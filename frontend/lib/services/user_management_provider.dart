@@ -1,0 +1,438 @@
+import 'dart:convert';
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:shared_preferences/shared_preferences.dart';
+import '../config/api_config.dart';
+
+final userManagementProvider =
+    NotifierProvider<UserManagementNotifier, UserManagementState>(
+      UserManagementNotifier.new,
+    );
+
+class UserManagementState {
+  final bool isLoading;
+  final bool isSaving;
+  final List<Map<String, dynamic>> users;
+  final List<Map<String, dynamic>> guestCodes;
+  final List<Map<String, dynamic>> defenseSchedules;
+  final Map<String, dynamic> counts;
+  final Map<String, dynamic> guestCounts;
+  final String search;
+  final String role;
+  final String? error;
+  final String? message;
+
+  const UserManagementState({
+    this.isLoading = false,
+    this.isSaving = false,
+    this.users = const [],
+    this.guestCodes = const [],
+    this.defenseSchedules = const [],
+    this.counts = const {},
+    this.guestCounts = const {},
+    this.search = '',
+    this.role = '',
+    this.error,
+    this.message,
+  });
+
+  UserManagementState copyWith({
+    bool? isLoading,
+    bool? isSaving,
+    List<Map<String, dynamic>>? users,
+    List<Map<String, dynamic>>? guestCodes,
+    List<Map<String, dynamic>>? defenseSchedules,
+    Map<String, dynamic>? counts,
+    Map<String, dynamic>? guestCounts,
+    String? search,
+    String? role,
+    String? error,
+    String? message,
+    bool clearError = false,
+    bool clearMessage = false,
+  }) {
+    return UserManagementState(
+      isLoading: isLoading ?? this.isLoading,
+      isSaving: isSaving ?? this.isSaving,
+      users: users ?? this.users,
+      guestCodes: guestCodes ?? this.guestCodes,
+      defenseSchedules: defenseSchedules ?? this.defenseSchedules,
+      counts: counts ?? this.counts,
+      guestCounts: guestCounts ?? this.guestCounts,
+      search: search ?? this.search,
+      role: role ?? this.role,
+      error: clearError ? null : error ?? this.error,
+      message: clearMessage ? null : message ?? this.message,
+    );
+  }
+}
+
+class UserManagementNotifier extends Notifier<UserManagementState> {
+  static final String baseUrl = ApiConfig.usersUrl;
+
+  @override
+  UserManagementState build() {
+    return const UserManagementState();
+  }
+
+  Future<void> fetchUsers({
+    String? search,
+    String? role,
+    String? successMessage,
+  }) async {
+    final nextSearch = search ?? state.search;
+    final nextRole = role ?? state.role;
+
+    state = state.copyWith(
+      isLoading: state.users.isEmpty,
+      isSaving: false,
+      search: nextSearch,
+      role: nextRole,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final uri = Uri.parse(baseUrl).replace(
+        queryParameters: {
+          if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
+          if (nextRole.isNotEmpty) 'role': nextRole,
+        },
+      );
+      final response = await http.get(uri, headers: await _headers());
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        _applyPayload(payload, successMessage: successMessage);
+        return;
+      }
+
+      state = state.copyWith(
+        isLoading: false,
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+    } catch (e) {
+      state = state.copyWith(
+        isLoading: false,
+        isSaving: false,
+        error: 'Connection error: $e',
+      );
+    }
+  }
+
+  Future<bool> addUser(Map<String, dynamic> payload) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 201) {
+        await fetchUsers(successMessage: 'User created.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateUser(int userId, Map<String, dynamic> payload) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/$userId/'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchUsers(successMessage: 'User updated.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> deleteUser(int userId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.delete(
+        Uri.parse('$baseUrl/$userId/'),
+        headers: await _headers(),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchUsers(successMessage: 'User deleted.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> bulkImport(
+    List<Map<String, dynamic>> rows, {
+    Map<String, dynamic>? studentContext,
+  }) async {
+    if (rows.isEmpty) {
+      state = state.copyWith(error: 'CSV has no valid data rows.');
+      return false;
+    }
+
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/bulk-import/'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'users': rows,
+          if (studentContext != null) 'student_context': studentContext,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final created = payload['created_count'] ?? 0;
+        final records = payload['records_created_count'] ?? 0;
+        final skipped = payload['skipped_count'] ?? 0;
+        final errors = payload['error_count'] ?? 0;
+        final recordsMessage = records == 0
+            ? ''
+            : ' $records academic records created.';
+        await fetchUsers(
+          successMessage:
+              '$created users imported.$recordsMessage $skipped skipped. $errors errors.',
+        );
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<void> fetchGuestCodes({String? successMessage}) async {
+    state = state.copyWith(clearError: true);
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/guest-codes/'),
+        headers: await _headers(),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        _applyGuestPayload(payload, successMessage: successMessage);
+        return;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+    }
+  }
+
+  Future<Map<String, dynamic>?> generateGuestCode(
+    Map<String, dynamic> payload,
+  ) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/guest-codes/'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 201) {
+        final responsePayload = Map<String, dynamic>.from(
+          jsonDecode(response.body),
+        );
+        _applyGuestPayload(
+          responsePayload,
+          successMessage: 'Guest panelist code generated.',
+        );
+        final guestCode = responsePayload['guest_code'];
+        if (guestCode is Map) {
+          return Map<String, dynamic>.from(guestCode);
+        }
+        return null;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return null;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> revokeGuestCode(int codeId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/guest-codes/$codeId/'),
+        headers: await _headers(),
+        body: jsonEncode({'is_active': false}),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        _applyGuestPayload(payload, successMessage: 'Guest code revoked.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<Map<String, String>> _headers() async {
+    final prefs = await SharedPreferences.getInstance();
+    final token = prefs.getString('jwt_token');
+
+    if (token == null) {
+      throw Exception('No authentication token found.');
+    }
+
+    return {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer $token',
+    };
+  }
+
+  void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
+    state = state.copyWith(
+      isLoading: false,
+      isSaving: false,
+      users: _readMapList(payload['users']),
+      counts: payload['counts'] is Map
+          ? Map<String, dynamic>.from(payload['counts'])
+          : state.counts,
+      message: successMessage,
+      clearError: true,
+    );
+  }
+
+  void _applyGuestPayload(
+    Map<String, dynamic> payload, {
+    String? successMessage,
+  }) {
+    state = state.copyWith(
+      isSaving: false,
+      guestCodes: _readMapList(payload['guest_codes']),
+      defenseSchedules: _readMapList(payload['defense_schedules']),
+      guestCounts: payload['guest_counts'] is Map
+          ? Map<String, dynamic>.from(payload['guest_counts'])
+          : state.guestCounts,
+      message: successMessage,
+      clearError: true,
+    );
+  }
+
+  List<Map<String, dynamic>> _readMapList(dynamic value) {
+    if (value is! List) {
+      return [];
+    }
+
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  String _errorFromResponse(http.Response response) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map) {
+        if (data['detail'] != null) {
+          return data['detail'].toString();
+        }
+        if (data.isNotEmpty) {
+          final firstValue = data.values.first;
+          if (firstValue is List && firstValue.isNotEmpty) {
+            return firstValue.first.toString();
+          }
+          return firstValue.toString();
+        }
+      }
+    } catch (_) {
+      return 'Request failed. Status: ${response.statusCode}';
+    }
+
+    return 'Request failed. Status: ${response.statusCode}';
+  }
+}

@@ -1,0 +1,68 @@
+# --- DefenSYS monorepo (root) — reduce accidental commits of secrets, builds, and junk ---
+
+# --- Python / Django (anywhere under repo) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+.venv/
+env/
+*.egg-info/
+.eggs/
+dist/
+build/
+*.egg
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+*.cover
+.hypothesis/
+
+# Local databases
+*.sqlite3
+db.sqlite3
+
+# Agent pipeline intermediates (regenerate; see docs/AGENTS.md)
+.tmp/
+
+# Secrets (never commit; templates use *.example)
+.env
+.env.local
+.env.*.local
+credentials.json
+token.json
+
+# Django user uploads (regenerate locally)
+backend/media/
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# --- IDEs ---
+.idea/
+*.iml
+*.ipr
+*.iws
+*.sublime-project
+*.sublime-workspace
+
+# VS Code / Cursor — uncomment if you do NOT commit shared workspace settings:
+# .vscode/
+
+# --- Logs & temp ---
+*.log
+*.tmp
+*.temp
+*.bak
+*~
+
+# --- Optional: local notes ---
+scratch.txt
