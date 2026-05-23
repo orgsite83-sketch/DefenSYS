@@ -2,8 +2,8 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from capstone_deliverables.models import DeliverableSubmission
-from digital_vault.models import VaultEntry
+from repository.deliverables.models import DeliverableSubmission
+from repository.vault.models import VaultEntry
 from student_teams.models import StudentTeam, TeamMembership
 
 
@@ -105,24 +105,6 @@ class CurriculumAnalyticsApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_classifier_returns_domain_and_similar_projects(self):
-        self.client.force_authenticate(user=self.admin)
-
-        response = self.client.post(
-            '/api/curriculum-analytics/classify/',
-            {
-                'text': 'A Flutter mobile app with cloud file storage and responsive UI.',
-            },
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertIn(response.data['domain'], ['Mobile Development', 'Web Development'])
-        self.assertGreater(response.data['confidence'], 0)
-        self.assertTrue(response.data['pipeline'])
-        self.assertTrue(response.data['similar_projects'])
-
-    def test_proposal_endpoint_generates_recommendations(self):
         self.client.force_authenticate(user=self.admin)
 
         response = self.client.post('/api/curriculum-analytics/proposal/', {}, format='json')

@@ -1,6 +1,6 @@
 import requests
 
-url = 'http://10.60.121.199:8000/api/digital-vault/'
+url = 'http://10.60.121.199:8000/api/repository/vault/'
 print(f'Testing URL: {url}')
 
 try:
@@ -14,7 +14,7 @@ try:
             print('\nFirst entry:')
             entry = data['entries'][0]
             for key, value in entry.items():
-                print(f'  {key}: {value}')
+                print(f'{key}: {value}')
     else:
         print(f'Response: {response.text[:200]}')
 except Exception as e:

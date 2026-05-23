@@ -49,6 +49,24 @@ class Semester(models.Model):
         default=True,
         help_text='When off, advisers cannot submit adviser grades for Capstone teams.',
     )
+    capstone_team_creation_enabled = models.BooleanField(
+        default=False,
+        help_text='When on, admins can create or bulk-import new capstone teams (Capstone 1 intake).',
+    )
+    PHASE_NONE = 'none'
+    PHASE_CAPSTONE_1 = 'capstone_1'
+    PHASE_CAPSTONE_2 = 'capstone_2'
+    PHASE_CHOICES = (
+        (PHASE_NONE, 'None'),
+        (PHASE_CAPSTONE_1, 'Capstone 1 intake'),
+        (PHASE_CAPSTONE_2, 'Capstone 2 continue'),
+    )
+    capstone_program_phase = models.CharField(
+        max_length=20,
+        choices=PHASE_CHOICES,
+        default=PHASE_NONE,
+        help_text='Capstone 1 = new team intake; Capstone 2 = same teams bumped via rollover.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

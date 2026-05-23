@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_http.dart';
 
 final studentTeamsProvider =
     NotifierProvider<StudentTeamsNotifier, StudentTeamsState>(
@@ -20,6 +21,11 @@ class StudentTeamsState {
   final List<String> statuses;
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
+  final String capstoneMode;
+  final bool canCreateCapstoneTeams;
+  final String? capstoneModeMessage;
+  final String operatingMode;
+  final String? operatingMessage;
   final String search;
   final String level;
   final String status;
@@ -36,8 +42,13 @@ class StudentTeamsState {
     this.statuses = const [],
     this.counts = const {},
     this.activeSemester,
+    this.capstoneMode = 'off',
+    this.canCreateCapstoneTeams = false,
+    this.capstoneModeMessage,
+    this.operatingMode = 'active',
+    this.operatingMessage,
     this.search = '',
-    this.level = 'Capstone',
+    this.level = '',
     this.status = '',
     this.error,
     this.message,
@@ -53,6 +64,11 @@ class StudentTeamsState {
     List<String>? statuses,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
+    String? capstoneMode,
+    bool? canCreateCapstoneTeams,
+    String? capstoneModeMessage,
+    String? operatingMode,
+    String? operatingMessage,
     String? search,
     String? level,
     String? status,
@@ -74,6 +90,12 @@ class StudentTeamsState {
       activeSemester: clearActiveSemester
           ? null
           : activeSemester ?? this.activeSemester,
+      capstoneMode: capstoneMode ?? this.capstoneMode,
+      canCreateCapstoneTeams:
+          canCreateCapstoneTeams ?? this.canCreateCapstoneTeams,
+      capstoneModeMessage: capstoneModeMessage ?? this.capstoneModeMessage,
+      operatingMode: operatingMode ?? this.operatingMode,
+      operatingMessage: operatingMessage ?? this.operatingMessage,
       search: search ?? this.search,
       level: level ?? this.level,
       status: status ?? this.status,
@@ -95,6 +117,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? search,
     String? level,
     String? status,
+    String? scope,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
@@ -117,9 +140,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
+          if (scope != null && scope.isNotEmpty) 'scope': scope,
         },
       );
-      final response = await http.get(uri, headers: await _headers());
+      final response = await apiHttpClient.get(uri, headers: await _headers());
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -149,7 +173,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await apiHttpClient.post(
         Uri.parse('$baseUrl/'),
         headers: await _headers(),
         body: jsonEncode(payload),
@@ -179,7 +203,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await apiHttpClient.patch(
         Uri.parse('$baseUrl/$teamId/'),
         headers: await _headers(),
         body: jsonEncode(payload),
@@ -209,7 +233,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await http.delete(
+      final response = await apiHttpClient.delete(
         Uri.parse('$baseUrl/$teamId/'),
         headers: await _headers(),
       );
@@ -230,10 +254,46 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     }
   }
 
-  Future<bool> bulkImport(List<Map<String, dynamic>> rows) async {
+  Future<Map<String, dynamic>?> bulkImportPreview(
+    List<Map<String, dynamic>> rows, {
+    String adviserFilter = 'all',
+  }) async {
     if (rows.isEmpty) {
       state = state.copyWith(error: 'CSV has no valid team rows.');
-      return false;
+      return null;
+    }
+
+    state = state.copyWith(clearError: true, clearMessage: true);
+
+    try {
+      final response = await apiHttpClient.post(
+        Uri.parse('$baseUrl/bulk-import/preview/'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'teams': rows,
+          'adviser_filter': adviserFilter,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      state = state.copyWith(error: _errorFromResponse(response));
+      return null;
+    } catch (e) {
+      state = state.copyWith(error: 'Connection error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> bulkImport(
+    List<Map<String, dynamic>> rows, {
+    String adviserFilter = 'all',
+  }) async {
+    if (rows.isEmpty) {
+      state = state.copyWith(error: 'CSV has no valid team rows.');
+      return null;
     }
 
     state = state.copyWith(
@@ -243,10 +303,13 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await apiHttpClient.post(
         Uri.parse('$baseUrl/bulk-import/'),
         headers: await _headers(),
-        body: jsonEncode({'teams': rows}),
+        body: jsonEncode({
+          'teams': rows,
+          'adviser_filter': adviserFilter,
+        }),
       );
 
       if (response.statusCode == 200 || response.statusCode == 201) {
@@ -256,18 +319,36 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         await fetchTeams(
           successMessage: '$created teams imported. $errors row errors.',
         );
-        return true;
+        return payload;
       }
 
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
       );
-      return false;
+      return null;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
-      return false;
+      return null;
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdviserHistory(int teamId) async {
+    try {
+      final response = await apiHttpClient.get(
+        Uri.parse('$baseUrl/$teamId/adviser-history/'),
+        headers: await _headers(),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return (payload['assignments'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (_) {
+      // Caller shows empty state on failure.
+    }
+    return const [];
   }
 
   Future<Map<String, String>> _headers() async {
@@ -300,6 +381,11 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           ? Map<String, dynamic>.from(payload['active_semester'])
           : null,
       clearActiveSemester: payload['active_semester'] == null,
+      capstoneMode: payload['capstone_mode']?.toString() ?? state.capstoneMode,
+      canCreateCapstoneTeams: payload['can_create_capstone_teams'] == true,
+      capstoneModeMessage: payload['capstone_mode_message']?.toString(),
+      operatingMode: payload['operating_mode']?.toString() ?? 'active',
+      operatingMessage: payload['operating_message']?.toString(),
       message: successMessage,
       clearError: true,
     );

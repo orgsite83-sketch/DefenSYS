@@ -45,7 +45,6 @@ users_data = [
         'role': 'faculty',
         'is_panelist': True,
         'is_adviser': True,
-        'adviser_phase': 'Capstone 1',
     },
     {
         'username': 'faculty2',
@@ -87,7 +86,7 @@ for user_data in users_data:
         if created:
             user.set_password(password)
             user.save()
-            print(f"✓ Created: {username} ({user.role})")
+            print(f"Created: {username} ({user.role})")
             created_count += 1
         else:
             # Update existing user
@@ -95,18 +94,18 @@ for user_data in users_data:
                 setattr(user, key, value)
             user.set_password(password)
             user.save()
-            print(f"↻ Updated: {username} ({user.role})")
+            print(f"Updated: {username} ({user.role})")
             updated_count += 1
             
     except Exception as e:
-        print(f"✗ Error creating {username}: {e}")
+        print(f"Error creating {username}: {e}")
         skipped_count += 1
 
 print(f"\n{'='*50}")
 print(f"Summary:")
-print(f"  Created: {created_count}")
-print(f"  Updated: {updated_count}")
-print(f"  Errors: {skipped_count}")
+print(f" Created: {created_count}")
+print(f" Updated: {updated_count}")
+print(f" Errors: {skipped_count}")
 print(f"{'='*50}\n")
 
 print("All users in database:")
@@ -120,12 +119,12 @@ print("\n" + "="*60)
 print("Login Credentials:")
 print("="*60)
 print("Admin:")
-print("  Username: admin | Password: admin123")
+print(" Username: admin | Password: admin123")
 print("\nFaculty:")
-print("  Username: faculty1 | Password: faculty123")
-print("  Username: faculty2 | Password: faculty123")
-print("  Username: faculty3 | Password: faculty123")
+print(" Username: faculty1 | Password: faculty123")
+print(" Username: faculty2 | Password: faculty123")
+print(" Username: faculty3 | Password: faculty123")
 print("\nStudents:")
-print("  Username: student | Password: student123")
-print("  Username: student2 | Password: student123")
+print(" Username: student | Password: student123")
+print(" Username: student2 | Password: student123")
 print("="*60)

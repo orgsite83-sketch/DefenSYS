@@ -107,7 +107,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       // Create multipart request
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('${ApiConfig.baseUrl}/weekly-progress/'),
+        Uri.parse('${ApiConfig.weeklyProgressUrl}/'),
       );
 
       // Add headers

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
@@ -5,6 +7,7 @@ import 'package:flutter/services.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/csv_file_io.dart';
+import '../../../utils/student_bulk_import_csv.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -24,6 +27,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   static const _line = Color(0xFFE5E7EB);
   static const List<int> _rowsPerPageOptions = [10, 25, 50, 100, 200, 500];
 
+  /// Canonical labels stored in `pit_lead_year` (matches team year_level usage).
+  static const List<String> _pitLeadYearOptions = [
+    '1st Year',
+    '2nd Year',
+    '3rd Year',
+    '4th Year',
+  ];
+
+  static String? _normalizePitLeadYear(String? raw) {
+    final s = raw?.trim() ?? '';
+    if (s.isEmpty) return null;
+    for (final y in _pitLeadYearOptions) {
+      if (y.toLowerCase() == s.toLowerCase()) return y;
+    }
+    return null;
+  }
+
   final _searchController = TextEditingController();
   int _rowsPerPage = 10;
   int _page = 0;
@@ -41,6 +61,18 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   String get _selectedBatchYearLevel => _batchYearLevel ?? '';
   String get _csvDraft => _bulkCsv ?? '';
 
+  Map<String, dynamic>? _accessControlUser;
+  String _acRole = 'student';
+  bool _acActive = true;
+  bool _acPanelist = false;
+  bool _acPitLead = false;
+  bool _acAdviser = false;
+  bool _acRepoAssistant = false;
+  String? _acPitLeadYear;
+  List<Map<String, dynamic>> _roleAssignments = [];
+  bool _roleAssignmentsLoading = false;
+  Timer? _successNoticeTimer;
+
   @override
   void initState() {
     super.initState();
@@ -53,8 +85,45 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   @override
   void dispose() {
+    _successNoticeTimer?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _dismissNotice() {
+    _successNoticeTimer?.cancel();
+    ref.read(userManagementProvider.notifier).clearNotice();
+  }
+
+  void _dismissError() {
+    ref.read(userManagementProvider.notifier).clearError();
+  }
+
+  void _scheduleSuccessNoticeAutoDismiss(String message) {
+    _successNoticeTimer?.cancel();
+    _successNoticeTimer = Timer(const Duration(seconds: 4), () {
+      if (!mounted) {
+        return;
+      }
+      final current = ref.read(userManagementProvider).message;
+      if (current == message) {
+        ref.read(userManagementProvider.notifier).clearNotice();
+      }
+    });
+  }
+
+  Widget? _errorNotice(String? error) {
+    if (error == null) {
+      return null;
+    }
+    return _notice(error, warning: true, onDismiss: _dismissError);
+  }
+
+  Widget? _successNotice(String? message) {
+    if (message == null) {
+      return null;
+    }
+    return _notice(message, onDismiss: _dismissNotice);
   }
 
   void _ensurePageInRange(int userCount) {
@@ -70,6 +139,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<String?>(
+      userManagementProvider.select((s) => s.message),
+      (previous, next) {
+        if (next != null && next.isNotEmpty) {
+          _scheduleSuccessNoticeAutoDismiss(next);
+        } else {
+          _successNoticeTimer?.cancel();
+        }
+      },
+    );
+
     final state = ref.watch(userManagementProvider);
     _ensurePageInRange(state.users.length);
     final academicState = ref.watch(academicPeriodProvider);
@@ -77,6 +157,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
     if (_isBulkImportVisible) {
       return _bulkImportPage(state, academicState);
+    }
+
+    if (_accessControlUser != null) {
+      return _accessControlPage(state);
     }
 
     return SingleChildScrollView(
@@ -92,13 +176,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ),
           const SizedBox(height: 28),
           _summaryCards(state),
-          if (state.error != null) ...[
+          if (_errorNotice(state.error) != null) ...[
             const SizedBox(height: 14),
-            _notice(state.error!, warning: true),
+            _errorNotice(state.error)!,
           ],
-          if (state.message != null) ...[
+          if (_successNotice(state.message) != null) ...[
             const SizedBox(height: 14),
-            _notice(state.message!),
+            _successNotice(state.message)!,
           ],
           const SizedBox(height: 30),
           _usersTableCard(state, visibleUsers),
@@ -142,7 +226,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
+  void _applySummaryRoleFilter(String role) {
+    setState(() => _page = 0);
+    ref.read(userManagementProvider.notifier).fetchUsers(role: role);
+  }
+
   Widget _summaryCards(UserManagementState state) {
+    final canTap = !state.isSaving;
     return Row(
       children: [
         Expanded(
@@ -150,7 +240,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             title: 'All Users',
             subtitle: '${_count(state, 'all')} Total',
             icon: Icons.groups_2_rounded,
-            selected: true,
+            selected: state.role.isEmpty,
+            onTap: canTap ? () => _applySummaryRoleFilter('') : null,
           ),
         ),
         const SizedBox(width: 20),
@@ -159,6 +250,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             title: 'Faculty',
             subtitle: '${_count(state, 'faculty')} Active',
             icon: Icons.co_present_rounded,
+            selected: state.role == 'faculty',
+            onTap: canTap ? () => _applySummaryRoleFilter('faculty') : null,
           ),
         ),
         const SizedBox(width: 20),
@@ -168,6 +261,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             subtitle: '${_count(state, 'students')} Active',
             icon: Icons.school_rounded,
             iconColor: const Color(0xFF2563EB),
+            selected: state.role == 'student',
+            onTap: canTap ? () => _applySummaryRoleFilter('student') : null,
           ),
         ),
       ],
@@ -180,14 +275,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     required IconData icon,
     bool selected = false,
     Color iconColor = _muted,
+    VoidCallback? onTap,
   }) {
-    return Container(
+    final card = Container(
       height: 90,
       padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
       decoration: BoxDecoration(
         color: selected ? const Color(0xFFFFF4F4) : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: selected ? _maroon : Colors.transparent),
+        border: Border.all(
+          color: selected ? _maroon : const Color(0xFFE5E7EB),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -232,6 +330,20 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             ],
           ),
         ],
+      ),
+    );
+
+    if (onTap == null) {
+      return card;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        mouseCursor: SystemMouseCursors.click,
+        child: card,
       ),
     );
   }
@@ -336,7 +448,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   Widget _roleFilter(UserManagementState state) {
     return Container(
-      width: 142,
+      width: 168,
       height: 42,
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
@@ -359,6 +471,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             DropdownMenuItem(value: '', child: Text('Filter by Role...')),
             DropdownMenuItem(value: 'admin', child: Text('Admin')),
             DropdownMenuItem(value: 'faculty', child: Text('Faculty')),
+            DropdownMenuItem(value: 'panelist', child: Text('Panelist')),
+            DropdownMenuItem(value: 'pit_lead', child: Text('PIT Lead')),
+            DropdownMenuItem(value: 'adviser', child: Text('Adviser')),
+            DropdownMenuItem(
+              value: 'repo_assistant',
+              child: Text('Repo Assistant'),
+            ),
             DropdownMenuItem(value: 'student', child: Text('Student')),
           ],
           onChanged: state.isSaving
@@ -495,24 +614,43 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Widget _roleBadge(Map<String, dynamic> user) {
+    final displayRole = user['displayRole'];
+    final tone = displayRole is Map
+        ? displayRole['tone']?.toString()
+        : null;
     final role = user['role']?.toString() ?? 'student';
-    final label = switch (role) {
-      'admin' => 'Administrator',
-      'faculty' => 'Faculty',
-      _ => 'Student',
-    };
-    final background = switch (role) {
+    final label = displayRole is Map && displayRole['label'] != null
+        ? displayRole['label'].toString()
+        : switch (role) {
+            'admin' => 'Administrator',
+            'faculty' => 'Faculty',
+            _ => 'Student',
+          };
+    final effectiveTone = tone ?? role;
+    final background = switch (effectiveTone) {
       'admin' => const Color(0xFFFDE8E8),
+      'adviser' => const Color(0xFFECFDF5),
+      'panelist' => const Color(0xFFF3E8FF),
+      'pit_lead' => const Color(0xFFEFF6FF),
+      'repo_assistant' => const Color(0xFFFFEDD5),
       'faculty' => const Color(0xFFFFEDD5),
       _ => const Color(0xFFEFF6FF),
     };
-    final textColor = switch (role) {
+    final textColor = switch (effectiveTone) {
       'admin' => const Color(0xFF9B1C1C),
+      'adviser' => const Color(0xFF047857),
+      'panelist' => const Color(0xFF7E22CE),
+      'pit_lead' => const Color(0xFF1D4ED8),
+      'repo_assistant' => const Color(0xFFEA580C),
       'faculty' => const Color(0xFFEA580C),
       _ => const Color(0xFF1E40AF),
     };
-    final icon = switch (role) {
+    final icon = switch (effectiveTone) {
       'admin' => Icons.admin_panel_settings_rounded,
+      'adviser' => Icons.school_outlined,
+      'panelist' => Icons.groups_2_outlined,
+      'pit_lead' => Icons.flag_outlined,
+      'repo_assistant' => Icons.inventory_2_outlined,
       'faculty' => Icons.co_present_rounded,
       _ => Icons.school_rounded,
     };
@@ -546,7 +684,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       mainAxisSize: MainAxisSize.min,
       children: [
         InkWell(
-          onTap: state.isSaving ? null : () => _showUserDialog(user),
+          onTap: state.isSaving ? null : () => _showProfileEditor(user),
           borderRadius: BorderRadius.circular(6),
           child: const Padding(
             padding: EdgeInsets.all(4),
@@ -555,7 +693,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         ),
         const SizedBox(width: 3),
         InkWell(
-          onTap: state.isSaving ? null : () => _showUserDialog(user),
+          onTap: state.isSaving ? null : () => _openAccessControl(user),
           borderRadius: BorderRadius.circular(6),
           child: const Padding(
             padding: EdgeInsets.all(4),
@@ -953,13 +1091,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   : () => setState(() => _showBulkImport = false),
             ),
           ),
-          if (state.error != null) ...[
+          if (_errorNotice(state.error) != null) ...[
             const SizedBox(height: 14),
-            _notice(state.error!, warning: true),
+            _errorNotice(state.error)!,
           ],
-          if (state.message != null) ...[
+          if (_successNotice(state.message) != null) ...[
             const SizedBox(height: 14),
-            _notice(state.message!),
+            _successNotice(state.message)!,
           ],
           const SizedBox(height: 28),
           _csvFormatCard(),
@@ -1656,7 +1794,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         label: Text(label),
         style: ElevatedButton.styleFrom(
           backgroundColor: _maroon,
-          foregroundColor: _gold,
+          foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
           padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1666,7 +1804,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
-  Widget _notice(String message, {bool warning = false}) {
+  Widget _notice(
+    String message, {
+    bool warning = false,
+    VoidCallback? onDismiss,
+  }) {
     final color = warning ? DefensysUi.warningText : DefensysUi.successText;
     final background = warning ? DefensysUi.warningBg : DefensysUi.successBg;
     final border = warning
@@ -1675,15 +1817,33 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: border),
       ),
-      child: Text(
-        message,
-        style: TextStyle(color: color, fontWeight: FontWeight.w700),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text(
+                message,
+                style: TextStyle(color: color, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+          if (onDismiss != null)
+            IconButton(
+              onPressed: onDismiss,
+              tooltip: 'Dismiss',
+              icon: Icon(Icons.close_rounded, size: 18, color: color),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+        ],
       ),
     );
   }
@@ -1701,9 +1861,22 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('CSV Template'),
-        content: const SizedBox(
+        content: SizedBox(
           width: 540,
-          child: SelectableText(_sampleCsvTemplate),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const SelectableText(sampleFacultyCsvTemplate),
+              const SizedBox(height: 16),
+              const Text(
+                'Student batch samples (4 students each) are available via '
+                'Download Sample Template on the bulk import screen, or from '
+                'sample_file/demo_students_*_year_import.csv in the repo.',
+                style: TextStyle(fontSize: 12.5, height: 1.45),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -1715,10 +1888,61 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
+  Future<String?> _pickStudentSampleYear() async {
+    return showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Download student sample CSV'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Each file has four students for one year level. Set the same '
+                'year level in Student Batch settings before importing.',
+                style: TextStyle(fontSize: 13.5, height: 1.45),
+              ),
+              const SizedBox(height: 16),
+              for (final year in studentSampleYearLevels)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(year),
+                    child: Text(year),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Future<void> _downloadCsvTemplate() async {
+    if (_showBulkImport == true && _selectedBulkImportType == 'student') {
+      final yearLevel = await _pickStudentSampleYear();
+      if (yearLevel == null || !mounted) {
+        return;
+      }
+      await downloadTextFile(
+        filename: sampleStudentCsvFilenameForYear(yearLevel),
+        content: sampleStudentCsvForYear(yearLevel),
+      );
+      return;
+    }
+
     await downloadTextFile(
       filename: 'defensys-user-import-template.csv',
-      content: _sampleCsvTemplate,
+      content: sampleFacultyCsvTemplate,
     );
   }
 
@@ -1746,9 +1970,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              backgroundColor: const Color(0xFFFFF5F5),
+              surfaceTintColor: Colors.transparent,
               shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
+                borderRadius: BorderRadius.circular(12),
+                side: const BorderSide(color: Color(0xFFE5E7EB)),
               ),
               titlePadding: const EdgeInsets.fromLTRB(24, 22, 24, 14),
               contentPadding: const EdgeInsets.fromLTRB(24, 0, 24, 20),
@@ -2111,6 +2336,1348 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
   }
 
+  void _syncAccessFieldsFromUser(Map<String, dynamic> user) {
+    _acRole = user['role']?.toString() ?? 'student';
+    _acActive = user['is_active'] != false;
+    _acPanelist = user['is_panelist'] == true;
+    _acPitLead = user['is_pit_lead'] == true;
+    _acAdviser = user['is_adviser'] == true;
+    _acRepoAssistant = (user['is_repo_assistant'] == true) ||
+        (user['is_uploader'] == true);
+    _acPitLeadYear = _normalizePitLeadYear(user['pit_lead_year']?.toString());
+  }
+
+  Future<void> _loadRoleAssignments(int userId) async {
+    setState(() => _roleAssignmentsLoading = true);
+    final rows = await ref
+        .read(userManagementProvider.notifier)
+        .fetchRoleAssignmentHistory(userId);
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _roleAssignments = rows;
+      _roleAssignmentsLoading = false;
+    });
+  }
+
+  void _openAccessControl(Map<String, dynamic> user) {
+    _acPitLeadYear = _normalizePitLeadYear(user['pit_lead_year']?.toString());
+    final userId = _asInt(user['id']);
+    setState(() {
+      _accessControlUser = Map<String, dynamic>.from(user);
+      _roleAssignments = [];
+      _roleAssignmentsLoading = userId != null;
+      _syncAccessFieldsFromUser(user);
+    });
+    if (userId != null) {
+      _loadRoleAssignments(userId);
+    }
+  }
+
+  void _closeAccessControlPage() {
+    setState(() {
+      _accessControlUser = null;
+      _roleAssignments = [];
+      _roleAssignmentsLoading = false;
+    });
+  }
+
+  Map<String, dynamic> _accessPayloadFromCurrent() {
+    final u = _accessControlUser!;
+    final isFaculty = _acRole == 'admin' || _acRole == 'faculty';
+    return {
+      'username': u['username']?.toString().trim() ?? '',
+      'first_name': u['first_name']?.toString().trim() ?? '',
+      'last_name': u['last_name']?.toString().trim() ?? '',
+      'email': u['email']?.toString().trim() ?? '',
+      'role': _acRole,
+      'is_active': _acActive,
+      'is_panelist': isFaculty && _acPanelist,
+      'is_pit_lead': isFaculty && _acPitLead,
+      'pit_lead_year':
+          isFaculty && _acPitLead ? _acPitLeadYear : null,
+      'is_adviser': isFaculty && _acAdviser,
+      'is_repo_assistant': isFaculty && _acRepoAssistant,
+      'is_uploader': isFaculty && _acRepoAssistant,
+    };
+  }
+
+  Future<void> _persistAccessControl() async {
+    final u = _accessControlUser;
+    if (u == null) {
+      return;
+    }
+    final id = _asInt(u['id']);
+    if (id == null) {
+      return;
+    }
+    final ok = await ref
+        .read(userManagementProvider.notifier)
+        .updateUser(id, _accessPayloadFromCurrent());
+    if (!mounted || !ok) {
+      return;
+    }
+    final rows = ref.read(userManagementProvider).users;
+    Map<String, dynamic>? next;
+    for (final row in rows) {
+      if (_asInt(row['id']) == id) {
+        next = row;
+        break;
+      }
+    }
+    if (next != null) {
+      setState(() {
+        _accessControlUser = Map<String, dynamic>.from(next!);
+        _syncAccessFieldsFromUser(_accessControlUser!);
+      });
+    }
+    await _loadRoleAssignments(id);
+  }
+
+  static const _histHead = TextStyle(
+    fontSize: 10,
+    fontWeight: FontWeight.w800,
+    letterSpacing: 1.1,
+    color: Color(0xFF9CA3AF),
+  );
+
+  Widget _accessControlPage(UserManagementState state) {
+    final u = _accessControlUser!;
+    final name = (u['name']?.toString().trim().isNotEmpty == true)
+        ? u['name']!.toString().trim()
+        : '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+    final email = u['email']?.toString() ?? '';
+    final isFaculty = _acRole == 'admin' || _acRole == 'faculty';
+
+    return SingleChildScrollView(
+      padding: DefensysUi.contentPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DefensysPageHeader(
+            icon: Icons.shield_outlined,
+            title: 'Access Control & Role Assignment',
+            subtitle:
+                'Configure primary access roles and operational duties for this user account.',
+            actions: _greyBorderMaroonTextButton(
+              icon: Icons.arrow_back_rounded,
+              label: 'Back to Users',
+              onPressed:
+                  state.isSaving ? null : () => _closeAccessControlPage(),
+            ),
+          ),
+          if (_errorNotice(state.error) != null) ...[
+            const SizedBox(height: 14),
+            _errorNotice(state.error)!,
+          ],
+          if (_successNotice(state.message) != null) ...[
+            const SizedBox(height: 14),
+            _successNotice(state.message)!,
+          ],
+          const SizedBox(height: 22),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 1,
+                child: _accessControlRefCard(
+                  padding: const EdgeInsets.fromLTRB(24, 24, 24, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      CircleAvatar(
+                        radius: 30,
+                        backgroundColor: _maroon,
+                        child: const Icon(
+                          Icons.person_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        name.isNotEmpty ? name : '—',
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.3,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        email.isNotEmpty ? email : '—',
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        'ID: ${u['username']?.toString() ?? '—'}',
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: OutlinedButton.icon(
+                          onPressed: state.isSaving ? null : _showProfileEditor,
+                          icon: const Icon(Icons.person_outline, size: 18),
+                          label: const Text('Edit User Profile'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _maroon,
+                            side: const BorderSide(
+                              color: Color(0xFFD1D5DB),
+                              width: 1,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 20),
+              Expanded(
+                flex: 3,
+                child: _accessControlRefCard(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.shield_outlined,
+                            color: _maroon,
+                            size: 22,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Dynamic Role Assignment',
+                                  style: TextStyle(
+                                    color: _ink,
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    letterSpacing: -0.2,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                const Text(
+                                  'Toggle switches to grant or revoke modular '
+                                  'permissions. Users can hold multiple roles simultaneously.',
+                                  style: TextStyle(
+                                    color: _muted,
+                                    fontSize: 12.5,
+                                    height: 1.45,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Changes apply after you save the configuration below.',
+                                  style: TextStyle(
+                                    color: _muted,
+                                    fontSize: 12,
+                                    height: 1.4,
+                                    fontStyle: FontStyle.italic,
+                                    fontWeight: FontWeight.w400,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      if (isFaculty) ...[
+                        Container(
+                          width: double.infinity,
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(color: _line),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                decoration: const BoxDecoration(
+                                  border: Border(
+                                    bottom: BorderSide(color: _line),
+                                  ),
+                                ),
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      flex: 3,
+                                      child: Text(
+                                        'ROLE',
+                                        style: _histHead.copyWith(
+                                          fontSize: 10.5,
+                                        ),
+                                      ),
+                                    ),
+                                    Text(
+                                      'ASSIGNED',
+                                      style: _histHead.copyWith(
+                                        fontSize: 10.5,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Padding(
+                                padding: const EdgeInsets.all(12),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    _accessRoleCard(
+                                      accent: const Color(0xFF9333EA),
+                                      icon: Icons.groups_2_outlined,
+                                      title: 'Defense Panelist',
+                                      subtitle:
+                                          'Participates as evaluator on defense panels.',
+                                      value: _acPanelist,
+                                      enabled: !state.isSaving,
+                                      onChanged: (v) =>
+                                          setState(() => _acPanelist = v),
+                                      flatInTable: true,
+                                    ),
+                                    const Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: _line,
+                                    ),
+                                    _accessRoleCard(
+                                      accent: const Color(0xFF2563EB),
+                                      icon: Icons.flag_outlined,
+                                      title: 'PIT Lead',
+                                      subtitle:
+                                          'Coordinates PIT activities and dependent roles.',
+                                      value: _acPitLead,
+                                      enabled: !state.isSaving,
+                                      onChanged: (v) {
+                                        setState(() {
+                                          _acPitLead = v;
+                                          if (!_acPitLead) {
+                                            _acRepoAssistant = false;
+                                            _acPitLeadYear = null;
+                                          }
+                                        });
+                                      },
+                                      below: _acPitLead
+                                          ? [
+                                              const Text(
+                                                'PIT Lead Year',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _ink,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 6),
+                                              DropdownButtonFormField<String?>(
+                                                key: ValueKey(
+                                                  'pit-year-$_acPitLeadYear',
+                                                ),
+                                                initialValue: _acPitLeadYear,
+                                                isExpanded: true,
+                                                style: const TextStyle(
+                                                  fontSize: 13,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _ink,
+                                                ),
+                                                decoration:
+                                                    _accessTextFieldDecoration(),
+                                                dropdownColor: Colors.white,
+                                                items: [
+                                                  const DropdownMenuItem<
+                                                      String?>(
+                                                    value: null,
+                                                    child: Text(
+                                                      '— Select year level —',
+                                                    ),
+                                                  ),
+                                                  ..._pitLeadYearOptions.map(
+                                                    (y) =>
+                                                        DropdownMenuItem<
+                                                            String?>(
+                                                      value: y,
+                                                      child: Text(y),
+                                                    ),
+                                                  ),
+                                                ],
+                                                onChanged: state.isSaving
+                                                    ? null
+                                                    : (v) => setState(
+                                                          () => _acPitLeadYear =
+                                                              v,
+                                                        ),
+                                              ),
+                                            ]
+                                          : null,
+                                      flatInTable: true,
+                                    ),
+                                    const Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: _line,
+                                    ),
+                                    _accessRoleCard(
+                                      accent: const Color(0xFF059669),
+                                      icon: Icons.school_outlined,
+                                      title: 'Project Adviser',
+                                      subtitle:
+                                          'Capstone advising responsibilities.',
+                                      value: _acAdviser,
+                                      enabled: !state.isSaving,
+                                      onChanged: (v) =>
+                                          setState(() => _acAdviser = v),
+                                      flatInTable: true,
+                                    ),
+                                    const Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: _line,
+                                    ),
+                                    _accessRoleCard(
+                                      accent: const Color(0xFFEA580C),
+                                      icon: Icons.inventory_2_outlined,
+                                      title: 'Repository Assistant',
+                                      subtitle:
+                                          'Assists with PIT repository tasks and '
+                                          'file uploads. Requires PIT Lead.',
+                                      value: _acRepoAssistant,
+                                      enabled:
+                                          !state.isSaving && _acPitLead,
+                                      onChanged: _acPitLead
+                                          ? (v) => setState(
+                                                () => _acRepoAssistant = v,
+                                              )
+                                          : null,
+                                      flatInTable: true,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: SizedBox(
+                          height: 46,
+                          child: ElevatedButton.icon(
+                            onPressed: state.isSaving
+                                ? null
+                                : _onSaveRoleConfiguration,
+                            icon: const Icon(
+                              Icons.lock_outline_rounded,
+                              size: 18,
+                            ),
+                            label: const Text('Save Role Configuration'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _maroon,
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              textStyle: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 22),
+          _roleAssignmentHistoryCard(),
+        ],
+      ),
+    );
+  }
+
+  Widget _roleAssignmentHistoryCard() {
+    return _accessControlRefCard(
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Icon(Icons.history_rounded, color: _maroon, size: 22),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Role Assignment History',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    SizedBox(height: 4),
+                    Text(
+                      'Capability toggles: Panelist, PIT Lead, Project Adviser, etc.',
+                      style: TextStyle(
+                        color: _muted,
+                        fontSize: 12.5,
+                        height: 1.4,
+                        fontWeight: FontWeight.w400,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          if (_roleAssignmentsLoading)
+            const SizedBox(
+              height: 72,
+              child: Center(
+                child: CircularProgressIndicator(color: DefensysUi.primaryMaroon),
+              ),
+            )
+          else if (_roleAssignments.isEmpty)
+            SizedBox(
+              height: 72,
+              width: double.infinity,
+              child: Center(
+                child: Text(
+                  'No role assignments recorded yet.',
+                  style: TextStyle(
+                    color: _muted.withValues(alpha: 0.95),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            )
+          else
+            _roleHistoryTable(),
+        ],
+      ),
+    );
+  }
+
+  String _formatAssignmentTimestamp(dynamic value) {
+    final raw = value?.toString() ?? '';
+    if (raw.isEmpty) {
+      return '—';
+    }
+    final dt = DateTime.tryParse(raw);
+    if (dt == null) {
+      return raw;
+    }
+    final local = dt.toLocal();
+    final y = local.year.toString().padLeft(4, '0');
+    final m = local.month.toString().padLeft(2, '0');
+    final d = local.day.toString().padLeft(2, '0');
+    return '$y-$m-$d';
+  }
+
+  static const Map<int, TableColumnWidth> _roleHistoryColumnWidths = {
+    0: FlexColumnWidth(2.1),
+    1: FlexColumnWidth(2.4),
+    2: FlexColumnWidth(1.1),
+    3: FlexColumnWidth(1.3),
+    4: FlexColumnWidth(1.1),
+  };
+
+  Widget _roleHistoryCell(
+    String text, {
+    FontWeight fontWeight = FontWeight.w500,
+    int maxLines = 1,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+      child: Text(
+        text.isEmpty ? '—' : text,
+        maxLines: maxLines,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+        style: TextStyle(
+          color: _ink,
+          fontSize: 12.5,
+          fontWeight: fontWeight,
+        ),
+      ),
+    );
+  }
+
+  Widget _roleHistoryHeaderCell(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 4),
+      child: Text(text, style: _histHead),
+    );
+  }
+
+  Widget _roleHistoryTable() {
+    return Table(
+      columnWidths: _roleHistoryColumnWidths,
+      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+      children: [
+        TableRow(
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: _line)),
+          ),
+          children: [
+            _roleHistoryHeaderCell('ROLE'),
+            _roleHistoryHeaderCell('SEMESTER'),
+            _roleHistoryHeaderCell('YEAR LEVEL'),
+            _roleHistoryHeaderCell('CHANGED'),
+            _roleHistoryHeaderCell('ACTION'),
+          ],
+        ),
+        ..._roleAssignments.map(_roleAssignmentHistoryTableRow),
+      ],
+    );
+  }
+
+  String _roleHistoryLabel(Map<String, dynamic> row) {
+    final label = row['role_label']?.toString() ?? '—';
+    final detail = row['role_detail']?.toString();
+    if (detail == null || detail.isEmpty) {
+      return label;
+    }
+    return '$label ($detail)';
+  }
+
+  TableRow _roleAssignmentHistoryTableRow(Map<String, dynamic> row) {
+    final isAssigned = row['action']?.toString() == 'assigned';
+    final yearLevel = row['year_level']?.toString().trim() ?? '';
+
+    return TableRow(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _line)),
+      ),
+      children: [
+        _roleHistoryCell(
+          _roleHistoryLabel(row),
+          fontWeight: FontWeight.w600,
+          maxLines: 2,
+        ),
+        _roleHistoryCell(row['semester']?.toString() ?? '—'),
+        _roleHistoryCell(yearLevel.isEmpty ? '—' : yearLevel),
+        _roleHistoryCell(_formatAssignmentTimestamp(row['changed_at'])),
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              decoration: BoxDecoration(
+                color: isAssigned
+                    ? const Color(0xFFECFDF5)
+                    : const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                isAssigned ? 'Assigned' : 'Revoked',
+                style: TextStyle(
+                  color: isAssigned
+                      ? const Color(0xFF047857)
+                      : const Color(0xFFB91C1C),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _accessControlRefCard({
+    required EdgeInsetsGeometry padding,
+    required Widget child,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: child,
+    );
+  }
+
+  Widget _accessRoleCard({
+    required Color accent,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required bool value,
+    required bool enabled,
+    required ValueChanged<bool>? onChanged,
+    List<Widget>? below,
+    bool flatInTable = false,
+  }) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _line),
+        boxShadow: flatInTable
+            ? const []
+            : [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.04),
+                  blurRadius: 6,
+                  offset: const Offset(0, 1),
+                ),
+              ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, color: Colors.white, size: 20),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          color: _muted,
+                          fontSize: 12,
+                          height: 1.38,
+                          fontStyle: FontStyle.italic,
+                          fontWeight: FontWeight.w400,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                DefensysUi.flatSwitch(
+                  value: value,
+                  onChanged: !enabled || onChanged == null
+                      ? null
+                      : (v) => onChanged(v),
+                ),
+              ],
+            ),
+          ),
+          if (below != null && below.isNotEmpty) ...[
+            const Divider(height: 1, thickness: 1, color: _line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: below,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _greyBorderMaroonTextButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        icon: Icon(icon, size: 16, color: _maroon),
+        label: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: _maroon,
+          ),
+        ),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _maroon,
+          side: const BorderSide(color: Color(0xFFD1D5DB)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _accessTextFieldDecoration({String? hint}) {
+    return InputDecoration(
+      hintText: hint,
+      filled: true,
+      fillColor: Colors.white,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      hintStyle: TextStyle(
+        color: _muted.withValues(alpha: 0.75),
+        fontSize: 13,
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: _maroon, width: 1.25),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+    );
+  }
+
+  InputDecoration _profileModalBaseRoleDecoration() {
+    const r = 8.0;
+    const side = BorderSide(color: _maroon, width: 1);
+    return InputDecoration(
+      filled: true,
+      fillColor: Colors.white,
+      isDense: true,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(r),
+        borderSide: side,
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(r),
+        borderSide: const BorderSide(color: _maroon, width: 1.25),
+      ),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(r),
+        borderSide: side,
+      ),
+    );
+  }
+
+  Future<void> _onSaveRoleConfiguration() async {
+    await _persistAccessControl();
+  }
+
+  Map<String, dynamic> _profilePayloadFromUser(
+    Map<String, dynamic> user, {
+    required String firstName,
+    required String lastName,
+    required String email,
+    required String role,
+    required bool isActive,
+    String? password,
+  }) {
+    final isFaculty = role == 'admin' || role == 'faculty';
+    if (!isFaculty) {
+      return {
+        'username': user['username']?.toString().trim() ?? '',
+        'first_name': firstName,
+        'last_name': lastName,
+        'email': email,
+        'role': role,
+        'is_active': isActive,
+        'is_panelist': false,
+        'is_pit_lead': false,
+        'pit_lead_year': null,
+        'is_adviser': false,
+        'is_repo_assistant': false,
+        'is_uploader': false,
+        if (password != null && password.isNotEmpty) 'password': password,
+      };
+    }
+    return {
+      'username': user['username']?.toString().trim() ?? '',
+      'first_name': firstName,
+      'last_name': lastName,
+      'email': email,
+      'role': role,
+      'is_active': isActive,
+      'is_panelist': user['is_panelist'] == true,
+      'is_pit_lead': user['is_pit_lead'] == true,
+      'pit_lead_year': user['is_pit_lead'] == true
+          ? _normalizePitLeadYear(user['pit_lead_year']?.toString())
+          : null,
+      'is_adviser': user['is_adviser'] == true,
+      'is_repo_assistant': (user['is_repo_assistant'] == true) ||
+          (user['is_uploader'] == true),
+      'is_uploader': (user['is_repo_assistant'] == true) ||
+          (user['is_uploader'] == true),
+      if (password != null && password.isNotEmpty) 'password': password,
+    };
+  }
+
+  Future<void> _showProfileEditor([Map<String, dynamic>? user]) async {
+    final u = user ?? _accessControlUser;
+    if (u == null) {
+      return;
+    }
+    final onAccessPage = _accessControlUser != null &&
+        _asInt(_accessControlUser!['id']) == _asInt(u['id']);
+    final first = TextEditingController(
+      text: u['first_name']?.toString() ?? '',
+    );
+    final last = TextEditingController(
+      text: u['last_name']?.toString() ?? '',
+    );
+    final email = TextEditingController(text: u['email']?.toString() ?? '');
+    final password = TextEditingController();
+
+    final displayName =
+        (u['name']?.toString().trim().isNotEmpty == true)
+            ? u['name']!.toString().trim()
+            : '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+    final usernameStr = u['username']?.toString() ?? '—';
+
+    Widget capsLabel(String text) => Padding(
+          padding: const EdgeInsets.only(bottom: 6),
+          child: Text(
+            text.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.85,
+              color: Color(0xFF4B5563),
+            ),
+          ),
+        );
+
+    final roleChoice = <String>[
+      onAccessPage ? _acRole : (u['role']?.toString() ?? 'student'),
+    ];
+    final activeChoice = <bool>[
+      onAccessPage ? _acActive : (u['is_active'] != false),
+    ];
+
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              surfaceTintColor: Colors.transparent,
+              elevation: 14,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(14),
+                side: const BorderSide(color: Color(0xFFE5E7EB)),
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 560),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(28, 26, 28, 22),
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Edit User Profile',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.w800,
+                            color: _maroon,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Editing account: $displayName (ID $usernameStr)',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: _muted,
+                            height: 1.35,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                        ),
+                        const SizedBox(height: 22),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.edit_outlined,
+                              size: 18,
+                              color: _maroon,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Edit Account Details',
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
+                                fontFamily: DefensysUi.fontFamily,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        const Text(
+                          "Update the user's name, email, and system role.",
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: _muted,
+                            height: 1.4,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                        ),
+                        const SizedBox(height: 18),
+                        capsLabel('ID Number / Username'),
+                        Text(
+                          usernameStr,
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                            color: _ink,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  capsLabel('First Name'),
+                                  TextField(
+                                    controller: first,
+                                    decoration: _accessTextFieldDecoration(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  capsLabel('Last Name'),
+                                  TextField(
+                                    controller: last,
+                                    decoration: _accessTextFieldDecoration(),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        capsLabel('Email Address'),
+                        TextField(
+                          controller: email,
+                          decoration: _accessTextFieldDecoration(),
+                          keyboardType: TextInputType.emailAddress,
+                        ),
+                        const SizedBox(height: 16),
+                        capsLabel('System Role'),
+                        DropdownButtonFormField<String>(
+                          key: ValueKey<String>(
+                            'profile-role-${roleChoice[0]}',
+                          ),
+                          initialValue: roleChoice[0],
+                          isExpanded: true,
+                          decoration: _profileModalBaseRoleDecoration(),
+                          icon: Icon(
+                            Icons.arrow_drop_down_rounded,
+                            color: _muted,
+                            size: 22,
+                          ),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: _ink,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                          items: const [
+                            DropdownMenuItem(
+                              value: 'admin',
+                              child: Text('Administrator'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'faculty',
+                              child: Text('Faculty'),
+                            ),
+                            DropdownMenuItem(
+                              value: 'student',
+                              child: Text('Student'),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            setDialogState(() {
+                              roleChoice[0] = v ?? 'student';
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: Checkbox(
+                                value: activeChoice[0],
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                visualDensity: VisualDensity.compact,
+                                side: const BorderSide(
+                                  color: _maroon,
+                                  width: 1.5,
+                                ),
+                                fillColor: WidgetStateProperty.resolveWith(
+                                  (states) {
+                                    if (states.contains(
+                                      WidgetState.selected,
+                                    )) {
+                                      return _maroon;
+                                    }
+                                    return Colors.white;
+                                  },
+                                ),
+                                checkColor: Colors.white,
+                                onChanged: (v) {
+                                  setDialogState(() {
+                                    activeChoice[0] = v ?? false;
+                                  });
+                                },
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            GestureDetector(
+                              onTap: () {
+                                setDialogState(() {
+                                  activeChoice[0] = !activeChoice[0];
+                                });
+                              },
+                              child: const Padding(
+                                padding: EdgeInsets.symmetric(
+                                  vertical: 4,
+                                  horizontal: 4,
+                                ),
+                                child: Text(
+                                  'Account is active',
+                                  style: TextStyle(
+                                    fontSize: 14,
+                                    fontWeight: FontWeight.w600,
+                                    color: _ink,
+                                    fontFamily: DefensysUi.fontFamily,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        capsLabel('New Password (optional)'),
+                        TextField(
+                          controller: password,
+                          obscureText: true,
+                          decoration: _accessTextFieldDecoration(
+                            hint: 'Leave blank to keep current password',
+                          ),
+                        ),
+                        const SizedBox(height: 26),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.end,
+                          children: [
+                            OutlinedButton(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, false),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: _ink,
+                                backgroundColor: Colors.white,
+                                side: const BorderSide(color: Color(0xFFD1D5DB)),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 22,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 12),
+                            ElevatedButton.icon(
+                              onPressed: () =>
+                                  Navigator.pop(dialogContext, true),
+                              icon: const Icon(
+                                Icons.save_outlined,
+                                size: 18,
+                                color: Colors.white,
+                              ),
+                              label: const Text('Save Changes'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: _maroon,
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 20,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    if (saved == true && mounted) {
+      final id = _asInt(u['id']);
+      if (id != null) {
+        final dialogRole = roleChoice[0];
+        final dialogActive = activeChoice[0];
+        final pwd = password.text.trim();
+        final Map<String, dynamic> payload;
+        if (onAccessPage) {
+          payload = Map<String, dynamic>.from(_accessPayloadFromCurrent());
+          payload['first_name'] = first.text.trim();
+          payload['last_name'] = last.text.trim();
+          payload['email'] = email.text.trim();
+          payload['role'] = dialogRole;
+          payload['is_active'] = dialogActive;
+          final isF = dialogRole == 'admin' || dialogRole == 'faculty';
+          if (!isF) {
+            payload['is_panelist'] = false;
+            payload['is_pit_lead'] = false;
+            payload['pit_lead_year'] = null;
+            payload['is_adviser'] = false;
+            payload['is_repo_assistant'] = false;
+            payload['is_uploader'] = false;
+          } else {
+            payload['is_panelist'] = _acPanelist;
+            payload['is_pit_lead'] = _acPitLead;
+            payload['pit_lead_year'] = _acPitLead &&
+                    (_acPitLeadYear != null && _acPitLeadYear!.isNotEmpty)
+                ? _acPitLeadYear
+                : null;
+            payload['is_adviser'] = _acAdviser;
+            payload['is_repo_assistant'] = _acRepoAssistant;
+            payload['is_uploader'] = _acRepoAssistant;
+          }
+          if (pwd.isNotEmpty) {
+            payload['password'] = pwd;
+          }
+        } else {
+          payload = _profilePayloadFromUser(
+            u,
+            firstName: first.text.trim(),
+            lastName: last.text.trim(),
+            email: email.text.trim(),
+            role: dialogRole,
+            isActive: dialogActive,
+            password: pwd.isNotEmpty ? pwd : null,
+          );
+        }
+        final ok = await ref
+            .read(userManagementProvider.notifier)
+            .updateUser(id, payload);
+        if (mounted && ok && onAccessPage) {
+          final rows = ref.read(userManagementProvider).users;
+          for (final row in rows) {
+            if (_asInt(row['id']) == id) {
+              setState(() {
+                _accessControlUser = Map<String, dynamic>.from(row);
+                _syncAccessFieldsFromUser(_accessControlUser!);
+              });
+              break;
+            }
+          }
+          await _loadRoleAssignments(id);
+        }
+      }
+    }
+
+    first.dispose();
+    last.dispose();
+    email.dispose();
+    password.dispose();
+  }
+
   Future<void> _showUserDialog([Map<String, dynamic>? user]) async {
     final editing = user != null;
     final username = TextEditingController(
@@ -2124,20 +3691,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
     final email = TextEditingController(text: user?['email']?.toString() ?? '');
     final password = TextEditingController();
-    final pitLeadYear = TextEditingController(
-      text: user?['pit_lead_year']?.toString() ?? '',
-    );
-    final adviserPhase = TextEditingController(
-      text: user?['adviser_phase']?.toString() ?? '',
-    );
-
     var role = user?['role']?.toString() ?? 'student';
     var isPanelist = user?['is_panelist'] == true;
     var isPitLead = user?['is_pit_lead'] == true;
     var isAdviser = user?['is_adviser'] == true;
-    var isRepoAssistant = user?['is_repo_assistant'] == true;
-    var isUploader = user?['is_uploader'] == true;
+    var isRepoAssistant = (user?['is_repo_assistant'] == true) ||
+        (user?['is_uploader'] == true);
     var isActive = user?['is_active'] != false;
+    String? pitLeadYear =
+        _normalizePitLeadYear(user?['pit_lead_year']?.toString());
 
     final saved = await showDialog<bool>(
       context: context,
@@ -2255,18 +3817,40 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               isPitLead = value ?? false;
                               if (!isPitLead) {
                                 isRepoAssistant = false;
+                                pitLeadYear = null;
                               }
                             });
                           },
                         ),
-                        if (isPitLead)
-                          TextField(
-                            controller: pitLeadYear,
+                        if (isPitLead) ...[
+                          DropdownButtonFormField<String?>(
+                            key: ValueKey('dlg-pit-$pitLeadYear'),
+                            initialValue: pitLeadYear,
+                            isExpanded: true,
                             decoration: const InputDecoration(
                               labelText: 'PIT Lead Year',
-                              hintText: '4th Year',
                             ),
+                            dropdownColor: Colors.white,
+                            items: [
+                              const DropdownMenuItem<String?>(
+                                value: null,
+                                child: Text('— Select year level —'),
+                              ),
+                              ..._pitLeadYearOptions.map(
+                                (y) => DropdownMenuItem<String?>(
+                                  value: y,
+                                  child: Text(y),
+                                ),
+                              ),
+                            ],
+                            onChanged: (value) {
+                              setDialogState(() {
+                                pitLeadYear = value;
+                              });
+                            },
                           ),
+                          const SizedBox(height: 12),
+                        ],
                         CheckboxListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Project Adviser'),
@@ -2277,36 +3861,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             });
                           },
                         ),
-                        if (isAdviser)
-                          TextField(
-                            controller: adviserPhase,
-                            decoration: const InputDecoration(
-                              labelText: 'Adviser Phase',
-                              hintText: 'Capstone 1',
-                            ),
-                          ),
                         CheckboxListTile(
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Repository Assistant'),
-                          subtitle: const Text('Requires PIT Lead'),
+                          subtitle: const Text(
+                            'Repository tasks and uploads. Requires PIT Lead.',
+                          ),
                           value: isRepoAssistant,
                           onChanged: isPitLead
                               ? (value) {
                                   setDialogState(() {
                                     isRepoAssistant = value ?? false;
-                                  });
-                                }
-                              : null,
-                        ),
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Uploader'),
-                          subtitle: const Text('Can upload project files'),
-                          value: isUploader,
-                          onChanged: isFaculty
-                              ? (value) {
-                                  setDialogState(() {
-                                    isUploader = value ?? false;
                                   });
                                 }
                               : null,
@@ -2338,8 +3903,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       lastName.dispose();
       email.dispose();
       password.dispose();
-      pitLeadYear.dispose();
-      adviserPhase.dispose();
       return;
     }
 
@@ -2352,11 +3915,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'is_active': isActive,
       'is_panelist': isPanelist,
       'is_pit_lead': isPitLead,
-      'pit_lead_year': isPitLead ? pitLeadYear.text.trim() : null,
+      'pit_lead_year': isPitLead ? pitLeadYear : null,
       'is_adviser': isAdviser,
-      'adviser_phase': isAdviser ? adviserPhase.text.trim() : null,
       'is_repo_assistant': isRepoAssistant,
-      'is_uploader': isUploader,
+      'is_uploader': isRepoAssistant,
       if (password.text.trim().isNotEmpty) 'password': password.text.trim(),
     };
 
@@ -2365,8 +3927,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     lastName.dispose();
     email.dispose();
     password.dispose();
-    pitLeadYear.dispose();
-    adviserPhase.dispose();
 
     if (!mounted) {
       return;
@@ -2658,10 +4218,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return int.tryParse(value?.toString() ?? '');
   }
 
-  static const _sampleCsvTemplate =
-      'id_number,first_name,last_name,email,role\n'
-      '2024-0001,Juan,Dela Cruz,juan@ustp.edu.ph,student\n'
-      'FAC-0001,Ada,Lovelace,ada@ustp.edu.ph,faculty\n';
 }
 
 class _ColumnSpec {

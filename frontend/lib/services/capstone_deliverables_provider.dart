@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_http.dart';
 
 final capstoneDeliverablesProvider =
     NotifierProvider<CapstoneDeliverablesNotifier, CapstoneDeliverablesState>(
@@ -111,7 +112,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
         },
       );
-      final response = await http.get(uri, headers: await _headers());
+      final response = await apiHttpClient.get(uri, headers: await _headers());
 
       if (response.statusCode == 200) {
         _applyPayload(
@@ -170,7 +171,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await apiHttpClient.post(
         Uri.parse('$baseUrl/$action/'),
         headers: await _headers(),
         body: jsonEncode(payload),

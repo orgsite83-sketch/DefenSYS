@@ -18,6 +18,7 @@ class User(AbstractUser):
     is_adviser = models.BooleanField(default=False)
     adviser_phase = models.CharField(max_length=50, blank=True, null=True)
     is_repo_assistant = models.BooleanField(default=False)
+    repo_assistant_year = models.CharField(max_length=50, blank=True, default='')
     is_uploader = models.BooleanField(default=False)
 
     def __str__(self):

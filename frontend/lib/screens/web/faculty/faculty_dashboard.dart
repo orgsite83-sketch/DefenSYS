@@ -14,6 +14,11 @@ import '../admin/student_teams_screen.dart';
 import '../uploader/uploader_dashboard.dart';
 import 'adviser_grading_screen.dart';
 import 'weekly_progress_reports_screen.dart';
+import 'pit_lead_dashboard_content.dart';
+import 'pit_lead_cohort_screen.dart';
+import 'adviser_dashboard_content.dart';
+
+enum FacultyWorkspace { pitLead, adviser, repoAssistant }
 
 class FacultyDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -25,8 +30,9 @@ class FacultyDashboard extends ConsumerStatefulWidget {
 
 class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   static const _primaryColor = Color(0xFF7F1D1D);
-  String _activeSection = 'dashboard'; // Track active section
-  bool _schedulingExpanded = false; // Track scheduling section expansion
+  String _activeSection = 'dashboard';
+  bool _schedulingExpanded = false;
+  FacultyWorkspace? _activeWorkspace;
 
   @override
   void initState() {
@@ -41,9 +47,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final dashState = ref.watch(dashboardProvider('faculty'));
     final roles =
         (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
-    final activeRoles =
-        (dashState.data?['active_roles'] as List?)?.cast<String>() ?? [];
-
     // Check if user is ONLY an uploader (no other roles)
     final isOnlyUploader = roles['uploader'] == true &&
                            roles['adviser'] != true &&
@@ -117,13 +120,71 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     );
   }
 
+  List<FacultyWorkspace> _availableWorkspaces(Map<String, dynamic> roles) {
+    final workspaces = <FacultyWorkspace>[];
+    if (roles['pit_lead'] == true) {
+      workspaces.add(FacultyWorkspace.pitLead);
+    }
+    if (roles['adviser'] == true) {
+      workspaces.add(FacultyWorkspace.adviser);
+    }
+    if (roles['repo_assistant'] == true && roles['pit_lead'] != true) {
+      workspaces.add(FacultyWorkspace.repoAssistant);
+    }
+    return workspaces;
+  }
+
+  FacultyWorkspace _resolvedWorkspace(Map<String, dynamic> roles) {
+    final available = _availableWorkspaces(roles);
+    if (available.isEmpty) {
+      return FacultyWorkspace.adviser;
+    }
+    if (_activeWorkspace != null && available.contains(_activeWorkspace)) {
+      return _activeWorkspace!;
+    }
+    return available.first;
+  }
+
+  String _workspaceLabel(FacultyWorkspace workspace, Map<String, dynamic> roles) {
+    switch (workspace) {
+      case FacultyWorkspace.pitLead:
+        final year = roles['pit_lead_year'] ?? 'Unscoped';
+        return 'PIT Lead · $year';
+      case FacultyWorkspace.adviser:
+        return 'Project Adviser';
+      case FacultyWorkspace.repoAssistant:
+        return 'Repository Assistant';
+    }
+  }
+
+  void _switchWorkspace(FacultyWorkspace workspace) {
+    setState(() {
+      _activeWorkspace = workspace;
+      _activeSection = 'dashboard';
+      _schedulingExpanded = false;
+    });
+  }
+
+  void _goToSection(String section) {
+    setState(() => _activeSection = section);
+  }
+
   Widget _buildPermanentSidebar(Map<String, dynamic> roles) {
+    final workspace = _resolvedWorkspace(roles);
+    final available = _availableWorkspaces(roles);
+    if (_activeWorkspace != workspace) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          setState(() => _activeWorkspace = workspace);
+        }
+      });
+    }
+
     return Container(
       width: 260,
       color: _primaryColor,
       child: Column(
         children: [
-          // Header
           Container(
             height: 92,
             padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -162,9 +223,45 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ],
             ),
           ),
+          if (available.length > 1)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<FacultyWorkspace>(
+                    isExpanded: true,
+                    value: workspace,
+                    dropdownColor: const Color(0xFF5E0D08),
+                    iconEnabledColor: const Color(0xFFFFC107),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    items: available
+                        .map(
+                          (ws) => DropdownMenuItem(
+                            value: ws,
+                            child: Text(_workspaceLabel(ws, roles)),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) {
+                      if (value != null) {
+                        _switchWorkspace(value);
+                      }
+                    },
+                  ),
+                ),
+              ),
+            ),
           Container(height: 1, color: Colors.white.withOpacity(0.07)),
-          
-          // Menu Items
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(top: 20),
@@ -172,143 +269,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 _buildSidebarItem(
                   icon: Icons.dashboard_outlined,
                   label: 'Dashboard',
-                  onTap: () {
-                    setState(() {
-                      _activeSection = 'dashboard';
-                    });
-                  },
+                  onTap: () => _goToSection('dashboard'),
                   isActive: _activeSection == 'dashboard',
                 ),
                 const SizedBox(height: 8),
-                
-                // Adviser-specific features
-                if (roles['adviser'] == true) ...[
-                  _buildSidebarItem(
-                    icon: Icons.folder_open_outlined,
-                    label: 'Capstone Deliverables',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'deliverables';
-                      });
-                    },
-                    isActive: _activeSection == 'deliverables',
-                  ),
-                  _buildSidebarItem(
-                    icon: Icons.assignment_outlined,
-                    label: 'Weekly Progress Reports',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'weekly_reports';
-                      });
-                    },
-                    isActive: _activeSection == 'weekly_reports',
-                  ),
-                  _buildSidebarItem(
-                    icon: Icons.rate_review_rounded,
-                    label: 'Grade Students',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'adviser_grading';
-                      });
-                    },
-                    isActive: _activeSection == 'adviser_grading',
-                  ),
-                ],
-                
-                // PIT Lead specific features
-                if (roles['pit_lead'] == true) ...[
-                  const SizedBox(height: 8),
-                  _buildSidebarItem(
-                    icon: Icons.groups_outlined,
-                    label: 'Student Teams',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'student_teams';
-                      });
-                    },
-                    isActive: _activeSection == 'student_teams',
-                  ),
-                  
-                  // Scheduling Section (Expandable)
-                  _buildExpandableSidebarItem(
-                    icon: Icons.calendar_month_outlined,
-                    label: 'Scheduling',
-                    isExpanded: _schedulingExpanded,
-                    onTap: () {
-                      setState(() {
-                        _schedulingExpanded = !_schedulingExpanded;
-                      });
-                    },
-                  ),
-                  if (_schedulingExpanded) ...[
-                    _buildSubSidebarItem(
-                      icon: Icons.event_outlined,
-                      label: 'Defense Scheduler',
-                      onTap: () {
-                        setState(() {
-                          _activeSection = 'defense_scheduler';
-                        });
-                      },
-                      isActive: _activeSection == 'defense_scheduler',
-                    ),
-                    _buildSubSidebarItem(
-                      icon: Icons.view_list_outlined,
-                      label: 'Defense Board',
-                      onTap: () {
-                        setState(() {
-                          _activeSection = 'defense_board';
-                        });
-                      },
-                      isActive: _activeSection == 'defense_board',
-                    ),
-                  ],
-                  
-                  _buildSidebarItem(
-                    icon: Icons.grading_outlined,
-                    label: 'Grade Center',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'grade_center';
-                      });
-                    },
-                    isActive: _activeSection == 'grade_center',
-                  ),
-                  _buildSidebarItem(
-                    icon: Icons.rule_outlined,
-                    label: 'Rubric Engine',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'rubric_engine';
-                      });
-                    },
-                    isActive: _activeSection == 'rubric_engine',
-                  ),
-                ],
-                
-                // PIT Lead and Repo Assistant features
-                if (roles['pit_lead'] == true || roles['repo_assistant'] == true) ...[
-                  _buildSidebarItem(
-                    icon: Icons.manage_search,
-                    label: 'Repository Audit',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'repository_audit';
-                      });
-                    },
-                    isActive: _activeSection == 'repository_audit',
-                  ),
-                ],
-                
-                // Uploader feature
+                ..._sidebarItemsForWorkspace(workspace, roles),
                 if (roles['uploader'] == true) ...[
                   _buildSidebarItem(
                     icon: Icons.upload_file,
                     label: 'Upload Documents',
-                    onTap: () {
-                      setState(() {
-                        _activeSection = 'uploader';
-                      });
-                    },
+                    onTap: () => _goToSection('uploader'),
                     isActive: _activeSection == 'uploader',
                   ),
                 ],
@@ -357,6 +327,99 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ],
       ),
     );
+  }
+
+  List<Widget> _sidebarItemsForWorkspace(
+    FacultyWorkspace workspace,
+    Map<String, dynamic> roles,
+  ) {
+    switch (workspace) {
+      case FacultyWorkspace.pitLead:
+        return [
+          _buildSidebarItem(
+            icon: Icons.school_outlined,
+            label: 'Cohort',
+            onTap: () => _goToSection('cohort'),
+            isActive: _activeSection == 'cohort',
+          ),
+          _buildSidebarItem(
+            icon: Icons.groups_outlined,
+            label: 'Student Teams',
+            onTap: () => _goToSection('student_teams'),
+            isActive: _activeSection == 'student_teams',
+          ),
+          _buildExpandableSidebarItem(
+            icon: Icons.calendar_month_outlined,
+            label: 'Scheduling',
+            isExpanded: _schedulingExpanded,
+            onTap: () {
+              setState(() => _schedulingExpanded = !_schedulingExpanded);
+            },
+          ),
+          if (_schedulingExpanded) ...[
+            _buildSubSidebarItem(
+              icon: Icons.event_outlined,
+              label: 'Defense Scheduler',
+              onTap: () => _goToSection('defense_scheduler'),
+              isActive: _activeSection == 'defense_scheduler',
+            ),
+            _buildSubSidebarItem(
+              icon: Icons.view_list_outlined,
+              label: 'Defense Board',
+              onTap: () => _goToSection('defense_board'),
+              isActive: _activeSection == 'defense_board',
+            ),
+          ],
+          _buildSidebarItem(
+            icon: Icons.grading_outlined,
+            label: 'Grade Center',
+            onTap: () => _goToSection('grade_center'),
+            isActive: _activeSection == 'grade_center',
+          ),
+          _buildSidebarItem(
+            icon: Icons.rule_outlined,
+            label: 'Rubric Engine',
+            onTap: () => _goToSection('rubric_engine'),
+            isActive: _activeSection == 'rubric_engine',
+          ),
+          _buildSidebarItem(
+            icon: Icons.manage_search,
+            label: 'Repository Audit',
+            onTap: () => _goToSection('repository_audit'),
+            isActive: _activeSection == 'repository_audit',
+          ),
+        ];
+      case FacultyWorkspace.adviser:
+        return [
+          _buildSidebarItem(
+            icon: Icons.folder_open_outlined,
+            label: 'Capstone Deliverables',
+            onTap: () => _goToSection('deliverables'),
+            isActive: _activeSection == 'deliverables',
+          ),
+          _buildSidebarItem(
+            icon: Icons.assignment_outlined,
+            label: 'Weekly Progress Reports',
+            onTap: () => _goToSection('weekly_reports'),
+            isActive: _activeSection == 'weekly_reports',
+          ),
+          _buildSidebarItem(
+            icon: Icons.rate_review_rounded,
+            label: 'Grade Students',
+            onTap: () => _goToSection('adviser_grading'),
+            isActive: _activeSection == 'adviser_grading',
+          ),
+        ];
+      case FacultyWorkspace.repoAssistant:
+        return [
+          _buildSidebarItem(
+            icon: Icons.manage_search,
+            label: 'Repository Audit',
+            onTap: () => _goToSection('repository_audit'),
+            isActive: _activeSection == 'repository_audit',
+          ),
+        ];
+    }
   }
 
   Widget _buildSidebarItem({
@@ -490,9 +553,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   }
 
   Widget _buildActiveContent(DashboardState dashState, Map<String, dynamic> roles) {
-    final activeRoles = (dashState.data?['active_roles'] as List?)?.cast<String>() ?? [];
-    
-    // For screens with their own Scaffold, wrap them in a container to prevent conflicts
+    final workspace = _resolvedWorkspace(roles);
+    final facultyName =
+        widget.userData?['name']?.toString() ??
+        dashState.data?['faculty']?['name']?.toString() ??
+        'Faculty';
+
     switch (_activeSection) {
       case 'deliverables':
         return Container(
@@ -506,10 +572,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'adviser_grading':
         return const AdviserGradingScreen();
+      case 'cohort':
+        return Container(
+          color: Colors.white,
+          child: PitLeadCohortScreen(
+            onCreateTeam: () => _goToSection('student_teams'),
+          ),
+        );
       case 'student_teams':
         return Container(
           color: Colors.white,
-          child: const StudentTeamsScreen(),
+          child: const StudentTeamsScreen(mode: TeamListMode.pitLead),
         );
       case 'repository_audit':
         return Container(
@@ -544,202 +617,69 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'dashboard':
       default:
         return SingleChildScrollView(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Welcome, ${widget.userData?['name'] ?? 'Faculty'}',
-                style: const TextStyle(
-                  fontSize: 21,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 16),
-
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  if (roles['panelist'] == true)
-                    _buildRoleChip('Panelist', Colors.purple),
-                  if (roles['pit_lead'] == true)
-                    _buildRoleChip(
-                      'PIT Lead: ${roles['pit_lead_year'] ?? 'Unscoped'}',
-                      Colors.blue,
-                    ),
-                  if (roles['adviser'] == true)
-                    _buildRoleChip('Project Adviser', Colors.green),
-                  if (roles['repo_assistant'] == true)
-                    _buildRoleChip('Repo Assistant', Colors.orange),
-                  if (activeRoles.isEmpty)
-                    _buildRoleChip(
-                      'No semester roles assigned',
-                      Colors.grey,
-                    ),
-                ],
-              ),
-              const SizedBox(height: 24),
-
-              _buildDashboardContent(dashState, roles),
-            ],
+          padding: const EdgeInsets.all(24),
+          child: _buildWorkspaceDashboard(
+            workspace: workspace,
+            dashState: dashState,
+            facultyName: facultyName,
           ),
         );
     }
   }
 
-  Widget _buildDashboardContent(DashboardState dashState, Map<String, dynamic> roles) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Text(
-          'My Advised Teams',
-          style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-        ),
-        const SizedBox(height: 12),
-
-        // Teams List
-        ...(dashState.data?['advised_teams'] as List? ?? []).map((
-          team,
-        ) {
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            elevation: 2,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
+  Widget _buildWorkspaceDashboard({
+    required FacultyWorkspace workspace,
+    required DashboardState dashState,
+    required String facultyName,
+  }) {
+    switch (workspace) {
+      case FacultyWorkspace.pitLead:
+        return PitLeadDashboardContent(
+          data: dashState.data,
+          facultyName: facultyName,
+          onOpenStudentTeams: () => _goToSection('student_teams'),
+          onOpenCohort: () => _goToSection('cohort'),
+          onOpenScheduler: () {
+            setState(() {
+              _schedulingExpanded = true;
+              _activeSection = 'defense_scheduler';
+            });
+          },
+          onOpenGradeCenter: () => _goToSection('grade_center'),
+          onOpenRubrics: () => _goToSection('rubric_engine'),
+        );
+      case FacultyWorkspace.adviser:
+        return AdviserDashboardContent(
+          data: dashState.data,
+          facultyName: facultyName,
+          onOpenDeliverables: () => _goToSection('deliverables'),
+          onOpenWeeklyReports: () => _goToSection('weekly_reports'),
+          onOpenGrading: () => _goToSection('adviser_grading'),
+        );
+      case FacultyWorkspace.repoAssistant:
+        final repoYear =
+            dashState.data?['repo_assistant_year']?.toString() ??
+            (dashState.data?['roles'] as Map?)?['repo_assistant_year']?.toString() ??
+            '';
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Welcome, $facultyName',
+              style: const TextStyle(
+                fontSize: 21,
+                fontWeight: FontWeight.bold,
+              ),
             ),
-            child: Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        team['name'],
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        team['projectTitle'],
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: Colors.grey,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 8,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.blue.shade50,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          team['currentStage'],
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.blue.shade700,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                              decoration: BoxDecoration(
-                                color: Colors.green.shade50,
-                                borderRadius: BorderRadius.circular(16),
-                              ),
-                              child: Text(
-                                team['status'],
-                                style: TextStyle(
-                                  color: Colors.green.shade700,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            OutlinedButton.icon(
-                              onPressed: _openCapstoneDeliverables,
-                              icon: const Icon(Icons.folder_open_outlined),
-                              label: const Text('Deliverables'),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }),
-                  if ((dashState.data?['advised_teams'] as List? ?? []).isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Center(
-                        child: Text(
-                          'No advised teams yet. Team data migrates in a later phase.',
-                          style: TextStyle(color: Colors.grey),
-                        ),
-                      ),
-                    ),
-      ],
-    );
-  }
-
-  Widget _buildRoleChip(String label, MaterialColor color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.shade50,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.shade200),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color.shade700,
-          fontSize: 12,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openCapstoneDeliverables() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const CapstoneDeliverablesScreen()),
-    );
-
-    if (!mounted) {
-      return;
+            const SizedBox(height: 12),
+            Text(
+              repoYear.isNotEmpty
+                  ? 'Repository Assistant for $repoYear — open Repository Audit to upload passed PIT project files after the PIT lead marks the event officially complete in Grade Center.'
+                  : 'Repository Assistant workspace — open Repository Audit once your PIT lead assigns your year level.',
+              style: const TextStyle(color: Colors.grey),
+            ),
+          ],
+        );
     }
-    ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
-  }
-
-  Future<void> _openRepositoryAudit() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const RepositoryAuditScreen()),
-    );
-
-    if (!mounted) {
-      return;
-    }
-    ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
-  }
-
-  void _openWeeklyProgressReports() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const WeeklyProgressReportsScreen()),
-    );
   }
 }

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/defense_board_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'defense_scheduler_screen.dart';
+import 'widgets/defensys_admin_shell.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
   const DefenseBoardScreen({super.key});
@@ -33,50 +34,75 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(defenseBoardProvider);
 
+    final cp = DefensysUi.contentPadding;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF6F7FB),
+      backgroundColor: DefensysUi.bgLight,
       body: RefreshIndicator(
         color: AppColors.maroon,
         onRefresh: () => ref.read(defenseBoardProvider.notifier).fetchBoard(),
-        child: SingleChildScrollView(
+        child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(34, 26, 34, 34),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1440),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(state),
-                  const SizedBox(height: 26),
-                  _buildSummaryCards(state),
-                  const SizedBox(height: 22),
-                  if (state.error != null) ...[
-                    _buildNotice(
-                      icon: Icons.error_outline,
-                      text: state.error!,
-                      color: AppColors.danger,
-                    ),
-                    const SizedBox(height: 16),
+          slivers: [
+            SliverPadding(
+              padding: EdgeInsets.fromLTRB(cp.left, cp.top, cp.right, 22),
+              sliver: SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _buildHeader(state),
+                    const SizedBox(height: 26),
+                    _buildSummaryCards(state),
+                    if (state.error != null) ...[
+                      const SizedBox(height: 14),
+                      _buildNotice(
+                        icon: Icons.error_outline,
+                        text: state.error!,
+                        color: AppColors.danger,
+                      ),
+                    ],
+                    if (state.message != null) ...[
+                      const SizedBox(height: 14),
+                      _buildNotice(
+                        icon: Icons.check_circle_outline,
+                        text: state.message!,
+                        color: AppColors.success,
+                      ),
+                    ],
+                    const SizedBox(height: 22),
+                    _buildFilterBar(state),
                   ],
-                  if (state.message != null) ...[
-                    _buildNotice(
-                      icon: Icons.check_circle_outline,
-                      text: state.message!,
-                      color: AppColors.success,
-                    ),
-                    const SizedBox(height: 16),
-                  ],
-                  _buildFilterBar(state),
-                  const SizedBox(height: 18),
-                  if (state.isLoading)
-                    _buildLoadingState()
-                  else
-                    _buildBoardSection(state),
-                ],
+                ),
               ),
             ),
-          ),
+            if (state.isLoading)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: SizedBox.expand(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                    child: _buildLoadingState(),
+                  ),
+                ),
+              )
+            else if (state.schedules.isEmpty)
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: SizedBox.expand(
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                    child: _buildEmptyBoard(),
+                  ),
+                ),
+              )
+            else
+              SliverPadding(
+                padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                sliver: SliverToBoxAdapter(
+                  child: _buildBoardSection(state),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -95,7 +121,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   Icon(
                     Icons.view_agenda_outlined,
                     color: AppColors.maroon,
-                    size: 26,
+                    size: 24,
                   ),
                   SizedBox(width: 8),
                   Text(
@@ -189,7 +215,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 value: _count(state, 'all'),
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 18),
             Expanded(
               child: _buildSummaryCard(
                 icon: Icons.access_time_filled,
@@ -198,7 +224,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 value: _count(state, 'scheduled'),
               ),
             ),
-            const SizedBox(width: 16),
+            const SizedBox(width: 18),
             Expanded(
               child: _buildSummaryCard(
                 icon: Icons.check_circle,
@@ -221,10 +247,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }) {
     return Container(
       height: 94,
-      padding: const EdgeInsets.symmetric(horizontal: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
         boxShadow: const [
           BoxShadow(
@@ -277,10 +303,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Widget _buildFilterBar(DefenseBoardState state) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
         boxShadow: const [
           BoxShadow(
@@ -434,7 +460,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
         boxShadow: const [
           BoxShadow(
@@ -462,7 +488,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           height: 46,
           decoration: const BoxDecoration(
             color: Color(0xFFF3F5F9),
-            borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+            borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
           ),
           child: const Row(
             children: [
@@ -688,10 +714,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Widget _buildEmptyBoard() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
         boxShadow: const [
           BoxShadow(
@@ -701,23 +726,26 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           ),
         ],
       ),
-      child: const Column(
-        children: [
-          Icon(
-            Icons.table_chart_outlined,
-            size: 44,
-            color: AppColors.textSecondary,
-          ),
-          SizedBox(height: 10),
-          Text(
-            'No schedules found.',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
+      child: const Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.table_chart_outlined,
+              size: 44,
+              color: AppColors.textSecondary,
             ),
-          ),
-        ],
+            SizedBox(height: 10),
+            Text(
+              'No schedules found.',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -725,10 +753,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   Widget _buildLoadingState() {
     return Container(
       width: double.infinity,
-      height: 220,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
       ),
       child: const Center(

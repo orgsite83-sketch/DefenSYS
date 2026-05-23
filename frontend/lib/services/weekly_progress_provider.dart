@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_http.dart';
 
 final weeklyProgressProvider =
     NotifierProvider<WeeklyProgressNotifier, WeeklyProgressState>(
@@ -45,7 +46,7 @@ class WeeklyProgressState {
 }
 
 class WeeklyProgressNotifier extends Notifier<WeeklyProgressState> {
-  static String get baseUrl => '${ApiConfig.baseUrl}/weekly-progress';
+  static String get baseUrl => ApiConfig.weeklyProgressUrl;
 
   @override
   WeeklyProgressState build() {
@@ -60,7 +61,7 @@ class WeeklyProgressNotifier extends Notifier<WeeklyProgressState> {
     );
 
     try {
-      final response = await http.get(
+      final response = await apiHttpClient.get(
         Uri.parse('$baseUrl/'),
         headers: await _headers(),
       );

@@ -28,7 +28,6 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
   bool _loading = true;
 
   List<TeamData> _teams = [];
-  List<Map<String, dynamic>> _rubrics = [];
   List<Map<String, dynamic>> _results = [];
 
   @override
@@ -44,14 +43,14 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
       // Get panelist ID
       final panelistId = widget.userData?['id']?.toString() ?? '';
       if (panelistId.isEmpty) {
-        print('❌ No panelist ID found');
+        print('No panelist ID found');
         setState(() => _loading = false);
         return;
       }
       
       // Load panelist assignments (teams and rubrics assigned to this panelist)
-      final assignmentsUrl = '${ApiConfig.baseUrl}/defense-schedules/panelist-assignments/?panelist_id=$panelistId';
-      print('🔍 Fetching panelist assignments from: $assignmentsUrl');
+      final assignmentsUrl = '${ApiConfig.defenseSchedulesUrl}/panelist-assignments/?panelist_id=$panelistId';
+      print('Fetching panelist assignments from: $assignmentsUrl');
       
       final response = await http
           .get(
@@ -62,47 +61,51 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           )
           .timeout(const Duration(seconds: 8));
       
-      print('📡 Assignments API response: ${response.statusCode}');
+      print('Assignments API response: ${response.statusCode}');
 
       if (response.statusCode == 200 && mounted) {
         final data = json.decode(response.body);
-        print('📄 Assignments data keys: ${data.keys}');
+        print('Assignments data keys: ${data.keys}');
         
         final teams = data['teams'] as List? ?? [];
-        final rubrics = data['rubrics'] as List? ?? [];
         
-        print('✅ Found ${teams.length} assigned teams');
-        print('✅ Found ${rubrics.length} assigned rubrics');
+        print('Found ${teams.length} assigned teams');
         
         // Convert teams to TeamData format
         _teams = teams.map((team) {
+          final weights = (team['grade_weights'] as Map?)?.cast<String, dynamic>() ?? {};
+          final isCapstone = team['is_capstone'] == true ||
+              team['scope']?.toString() == 'capstone';
           return TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
             defenseDate: '${team['defense_stage'] ?? 'No stage'} - ${team['scheduled_date'] ?? ''} ${team['start_time'] ?? ''}',
-            isCapstone: true,
+            isCapstone: isCapstone,
+            scope: (team['scope'] ?? (isCapstone ? 'capstone' : 'pit')).toString(),
             teamId: (team['id'] ?? 0).toString(),
+            scheduleId: (team['schedule_id'] ?? '').toString(),
             members: (team['members'] as List? ?? [])
                 .map((m) => (m['name'] ?? m['username'] ?? 'Member').toString())
                 .toList(),
-            criteria: [], // Will be filled when rubric is selected
+            criteria: [],
             isPosted: false,
-            panelWeight: 50,
-            peerWeight: 20,
+            panelWeight: (weights['panel'] as num?)?.toInt() ?? (isCapstone ? 50 : 80),
+            peerWeight: (weights['peer'] as num?)?.toInt() ?? (isCapstone ? 20 : 20),
+            adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,
+            panelRubric: team['panel_rubric'] is Map
+                ? Map<String, dynamic>.from(team['panel_rubric'] as Map)
+                : null,
           );
         }).toList();
         
-        // Store rubrics
-        _rubrics = rubrics.map((r) => r as Map<String, dynamic>).toList();
-        
         setState(() => _loading = false);
       } else {
-        print('❌ Assignments API failed: ${response.statusCode}');
-        print('   Response: ${response.body}');
+        print('Assignments API failed: ${response.statusCode}');
+        print('Response: ${response.body}');
         setState(() => _loading = false);
       }
     } catch (e) {
-      print('❌ Error loading assignments: $e');
+      print('Error loading assignments: $e');
       setState(() => _loading = false);
     }
   }
@@ -147,7 +150,6 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 ),
                 GradeSheetTab(
                   teams: _teams,
-                  rubrics: _rubrics,
                   selectedTeamIndex: _selectedTeamIndex,
                   panelistId: (widget.userData?['id'] ?? '').toString(),
                   onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),

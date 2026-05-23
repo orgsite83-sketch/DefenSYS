@@ -4,6 +4,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from .capstone_mode import capstone_mode_payload, normalize_capstone_flags
 from .models import SchoolYear, Semester
 from .serializers import (
     SchoolYearCreateSerializer,
@@ -66,17 +67,27 @@ class SemesterStatusView(APIView):
 
     def patch(self, request, semester_id):
         semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
-        is_active = request.data.get('is_active', request.data.get('active'))
+        update_fields = []
 
-        if isinstance(is_active, str):
-            is_active = is_active.lower() in ['1', 'true', 'yes', 'on']
-        else:
-            is_active = bool(is_active)
+        if 'is_active' in request.data or 'active' in request.data:
+            is_active = request.data.get('is_active', request.data.get('active'))
+            if isinstance(is_active, str):
+                is_active = is_active.lower() in ['1', 'true', 'yes', 'on']
+            else:
+                is_active = bool(is_active)
+            semester.is_active = is_active
+            update_fields.append('is_active')
 
-        semester.is_active = is_active
-        semester.save(update_fields=['is_active'])
+        capstone_fields = normalize_capstone_flags(semester)
+        update_fields.extend(capstone_fields)
+
+        if update_fields:
+            semester.save(update_fields=list(dict.fromkeys(update_fields)))
+
+        payload = SemesterSerializer(semester).data
+        payload.update(capstone_mode_payload(semester if semester.is_active else active_semester()))
 
         return Response({
-            'semester': SemesterSerializer(semester).data,
+            'semester': payload,
             'active_semester': active_semester_payload(),
         })

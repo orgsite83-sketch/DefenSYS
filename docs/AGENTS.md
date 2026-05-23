@@ -71,6 +71,19 @@ Errors are learning opportunities. When something breaks:
 
 **Key principle:** Local files are only for processing. Deliverables live in cloud services (Google Sheets, Slides, etc.) where the user can access them. Everything in `.tmp/` can be deleted and regenerated.
 
+## Django database safety (DefenSYS backend)
+
+When debugging or scripting against the Django ORM:
+
+- **Never** run `python -c` with `django.setup()` and `.objects.create()` on the default database (`defensys_db`). That pollutes the dev DB visible in the admin UI (e.g. stray school years).
+- **Prefer** `python manage.py test <app>.tests` for anything that creates academic periods, teams, users, or submissions. Tests use `test_defensys_db` and tear down automatically.
+- Use **`python manage.py test <app> --keepdb`** locally when `test_defensys_db` already exists to avoid interactive delete prompts.
+- **Ad-hoc scripts** under `backend/tests/` or `backend/scripts/` that mutate data must call `bootstrap_test_db_script()` from [`defensys_backend/db_guard.py`](../backend/defensys_backend/db_guard.py) before ORM writes.
+- **Deliverable upload probe:** `python scripts/probe_deliverable_upload.py` (from `backend/`) or `python manage.py test repository.deliverables.tests`.
+- **Clear all stage deliverables (dev cleanup):** `python manage.py clear_stage_deliverables` — then reconfigure in Defense Stages UI only.
+- **Suggested checklist seed:** `python manage.py seed_suggested_stage_deliverables` is for **unit tests / explicit opt-in only** — never run on demo or production DB.
+- **Escape hatch (rare):** set `DEFENSYS_ALLOW_DEV_DB=1` only when you intentionally need to write to the dev database from a script.
+
 ## Summary
 
 You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.

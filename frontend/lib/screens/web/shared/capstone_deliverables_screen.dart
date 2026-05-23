@@ -12,6 +12,41 @@ import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/weekly_progress_provider.dart';
 import '../../../theme/app_theme.dart';
 
+String _formatUploadFailureMessage(int statusCode, String responseBody) {
+  try {
+    final decoded = jsonDecode(responseBody);
+    if (decoded is Map) {
+      final detail = decoded['detail'];
+      if (detail is String && detail.isNotEmpty) {
+        return 'Upload failed: $detail';
+      }
+      final lines = <String>[];
+      decoded.forEach((key, value) {
+        if (value is List) {
+          for (final item in value) {
+            lines.add('$key: $item');
+          }
+        } else {
+          lines.add('$key: $value');
+        }
+      });
+      if (lines.isNotEmpty) {
+        return 'Upload failed: ${lines.join(' ')}';
+      }
+    }
+  } catch (_) {
+    // Not JSON (e.g. legacy HTML error page).
+  }
+  if (responseBody.contains('<!DOCTYPE html>') || responseBody.contains('<html')) {
+    return 'Upload failed (server error $statusCode). Check backend logs or try again.';
+  }
+  final trimmed = responseBody.trim();
+  if (trimmed.isEmpty) {
+    return 'Upload failed (status $statusCode).';
+  }
+  return 'Upload failed: $trimmed';
+}
+
 class CapstoneDeliverablesScreen extends ConsumerStatefulWidget {
   const CapstoneDeliverablesScreen({super.key});
 
@@ -90,6 +125,15 @@ class _CapstoneDeliverablesScreenState
                   ],
                   const SizedBox(height: 20),
                   _buildToolbar(state),
+                  if (_stageNotConfigured(state)) ...[
+                    const SizedBox(height: 12),
+                    _notice(
+                      Icons.info_outline,
+                      'No deliverables configured for ${state.selectedStage}. '
+                      'Add them in Defense Stages so Required progress can be tracked.',
+                      AppColors.gold,
+                    ),
+                  ],
                   const SizedBox(height: 16),
                   if (state.isLoading)
                     const Center(
@@ -339,10 +383,10 @@ class _CapstoneDeliverablesScreenState
     );
     final requiredUploaded = _asInt(selectedStage['required_uploaded']);
     final requiredTotal = _asInt(selectedStage['required_total']);
-    final vaultUploaded = _asInt(selectedStage['vault_uploaded']);
-    final vaultTotal = _asInt(selectedStage['vault_total']);
+    final configured = selectedStage['deliverables_configured'] == true;
     final complete = selectedStage['required_complete'] == true;
     final endorsed = selectedStage['endorsed'] == true;
+    final canEndorse = configured && complete && !endorsed;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -399,24 +443,18 @@ class _CapstoneDeliverablesScreenState
             Row(
               children: [
                 Expanded(
-                  child: _progressBlock(
-                    'Required',
-                    requiredUploaded,
-                    requiredTotal,
-                    AppColors.success,
+                  child: _requiredProgressBlock(
+                    configured: configured,
+                    done: requiredUploaded,
+                    total: requiredTotal,
                   ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: _progressBlock(
-                    'Vault',
-                    vaultUploaded,
-                    vaultTotal,
-                    AppColors.gold,
-                  ),
+                  child: _vaultProgressBlock(selectedStage),
                 ),
                 const SizedBox(width: 12),
-                if (complete && !endorsed)
+                if (canEndorse)
                   ElevatedButton.icon(
                     onPressed: state.isSaving
                         ? null
@@ -426,7 +464,9 @@ class _CapstoneDeliverablesScreenState
                               builder: (dialogContext) => AlertDialog(
                                 title: const Text('Endorse Team'),
                                 content: Text(
-                                  'Endorse ${team['name']} for ${state.selectedStage}? This confirms all required deliverables are complete and the team is ready for defense scheduling.',
+                                  'Endorse ${team['name']} for ${state.selectedStage}? '
+                                  'This confirms all required deliverables are complete '
+                                  'and the team is ready for defense scheduling.',
                                 ),
                                 actions: [
                                   TextButton(
@@ -479,8 +519,93 @@ class _CapstoneDeliverablesScreenState
     );
   }
 
-  Widget _progressBlock(String label, int done, int total, Color color) {
-    final pct = total == 0 ? 0.0 : done / total;
+  bool _stageNotConfigured(CapstoneDeliverablesState state) {
+    if (state.teams.isEmpty) {
+      return false;
+    }
+    final stage = state.teams.first['selected_stage'];
+    if (stage is! Map) {
+      return false;
+    }
+    return stage['deliverables_configured'] != true;
+  }
+
+  Widget _requiredProgressBlock({
+    required bool configured,
+    required int done,
+    required int total,
+  }) {
+    final emptyLabel = configured
+        ? 'Required — No required items'
+        : 'Required — Not configured';
+    return _progressBlock(
+      'Required',
+      done,
+      total,
+      AppColors.success,
+      emptyLabel: emptyLabel,
+    );
+  }
+
+  Widget _vaultProgressBlock(Map<String, dynamic> selectedStage) {
+    final unlocked = selectedStage['vault_unlocked'] == true;
+    final done = _asInt(selectedStage['vault_required_uploaded']);
+    final total = _asInt(selectedStage['vault_required_total']);
+
+    if (!unlocked) {
+      return _progressBlock(
+        'Vault',
+        0,
+        0,
+        AppColors.gold,
+        emptyLabel: 'Vault — Locked until defense done',
+      );
+    }
+    if (total == 0) {
+      return _progressBlock(
+        'Vault',
+        0,
+        0,
+        AppColors.gold,
+        emptyLabel: 'Vault — No required items',
+      );
+    }
+    return _progressBlock('Vault', done, total, AppColors.gold);
+  }
+
+  Widget _progressBlock(
+    String label,
+    int done,
+    int total,
+    Color color, {
+    String? emptyLabel,
+  }) {
+    if (total == 0) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            emptyLabel ?? '$label — Not configured',
+            style: const TextStyle(
+              fontWeight: FontWeight.w800,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              minHeight: 8,
+              value: 0,
+              color: color.withValues(alpha: 0.35),
+              backgroundColor: color.withValues(alpha: 0.12),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final pct = done / total;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -521,8 +646,10 @@ class _CapstoneDeliverablesScreenState
             final stage = _stagePayload(stages, selectedStage);
             final pre = _deliverables(stage, 'pre');
             final vault = _deliverables(stage, 'vault');
+            final configured = stage['deliverables_configured'] == true;
             final complete = stage['required_complete'] == true;
             final endorsed = stage['endorsed'] == true;
+            final canEndorse = configured && complete && !endorsed;
 
             return AlertDialog(
               title: Text('Deliverables - ${team['name'] ?? ''}'),
@@ -583,7 +710,7 @@ class _CapstoneDeliverablesScreenState
                   child: const Text('Close'),
                 ),
                 ElevatedButton.icon(
-                  onPressed: complete && !endorsed
+                  onPressed: canEndorse
                       ? () async {
                           await ref
                               .read(capstoneDeliverablesProvider.notifier)
@@ -594,7 +721,11 @@ class _CapstoneDeliverablesScreenState
                         }
                       : null,
                   icon: const Icon(Icons.verified_outlined),
-                  label: Text(endorsed ? 'Already Endorsed' : 'Endorse'),
+                  label: Text(
+                    endorsed
+                        ? 'Already Endorsed'
+                        : (configured ? 'Endorse' : 'Configure Stage First'),
+                  ),
                 ),
               ],
             );
@@ -882,7 +1013,7 @@ class _CapstoneDeliverablesScreenState
         final responseBody = await response.stream.bytesToString();
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Upload failed: $responseBody')),
+            SnackBar(content: Text(_formatUploadFailureMessage(response.statusCode, responseBody))),
           );
         }
       }
@@ -1071,274 +1202,6 @@ class _CapstoneDeliverablesScreenState
     return _asInt(state.counts[key]);
   }
 
-  Future<void> _compileDeliverables(
-    Map<String, dynamic> team,
-    String stageLabel,
-  ) async {
-    final stages = _stageList(team);
-    final stage = _stagePayload(stages, stageLabel);
-    final deliverables = stage['deliverables'] as List? ?? [];
-    
-    // Get all uploaded deliverables
-    final uploadedDeliverables = deliverables
-        .whereType<Map<String, dynamic>>()
-        .where((d) => d['uploaded'] == true)
-        .toList();
-    
-    if (uploadedDeliverables.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No deliverables uploaded yet for this stage.'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
-      return;
-    }
-    
-    // Show compilation dialog
-    await showDialog(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(
-          children: [
-            const Icon(Icons.folder_zip, color: AppColors.maroon),
-            const SizedBox(width: 10),
-            Text('Compile Deliverables - ${team['name']}'),
-          ],
-        ),
-        content: SizedBox(
-          width: 600,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Stage: $stageLabel',
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 15,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF0F9FF),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFFBAE6FD)),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(Icons.info_outline, 
-                      color: Color(0xFF0369A1), 
-                      size: 20,
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Text(
-                        'This will generate a compilation report of all ${uploadedDeliverables.length} uploaded deliverables for this team.',
-                        style: const TextStyle(
-                          color: Color(0xFF0369A1),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'Deliverables to compile:',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Container(
-                constraints: const BoxConstraints(maxHeight: 300),
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: uploadedDeliverables.length,
-                  itemBuilder: (context, index) {
-                    final item = uploadedDeliverables[index];
-                    final submission = item['submission'] as Map? ?? {};
-                    return Container(
-                      padding: const EdgeInsets.all(10),
-                      margin: const EdgeInsets.only(bottom: 8),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        border: Border.all(color: const Color(0xFFE5E7EB)),
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                      child: Row(
-                        children: [
-                          const Icon(Icons.check_circle, 
-                            color: AppColors.success, 
-                            size: 18,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  item['label']?.toString() ?? '',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  submission['file_name']?.toString() ?? '',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          if (item['required'] == true)
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 6,
-                                vertical: 3,
-                              ),
-                              decoration: BoxDecoration(
-                                color: AppColors.danger.withValues(alpha: 0.1),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: const Text(
-                                'Required',
-                                style: TextStyle(
-                                  color: AppColors.danger,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                        ],
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton.icon(
-            onPressed: () {
-              Navigator.pop(dialogContext);
-              _downloadCompilation(team, stageLabel, uploadedDeliverables);
-            },
-            icon: const Icon(Icons.download),
-            label: const Text('Download Report'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.maroon,
-              foregroundColor: AppColors.gold,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _downloadCompilation(
-    Map<String, dynamic> team,
-    String stageLabel,
-    List<Map<String, dynamic>> deliverables,
-  ) {
-    // Generate a simple text report
-    final buffer = StringBuffer();
-    buffer.writeln('='*60);
-    buffer.writeln('DELIVERABLES COMPILATION REPORT');
-    buffer.writeln('='*60);
-    buffer.writeln();
-    buffer.writeln('Team: ${team['name']}');
-    buffer.writeln('Project: ${team['project_title'] ?? 'N/A'}');
-    buffer.writeln('Stage: $stageLabel');
-    buffer.writeln('Adviser: ${team['adviser_name'] ?? 'N/A'}');
-    buffer.writeln('Generated: ${DateTime.now().toString().substring(0, 19)}');
-    buffer.writeln();
-    buffer.writeln('='*60);
-    buffer.writeln('UPLOADED DELIVERABLES (${deliverables.length})');
-    buffer.writeln('='*60);
-    buffer.writeln();
-    
-    for (var i = 0; i < deliverables.length; i++) {
-      final item = deliverables[i];
-      final submission = item['submission'] as Map? ?? {};
-      
-      buffer.writeln('${i + 1}. ${item['label']}');
-      buffer.writeln('   ID: ${item['id']}');
-      buffer.writeln('   Type: ${item['type'] == 'pre' ? 'Pre-Defense' : 'Vault'}');
-      buffer.writeln('   Required: ${item['required'] == true ? 'Yes' : 'No'}');
-      buffer.writeln('   File: ${submission['file_name'] ?? 'N/A'}');
-      buffer.writeln('   Size: ${submission['file_size'] ?? 'N/A'}');
-      buffer.writeln('   Uploaded by: ${submission['uploaded_by_name'] ?? 'N/A'}');
-      buffer.writeln('   Uploaded at: ${submission['uploaded_at'] ?? 'N/A'}');
-      buffer.writeln();
-    }
-    
-    buffer.writeln('='*60);
-    buffer.writeln('END OF REPORT');
-    buffer.writeln('='*60);
-    
-    // In a real implementation, you would:
-    // 1. Create a ZIP file with all deliverable files
-    // 2. Download it to the user's computer
-    // For now, we'll show a success message
-    
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Compilation report generated for ${team['name']} - $stageLabel\n'
-          '${deliverables.length} deliverables compiled.',
-        ),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'View',
-          textColor: Colors.white,
-          onPressed: () {
-            // Show the report in a dialog
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Compilation Report'),
-                content: SizedBox(
-                  width: 600,
-                  height: 400,
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      buffer.toString(),
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Close'),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      ),
-    );
-  }
 
   Future<void> _showApproveWPRDialog(
     Map<String, dynamic> team,
@@ -2034,8 +1897,8 @@ class _CapstoneDeliverablesScreenState
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        
+        jsonDecode(response.body);
+
         // Refresh deliverables to show the new PDF submission
         await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
         

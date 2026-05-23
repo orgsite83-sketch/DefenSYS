@@ -20,10 +20,10 @@ except User.DoesNotExist:
         role='student',
         team_id='TEAM-001'
     )
-    print(f"✓ Created student user: {user.username}")
+    print(f"Created student user: {user.username}")
 
 print(f"\nStudent Account Details:")
-print(f"  Username: student")
-print(f"  Password: student123")
-print(f"  Role: {user.role}")
-print(f"  Team ID: {user.team_id}")
+print(f" Username: student")
+print(f" Password: student123")
+print(f" Role: {user.role}")
+print(f" Team ID: {user.team_id}")

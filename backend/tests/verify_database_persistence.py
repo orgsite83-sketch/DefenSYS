@@ -19,14 +19,14 @@ def verify_database_persistence():
     print("="*70 + "\n")
     
     # Check database connection
-    print("📊 Database Information:")
-    print(f"   Database: {connection.settings_dict['NAME']}")
-    print(f"   Engine: {connection.settings_dict['ENGINE']}")
-    print(f"   Host: {connection.settings_dict['HOST']}")
-    print(f"   Port: {connection.settings_dict['PORT']}")
+    print("Database Information:")
+    print(f"Database: {connection.settings_dict['NAME']}")
+    print(f"Engine: {connection.settings_dict['ENGINE']}")
+    print(f"Host: {connection.settings_dict['HOST']}")
+    print(f"Port: {connection.settings_dict['PORT']}")
     
     # Check tables exist
-    print(f"\n✅ Database Tables:")
+    print(f"\n Database Tables:")
     with connection.cursor() as cursor:
         cursor.execute("""
             SELECT table_name 
@@ -39,49 +39,49 @@ def verify_database_persistence():
         for table in tables:
             cursor.execute(f"SELECT COUNT(*) FROM {table[0]}")
             count = cursor.fetchone()[0]
-            print(f"   ✓ {table[0]}: {count} records")
+            print(f"{table[0]}: {count} records")
     
     # Verify StudentTeam model
-    print(f"\n📋 StudentTeam Model:")
+    print(f"\n StudentTeam Model:")
     teams = StudentTeam.objects.all()
-    print(f"   Total teams in database: {teams.count()}")
+    print(f"Total teams in database: {teams.count()}")
     
     if teams.exists():
         print(f"\n   Sample teams:")
         for team in teams[:3]:
-            print(f"   - ID: {team.id}")
-            print(f"     Name: {team.name}")
-            print(f"     Level: {team.level}")
-            print(f"     Status: {team.status}")
-            print(f"     Created: {team.created_at}")
-            print(f"     Updated: {team.updated_at}")
-            print(f"     Members: {team.memberships.count()}")
+            print(f"- ID: {team.id}")
+            print(f" Name: {team.name}")
+            print(f" Level: {team.level}")
+            print(f" Status: {team.status}")
+            print(f" Created: {team.created_at}")
+            print(f" Updated: {team.updated_at}")
+            print(f" Members: {team.memberships.count()}")
             print()
     
     # Verify TeamMembership model
-    print(f"📋 TeamMembership Model:")
+    print(f"TeamMembership Model:")
     memberships = TeamMembership.objects.all()
-    print(f"   Total memberships in database: {memberships.count()}")
+    print(f"Total memberships in database: {memberships.count()}")
     
     if memberships.exists():
         print(f"\n   Sample memberships:")
         for membership in memberships[:5]:
-            print(f"   - {membership.student.username} → {membership.team.name}")
-            print(f"     Role: {'Leader' if membership.is_leader else 'Member'}")
-            print(f"     Created: {membership.created_at}")
+            print(f"- {membership.student.username} → {membership.team.name}")
+            print(f" Role: {'Leader' if membership.is_leader else 'Member'}")
+            print(f" Created: {membership.created_at}")
     
     # Verify User.team_id field
-    print(f"\n👥 User.team_id Field:")
+    print(f"\n User.team_id Field:")
     students_with_teams = User.objects.filter(role='student', team_id__isnull=False)
-    print(f"   Students with team_id set: {students_with_teams.count()}")
+    print(f"Students with team_id set: {students_with_teams.count()}")
     
     if students_with_teams.exists():
         print(f"\n   Sample students:")
         for student in students_with_teams[:5]:
-            print(f"   - {student.username}: team_id = {student.team_id}")
+            print(f"- {student.username}: team_id = {student.team_id}")
     
     # Verify data integrity
-    print(f"\n🔍 Data Integrity Checks:")
+    print(f"\n Data Integrity Checks:")
     
     # Check 1: team_id matches membership
     mismatches = 0
@@ -90,12 +90,12 @@ def verify_database_persistence():
         if membership:
             if student.team_id != str(membership.team_id):
                 mismatches += 1
-                print(f"   ⚠️  {student.username}: team_id={student.team_id}, but in team {membership.team_id}")
+                print(f"Warning: {student.username}: team_id={student.team_id}, but in team {membership.team_id}")
     
     if mismatches == 0:
-        print(f"   ✅ All student team_id fields match their memberships")
+        print(f"All student team_id fields match their memberships")
     else:
-        print(f"   ⚠️  Found {mismatches} mismatches")
+        print(f"Warning: Found {mismatches} mismatches")
     
     # Check 2: No students in multiple teams
     multi_team_students = []
@@ -105,22 +105,22 @@ def verify_database_persistence():
             multi_team_students.append((student.username, team_count))
     
     if not multi_team_students:
-        print(f"   ✅ No students in multiple teams (one-team-per-student enforced)")
+        print(f"No students in multiple teams (one-team-per-student enforced)")
     else:
-        print(f"   ⚠️  Found {len(multi_team_students)} students in multiple teams:")
+        print(f"Warning: Found {len(multi_team_students)} students in multiple teams:")
         for username, count in multi_team_students:
-            print(f"      - {username}: {count} teams")
+            print(f"  - {username}: {count} teams")
     
     # Check 3: All teams have members
     teams_without_members = StudentTeam.objects.filter(memberships__isnull=True)
     if teams_without_members.count() == 0:
-        print(f"   ✅ All teams have at least one member")
+        print(f"All teams have at least one member")
     else:
-        print(f"   ⚠️  Found {teams_without_members.count()} teams without members")
+        print(f"Warning: Found {teams_without_members.count()} teams without members")
     
     # Test database write
-    print(f"\n🧪 Testing Database Write:")
-    print(f"   Creating test record...")
+    print(f"\n Testing Database Write:")
+    print(f"Creating test record...")
     
     try:
         # Create a test team (will rollback)
@@ -154,39 +154,39 @@ def verify_database_persistence():
                         order=0
                     )
                     
-                    print(f"   ✅ Successfully created test team (ID: {test_team.id})")
-                    print(f"   ✅ Successfully created test membership")
-                    print(f"   ✅ Database write operations working correctly")
+                    print(f"Successfully created test team (ID: {test_team.id})")
+                    print(f"Successfully created test membership")
+                    print(f"Database write operations working correctly")
                     
                     # Rollback (don't actually save)
                     raise Exception("Rollback test data")
             else:
-                print(f"   ⚠️  No students available for test")
+                print(f"Warning: No students available for test")
     except Exception as e:
         if "Rollback" in str(e):
-            print(f"   ✅ Test data rolled back (not saved)")
+            print(f"Test data rolled back (not saved)")
         else:
-            print(f"   ❌ Error: {e}")
+            print(f"Error: {e}")
     
     # Summary
     print(f"\n" + "="*70)
     print("SUMMARY")
     print("="*70)
     
-    print(f"\n✅ Database Persistence Status:")
-    print(f"   ✓ Connected to PostgreSQL database")
-    print(f"   ✓ Tables exist and contain data")
-    print(f"   ✓ StudentTeam model: {teams.count()} teams")
-    print(f"   ✓ TeamMembership model: {memberships.count()} memberships")
-    print(f"   ✓ User.team_id field: {students_with_teams.count()} students")
-    print(f"   ✓ Data integrity: {'OK' if mismatches == 0 and not multi_team_students else 'Issues found'}")
-    print(f"   ✓ Write operations: Working")
+    print(f"\n Database Persistence Status:")
+    print(f"Connected to PostgreSQL database")
+    print(f"Tables exist and contain data")
+    print(f"StudentTeam model: {teams.count()} teams")
+    print(f"TeamMembership model: {memberships.count()} memberships")
+    print(f"User.team_id field: {students_with_teams.count()} students")
+    print(f"Data integrity: {'OK' if mismatches == 0 and not multi_team_students else 'Issues found'}")
+    print(f"Write operations: Working")
     
-    print(f"\n🎯 All team operations ARE saved to the database!")
-    print(f"   - Team creation → Saved to student_teams_studentteam")
-    print(f"   - Member assignment → Saved to student_teams_teammembership")
-    print(f"   - User team_id → Saved to authentication_access_control_user")
-    print(f"   - Timestamps → Automatically tracked (created_at, updated_at)")
+    print(f"\n All team operations ARE saved to the database!")
+    print(f"- Team creation → Saved to student_teams_studentteam")
+    print(f"- Member assignment → Saved to student_teams_teammembership")
+    print(f"- User team_id → Saved to authentication_access_control_user")
+    print(f"- Timestamps → Automatically tracked (created_at, updated_at)")
     
     print(f"\n" + "="*70 + "\n")
 

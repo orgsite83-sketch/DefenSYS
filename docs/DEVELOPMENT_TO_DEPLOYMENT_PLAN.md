@@ -36,7 +36,7 @@ Use this as a **living backlog** of what to improve and what to build next, sepa
 
 | Gap | Why it matters | Direction |
 |-----|----------------|-----------|
-| **Public read APIs** | Unauthenticated `GET` on teams, rubrics, and team-document lists exposes roster and rubric data (see `docs/SYSTEM_OVERVIEW.md` audit). | Require `IsAuthenticated` (then narrow by role / team membership). |
+zrd5xdr5tfdxrt5
 | **No DRF default permission** | New views can accidentally stay `AllowAny`. | Set `DEFAULT_PERMISSION_CLASSES` to authenticated; whitelist only login, token refresh, and truly public flows (e.g. guest code validation). |
 | **JWT lifetimes** | Long-lived access tokens increase impact of token theft. | Shorter access TTL in production; optional refresh rotation + blacklist. |
 | **Guest code endpoint** | Public validation is correct for UX; needs abuse controls. | Rate limits, logging, strong code entropy, optional CAPTCHA under load. |
@@ -66,6 +66,7 @@ Use this as a **living backlog** of what to improve and what to build next, sepa
 - **Semesters / rollover:** scripts like academic rollover should be documented, idempotent, and run in staging first.
 - **Retention:** how long to keep submissions, logs, and guest codes; GDPR-style deletion if you store personal data beyond the institution’s needs.
 - **Backups:** automated PostgreSQL backups, tested restore procedure, and separation of **media** backups from DB.
+- **Media layout (local / S3):** PIT archive PDFs live under `backend/media/vault_entries/pit/{year-level}/{academic_year}/{MM}/` (see `VaultEntry` + `relocate_vault_files`). Capstone “digital vault” deliverables stay under `backend/media/deliverables/` until an optional unify; Repository Audit and Digital Vault merge both in the API (filter by type in the UI).
 - **Integrity:** audit trail for who changed grades, schedules, or rubric weights (beyond current domain models if missing).
 
 ### 3.5 Engineering quality (how the codebase matures)

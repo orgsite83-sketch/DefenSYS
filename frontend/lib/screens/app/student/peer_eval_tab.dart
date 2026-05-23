@@ -12,6 +12,8 @@ class PeerEvalTab extends StatefulWidget {
   final String studentId;
   final String teamId;
   final int peerWeight;
+  final List<Map<String, dynamic>> myPeerSubmissions;
+  final VoidCallback? onPeerSubmitted;
 
   const PeerEvalTab({
     super.key,
@@ -19,6 +21,8 @@ class PeerEvalTab extends StatefulWidget {
     required this.peerEvalAllowed,
     required this.teammates,
     required this.peerCriteria,
+    this.myPeerSubmissions = const [],
+    this.onPeerSubmitted,
     required this.studentId,
     required this.teamId,
     this.peerWeight = 20,
@@ -52,7 +56,9 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
   @override
   void didUpdateWidget(PeerEvalTab oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.teammates != widget.teammates || oldWidget.peerCriteria != widget.peerCriteria) {
+    if (oldWidget.teammates != widget.teammates ||
+        oldWidget.peerCriteria != widget.peerCriteria ||
+        oldWidget.myPeerSubmissions != widget.myPeerSubmissions) {
       _buildScores();
     }
   }
@@ -60,12 +66,46 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
   void _buildScores() {
     for (final t in widget.teammates) {
       final name = t['name'] as String? ?? t['id'] as String? ?? '?';
-      // Only initialize if not already tracked (preserve posted state)
       _posted.putIfAbsent(name, () => false);
       _scores.putIfAbsent(name, () => {
         for (final c in _effectiveCriteria)
           (c['name'] as String): ((c['maxScore'] as num?) ?? 5).toDouble() * 0.8
       });
+    }
+    _hydrateFromSubmissions();
+  }
+
+  void _hydrateFromSubmissions() {
+    for (final sub in widget.myPeerSubmissions) {
+      final name = sub['evaluateeName'] as String? ?? '';
+      if (name.isEmpty) continue;
+
+      _posted[name] = true;
+      _scores.putIfAbsent(name, () => {});
+
+      final breakdown = (sub['breakdown'] as List? ?? []).cast<Map<String, dynamic>>();
+      if (breakdown.isNotEmpty) {
+        for (final item in breakdown) {
+          final criteriaName =
+              item['criteriaName'] as String? ?? item['name'] as String?;
+          final score = (item['score'] as num?)?.toDouble();
+          if (criteriaName != null && score != null) {
+            _scores[name]![criteriaName] = score;
+          }
+        }
+        continue;
+      }
+
+      final total = (sub['total'] as num?)?.toDouble();
+      final max = (sub['max'] as num?)?.toDouble();
+      if (total == null || max == null || max <= 0) continue;
+
+      final ratio = total / max;
+      for (final c in _effectiveCriteria) {
+        final criteriaName = c['name'] as String;
+        final cMax = ((c['maxScore'] as num?) ?? 5).toDouble();
+        _scores[name]![criteriaName] = (ratio * cMax).clamp(0, cMax);
+      }
     }
   }
 
@@ -278,6 +318,8 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
                 total: total,
                 max: max,
               );
+
+              widget.onPeerSubmitted?.call();
 
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(

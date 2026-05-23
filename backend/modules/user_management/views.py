@@ -7,13 +7,17 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academic_period_management.models import Semester
-from defense_scheduler.models import DefenseSchedule
-from student_academic_records.models import StudentAcademicRecord
-from .models import GuestPanelistCode
+from defense.scheduler.models import DefenseSchedule
+from user_management.academic_records.models import StudentAcademicRecord
+from .models import FacultyRoleAssignment, GuestPanelistCode
 from .permissions import IsSystemAdmin
+from student_teams.models import TeamAdviserAssignment
+from student_teams.serializers import TeamAdviserAssignmentSerializer
+
 from .serializers import (
     BulkUserRowSerializer,
     DefenseScheduleOptionSerializer,
+    FacultyRoleAssignmentSerializer,
     GuestPanelistCodeCreateSerializer,
     GuestPanelistCodeSerializer,
     ManagedUserSerializer,
@@ -93,16 +97,28 @@ class UserListCreateView(APIView):
 
         if role == 'faculty':
             users = users.filter(role__in=['faculty', 'admin'])
+        elif role == 'panelist':
+            users = users.filter(role__in=['faculty', 'admin'], is_panelist=True)
+        elif role == 'pit_lead':
+            users = users.filter(role__in=['faculty', 'admin'], is_pit_lead=True)
+        elif role == 'adviser':
+            users = users.filter(role__in=['faculty', 'admin'], is_adviser=True)
+        elif role == 'repo_assistant':
+            users = users.filter(role__in=['faculty', 'admin'], is_repo_assistant=True)
         elif role in dict(User.ROLE_CHOICES):
             users = users.filter(role=role)
 
         return Response({
-            'users': ManagedUserSerializer(users, many=True).data,
+            'users': ManagedUserSerializer(
+                users, many=True, context={'request': request}
+            ).data,
             'counts': user_counts(),
         })
 
     def post(self, request):
-        serializer = ManagedUserSerializer(data=request.data)
+        serializer = ManagedUserSerializer(
+            data=request.data, context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
@@ -120,15 +136,22 @@ class UserDetailView(APIView):
 
     def get(self, request, user_id):
         user = self.get_object(user_id)
-        return Response({'user': ManagedUserSerializer(user).data})
+        return Response({
+            'user': ManagedUserSerializer(user, context={'request': request}).data,
+        })
 
     def patch(self, request, user_id):
         user = self.get_object(user_id)
-        serializer = ManagedUserSerializer(user, data=request.data, partial=True)
+        serializer = ManagedUserSerializer(
+            user, data=request.data, partial=True, context={'request': request}
+        )
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
 
-        return Response({'user': ManagedUserSerializer(user).data, 'counts': user_counts()})
+        return Response({
+            'user': ManagedUserSerializer(user, context={'request': request}).data,
+            'counts': user_counts(),
+        })
 
     def delete(self, request, user_id):
         user = self.get_object(user_id)
@@ -140,6 +163,36 @@ class UserDetailView(APIView):
 
         user.delete()
         return Response({'counts': user_counts()}, status=status.HTTP_200_OK)
+
+
+class UserAdviserAssignmentHistoryView(APIView):
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, pk=user_id)
+        assignments = (
+            TeamAdviserAssignment.objects.filter(adviser=user)
+            .select_related('adviser', 'assigned_by', 'team', 'team__semester')
+            .order_by('-assigned_at', '-id')
+        )
+        return Response({
+            'assignments': TeamAdviserAssignmentSerializer(assignments, many=True).data,
+        })
+
+
+class UserRoleAssignmentHistoryView(APIView):
+    permission_classes = [IsSystemAdmin]
+
+    def get(self, request, user_id):
+        user = get_object_or_404(User, pk=user_id)
+        assignments = (
+            FacultyRoleAssignment.objects.filter(user=user)
+            .select_related('semester', 'semester__school_year', 'changed_by')
+            .order_by('-changed_at', '-id')
+        )
+        return Response({
+            'assignments': FacultyRoleAssignmentSerializer(assignments, many=True).data,
+        })
 
 
 class BulkImportUsersView(APIView):

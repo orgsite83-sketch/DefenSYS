@@ -9,7 +9,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
-        ('defense_scheduler', '0001_initial'),
+        ('defense', '0002_scheduler'),
     ]
 
     operations = [
@@ -26,7 +26,7 @@ class Migration(migrations.Migration):
                 ('created_at', models.DateTimeField(auto_now_add=True)),
                 ('updated_at', models.DateTimeField(auto_now=True)),
                 ('created_by', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='created_guest_panelist_codes', to=settings.AUTH_USER_MODEL)),
-                ('defense_schedule', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='guest_panelist_codes', to='defense_scheduler.defenseschedule')),
+                ('defense_schedule', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='guest_panelist_codes', to='defense.defenseschedule')),
             ],
             options={
                 'ordering': ['-created_at'],

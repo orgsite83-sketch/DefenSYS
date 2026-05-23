@@ -2,8 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/defense_scheduler_provider.dart';
+import '../../../services/defense_stages_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
+import 'widgets/defensys_admin_shell.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
   const DefenseSchedulerScreen({super.key});
@@ -16,6 +18,8 @@ class DefenseSchedulerScreen extends ConsumerStatefulWidget {
 class _DefenseSchedulerScreenState
     extends ConsumerState<DefenseSchedulerScreen> {
   final _eventController = TextEditingController();
+  final _panelWeightController = TextEditingController(text: '80');
+  final _peerWeightController = TextEditingController(text: '20');
   final _dateController = TextEditingController();
   final _timeController = TextEditingController(text: '08:00');
   final _durationController = TextEditingController(text: '60');
@@ -26,8 +30,23 @@ class _DefenseSchedulerScreenState
   String _scope = 'capstone';
   int? _stageId;
   int? _rubricId;
+  int? _adviserRubricId;
+  int? _capstonePeerRubricId;
+  int? _peerRubricId;
   bool _showFinalPreview = false;
   List<Map<String, dynamic>> _planSlots = [];
+
+  @override
+  void dispose() {
+    _eventController.dispose();
+    _panelWeightController.dispose();
+    _peerWeightController.dispose();
+    _dateController.dispose();
+    _timeController.dispose();
+    _durationController.dispose();
+    _roomController.dispose();
+    super.dispose();
+  }
 
   @override
   void initState() {
@@ -50,64 +69,51 @@ class _DefenseSchedulerScreenState
   }
 
   @override
-  void dispose() {
-    _eventController.dispose();
-    _dateController.dispose();
-    _timeController.dispose();
-    _durationController.dispose();
-    _roomController.dispose();
-    super.dispose();
-  }
-
-  @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
     final currentStep = _planSlots.isEmpty ? 1 : (_showFinalPreview ? 3 : 2);
 
-    return RefreshIndicator(
-      onRefresh: () =>
-          ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
-      child: SingleChildScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(36, 24, 36, 36),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1440),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(state),
-                const SizedBox(height: 22),
-                _buildStepProgress(currentStep),
-                const SizedBox(height: 22),
+    final cp = DefensysUi.contentPadding;
 
-                if (state.error != null) ...[
-                  _buildNotice(
-                    icon: Icons.error_outline_rounded,
-                    text: state.error!,
-                    color: AppColors.danger,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                if (state.message != null) ...[
-                  _buildNotice(
-                    icon: Icons.check_circle_outline_rounded,
-                    text: state.message!,
-                    color: AppColors.success,
-                  ),
-                  const SizedBox(height: 16),
-                ],
-
-                if (currentStep == 1) _buildStepOne(state),
-                if (currentStep == 2) _buildStepTwo(state),
-                if (currentStep == 3) _buildStepThree(state),
-                
-                // Add existing schedules list
-                const SizedBox(height: 40),
-                _buildExistingSchedules(state),
+    return Scaffold(
+      backgroundColor: DefensysUi.bgLight,
+      body: RefreshIndicator(
+        color: AppColors.maroon,
+        onRefresh: () =>
+            ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: cp,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(state),
+              const SizedBox(height: 26),
+              _buildStepProgress(currentStep),
+              const SizedBox(height: 12),
+              if (state.error != null) ...[
+                const SizedBox(height: 14),
+                _buildNotice(
+                  icon: Icons.error_outline_rounded,
+                  text: state.error!,
+                  color: AppColors.danger,
+                ),
               ],
-            ),
+              if (state.message != null) ...[
+                const SizedBox(height: 14),
+                _buildNotice(
+                  icon: Icons.check_circle_outline_rounded,
+                  text: state.message!,
+                  color: AppColors.success,
+                ),
+              ],
+              const SizedBox(height: 12),
+              if (currentStep == 1) _buildStepOne(state),
+              if (currentStep == 2) _buildStepTwo(state),
+              if (currentStep == 3) _buildStepThree(state),
+              const SizedBox(height: 22),
+              _buildExistingSchedules(state),
+            ],
           ),
         ),
       ),
@@ -145,7 +151,7 @@ class _DefenseSchedulerScreenState
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: 8),
               Text(
                 semesterLabel,
                 style: const TextStyle(
@@ -161,44 +167,50 @@ class _DefenseSchedulerScreenState
           spacing: 12,
           runSpacing: 12,
           children: [
-            OutlinedButton.icon(
-              onPressed: state.isSaving ? null : () => _showManualDialog(state),
-              icon: const Icon(Icons.open_in_new_rounded, size: 18),
-              label: const Text('Manual Schedule Form'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.textPrimary,
-                side: const BorderSide(color: Color(0xFFD0D5DD)),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 18,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 14,
+            SizedBox(
+              height: 42,
+              child: OutlinedButton.icon(
+                onPressed: state.isSaving ? null : () => _showManualDialog(state),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('Manual Schedule Form'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.textPrimary,
+                  side: const BorderSide(color: Color(0xFFD0D5DD)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 0,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
-            ElevatedButton.icon(
-              onPressed: state.isSaving ? null : _generatePlan,
-              icon: const Icon(Icons.bolt_rounded, size: 18),
-              label: const Text('Generate Schedule Plan'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.maroon,
-                foregroundColor: AppColors.gold,
-                elevation: 0,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 18,
-                  vertical: 18,
-                ),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                textStyle: const TextStyle(
-                  fontWeight: FontWeight.w900,
-                  fontSize: 14,
+            SizedBox(
+              height: 42,
+              child: ElevatedButton.icon(
+                onPressed: state.isSaving ? null : _generatePlan,
+                icon: const Icon(Icons.bolt_rounded, size: 18),
+                label: const Text('Generate Schedule Plan'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.maroon,
+                  foregroundColor: AppColors.gold,
+                  elevation: 0,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 18,
+                    vertical: 0,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 14,
+                  ),
                 ),
               ),
             ),
@@ -431,149 +443,263 @@ class _DefenseSchedulerScreenState
                 ),
               ),
               const SizedBox(height: 20),
-              if (_scope == 'capstone')
-                Row(
-                  children: [
-                    Expanded(
-                      child: _labeledField(
-                        'Stage *',
-                        DropdownButtonFormField<int?>(
-                          initialValue: stageId,
-                          decoration: _schedulerInputDecoration(),
-                          items: stages
-                              .map(
-                                (stage) => DropdownMenuItem<int?>(
-                                  value: _asInt(stage['id']),
-                                  child: Text(stage['label']?.toString() ?? ''),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) {
-                            setState(() {
-                              _scope = 'capstone';
-                              _stageId = value;
-                              _rubricId = null;
-                              _planSlots = [];
-                              _showFinalPreview = false;
-                            });
-                          },
+              if (_scope == 'capstone') ...[
+                _labeledField(
+                  'Stage *',
+                  DropdownButtonFormField<int?>(
+                    initialValue: stageId,
+                    decoration: _schedulerInputDecoration(),
+                    items: stages
+                        .map(
+                          (stage) => DropdownMenuItem<int?>(
+                            value: _asInt(stage['id']),
+                            child: Text(stage['label']?.toString() ?? ''),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) async {
+                      setState(() {
+                        _scope = 'capstone';
+                        _stageId = value;
+                        _rubricId = null;
+                        _adviserRubricId = null;
+                        _capstonePeerRubricId = null;
+                        _planSlots = [];
+                        _showFinalPreview = false;
+                      });
+                      await _prefillCapstoneStageRubrics();
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _labeledField(
+                  'Panel rubric *',
+                  DropdownButtonFormField<int?>(
+                    initialValue: _validCapstoneRubricId(state, _rubricId, 'panel'),
+                    decoration: _schedulerInputDecoration(),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Select panel rubric'),
+                      ),
+                      ..._capstoneRubricsForEval(state, 'panel').map(
+                        (rubric) => DropdownMenuItem<int?>(
+                          value: _asInt(rubric['id']),
+                          child: Text(rubric['name']?.toString() ?? ''),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: _labeledField(
-                        'Rubric *',
-                        DropdownButtonFormField<int?>(
-                          initialValue: rubricId,
-                          decoration: _schedulerInputDecoration(),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('No rubric'),
-                            ),
-                            ...rubricItems.map(
-                              (rubric) => DropdownMenuItem<int?>(
-                                value: _asInt(rubric['id']),
-                                child: Text(rubric['name']?.toString() ?? ''),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _rubricId = value;
-                            });
-                          },
+                    ],
+                    onChanged: (value) => setState(() => _rubricId = value),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _labeledField(
+                  'Adviser rubric *',
+                  DropdownButtonFormField<int?>(
+                    initialValue: _validCapstoneRubricId(state, _adviserRubricId, 'adviser'),
+                    decoration: _schedulerInputDecoration(),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Select adviser rubric'),
+                      ),
+                      ..._capstoneRubricsForEval(state, 'adviser').map(
+                        (rubric) => DropdownMenuItem<int?>(
+                          value: _asInt(rubric['id']),
+                          child: Text(rubric['name']?.toString() ?? ''),
                         ),
                       ),
-                    ),
-                  ],
-                )
-              else
-                Row(
-                  children: [
-                    Expanded(
-                      child: _labeledField(
-                        'PIT Event Name *',
+                    ],
+                    onChanged: (value) => setState(() => _adviserRubricId = value),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                _labeledField(
+                  'Peer rubric *',
+                  DropdownButtonFormField<int?>(
+                    initialValue: _validCapstoneRubricId(state, _capstonePeerRubricId, 'peer'),
+                    decoration: _schedulerInputDecoration(),
+                    items: [
+                      const DropdownMenuItem<int?>(
+                        value: null,
+                        child: Text('Select peer rubric'),
+                      ),
+                      ..._capstoneRubricsForEval(state, 'peer').map(
+                        (rubric) => DropdownMenuItem<int?>(
+                          value: _asInt(rubric['id']),
+                          child: Text(rubric['name']?.toString() ?? ''),
+                        ),
+                      ),
+                    ],
+                    onChanged: (value) => setState(() => _capstonePeerRubricId = value),
+                  ),
+                ),
+              ]
+              else ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE4E7EC)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PIT event setup (this run)',
+                        style: TextStyle(
+                          color: Color(0xFF344054),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _labeledField(
+                        'Event name *',
                         TextField(
                           controller: _eventController,
                           decoration: _schedulerInputDecoration(
                             hintText: 'e.g. 2nd Year PIT Expo',
                           ),
+                          onChanged: (_) => _prefillPitEventConfig(),
                         ),
                       ),
-                    ),
-                    const SizedBox(width: 14),
-                    Expanded(
-                      child: _labeledField(
-                        'Rubric',
-                        DropdownButtonFormField<int?>(
-                          initialValue: rubricId,
-                          decoration: _schedulerInputDecoration(),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('No rubric'),
-                            ),
-                            ...rubricItems.map(
-                              (rubric) => DropdownMenuItem<int?>(
-                                value: _asInt(rubric['id']),
-                                child: Text(rubric['name']?.toString() ?? ''),
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _labeledField(
+                              'Panel rubric *',
+                              DropdownButtonFormField<int?>(
+                                initialValue: rubricId,
+                                decoration: _schedulerInputDecoration(),
+                                items: [
+                                  const DropdownMenuItem<int?>(
+                                    value: null,
+                                    child: Text('Select panel rubric'),
+                                  ),
+                                  ...rubricItems.map(
+                                    (rubric) => DropdownMenuItem<int?>(
+                                      value: _asInt(rubric['id']),
+                                      child: Text(
+                                        rubric['name']?.toString() ?? '',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _rubricId = value;
+                                  });
+                                },
                               ),
                             ),
-                          ],
-                          onChanged: (value) {
-                            setState(() {
-                              _rubricId = value;
-                            });
-                          },
-                        ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: _labeledField(
+                              'Peer rubric *',
+                              DropdownButtonFormField<int?>(
+                                initialValue: _validPeerRubricId(state),
+                                decoration: _schedulerInputDecoration(),
+                                items: [
+                                  const DropdownMenuItem<int?>(
+                                    value: null,
+                                    child: Text('Select peer rubric'),
+                                  ),
+                                  ..._peerRubricsForContext(state).map(
+                                    (rubric) => DropdownMenuItem<int?>(
+                                      value: _asInt(rubric['id']),
+                                      child: Text(
+                                        rubric['name']?.toString() ?? '',
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                                onChanged: (value) {
+                                  setState(() {
+                                    _peerRubricId = value;
+                                  });
+                                },
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ),
-                  ],
-                ),
-              const SizedBox(height: 8),
-              const Padding(
-                padding: EdgeInsets.only(left: 2),
-                child: Text(
-                  'Only Panel rubrics and legacy untyped rubrics are shown.',
-                  style: TextStyle(
-                    color: Color(0xFF98A2B3),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500,
+                      const SizedBox(height: 14),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _labeledField(
+                              'Panel %',
+                              TextField(
+                                controller: _panelWeightController,
+                                keyboardType: TextInputType.number,
+                                decoration: _schedulerInputDecoration(),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: _labeledField(
+                              'Peer %',
+                              TextField(
+                                controller: _peerWeightController,
+                                keyboardType: TextInputType.number,
+                                decoration: _schedulerInputDecoration(),
+                                onChanged: (_) => setState(() {}),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 22),
+                            child: Text(
+                              'Total ${_pitWeightTotal()}%',
+                              style: TextStyle(
+                                color: _pitWeightTotal() == 100
+                                    ? const Color(0xFF027A48)
+                                    : const Color(0xFFB42318),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
                   ),
                 ),
-              ),
+                const SizedBox(height: 8),
+                const Padding(
+                  padding: EdgeInsets.only(left: 2),
+                  child: Text(
+                    'Panel and peer rubrics define criteria only. The split above applies to all teams in this event.',
+                    style: TextStyle(
+                      color: Color(0xFF98A2B3),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
               const SizedBox(height: 18),
               Row(
                 children: [
                   Expanded(
                     child: _labeledField(
                       'Date *',
-                      TextField(
-                        controller: _dateController,
-                        decoration: _schedulerInputDecoration(
-                          suffixIcon: const Icon(
-                            Icons.calendar_today_outlined,
-                            size: 18,
-                          ),
-                        ),
-                      ),
+                      _scheduleDateField(controller: _dateController),
                     ),
                   ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: _labeledField(
                       'Starting Time *',
-                      TextField(
-                        controller: _timeController,
-                        decoration: _schedulerInputDecoration(
-                          suffixIcon: const Icon(
-                            Icons.access_time_outlined,
-                            size: 18,
-                          ),
-                        ),
-                      ),
+                      _scheduleTimeField(controller: _timeController),
                     ),
                   ),
                   const SizedBox(width: 14),
@@ -597,55 +723,56 @@ class _DefenseSchedulerScreenState
                   decoration: _schedulerInputDecoration(),
                 ),
               ),
-              const SizedBox(height: 20),
-              Container(
-                key: ValueKey('stage-info-$_stageId'), // Force rebuild when stage changes
-                width: double.infinity,
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 22,
-                  vertical: 14,
-                ),
-                decoration: const BoxDecoration(
-                  color: Color(0xFFF9FAFB),
-                  border: Border(
-                    top: BorderSide(color: Color(0xFFE5E7EB)),
-                    bottom: BorderSide(color: Color(0xFFE5E7EB)),
+              if (_scope == 'capstone') ...[
+                const SizedBox(height: 20),
+                Container(
+                  key: ValueKey('stage-info-$_stageId'),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 14,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF9FAFB),
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFE5E7EB)),
+                      bottom: BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                  ),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _softBadge(
+                        'Stage: ${_stageLabel(state)}',
+                        const Color(0xFFDCFCE7),
+                        const Color(0xFF166534),
+                      ),
+                      _softBadge(
+                        'Ready Teams: ${_readyTeamsCount(state)}',
+                        _readyTeamsCount(state) > 0
+                            ? const Color(0xFFDCFCE7)
+                            : const Color(0xFFFEF3C7),
+                        _readyTeamsCount(state) > 0
+                            ? const Color(0xFF166534)
+                            : const Color(0xFFB45309),
+                      ),
+                      _softBadge(
+                        'Blocked: 0',
+                        const Color(0xFFFEF3C7),
+                        const Color(0xFFB45309),
+                      ),
+                      _softBadge(
+                        'Already Scheduled: ${_count(state, 'scheduled')}',
+                        const Color(0xFFDBEAFE),
+                        const Color(0xFF1D4ED8),
+                      ),
+                    ],
                   ),
                 ),
-                child: Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  children: [
-                    _softBadge(
-                      _scope == 'pit'
-                          ? 'Event: ${_eventController.text.trim().isEmpty ? 'Not set' : _eventController.text.trim()}'
-                          : 'Stage: ${_stageLabel(state)}',
-                      const Color(0xFFDCFCE7),
-                      const Color(0xFF166534),
-                    ),
-                    _softBadge(
-                      'Ready Teams: ${_readyTeamsCount(state)}',
-                      _readyTeamsCount(state) > 0
-                          ? const Color(0xFFDCFCE7)
-                          : const Color(0xFFFEF3C7),
-                      _readyTeamsCount(state) > 0
-                          ? const Color(0xFF166534)
-                          : const Color(0xFFB45309),
-                    ),
-                    _softBadge(
-                      'Blocked: 0',
-                      const Color(0xFFFEF3C7),
-                      const Color(0xFFB45309),
-                    ),
-                    _softBadge(
-                      'Already Scheduled: ${_count(state, 'scheduled')}',
-                      const Color(0xFFDBEAFE),
-                      const Color(0xFF1D4ED8),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
+                const SizedBox(height: 18),
+              ] else
+                const SizedBox(height: 20),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
@@ -1522,6 +1649,13 @@ class _DefenseSchedulerScreenState
       return;
     }
 
+    if (_scope == 'capstone') {
+      final synced = await _syncCapstoneStageRubrics();
+      if (!synced) {
+        return;
+      }
+    }
+
     payload['slots'] = _planSlots
         .map((slot) => {'team_id': _asInt(slot['team_id'])})
         .toList();
@@ -1549,9 +1683,40 @@ class _DefenseSchedulerScreenState
       return null;
     }
 
+    if (_scope == 'capstone') {
+      final schedulerState = ref.read(defenseSchedulerProvider);
+      if (_validCapstoneRubricId(schedulerState, _rubricId, 'panel') == null) {
+        _showSnack('Select a panel rubric.');
+        return null;
+      }
+      if (_validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') == null) {
+        _showSnack('Select an adviser rubric.');
+        return null;
+      }
+      if (_validCapstoneRubricId(schedulerState, _capstonePeerRubricId, 'peer') == null) {
+        _showSnack('Select a peer rubric.');
+        return null;
+      }
+    }
+
     if (_scope == 'pit' && _eventController.text.trim().isEmpty) {
       _showSnack('Enter a PIT event name.');
       return null;
+    }
+
+    if (_scope == 'pit') {
+      if (_validRubricId(ref.read(defenseSchedulerProvider)) == null) {
+        _showSnack('Select a panel rubric.');
+        return null;
+      }
+      if (_validPeerRubricId(ref.read(defenseSchedulerProvider)) == null) {
+        _showSnack('Select a peer rubric.');
+        return null;
+      }
+      if (_pitWeightTotal() != 100) {
+        _showSnack('Panel and peer weights must total 100%.');
+        return null;
+      }
     }
 
     if (date.isEmpty || time.isEmpty || room.isEmpty) {
@@ -1564,7 +1729,7 @@ class _DefenseSchedulerScreenState
       return null;
     }
 
-    return {
+    final payload = {
       'scope': _scope,
       'defense_stage_id': _scope == 'capstone' ? _stageId : null,
       'event_name': _scope == 'pit' ? _eventController.text.trim() : '',
@@ -1575,6 +1740,45 @@ class _DefenseSchedulerScreenState
       'room': room,
       'panelist_ids': _selectedPanelistIds.toList(),
     };
+    if (_scope == 'pit') {
+      payload['peer_rubric_id'] = _validPeerRubricId(ref.read(defenseSchedulerProvider));
+      payload['panel_weight'] =
+          int.tryParse(_panelWeightController.text.trim()) ?? 80;
+      payload['peer_weight'] =
+          int.tryParse(_peerWeightController.text.trim()) ?? 20;
+    }
+    return payload;
+  }
+
+  int _pitWeightTotal() {
+    final panel = int.tryParse(_panelWeightController.text.trim()) ?? 0;
+    final peer = int.tryParse(_peerWeightController.text.trim()) ?? 0;
+    return panel + peer;
+  }
+
+  Future<void> _prefillPitEventConfig() async {
+    if (_scope != 'pit') {
+      return;
+    }
+    final eventName = _eventController.text.trim();
+    if (eventName.length < 3) {
+      return;
+    }
+    final semesterId = _asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
+    final config = await ref
+        .read(defenseSchedulerProvider.notifier)
+        .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+    if (!mounted || config == null) {
+      return;
+    }
+    setState(() {
+      _rubricId = _asInt(config['panel_rubric_id']) ?? _rubricId;
+      _peerRubricId = _asInt(config['peer_rubric_id']) ?? _peerRubricId;
+      _panelWeightController.text = config['panel_weight']?.toString() ?? '80';
+      _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
+    });
   }
 
   Future<void> _showManualDialog(DefenseSchedulerState state) async {
@@ -1582,6 +1786,9 @@ class _DefenseSchedulerScreenState
     int? stageId = _stageId;
     int? teamId;
     int? rubricId = _rubricId;
+    int? peerRubricId = _peerRubricId;
+    final panelWeight = TextEditingController(text: _panelWeightController.text);
+    final peerWeight = TextEditingController(text: _peerWeightController.text);
 
     final event = TextEditingController(text: _eventController.text);
     final date = TextEditingController(text: _dateController.text);
@@ -1598,9 +1805,14 @@ class _DefenseSchedulerScreenState
             final teams = _teamsForScope(state, scope);
             final rubrics = _rubricsForScopeAndStage(state, scope, stageId);
 
+            final peerRubrics = _peerRubricsForContext(state);
             final validRubric =
                 rubrics.any((item) => _asInt(item['id']) == rubricId)
                 ? rubricId
+                : null;
+            final validPeerRubric =
+                peerRubrics.any((item) => _asInt(item['id']) == peerRubricId)
+                ? peerRubricId
                 : null;
 
             final validTeam = teams.any((item) => _asInt(item['id']) == teamId)
@@ -1722,12 +1934,63 @@ class _DefenseSchedulerScreenState
                           });
                         },
                       ),
+                      if (scope == 'pit') ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int?>(
+                          initialValue: validPeerRubric,
+                          decoration: const InputDecoration(
+                            labelText: 'Peer Rubric',
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Select peer rubric'),
+                            ),
+                            ...peerRubrics.map(
+                              (rubric) => DropdownMenuItem<int?>(
+                                value: _asInt(rubric['id']),
+                                child: Text(rubric['name']?.toString() ?? ''),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              peerRubricId = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: panelWeight,
+                                decoration: const InputDecoration(
+                                  labelText: 'Panel %',
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: TextField(
+                                controller: peerWeight,
+                                decoration: const InputDecoration(
+                                  labelText: 'Peer %',
+                                ),
+                                keyboardType: TextInputType.number,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Expanded(
-                            child: TextField(
+                            child: _scheduleDateField(
                               controller: date,
+                              onSelected: () => setDialogState(() {}),
                               decoration: const InputDecoration(
                                 labelText: 'Date',
                               ),
@@ -1735,8 +1998,9 @@ class _DefenseSchedulerScreenState
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: TextField(
+                            child: _scheduleTimeField(
                               controller: time,
+                              onSelected: () => setDialogState(() {}),
                               decoration: const InputDecoration(
                                 labelText: 'Start Time',
                               ),
@@ -1822,6 +2086,8 @@ class _DefenseSchedulerScreenState
     );
 
     event.dispose();
+    panelWeight.dispose();
+    peerWeight.dispose();
     date.dispose();
     time.dispose();
     duration.dispose();
@@ -1836,7 +2102,7 @@ class _DefenseSchedulerScreenState
       return;
     }
 
-    await ref.read(defenseSchedulerProvider.notifier).createSchedule({
+    final schedulePayload = {
       'scope': scope,
       'team_id': teamId,
       'defense_stage_id': scope == 'capstone' ? stageId : null,
@@ -1847,7 +2113,78 @@ class _DefenseSchedulerScreenState
       'slot_duration': int.tryParse(duration.text.trim()) ?? 60,
       'room': room.text.trim(),
       'panelist_ids': panelIds.toList(),
+    };
+    if (scope == 'pit') {
+      schedulePayload['peer_rubric_id'] = peerRubricId;
+      schedulePayload['panel_weight'] =
+          int.tryParse(panelWeight.text.trim()) ?? 80;
+      schedulePayload['peer_weight'] =
+          int.tryParse(peerWeight.text.trim()) ?? 20;
+    }
+    await ref.read(defenseSchedulerProvider.notifier).createSchedule(schedulePayload);
+  }
+
+  Future<bool> _syncCapstoneStageRubrics() async {
+    if (_scope != 'capstone' || _stageId == null) {
+      return true;
+    }
+    final semesterId = _asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']);
+    if (semesterId == null) {
+      _showSnack('No active semester for rubric assignment.');
+      return false;
+    }
+    return ref.read(defenseStagesProvider.notifier).updateGradingConfig(
+          _stageId!,
+          semesterId,
+          {
+            'panel_rubric_id': _rubricId,
+            'adviser_rubric_id': _adviserRubricId,
+            'peer_rubric_id': _capstonePeerRubricId,
+          },
+        );
+  }
+
+  Future<void> _prefillCapstoneStageRubrics() async {
+    if (_scope != 'capstone' || _stageId == null) {
+      return;
+    }
+    final semesterId = _asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']);
+    if (semesterId == null) {
+      return;
+    }
+    final detail = await ref
+        .read(defenseStagesProvider.notifier)
+        .fetchStageDetail(_stageId!, semesterId: semesterId);
+    if (!mounted || detail == null) {
+      return;
+    }
+    final grading = detail['grading_config'];
+    if (grading is! Map) {
+      return;
+    }
+    setState(() {
+      _rubricId = _asInt(grading['panel_rubric_id']) ?? _rubricId;
+      _adviserRubricId = _asInt(grading['adviser_rubric_id']) ?? _adviserRubricId;
+      _capstonePeerRubricId = _asInt(grading['peer_rubric_id']) ?? _capstonePeerRubricId;
     });
+  }
+
+  List<Map<String, dynamic>> _capstoneRubricsForEval(
+    DefenseSchedulerState state,
+    String evaluationType,
+  ) {
+    return _rubricsForScopeAndStage(state, 'capstone', _stageId)
+        .where((rubric) => rubric['evaluation_type']?.toString() == evaluationType)
+        .toList();
+  }
+
+  int? _validCapstoneRubricId(
+    DefenseSchedulerState state,
+    int? rubricId,
+    String evaluationType,
+  ) {
+    final rubrics = _capstoneRubricsForEval(state, evaluationType);
+    return rubrics.any((rubric) => _asInt(rubric['id']) == rubricId) ? rubricId : null;
   }
 
   List<Map<String, dynamic>> _rubricsForContext(DefenseSchedulerState state) {
@@ -1889,6 +2226,17 @@ class _DefenseSchedulerScreenState
         : null;
   }
 
+  List<Map<String, dynamic>> _peerRubricsForContext(DefenseSchedulerState state) {
+    return state.peerRubrics.where((rubric) => rubric['scope'] == 'pit').toList();
+  }
+
+  int? _validPeerRubricId(DefenseSchedulerState state) {
+    final rubrics = _peerRubricsForContext(state);
+    return rubrics.any((rubric) => _asInt(rubric['id']) == _peerRubricId)
+        ? _peerRubricId
+        : null;
+  }
+
   String _stageLabel(DefenseSchedulerState state) {
     for (final stage in state.defenseStages) {
       if (_asInt(stage['id']) == _stageId) {
@@ -1896,6 +2244,126 @@ class _DefenseSchedulerScreenState
       }
     }
     return 'Stage';
+  }
+
+  DateTime _parseScheduleDate(String text) {
+    final parsed = DateTime.tryParse(text.trim());
+    if (parsed != null) {
+      return DateTime(parsed.year, parsed.month, parsed.day);
+    }
+    final now = DateTime.now();
+    return DateTime(now.year, now.month, now.day);
+  }
+
+  TimeOfDay _parseScheduleTime(String text) {
+    final parts = text.trim().split(':');
+    final hour = int.tryParse(parts.isNotEmpty ? parts[0] : '') ?? 8;
+    final minute = int.tryParse(parts.length > 1 ? parts[1] : '') ?? 0;
+    return TimeOfDay(hour: hour.clamp(0, 23), minute: minute.clamp(0, 59));
+  }
+
+  String _formatScheduleDate(DateTime date) {
+    return '${date.year}-${date.month.toString().padLeft(2, '0')}-${date.day.toString().padLeft(2, '0')}';
+  }
+
+  String _formatScheduleTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  Future<void> _pickScheduleDate({
+    TextEditingController? controller,
+    VoidCallback? onSelected,
+  }) async {
+    final target = controller ?? _dateController;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: _parseScheduleDate(target.text),
+      firstDate: today,
+      lastDate: DateTime(now.year + 3, now.month, now.day),
+    );
+    if (picked == null) {
+      return;
+    }
+    target.text = _formatScheduleDate(picked);
+    onSelected?.call();
+    if (controller == null && mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _pickScheduleTime({
+    TextEditingController? controller,
+    VoidCallback? onSelected,
+  }) async {
+    final target = controller ?? _timeController;
+    final picked = await showTimePicker(
+      context: context,
+      initialTime: _parseScheduleTime(target.text),
+    );
+    if (picked == null) {
+      return;
+    }
+    target.text = _formatScheduleTime(picked);
+    onSelected?.call();
+    if (controller == null && mounted) {
+      setState(() {
+        if (_planSlots.isNotEmpty) {
+          _recalculatePlanSlots();
+        }
+      });
+    }
+  }
+
+  Widget _scheduleDateField({
+    required TextEditingController controller,
+    VoidCallback? onSelected,
+    InputDecoration? decoration,
+  }) {
+    Future<void> pick() => _pickScheduleDate(
+      controller: controller,
+      onSelected: onSelected,
+    );
+
+    return TextField(
+      controller: controller,
+      readOnly: true,
+      onTap: pick,
+      decoration: decoration ??
+          _schedulerInputDecoration(
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.calendar_today_outlined, size: 18),
+              onPressed: pick,
+              tooltip: 'Pick date',
+            ),
+          ),
+    );
+  }
+
+  Widget _scheduleTimeField({
+    required TextEditingController controller,
+    VoidCallback? onSelected,
+    InputDecoration? decoration,
+  }) {
+    Future<void> pick() => _pickScheduleTime(
+      controller: controller,
+      onSelected: onSelected,
+    );
+
+    return TextField(
+      controller: controller,
+      readOnly: true,
+      onTap: pick,
+      decoration: decoration ??
+          _schedulerInputDecoration(
+            suffixIcon: IconButton(
+              icon: const Icon(Icons.access_time_outlined, size: 18),
+              onPressed: pick,
+              tooltip: 'Pick time',
+            ),
+          ),
+    );
   }
 
   void _recalculatePlanSlots() {
@@ -1960,8 +2428,9 @@ class _DefenseSchedulerScreenState
   }
 
   Widget _buildExistingSchedules(DefenseSchedulerState state) {
-    final schedules = state.schedules ?? [];
-    final activeSchedules = schedules.where((s) => s['status'] == 'scheduled').toList();
+    final activeSchedules = state.schedules
+        .where((s) => s['status'] == 'scheduled')
+        .toList();
     
     if (activeSchedules.isEmpty) {
       return const SizedBox.shrink();
@@ -2100,28 +2569,15 @@ class _DefenseSchedulerScreenState
       final stageLabel = selectedStage['label']?.toString() ?? '';
       
       if (stageLabel.isNotEmpty) {
-        final readyTeams = state.teams.where((team) {
+        return state.teams.where((team) {
           final readyForStage = team['ready_for_stage']?.toString() ?? '';
           final teamLevel = team['level']?.toString() ?? '';
           final isCapstone = teamLevel.toLowerCase().contains('capstone');
-          
-          // Match the stage label
-          final isReady = isCapstone && readyForStage == stageLabel;
-          
-          // Debug output
-          if (isCapstone) {
-            print('🔍 Team: ${team['name']} | Level: $teamLevel | Ready for: $readyForStage | Match: $isReady');
-          }
-          
-          return isReady;
-        }).toList();
-        
-        print('✅ Stage: $stageLabel | Ready Teams: ${readyTeams.length}/${state.teams.length}');
-        return readyTeams.length;
+          return isCapstone && readyForStage == stageLabel;
+        }).length;
       }
     }
-    
-    print('⚠️  No stage selected or not capstone scope');
+
     return 0;
   }
 

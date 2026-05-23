@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_http.dart';
 
 final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
 
@@ -46,7 +47,7 @@ class AuthNotifier extends Notifier<AuthState> {
     state = state.copyWith(isLoading: true, error: null);
 
     try {
-      final response = await http.post(
+      final response = await apiHttpClient.post(
         Uri.parse('$baseUrl/login/'),
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
@@ -56,9 +57,25 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final token = data['access'];
-        final user = data['user'];
+        final data = _decodeJsonMap(response.body);
+        if (data == null) {
+          state = state.copyWith(
+            isLoading: false,
+            error: _htmlResponseMessage(response.statusCode),
+          );
+          return false;
+        }
+
+        final token = data['access'] as String?;
+        final userRaw = data['user'];
+        if (token == null || userRaw is! Map) {
+          state = state.copyWith(
+            isLoading: false,
+            error: 'Login response missing token or user.',
+          );
+          return false;
+        }
+        final user = Map<String, dynamic>.from(userRaw);
 
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('jwt_token', token);
@@ -66,15 +83,48 @@ class AuthNotifier extends Notifier<AuthState> {
 
         state = state.copyWith(isLoading: false, token: token, user: user);
         return true;
-      } else {
-        final errorMsg = jsonDecode(response.body)['detail'] ?? 'Login failed';
-        state = state.copyWith(isLoading: false, error: errorMsg);
-        return false;
       }
+
+      final errorMsg = _loginErrorMessage(response);
+      state = state.copyWith(isLoading: false, error: errorMsg);
+      return false;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  static Map<String, dynamic>? _decodeJsonMap(String body) {
+    final trimmed = body.trimLeft();
+    if (trimmed.isEmpty ||
+        trimmed.startsWith('<!DOCTYPE') ||
+        trimmed.startsWith('<html')) {
+      return null;
+    }
+    try {
+      final decoded = jsonDecode(body);
+      return decoded is Map<String, dynamic> ? decoded : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  static String _htmlResponseMessage(int statusCode) {
+    return 'Server returned HTML (HTTP $statusCode). '
+        'Check DJANGO_ALLOWED_HOSTS includes 10.0.2.2 for the Android emulator '
+        'and your PC LAN IP for physical devices.';
+  }
+
+  static String _loginErrorMessage(http.Response response) {
+    final data = _decodeJsonMap(response.body);
+    if (data == null) {
+      return _htmlResponseMessage(response.statusCode);
+    }
+    final detail = data['detail'];
+    if (detail is String && detail.isNotEmpty) {
+      return detail;
+    }
+    return 'Login failed (HTTP ${response.statusCode})';
   }
 
   Future<void> logout() async {

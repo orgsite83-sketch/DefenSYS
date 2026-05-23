@@ -76,9 +76,9 @@ class OverallResultsTab extends StatelessWidget {
             ? Colors.red
             : Colors.orange;
     final statusLabel = teamStatus == 'Approved'
-        ? '✓ Passed'
+        ? 'Passed'
         : teamStatus == 'Failed'
-            ? '✗ Failed'
+            ? 'Failed'
             : 'Pending';
 
     return Card(

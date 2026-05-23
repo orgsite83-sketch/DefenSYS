@@ -15,23 +15,12 @@ class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
 
 class _CurriculumAnalyticsScreenState
     extends ConsumerState<CurriculumAnalyticsScreen> {
-  final _classifierController = TextEditingController(
-    text:
-        'This project develops a Flutter mobile application with cloud file storage, responsive UI, and REST API integration.',
-  );
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
     });
-  }
-
-  @override
-  void dispose() {
-    _classifierController.dispose();
-    super.dispose();
   }
 
   @override
@@ -74,8 +63,6 @@ class _CurriculumAnalyticsScreenState
             _buildMainAnalyticsGrid(state),
             const SizedBox(height: 22),
             _buildLowerAnalyticsGrid(state),
-            const SizedBox(height: 22),
-            _buildClassifier(state),
           ],
         ],
       ),
@@ -944,108 +931,6 @@ class _CurriculumAnalyticsScreenState
     );
   }
 
-  Widget _buildClassifier(CurriculumAnalyticsState state) {
-    final classifier = state.classifier;
-
-    return _contentCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'ML Document Classifier',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 17,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Naive Bayes-style keyword classification with repository similarity search.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12.5),
-          ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _classifierController,
-            minLines: 4,
-            maxLines: 7,
-            decoration: const InputDecoration(
-              labelText: 'Paste project abstract or document text',
-            ),
-          ),
-          const SizedBox(height: 12),
-          _primaryButton(
-            icon: Icons.bolt_rounded,
-            label: 'Run Classification',
-            onTap: state.isSaving
-                ? null
-                : () => ref
-                      .read(curriculumAnalyticsProvider.notifier)
-                      .classify(_classifierController.text.trim()),
-          ),
-          if (classifier != null) ...[
-            const SizedBox(height: 18),
-            _classifierResult(classifier),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _classifierResult(Map<String, dynamic> classifier) {
-    final similar = _mapList(classifier['similar_projects']);
-    final keywords = _stringList(classifier['matched_keywords']);
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _chip(
-                'Domain: ${classifier['domain'] ?? 'Unclassified'}',
-                Colors.blue,
-              ),
-              _chip(
-                'Confidence: ${classifier['confidence'] ?? 0}%',
-                AppColors.success,
-              ),
-              if (keywords.isNotEmpty)
-                _chip('Keywords: ${keywords.join(', ')}', AppColors.maroon),
-            ],
-          ),
-          if (similar.isNotEmpty) ...[
-            const SizedBox(height: 14),
-            const Text(
-              'Similar Projects In Vault',
-              style: TextStyle(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            ...similar.map(
-              (item) => ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: const Icon(Icons.folder_copy_outlined),
-                title: Text(item['team_name']?.toString() ?? ''),
-                subtitle: Text(
-                  '${item['file_name'] ?? ''} - ${item['academic_year'] ?? ''} - ${item['tech_stack'] ?? ''}',
-                ),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
   Widget _contentCard({required Widget child}) {
     return Container(
       width: double.infinity,
@@ -1150,24 +1035,6 @@ class _CurriculumAnalyticsScreenState
           ),
         ),
       ],
-    );
-  }
-
-  Widget _chip(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
     );
   }
 

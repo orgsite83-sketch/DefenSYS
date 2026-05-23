@@ -17,6 +17,7 @@ class DefenseSchedulerState {
   final List<Map<String, dynamic>> teams;
   final List<Map<String, dynamic>> defenseStages;
   final List<Map<String, dynamic>> rubrics;
+  final List<Map<String, dynamic>> peerRubrics;
   final List<Map<String, dynamic>> panelists;
   final List<Map<String, dynamic>> generatedSlots;
   final List<String> statuses;
@@ -35,6 +36,7 @@ class DefenseSchedulerState {
     this.teams = const [],
     this.defenseStages = const [],
     this.rubrics = const [],
+    this.peerRubrics = const [],
     this.panelists = const [],
     this.generatedSlots = const [],
     this.statuses = const [],
@@ -54,6 +56,7 @@ class DefenseSchedulerState {
     List<Map<String, dynamic>>? teams,
     List<Map<String, dynamic>>? defenseStages,
     List<Map<String, dynamic>>? rubrics,
+    List<Map<String, dynamic>>? peerRubrics,
     List<Map<String, dynamic>>? panelists,
     List<Map<String, dynamic>>? generatedSlots,
     List<String>? statuses,
@@ -75,6 +78,7 @@ class DefenseSchedulerState {
       teams: teams ?? this.teams,
       defenseStages: defenseStages ?? this.defenseStages,
       rubrics: rubrics ?? this.rubrics,
+      peerRubrics: peerRubrics ?? this.peerRubrics,
       panelists: panelists ?? this.panelists,
       generatedSlots: generatedSlots ?? this.generatedSlots,
       statuses: statuses ?? this.statuses,
@@ -172,6 +176,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           teams: _readMapList(data['teams']),
           defenseStages: _readMapList(data['defense_stages']),
           rubrics: _readMapList(data['rubrics']),
+          peerRubrics: _readMapList(data['peer_rubrics']),
           panelists: _readMapList(data['panelists']),
           activeSemester: data['active_semester'] is Map
               ? Map<String, dynamic>.from(data['active_semester'])
@@ -286,6 +291,37 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchPitEventConfig({
+    required String eventName,
+    int? semesterId,
+  }) async {
+    final trimmed = eventName.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+
+    try {
+      final uri = Uri.parse('$baseUrl/pit-event-config/').replace(
+        queryParameters: {
+          'event_name': trimmed,
+          if (semesterId != null) 'semester_id': semesterId.toString(),
+        },
+      );
+      final response = await http.get(uri, headers: await _headers());
+      if (response.statusCode != 200) {
+        return null;
+      }
+      final data = Map<String, dynamic>.from(jsonDecode(response.body));
+      final config = data['config'];
+      if (config is Map) {
+        return Map<String, dynamic>.from(config);
+      }
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<bool> deleteSchedule(int scheduleId) async {
     state = state.copyWith(
       isSaving: true,
@@ -337,6 +373,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       teams: _readMapList(payload['teams']),
       defenseStages: _readMapList(payload['defense_stages']),
       rubrics: _readMapList(payload['rubrics']),
+      peerRubrics: _readMapList(payload['peer_rubrics']),
       panelists: _readMapList(payload['panelists']),
       statuses: _readStringList(payload['statuses']),
       counts: payload['counts'] is Map

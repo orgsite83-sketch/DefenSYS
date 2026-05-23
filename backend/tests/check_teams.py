@@ -19,12 +19,12 @@ def check_teams():
     
     for team in teams:
         print(f"Team: {team.name} (ID: {team.id})")
-        print(f"  Leader: {team.leader.username if team.leader else 'None'}")
-        print(f"  Members:")
+        print(f" Leader: {team.leader.username if team.leader else 'None'}")
+        print(f" Members:")
         memberships = TeamMembership.objects.filter(team=team)
         for membership in memberships:
             is_leader = "(Leader)" if membership.student == team.leader else ""
-            print(f"    - {membership.student.username} {is_leader}")
+            print(f"- {membership.student.username} {is_leader}")
         print()
     
     print("\n=== All Students ===\n")
@@ -32,9 +32,9 @@ def check_teams():
     for student in students:
         team = StudentTeam.objects.filter(memberships__student=student).first()
         if team:
-            print(f"✓ {student.username}: {team.name}")
+            print(f"{student.username}: {team.name}")
         else:
-            print(f"✗ {student.username}: NO TEAM")
+            print(f"{student.username}: NO TEAM")
 
 if __name__ == '__main__':
     check_teams()

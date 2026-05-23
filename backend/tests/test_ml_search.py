@@ -9,9 +9,9 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
-from capstone_deliverables.models import DeliverableSubmission
-from digital_vault.models import VaultEntry
-from student_weekly_progress.models import WeeklyProgressReport
+from repository.deliverables.models import DeliverableSubmission
+from repository.vault.models import VaultEntry
+from student_teams.weekly_progress.models import WeeklyProgressReport
 
 
 def test_deliverables():
@@ -23,10 +23,10 @@ def test_deliverables():
     submissions = DeliverableSubmission.objects.filter(file__isnull=False).exclude(file='')
     
     for submission in submissions:
-        print(f'\n📄 File: {submission.file_name}')
-        print(f'   Text Length: {len(submission.extracted_text)} chars')
-        print(f'   Topics: {submission.topics}')
-        print(f'   Summary: {submission.summary[:100]}...' if len(submission.summary) > 100 else f'   Summary: {submission.summary}')
+        print(f'\n File: {submission.file_name}')
+        print(f'Text Length: {len(submission.extracted_text)} chars')
+        print(f'Topics: {submission.topics}')
+        print(f'Summary: {submission.summary[:100]}...' if len(submission.summary) > 100 else f'   Summary: {submission.summary}')
 
 
 def test_weekly_reports():
@@ -38,10 +38,10 @@ def test_weekly_reports():
     reports = WeeklyProgressReport.objects.filter(report_file__isnull=False).exclude(report_file='')
     
     for report in reports:
-        print(f'\n📄 Week {report.week_number} - {report.student.username}')
-        print(f'   Text Length: {len(report.extracted_text)} chars')
-        print(f'   Topics: {report.topics}')
-        print(f'   Summary: {report.summary[:100]}...' if len(report.summary) > 100 else f'   Summary: {report.summary}')
+        print(f'\n Week {report.week_number} - {report.student.username}')
+        print(f'Text Length: {len(report.extracted_text)} chars')
+        print(f'Topics: {report.topics}')
+        print(f'Summary: {report.summary[:100]}...' if len(report.summary) > 100 else f'   Summary: {report.summary}')
 
 
 def test_vault_entries():
@@ -53,14 +53,14 @@ def test_vault_entries():
     entries = VaultEntry.objects.filter(file__isnull=False).exclude(file='')
     
     if entries.count() == 0:
-        print('\n⚠️  No vault entries with files yet')
+        print('\nWarning: No vault entries with files yet')
         return
     
     for entry in entries:
-        print(f'\n📄 File: {entry.file_name}')
-        print(f'   Text Length: {len(entry.extracted_text)} chars')
-        print(f'   Topics: {entry.topics}')
-        print(f'   Summary: {entry.summary[:100]}...' if len(entry.summary) > 100 else f'   Summary: {entry.summary}')
+        print(f'\n File: {entry.file_name}')
+        print(f'Text Length: {len(entry.extracted_text)} chars')
+        print(f'Topics: {entry.topics}')
+        print(f'Summary: {entry.summary[:100]}...' if len(entry.summary) > 100 else f'   Summary: {entry.summary}')
 
 
 def test_search_simulation():
@@ -103,7 +103,7 @@ def test_search_simulation():
     ]
     
     for query in queries:
-        print(f'\n🔍 Query: "{query}"')
+        print(f'\n Query: "{query}"')
         matches = []
         
         for doc in all_docs:
@@ -120,20 +120,20 @@ def test_search_simulation():
                 })
         
         if matches:
-            print(f'   ✅ Found {len(matches)} matches:')
+            print(f'Found {len(matches)} matches:')
             for match in matches:
                 match_type = []
                 if match['text_match']:
                     match_type.append('content')
                 if match['topic_match']:
                     match_type.append('topic')
-                print(f'      - {match["name"]} ({match["type"]}) - matched in: {", ".join(match_type)}')
+                print(f'- {match["name"]} ({match["type"]}) - matched in: {", ".join(match_type)}')
         else:
-            print(f'   ❌ No matches found')
+            print(f'No matches found')
 
 
 if __name__ == '__main__':
-    print('\n🚀 Testing ML Search Functionality...')
+    print('\n Testing ML Search Functionality...')
     
     test_deliverables()
     test_weekly_reports()
@@ -141,5 +141,5 @@ if __name__ == '__main__':
     test_search_simulation()
     
     print('\n' + '='*80)
-    print('✅ ML SEARCH TEST COMPLETE')
+    print('ML SEARCH TEST COMPLETE')
     print('='*80)

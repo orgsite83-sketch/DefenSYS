@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/defense_stages_provider.dart';
 import '../../../theme/app_theme.dart';
+import 'defense_stage_editor_screen.dart';
+import 'widgets/defensys_admin_shell.dart';
 
 class DefenseStagesScreen extends ConsumerStatefulWidget {
   const DefenseStagesScreen({super.key});
@@ -13,6 +15,10 @@ class DefenseStagesScreen extends ConsumerStatefulWidget {
 }
 
 class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
+  bool _stageEditorOpen = false;
+  int? _editingStageId;
+  Map<String, dynamic>? _editingStage;
+
   @override
   void initState() {
     super.initState();
@@ -21,8 +27,36 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     });
   }
 
+  void _openStageEditor(Map<String, dynamic> stage) {
+    final stageId = _asInt(stage['id']);
+    if (stageId == null) return;
+    setState(() {
+      _stageEditorOpen = true;
+      _editingStageId = stageId;
+      _editingStage = stage;
+    });
+  }
+
+  void _closeStageEditor() {
+    setState(() {
+      _stageEditorOpen = false;
+      _editingStageId = null;
+      _editingStage = null;
+    });
+    ref.read(defenseStagesProvider.notifier).fetchStages();
+  }
+
   @override
   Widget build(BuildContext context) {
+    if (_stageEditorOpen && _editingStageId != null) {
+      return DefenseStageEditorScreen(
+        key: ValueKey(_editingStageId),
+        stageId: _editingStageId!,
+        initialStage: _editingStage,
+        onBack: _closeStageEditor,
+      );
+    }
+
     final state = ref.watch(defenseStagesProvider);
 
     return RefreshIndicator(
@@ -30,40 +64,35 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       onRefresh: () => ref.read(defenseStagesProvider.notifier).fetchStages(),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
-        padding: const EdgeInsets.fromLTRB(34, 26, 34, 34),
-        child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 1440),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildHeader(state),
-                const SizedBox(height: 26),
-                _buildLifecycleInfo(state),
-                if (state.error != null) ...[
-                  const SizedBox(height: 14),
-                  _buildNotice(
-                    icon: Icons.error_outline,
-                    text: state.error!,
-                    color: AppColors.danger,
-                  ),
-                ],
-                if (state.message != null) ...[
-                  const SizedBox(height: 14),
-                  _buildNotice(
-                    icon: Icons.check_circle_outline,
-                    text: state.message!,
-                    color: AppColors.success,
-                  ),
-                ],
-                const SizedBox(height: 22),
-                if (state.isLoading)
-                  _buildLoadingState()
-                else
-                  _buildStageDirectory(state),
-              ],
-            ),
-          ),
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(state),
+            const SizedBox(height: 26),
+            _buildLifecycleInfo(state),
+            if (state.error != null) ...[
+              const SizedBox(height: 14),
+              _buildNotice(
+                icon: Icons.error_outline,
+                text: state.error!,
+                color: AppColors.danger,
+              ),
+            ],
+            if (state.message != null) ...[
+              const SizedBox(height: 14),
+              _buildNotice(
+                icon: Icons.check_circle_outline,
+                text: state.message!,
+                color: AppColors.success,
+              ),
+            ],
+            const SizedBox(height: 22),
+            if (state.isLoading)
+              _buildLoadingState()
+            else
+              _buildStageDirectory(state),
+          ],
         ),
       ),
     );
@@ -197,6 +226,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 const Color(0xFFDCEAFE),
                 const Color(0xFF1D4ED8),
                 const Color(0xFFBFDBFE),
+                chipMaxWidth: null,
               ),
             ],
           ),
@@ -266,9 +296,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 return _buildStageCards(state);
               }
 
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: SizedBox(width: 1380, child: _buildStageTable(state)),
+              return SizedBox(
+                width: constraints.maxWidth,
+                child: _buildStageTable(state),
               );
             },
           ),
@@ -277,63 +307,199 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
+  static const _tableLine = Color(0xFFE5E7EB);
+
   Widget _buildStageTable(DefenseStagesState state) {
-    return Column(
-      children: [
-        Container(
-          height: 48,
-          color: const Color(0xFFF3F5F9),
-          child: const Row(
-            children: [
-              _StageHeaderCell('ORDER', flex: 0.6),
-              _StageHeaderCell('NAME', flex: 4.2),
-              _StageHeaderCell('CODE', flex: 1.8),
-              _StageHeaderCell('PREVIOUS STAGE', flex: 1.8),
-              _StageHeaderCell('DELIVERABLES', flex: 1.4),
-              _StageHeaderCell('STATUS', flex: 1.2),
-              _StageHeaderCell('ACTIONS', flex: 1.6),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _stageTableHeaderRow(),
+          const SizedBox(height: 8),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              border: Border.all(color: _tableLine),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: [
+                  for (var i = 0; i < state.stages.length; i++)
+                    _stageTableDataRow(state, state.stages[i], i),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageTableHeaderRow() {
+    return Container(
+      height: 50,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F1F4),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _tableLine),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _stageThFixed('ORDER', 64, maxLines: 1),
+          Expanded(flex: 26, child: _stageTh('NAME')),
+          Expanded(flex: 15, child: _stageTh('CODE')),
+          Expanded(flex: 17, child: _stageTh('PREVIOUS STAGE')),
+          _stageThFixed('DELIVERABLES', 118),
+          _stageThFixed('STATUS', 128),
+          _stageThFixed('ACTIONS', 184),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageTh(String text) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.5,
           ),
         ),
-        ...state.stages.map((stage) {
-          return Container(
-            constraints: const BoxConstraints(minHeight: 66),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFE9EDF4))),
+      ),
+    );
+  }
+
+  Widget _stageThFixed(String text, double width, {int maxLines = 2}) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+        child: Text(
+          text,
+          maxLines: maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 11,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.45,
+            height: 1.15,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _stageTableDataRow(
+    DefenseStagesState state,
+    Map<String, dynamic> stage,
+    int index,
+  ) {
+    final zebra = index.isOdd;
+    return Container(
+      constraints: const BoxConstraints(minHeight: 58),
+      decoration: BoxDecoration(
+        color: zebra ? const Color(0xFFFAFAFA) : Colors.white,
+        border: index > 0
+            ? const Border(top: BorderSide(color: _tableLine))
+            : null,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _stageTdFixed(64, _orderTableBadge(stage['display_order'])),
+          Expanded(
+            flex: 26,
+            child: _stageTd(_stageNameCell(stage)),
+          ),
+          Expanded(
+            flex: 15,
+            child: _stageTd(
+              _codeTag(stage['code']?.toString() ?? ''),
             ),
-            child: Row(
-              children: [
-                _StageBodyCell(
-                  flex: 0.6,
-                  child: _orderBadge(stage['display_order']),
-                ),
-                _StageBodyCell(flex: 4.2, child: _stageNameCell(stage)),
-                _StageBodyCell(
-                  flex: 1.8,
-                  child: _codeTag(stage['code']?.toString() ?? ''),
-                ),
-                _StageBodyCell(flex: 1.8, child: _previousStageCell(stage)),
-                _StageBodyCell(
-                  flex: 1.4,
-                  child: Text(
-                    '${_deliverablesCount(stage)} deliverables',
-                    style: const TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-                _StageBodyCell(flex: 1.2, child: _statusChip(stage)),
-                _StageBodyCell(
-                  flex: 1.6,
-                  child: _buildStageActions(state, stage),
-                ),
-              ],
+          ),
+          Expanded(
+            flex: 17,
+            child: _stageTd(_previousStageCell(stage)),
+          ),
+          _stageTdFixed(
+            118,
+            Text(
+              '${_deliverablesCount(stage)} deliverables',
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.left,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                height: 1.2,
+              ),
             ),
-          );
-        }),
-      ],
+          ),
+          _stageTdFixed(128, _statusChip(stage)),
+          _stageTdFixedActions(184, _buildStageActions(state, stage)),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageTd(Widget child) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+      child: Align(alignment: Alignment.centerLeft, child: child),
+    );
+  }
+
+  Widget _stageTdFixed(double width, Widget child) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        child: Align(alignment: Alignment.centerLeft, child: child),
+      ),
+    );
+  }
+
+  /// Actions column: center the control cluster so Edit / Publish / Delete align with each other and the row.
+  Widget _stageTdFixedActions(double width, Widget child) {
+    return SizedBox(
+      width: width,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+        child: Align(alignment: Alignment.center, child: child),
+      ),
+    );
+  }
+
+  Widget _orderTableBadge(dynamic value) {
+    return Container(
+      width: 30,
+      height: 30,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _tableLine),
+      ),
+      child: Text(
+        value?.toString() ?? '',
+        style: const TextStyle(
+          fontWeight: FontWeight.w800,
+          fontSize: 12,
+          color: AppColors.textPrimary,
+        ),
+      ),
     );
   }
 
@@ -356,7 +522,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               children: [
                 Row(
                   children: [
-                    _orderBadge(stage['display_order']),
+                    _orderTableBadge(stage['display_order']),
                     const SizedBox(width: 12),
                     Expanded(child: _stageNameCell(stage)),
                     _statusChip(stage),
@@ -472,10 +638,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Wrap(
       spacing: 8,
       runSpacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         if (!locked)
           OutlinedButton.icon(
-            onPressed: state.isSaving ? null : () => _showStageDialog(stage),
+            onPressed: state.isSaving || stageId == null
+                ? null
+                : () => _openStageEditor(stage),
             icon: const Icon(Icons.edit_outlined, size: 15),
             label: const Text('Edit'),
             style: OutlinedButton.styleFrom(
@@ -543,7 +712,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         if (!locked)
           IconButton(
             tooltip: 'Delete stage',
-            color: AppColors.danger,
+            style: IconButton.styleFrom(
+              foregroundColor: AppColors.danger,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              visualDensity: VisualDensity.compact,
+            ),
             onPressed: state.isSaving || stageId == null
                 ? null
                 : () => _confirmDelete(
@@ -573,8 +748,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     
     // Get deliverables from stage
     List<Map<String, dynamic>> deliverables = [];
-    if (editing && stage?['deliverables'] != null) {
-      final delivsList = stage!['deliverables'];
+    if (stage != null && stage['deliverables'] != null) {
+      final delivsList = stage['deliverables'];
       if (delivsList is List) {
         deliverables = delivsList
             .map((d) => Map<String, dynamic>.from(d as Map))
@@ -642,7 +817,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   'deliverable_id': 'D${deliverables.length + 1}',
                                   'label': '',
                                   'deliverable_type': 'pre',
-                                  'required': false,
+                                  'required': true,
                                   'display_order': deliverables.length + 1,
                                   'vault_note': '',
                                 });
@@ -816,7 +991,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               Expanded(
                 flex: 2,
                 child: DropdownButtonFormField<String>(
-                  value: item['deliverable_type']?.toString() ?? 'pre',
+                  key: ValueKey(
+                    'deliverable_type_${index}_${item['deliverable_type']}',
+                  ),
+                  initialValue:
+                      item['deliverable_type']?.toString() ?? 'pre',
                   decoration: const InputDecoration(
                     labelText: 'Type',
                     isDense: true,
@@ -829,6 +1008,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   onChanged: (value) {
                     setDialogState(() {
                       item['deliverable_type'] = value;
+                      if (value == 'vault') {
+                        item['required'] = false;
+                      } else if (value == 'pre') {
+                        item['required'] = true;
+                      }
                     });
                   },
                 ),
@@ -907,26 +1091,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     await ref.read(defenseStagesProvider.notifier).deleteStage(stageId);
   }
 
-  Widget _orderBadge(dynamic value) {
-    return Container(
-      width: 32,
-      height: 32,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: AppColors.maroon,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Text(
-        value?.toString() ?? '',
-        style: const TextStyle(
-          color: Colors.white,
-          fontWeight: FontWeight.w900,
-          fontSize: 13,
-        ),
-      ),
-    );
-  }
-
   Widget _codeTag(String code) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
@@ -986,9 +1150,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     Color foreground,
     Color border, {
     IconData? icon,
+    double? chipMaxWidth = 120,
   }) {
     return Container(
-      constraints: const BoxConstraints(maxWidth: 120),
+      constraints: chipMaxWidth != null
+          ? BoxConstraints(maxWidth: chipMaxWidth)
+          : const BoxConstraints(),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
         color: background,
@@ -1154,52 +1321,5 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     if (value is num) return value.toInt();
 
     return int.tryParse(value?.toString() ?? '');
-  }
-}
-
-class _StageHeaderCell extends StatelessWidget {
-  const _StageHeaderCell(this.text, {required this.flex});
-
-  final String text;
-  final double flex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            text,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 0.6,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _StageBodyCell extends StatelessWidget {
-  const _StageBodyCell({required this.child, required this.flex});
-
-  final Widget child;
-  final double flex;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      ),
-    );
   }
 }

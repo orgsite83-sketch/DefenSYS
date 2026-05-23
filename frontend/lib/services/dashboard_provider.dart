@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'api_http.dart';
 
 final dashboardProvider =
     NotifierProvider.family<DashboardNotifier, DashboardState, String>(
@@ -57,9 +58,9 @@ class DashboardNotifier extends Notifier<DashboardState> {
       }
 
       final url = '$baseUrl/$role/';
-      print('📡 Fetching dashboard data from: $url');
+      print('Fetching dashboard data from: $url');
 
-      final response = await http.get(
+      final response = await apiHttpClient.get(
         Uri.parse(url),
         headers: {
           'Content-Type': 'application/json',
@@ -67,15 +68,15 @@ class DashboardNotifier extends Notifier<DashboardState> {
         },
       );
 
-      print('📥 Dashboard response status: ${response.statusCode}');
+      print('Dashboard response status: ${response.statusCode}');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
-        print('✅ Dashboard data received: ${data.keys}');
+        print('Dashboard data received: ${data.keys}');
         if (data['team'] != null) {
-          print('   Team: ${data['team']['name']}');
+          print('Team: ${data['team']['name']}');
         } else {
-          print('   ⚠️ No team data in response');
+          print('Warning: No team data in response');
         }
         
         state = state.copyWith(
@@ -83,7 +84,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
           data: data,
         );
       } else {
-        print('❌ Dashboard error: ${response.statusCode} - ${response.body}');
+        print('Dashboard error: ${response.statusCode} - ${response.body}');
         state = state.copyWith(
           isLoading: false,
           error:
@@ -91,7 +92,7 @@ class DashboardNotifier extends Notifier<DashboardState> {
         );
       }
     } catch (e) {
-      print('❌ Dashboard exception: $e');
+      print('Dashboard exception: $e');
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }

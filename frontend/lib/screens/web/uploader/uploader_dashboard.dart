@@ -73,7 +73,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
     final token = authState.token;
 
     final response = await http.get(
-      Uri.parse('${ApiConfig.baseUrl}/documents/'),
+      Uri.parse('${ApiConfig.teamDocumentsUrl}/'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -92,9 +92,9 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
     final authState = ref.read(authProvider);
     final token = authState.token;
 
-    print('🔍 Loading teams...');
-    print('   API URL: ${ApiConfig.baseUrl}/teams/');
-    print('   Token: ${token?.substring(0, 20)}...');
+    print('Loading teams...');
+    print('API URL: ${ApiConfig.baseUrl}/teams/');
+    print('Token: ${token?.substring(0, 20)}...');
 
     try {
       final response = await http.get(
@@ -105,7 +105,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
         },
       );
 
-      print('📡 Response status: ${response.statusCode}');
+      print('Response status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -115,22 +115,22 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
           _teams = List<Map<String, dynamic>>.from(teams);
         });
         
-        print('✅ Loaded ${_teams.length} teams');
+        print('Loaded ${_teams.length} teams');
         if (_teams.isNotEmpty) {
-          print('   Teams:');
+          print('Teams:');
           for (var team in _teams.take(5)) {
-            print('   - ${team['id']}: ${team['name']} (${team['level']}) - SY: ${team['schoolYear']}, Sem: ${team['semester']}');
+            print('- ${team['id']}: ${team['name']} (${team['level']}) - SY: ${team['schoolYear']}, Sem: ${team['semester']}');
           }
         }
       } else {
-        print('❌ Failed to load teams: ${response.statusCode}');
-        print('   Response body: ${response.body}');
+        print('Failed to load teams: ${response.statusCode}');
+        print('Response body: ${response.body}');
         setState(() {
           _errorMessage = 'Failed to load teams: ${response.statusCode}';
         });
       }
     } catch (e) {
-      print('❌ Error loading teams: $e');
+      print('Error loading teams: $e');
       setState(() {
         _errorMessage = 'Error loading teams: $e';
       });
@@ -286,7 +286,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
 
       var request = http.MultipartRequest(
         'POST',
-        Uri.parse('${ApiConfig.baseUrl}/documents/upload/'),
+        Uri.parse('${ApiConfig.teamDocumentsUrl}/upload/'),
       );
 
       request.headers['Authorization'] = 'Bearer $token';
@@ -890,7 +890,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
   }
 
   Future<void> _downloadDocument(int docId) async {
-    // Implement download: `${ApiConfig.baseUrl}/documents/$docId/download/` with bearer token
+    // Implement download: `${ApiConfig.teamDocumentsUrl}/$docId/download/` with bearer token
     // Open in new tab or download — platform-specific implementation
   }
 
@@ -919,7 +919,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
       final token = authState.token;
 
       final response = await http.delete(
-        Uri.parse('${ApiConfig.baseUrl}/documents/$docId/'),
+        Uri.parse('${ApiConfig.teamDocumentsUrl}/$docId/'),
         headers: {
           'Authorization': 'Bearer $token',
         },

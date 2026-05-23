@@ -1,13 +1,59 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../../services/student_teams_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/student_teams_provider.dart';
 import '../../../utils/csv_file_io.dart';
+import '../../../utils/team_bulk_import_csv.dart';
+import '../../../utils/team_bulk_import_draft.dart';
+import 'team_detail_page.dart';
 import 'widgets/defensys_admin_shell.dart';
+import 'widgets/team_bulk_import_review_table.dart';
+
+List<String> _formatBulkImportErrorLines(dynamic messages) {
+  if (messages is List) {
+    return messages.map((item) => item.toString()).toList();
+  }
+  if (messages is Map) {
+    final lines = <String>[];
+    for (final entry in messages.entries) {
+      final key = entry.key.toString();
+      final value = entry.value;
+      if (value is List) {
+        for (final item in value) {
+          lines.add('$key: $item');
+        }
+      } else {
+        lines.add('$key: $value');
+      }
+    }
+    return lines;
+  }
+  return [messages?.toString() ?? 'Unknown error'];
+}
+
+/// Who is viewing the shared Student Teams screen.
+enum TeamListMode {
+  /// System admin: capstone teams (+ optional PIT filter for audit).
+  capstoneAdmin,
+
+  /// Faculty PIT Lead workspace: PIT teams for assigned year only.
+  pitLead,
+}
 
 class StudentTeamsScreen extends ConsumerStatefulWidget {
-  const StudentTeamsScreen({super.key});
+  const StudentTeamsScreen({
+    super.key,
+    this.mode = TeamListMode.capstoneAdmin,
+    this.onOpenStudentRecords,
+  });
+
+  final TeamListMode mode;
+
+  /// Opens Student Academic Records (rollover) from the admin shell.
+  final VoidCallback? onOpenStudentRecords;
 
   @override
   ConsumerState<StudentTeamsScreen> createState() => _StudentTeamsScreenState();
@@ -25,23 +71,132 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   final _searchController = TextEditingController();
 
+  int? _openTeamId;
+  bool _openTeamCanManage = false;
+
+  bool? _showBulkImport = false;
+  String? _bulkCsv = '';
+  String? _bulkAdviserFilter = 'all';
+  Map<String, dynamic>? _bulkPreview;
+  List<Map<String, dynamic>> _parsedBulkRows = [];
+  bool _showIssuesOnly = false;
+  TeamBulkImportDraft? _savedDraft;
+  Timer? _draftSaveTimer;
+  Timer? _rowPreviewTimer;
+
+  bool get _isBulkImportVisible => _showBulkImport == true;
+  String get _selectedBulkAdviserFilter => _bulkAdviserFilter ?? 'all';
+  String get _csvDraft => _bulkCsv ?? '';
+
+  bool get _isCapstoneAdmin => widget.mode == TeamListMode.capstoneAdmin;
+
+  bool get _isPitLeadManager => widget.mode == TeamListMode.pitLead;
+
+  bool get _pitTermIsAudit =>
+      _isPitLeadManager && ref.read(studentTeamsProvider).operatingMode == 'audit';
+
+  String _teamListScope = 'active';
+
+  String? get _pitLeadYear {
+    if (!_isPitLeadManager) {
+      return null;
+    }
+    final faculty = ref.read(dashboardProvider('faculty')).data;
+    final topLevel = faculty?['pit_lead_year']?.toString().trim();
+    if (topLevel != null && topLevel.isNotEmpty) {
+      return topLevel;
+    }
+    final roles =
+        (faculty?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+    final year = roles['pit_lead_year']?.toString().trim();
+    return year != null && year.isNotEmpty ? year : null;
+  }
+
+  /// Admin dropdown may display Capstone while [state.level] is still empty
+  /// until the first fetch completes or admin dashboard loads.
+  String _teamLevelFilter(StudentTeamsState state) {
+    if (!_isCapstoneAdmin) {
+      return state.level;
+    }
+    final level = state.level.trim();
+    if (level.isEmpty || level == 'Capstone') {
+      return 'Capstone';
+    }
+    return level;
+  }
+
+  bool _isPitContext(StudentTeamsState state) =>
+      _isPitLeadManager ||
+      (_isCapstoneAdmin && _teamLevelFilter(state) == 'PIT');
+
+  bool _teamIsPit(Map<String, dynamic> team) =>
+      team['level']?.toString().toUpperCase().contains('PIT') ?? false;
+
+  void _deriveLevelOnRow(Map<String, dynamic> row) {
+    applyDerivedLevelToRow(
+      row,
+      isCapstoneAdmin: _isCapstoneAdmin,
+      pitLeadYear: _pitLeadYear,
+    );
+  }
+
+  void _deriveLevelsOnRows(List<Map<String, dynamic>> rows) {
+    for (final row in rows) {
+      _deriveLevelOnRow(row);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(studentTeamsProvider.notifier).fetchTeams();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadBulkDraft();
+      _fetchTeamsForCurrentRole();
     });
+  }
+
+  void _fetchTeamsForCurrentRole({String? scope}) {
+    final initialLevel = _isCapstoneAdmin ? 'Capstone' : '';
+    ref.read(studentTeamsProvider.notifier).fetchTeams(
+          level: initialLevel,
+          scope: _isPitLeadManager ? (scope ?? _teamListScope) : null,
+        );
   }
 
   @override
   void dispose() {
+    _draftSaveTimer?.cancel();
+    _rowPreviewTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (_isPitLeadManager) {
+      ref.watch(dashboardProvider('faculty'));
+    }
     final state = ref.watch(studentTeamsProvider);
+
+    if (_isBulkImportVisible) {
+      return _bulkImportPage(state);
+    }
+
+    if (_openTeamId != null) {
+      return TeamDetailPage(
+        teamId: _openTeamId!,
+        canManage: _openTeamCanManage,
+        isPitLead: _isPitLeadManager,
+        pitLeadYear: _pitLeadYear,
+        onBack: () {
+          setState(() => _openTeamId = null);
+          ref.read(studentTeamsProvider.notifier).fetchTeams();
+        },
+        onDeleted: () {
+          setState(() => _openTeamId = null);
+        },
+      );
+    }
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -51,8 +206,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           DefensysPageHeader(
             icon: Icons.groups_2_rounded,
             title: 'Student Teams',
-            subtitle:
-                'Manage all capstone project teams, assign advisers, and review defense context.',
+            subtitle: _isCapstoneAdmin
+                ? 'Manage capstone project teams, assign advisers, and review defense context.'
+                : 'Manage PIT teams and PIT events for your assigned year level.',
             actions: _headerActions(state),
           ),
           const SizedBox(height: 26),
@@ -65,6 +221,19 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             const SizedBox(height: 14),
             _notice(state.message!),
           ],
+          if (state.operatingMessage != null &&
+              state.operatingMessage!.trim().isNotEmpty) ...[
+            const SizedBox(height: 14),
+            _notice(state.operatingMessage!, warning: _pitTermIsAudit),
+          ],
+          if (_isPitLeadManager) ...[
+            const SizedBox(height: 14),
+            _pitTeamScopeToggle(state),
+          ],
+          if (_savedDraft != null && !_isBulkImportVisible) ...[
+            const SizedBox(height: 14),
+            _draftResumeBanner(),
+          ],
           const SizedBox(height: 22),
           _teamsTableCard(state),
         ],
@@ -72,7 +241,97 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
   }
 
+  bool _canCreateCapstoneTeams(StudentTeamsState state) =>
+      !_isCapstoneAdmin || state.canCreateCapstoneTeams;
+
+  bool _canManageTeams(StudentTeamsState state) {
+    if (_pitTermIsAudit || state.operatingMode == 'audit') {
+      return false;
+    }
+    return _isPitLeadManager ||
+        (_isCapstoneAdmin && _teamLevelFilter(state) == 'PIT') ||
+        _canCreateCapstoneTeams(state);
+  }
+
+  bool _shouldBlockCapstoneCreate(StudentTeamsState state) =>
+      _isCapstoneAdmin &&
+      _teamLevelFilter(state) == 'Capstone' &&
+      !state.canCreateCapstoneTeams;
+
+  bool _canTapTeamActions(StudentTeamsState state) =>
+      !state.isSaving &&
+      (_canManageTeams(state) ||
+          (_isCapstoneAdmin && _teamLevelFilter(state) == 'Capstone'));
+
+  Future<void> _showCapstoneCreationBlockedDialog(
+    StudentTeamsState state,
+  ) async {
+    final message = state.capstoneModeMessage?.trim();
+    if (message == null || message.isEmpty || !mounted) {
+      return;
+    }
+
+    final isCapstone2 = state.capstoneMode == 'capstone_2_continue';
+
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Capstone team creation closed'),
+        content: SizedBox(
+          width: 480,
+          child: Text(
+            message,
+            style: const TextStyle(
+              color: Color(0xFF374151),
+              fontSize: 14,
+              height: 1.45,
+            ),
+          ),
+        ),
+        actions: [
+          if (isCapstone2 && widget.onOpenStudentRecords != null)
+            TextButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                widget.onOpenStudentRecords?.call();
+              },
+              child: const Text('Student Records'),
+            ),
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _onBulkImportPressed(StudentTeamsState state) {
+    if (_shouldBlockCapstoneCreate(state)) {
+      _showCapstoneCreationBlockedDialog(state);
+      return;
+    }
+    if (!_canManageTeams(state) || state.isSaving) {
+      return;
+    }
+    _openBulkImport();
+  }
+
+  void _onCreateTeamPressed(StudentTeamsState state) {
+    if (_shouldBlockCapstoneCreate(state)) {
+      _showCapstoneCreationBlockedDialog(state);
+      return;
+    }
+    if (!_canManageTeams(state) || state.isSaving) {
+      return;
+    }
+    _showTeamDialog();
+  }
+
   Widget _headerActions(StudentTeamsState state) {
+    final canTapActions = _canTapTeamActions(state);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -83,65 +342,68 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         ),
         const SizedBox(width: 14),
         _secondaryButton(
-          icon: Icons.input_rounded,
-          label: 'Import Teams',
-          onTap: state.isSaving ? null : _pickTeamsCsv,
+          icon: Icons.output_rounded,
+          label: 'Bulk Import',
+          onTap: canTapActions ? () => _onBulkImportPressed(state) : null,
         ),
         const SizedBox(width: 14),
         _primaryButton(
           icon: Icons.add_rounded,
           label: 'Create New Team',
-          onTap: state.isSaving ? null : () => _showTeamDialog(),
+          onTap: canTapActions ? () => _onCreateTeamPressed(state) : null,
         ),
       ],
     );
   }
 
   Widget _summaryCards(StudentTeamsState state) {
-    return Row(
-      children: [
-        Expanded(
-          child: _summaryCard(
-            title: 'All Teams',
-            value: _count(state, 'all'),
-            subtitle: '',
-            icon: Icons.groups_2_rounded,
-            selected: true,
-          ),
+    final hideAdviser = _isPitContext(state);
+    final cards = <Widget>[
+      Expanded(
+        child: _summaryCard(
+          title: 'All Teams',
+          value: _count(state, 'all'),
+          subtitle: '',
+          icon: Icons.groups_2_rounded,
+          selected: true,
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _summaryCard(
-            title: 'Result Pending',
-            value: _count(state, 'pending'),
-            subtitle: 'Awaiting decision',
-            icon: Icons.schedule_rounded,
-            iconColor: const Color(0xFFB45309),
-            iconBg: const Color(0xFFFEF3C7),
-          ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: _summaryCard(
+          title: 'Result Pending',
+          value: _count(state, 'pending'),
+          subtitle: 'Awaiting decision',
+          icon: Icons.schedule_rounded,
+          iconColor: const Color(0xFFB45309),
+          iconBg: const Color(0xFFFEF3C7),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _summaryCard(
-            title: 'Approved',
-            value: _count(state, 'approved'),
-            subtitle: 'Passed',
-            icon: Icons.check_circle_rounded,
-            iconColor: const Color(0xFF047857),
-            iconBg: const Color(0xFFD1FAE5),
-          ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: _summaryCard(
+          title: 'Approved',
+          value: _count(state, 'approved'),
+          subtitle: 'Passed',
+          icon: Icons.check_circle_rounded,
+          iconColor: const Color(0xFF047857),
+          iconBg: const Color(0xFFD1FAE5),
         ),
-        const SizedBox(width: 12),
-        Expanded(
-          child: _summaryCard(
-            title: 'Failed',
-            value: _count(state, 'failed'),
-            subtitle: 'Teams',
-            icon: Icons.cancel_rounded,
-            iconColor: const Color(0xFFB91C1C),
-            iconBg: const Color(0xFFFEE2E2),
-          ),
+      ),
+      const SizedBox(width: 12),
+      Expanded(
+        child: _summaryCard(
+          title: 'Failed',
+          value: _count(state, 'failed'),
+          subtitle: 'Teams',
+          icon: Icons.cancel_rounded,
+          iconColor: const Color(0xFFB91C1C),
+          iconBg: const Color(0xFFFEE2E2),
         ),
+      ),
+    ];
+    if (!hideAdviser) {
+      cards.addAll([
         const SizedBox(width: 12),
         Expanded(
           child: _summaryCard(
@@ -153,8 +415,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             iconBg: const Color(0xFFFEF3C7),
           ),
         ),
-      ],
-    );
+      ]);
+    }
+    return Row(children: cards);
   }
 
   Widget _summaryCard({
@@ -245,8 +508,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _teamsTableCard(StudentTeamsState state) {
-    return DefensysCard(
+    return Container(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      decoration: DefensysUi.cardDecoration(),
+      clipBehavior: Clip.none,
       child: Column(
         children: [
           Row(
@@ -296,7 +561,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 19),
-          hintText: 'Search by project title, leader, or adviser...',
+          hintText: _isPitContext(state)
+              ? 'Search by project title or leader...'
+              : 'Search by project title, leader, or adviser...',
           hintStyle: const TextStyle(color: _muted, fontSize: 13),
           filled: true,
           fillColor: const Color(0xFFF3F4F6),
@@ -325,18 +592,24 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _levelFilter(StudentTeamsState state) {
+    if (_isPitLeadManager) {
+      return const SizedBox.shrink();
+    }
+
     final levelItems = <DropdownMenuItem<String>>[
       const DropdownMenuItem(
         value: 'Capstone',
-        child: Text('All Capstone Teams'),
+        child: Text('Capstone Teams'),
       ),
-      const DropdownMenuItem(value: '', child: Text('All Teams')),
-      ...state.levels.map(
-        (level) => DropdownMenuItem(value: level, child: Text(level)),
+      const DropdownMenuItem(
+        value: 'PIT',
+        child: Text('PIT Teams'),
       ),
     ];
     final values = levelItems.map((item) => item.value).toSet();
-    final safeValue = values.contains(state.level) ? state.level : 'Capstone';
+    final safeValue = values.contains(_teamLevelFilter(state))
+        ? _teamLevelFilter(state)
+        : 'Capstone';
 
     return Container(
       width: 220,
@@ -372,22 +645,25 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _teamsTable(StudentTeamsState state) {
+    final hideAdviser = _isPitContext(state);
+    final pitOnlyView = hideAdviser;
+    final columns = <_ColumnSpec>[
+      const _ColumnSpec('Project Title', 1.45),
+      const _ColumnSpec('Year Level', 1.0),
+      const _ColumnSpec('Team Result', 1.12),
+      _ColumnSpec(pitOnlyView ? 'PIT Event' : 'Defense Context', 1.42),
+      const _ColumnSpec('Leader', 0.78),
+      if (!hideAdviser) const _ColumnSpec('Adviser', 0.85),
+      const _ColumnSpec('Members', 0.98),
+      const _ColumnSpec('Details', 0.55),
+    ];
     return Column(
       children: [
-        _tableHeader(const [
-          _ColumnSpec('Project Title', 1.45),
-          _ColumnSpec('Year Level', 1.0),
-          _ColumnSpec('Team Result', 1.12),
-          _ColumnSpec('Defense Context', 1.42),
-          _ColumnSpec('Leader', 0.78),
-          _ColumnSpec('Adviser', 0.85),
-          _ColumnSpec('Members', 0.98),
-          _ColumnSpec('Action', 0.74),
-        ]),
+        _tableHeader(columns),
         if (state.teams.isEmpty)
           _emptyRows()
         else
-          ...state.teams.map((team) => _teamRow(state, team)),
+          ...state.teams.map((team) => _teamRow(state, team, hideAdviser: hideAdviser)),
       ],
     );
   }
@@ -423,7 +699,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
   }
 
-  Widget _teamRow(StudentTeamsState state, Map<String, dynamic> team) {
+  Widget _teamRow(
+    StudentTeamsState state,
+    Map<String, dynamic> team, {
+    required bool hideAdviser,
+  }) {
     return Container(
       constraints: const BoxConstraints(minHeight: 58),
       decoration: const BoxDecoration(
@@ -454,12 +734,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             _bodyText(team['leader_name']?.toString() ?? '-'),
             flex: 0.78,
           ),
-          _tableCell(
-            _bodyText(team['adviser_name']?.toString() ?? '-'),
-            flex: 0.85,
-          ),
+          if (!hideAdviser)
+            _tableCell(
+              _bodyText(team['adviser_name']?.toString() ?? '-'),
+              flex: 0.85,
+            ),
           _tableCell(_bodyText('${team['member_count'] ?? 0}'), flex: 0.98),
-          _tableCell(_rowActions(state, team), flex: 0.74),
+          _tableCell(_rowActions(state, team), flex: 0.55),
         ],
       ),
     );
@@ -536,28 +817,47 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   Widget _rowActions(StudentTeamsState state, Map<String, dynamic> team) {
     final teamId = _asInt(team['id']);
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: state.isSaving ? null : () => _showTeamDialog(team),
-          borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.edit_square, color: _blue, size: 18),
-          ),
+    return Tooltip(
+      message: 'View team details',
+      child: InkWell(
+        onTap: state.isSaving || teamId == null
+            ? null
+            : () => setState(() {
+                _openTeamId = teamId;
+                _openTeamCanManage = team['is_editable'] == true;
+              }),
+        borderRadius: BorderRadius.circular(6),
+        child: const Padding(
+          padding: EdgeInsets.all(4),
+          child: Icon(Icons.info_outline, color: _blue, size: 18),
         ),
-        const SizedBox(width: 3),
-        InkWell(
-          onTap: state.isSaving || teamId == null
+      ),
+    );
+  }
+
+  Widget _pitTeamScopeToggle(StudentTeamsState state) {
+    return Row(
+      children: [
+        ChoiceChip(
+          label: const Text('Current term'),
+          selected: _teamListScope == 'active',
+          onSelected: state.isSaving
               ? null
-              : () =>
-                    _confirmDelete(teamId, team['name']?.toString() ?? 'team'),
-          borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.delete_rounded, color: _red, size: 18),
-          ),
+              : (_) {
+                  setState(() => _teamListScope = 'active');
+                  _fetchTeamsForCurrentRole(scope: 'active');
+                },
+        ),
+        const SizedBox(width: 8),
+        ChoiceChip(
+          label: const Text('History'),
+          selected: _teamListScope == 'history',
+          onSelected: state.isSaving
+              ? null
+              : (_) {
+                  setState(() => _teamListScope = 'history');
+                  _fetchTeamsForCurrentRole(scope: 'history');
+                },
         ),
       ],
     );
@@ -631,78 +931,1073 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Future<void> _downloadCsvTemplate() async {
+    if (_isPitLeadManager) {
+      final year = _pitLeadYear ?? '3rd Year';
+      await downloadTextFile(
+        filename: sampleTeamCsvFilenameForYear(year),
+        content: sampleTeamCsvForYear(year, isCapstoneAdmin: false),
+      );
+      return;
+    }
+
+    final yearLevel = await showDialog<String>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Download sample team CSV'),
+        content: SizedBox(
+          width: 360,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text(
+                'Each file has one team with four members for that year level. '
+                'Import the matching student batch from User Management first.',
+                style: TextStyle(fontSize: 13.5, height: 1.45),
+              ),
+              const SizedBox(height: 16),
+              for (final year in teamSampleYearLevels)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: OutlinedButton(
+                    onPressed: () => Navigator.of(dialogContext).pop(year),
+                    child: Text(year),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Cancel'),
+          ),
+        ],
+      ),
+    );
+
+    if (yearLevel == null || !mounted) {
+      return;
+    }
+
     await downloadTextFile(
-      filename: 'defensys-team-import-template.csv',
-      content: _sampleTeamCsvTemplate,
+      filename: sampleTeamCsvFilenameForYear(yearLevel),
+      content: sampleTeamCsvForYear(
+        yearLevel,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      ),
     );
   }
 
-  Future<void> _pickTeamsCsv() async {
+  Future<void> _loadBulkDraft() async {
+    final draft = await loadTeamBulkImportDraft();
+    if (!mounted || draft == null) {
+      return;
+    }
+    final rows = draft.rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    _deriveLevelsOnRows(rows);
+    setState(() {
+      _savedDraft = draft;
+      _parsedBulkRows = rows;
+      _bulkAdviserFilter = draft.adviserFilter;
+      _bulkPreview = draft.preview;
+      _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+    });
+  }
+
+  Future<void> _persistBulkDraft() async {
+    if (_parsedBulkRows.isEmpty) {
+      await clearTeamBulkImportDraft();
+      if (mounted) {
+        setState(() => _savedDraft = null);
+      }
+      return;
+    }
+
+    final draft = TeamBulkImportDraft(
+      rows: _parsedBulkRows
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList(),
+      preview: _bulkPreview,
+      adviserFilter: _selectedBulkAdviserFilter,
+      savedAt: DateTime.now(),
+      issueCount: countPreviewIssues(_bulkPreview),
+    );
+    await saveTeamBulkImportDraft(draft);
+    if (mounted) {
+      setState(() => _savedDraft = draft);
+    }
+  }
+
+  void _scheduleDraftSave() {
+    _draftSaveTimer?.cancel();
+    _draftSaveTimer = Timer(const Duration(milliseconds: 500), () {
+      _persistBulkDraft();
+    });
+  }
+
+  Future<void> _discardBulkDraft() async {
+    await clearTeamBulkImportDraft();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedDraft = null;
+      _parsedBulkRows = [];
+      _bulkCsv = '';
+      _bulkPreview = null;
+    });
+  }
+
+  void _openBulkImport({bool resumeDraft = false}) {
+    if (resumeDraft && _savedDraft != null) {
+      setState(() {
+        _showBulkImport = true;
+        _parsedBulkRows = _savedDraft!.rows
+            .map((row) => Map<String, dynamic>.from(row))
+            .toList();
+        _bulkAdviserFilter = _savedDraft!.adviserFilter;
+        _bulkPreview = _savedDraft!.preview;
+        _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+      });
+      _refreshBulkPreview();
+      return;
+    }
+
+    setState(() => _showBulkImport = true);
+  }
+
+  void _closeBulkImport({bool clearDraft = false}) {
+    if (clearDraft) {
+      _discardBulkDraft();
+    } else {
+      _scheduleDraftSave();
+    }
+    setState(() {
+      _showBulkImport = false;
+    });
+  }
+
+  void _applyParsedRows(List<Map<String, dynamic>> rows) {
+    final normalized = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+    _deriveLevelsOnRows(normalized);
+    setState(() {
+      _parsedBulkRows = normalized;
+      _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+    });
+    _scheduleDraftSave();
+    _refreshBulkPreview();
+  }
+
+  Widget _draftResumeBanner() {
+    final draft = _savedDraft!;
+    final issueCount = draft.issueCount > 0
+        ? draft.issueCount
+        : countPreviewIssues(draft.preview);
+    final savedLabel = MaterialLocalizations.of(context).formatShortDate(draft.savedAt);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.pending_actions_rounded, color: _blue, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              issueCount > 0
+                  ? 'Unfinished bulk import — $issueCount row${issueCount == 1 ? '' : 's'} need fixes · Saved $savedLabel'
+                  : 'Unfinished bulk import · Saved $savedLabel',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _secondaryButton(
+            icon: Icons.play_arrow_rounded,
+            label: 'Resume',
+            onTap: () => _openBulkImport(resumeDraft: true),
+          ),
+          const SizedBox(width: 8),
+          _secondaryButton(
+            icon: Icons.delete_outline_rounded,
+            label: 'Discard',
+            onTap: _discardBulkDraft,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bulkImportPage(StudentTeamsState state) {
+    return SingleChildScrollView(
+      padding: DefensysUi.contentPadding,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DefensysPageHeader(
+            icon: Icons.output_rounded,
+            title: 'Bulk Import Teams',
+            subtitle:
+                'Upload a CSV, review teams in the table, fix issues inline, then import ready rows.',
+            actions: _secondaryButton(
+              icon: Icons.arrow_back_rounded,
+              label: 'Back to Teams',
+              onTap: state.isSaving ? null : () => _closeBulkImport(),
+            ),
+          ),
+          if (state.error != null) ...[
+            const SizedBox(height: 14),
+            _notice(state.error!, warning: true),
+          ],
+          if (state.message != null) ...[
+            const SizedBox(height: 14),
+            _notice(state.message!),
+          ],
+          const SizedBox(height: 28),
+          _teamCsvFormatCard(),
+          const SizedBox(height: 20),
+          _teamUploadCsvCard(state),
+        ],
+      ),
+    );
+  }
+
+  Widget _teamCsvFormatCard() {
+    final columns = _isCapstoneAdmin
+        ? const [
+            'team_name',
+            'project_title',
+            'year_level',
+            'member_ids',
+            'leader_id',
+            'adviser_id',
+          ]
+        : const [
+            'team_name',
+            'project_title',
+            'member_ids',
+            'leader_id',
+          ];
+    final values = _isCapstoneAdmin
+        ? const [
+            'Team VaultSync',
+            'Cloud File Sync',
+            '3rd Year',
+            'Juan Dela Cruz|Maria Santos',
+            'Juan Dela Cruz',
+            'Ada Lovelace',
+          ]
+        : const [
+            'Team CodeLearners',
+            'Smart Campus Navigator',
+            'Carlos Reyes|Maria Santos',
+            'Carlos Reyes',
+          ];
+
+    return DefensysCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 20, 24, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'CSV Format',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Your CSV must follow this column structure exactly. Column order matters.',
+                  style: TextStyle(
+                    color: Color(0xFF536079),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(height: 1, color: _line),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _bulkSampleTable(columns, values),
+                const SizedBox(height: 14),
+                _infoBanner(
+                  _isCapstoneAdmin
+                      ? 'Use full names (First Last) for members, leader, and adviser. Pipe-separate members. Capitalization is ignored; spelling must match User Management.'
+                      : 'Use full names (First Last) for members and leader. Program is set to ${_pitLeadYear ?? "your year"} PIT automatically. Pipe-separate members.',
+                ),
+                const SizedBox(height: 16),
+                _secondaryButton(
+                  icon: Icons.file_download_rounded,
+                  label: 'Download Sample Template',
+                  onTap: _downloadCsvTemplate,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bulkSampleTable(List<String> columns, List<String> values) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFDDE2EA)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 38,
+            color: const Color(0xFFF8FAFC),
+            child: Row(
+              children: columns
+                  .map(
+                    (column) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          column,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          Container(
+            height: 40,
+            alignment: Alignment.centerLeft,
+            child: Row(
+              children: values
+                  .map(
+                    (value) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          value,
+                          style: const TextStyle(
+                            color: Color(0xFF536079),
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w500,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoBanner(String message) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFFCD34D)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_rounded, color: Color(0xFFB45309), size: 18),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFFB45309),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _teamUploadCsvCard(StudentTeamsState state) {
+    return DefensysCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(24, 20, 24, 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Upload CSV',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 4),
+                Text(
+                  'Upload a CSV or resume a draft, edit rows in the review table, then import ready teams.',
+                  style: TextStyle(
+                    color: Color(0xFF536079),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(height: 1, color: _line),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (_isCapstoneAdmin) ...[
+                  _fieldLabel('ADVISER IMPORT FILTER'),
+                  const SizedBox(height: 8),
+                  _dropdownBox(
+                    value: _selectedBulkAdviserFilter,
+                    hint: 'Select filter',
+                    onChanged: state.isSaving
+                        ? null
+                        : (value) {
+                            if (value == null) return;
+                            setState(() => _bulkAdviserFilter = value);
+                            _refreshBulkPreview();
+                            _scheduleDraftSave();
+                          },
+                    items: const [
+                      DropdownMenuItem(value: 'all', child: Text('All teams')),
+                      DropdownMenuItem(
+                        value: 'with_adviser',
+                        child: Text('With adviser only'),
+                      ),
+                      DropdownMenuItem(
+                        value: 'without_adviser',
+                        child: Text('Without adviser only'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+                ],
+                const Text(
+                  'CSV source (upload / paste)',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _fieldLabel('CSV FILE'),
+                const SizedBox(height: 8),
+                _bulkUploadDropZone(state),
+                if (_parsedBulkRows.isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _teamBulkReviewSection(state),
+                ],
+                const SizedBox(height: 22),
+                Row(
+                  children: [
+                    _primaryButton(
+                      icon: Icons.system_update_alt_rounded,
+                      label: state.isSaving
+                          ? 'Importing...'
+                          : 'Import ready teams',
+                      onTap: state.isSaving || _parsedBulkRows.isEmpty
+                          ? null
+                          : _importBulkTeams,
+                    ),
+                    const SizedBox(width: 12),
+                    if (_parsedBulkRows.isNotEmpty)
+                      _secondaryButton(
+                        icon: Icons.file_download_rounded,
+                        label: 'Export CSV',
+                        onTap: _exportBulkCsv,
+                      ),
+                    const SizedBox(width: 12),
+                    _secondaryButton(
+                      icon: Icons.close_rounded,
+                      label: 'Cancel',
+                      onTap: state.isSaving ? null : () => _closeBulkImport(),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _teamBulkReviewSection(StudentTeamsState state) {
+    final summary = (_bulkPreview?['summary'] as Map?)?.cast<String, dynamic>() ?? {};
+    final previewRows = (_bulkPreview?['rows'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    final readyCount = _asInt(summary['ready']) ?? 0;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFDDE2EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fact_check_rounded, color: _maroon, size: 16),
+              const SizedBox(width: 6),
+              const Expanded(
+                child: Text(
+                  'Review & fix teams',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              FilterChip(
+                label: const Text('Issues only'),
+                selected: _showIssuesOnly,
+                onSelected: state.isSaving
+                    ? null
+                    : (value) => setState(() => _showIssuesOnly = value),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            '${summary['total'] ?? _parsedBulkRows.length} rows · $readyCount ready to import',
+            style: const TextStyle(
+              color: Color(0xFF667085),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 16),
+          TeamBulkImportReviewTable(
+            rows: _parsedBulkRows,
+            previewRows: previewRows,
+            isCapstoneAdmin: _isCapstoneAdmin,
+            pitLeadYear: _pitLeadYear,
+            showIssuesOnly: _showIssuesOnly,
+            onRowChanged: _scheduleRowPreview,
+            onDeleteRow: _deleteBulkRow,
+            onAddRow: _addBulkRow,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _scheduleRowPreview(int index) {
+    _scheduleDraftSave();
+    _rowPreviewTimer?.cancel();
+    _rowPreviewTimer = Timer(const Duration(milliseconds: 500), () {
+      _preflightSingleRow(index);
+    });
+  }
+
+  Future<void> _preflightSingleRow(int index) async {
+    if (index < 0 || index >= _parsedBulkRows.length) {
+      return;
+    }
+    final row = Map<String, dynamic>.from(_parsedBulkRows[index]);
+    if (!_isCapstoneAdmin) {
+      _deriveLevelOnRow(row);
+    }
+    _parsedBulkRows[index] = row;
+    final preview = await ref.read(studentTeamsProvider.notifier).bulkImportPreview(
+      [row],
+      adviserFilter: _selectedBulkAdviserFilter,
+    );
+    if (!mounted || preview == null) {
+      return;
+    }
+    final previewRows = (preview['rows'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    if (previewRows.isEmpty) {
+      return;
+    }
+
+    final previewRow = previewRows.first;
+    if (_isCapstoneAdmin) {
+      final inferredYear = previewRow['year_level']?.toString();
+      final inferredLevel = previewRow['level']?.toString();
+      if (inferredYear != null && inferredYear.isNotEmpty) {
+        row['year_level'] = inferredYear;
+      }
+      if (inferredLevel != null && inferredLevel.isNotEmpty) {
+        row['level'] = inferredLevel;
+      }
+      _parsedBulkRows[index] = row;
+    }
+
+    final existing = (_bulkPreview?['rows'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    final rowNumber = index + 1;
+    final updated = [
+      for (final item in existing)
+        if (item['row'] != rowNumber) item,
+      {...previewRows.first, 'row': rowNumber, 'sheet_row': rowNumber + 1},
+    ];
+    updated.sort((a, b) => (a['row'] as int).compareTo(b['row'] as int));
+
+    final ready = updated.where((item) => item['ready'] == true).length;
+    setState(() {
+      _bulkPreview = {
+        'rows': updated,
+        'summary': {
+          'total': _parsedBulkRows.length,
+          'ready': ready,
+          'with_adviser': updated
+              .where((item) => item['adviser_status'] == 'valid')
+              .length,
+          'without_adviser': updated
+              .where((item) => item['adviser_status'] == 'none')
+              .length,
+          'adviser_invalid': updated.where((item) {
+            final status = item['adviser_status']?.toString() ?? '';
+            return status != 'valid' && status != 'none';
+          }).length,
+        },
+      };
+    });
+    _scheduleDraftSave();
+  }
+
+  void _addBulkRow() {
+    final row = <String, dynamic>{
+      'team_name': '',
+      'project_title': '',
+      if (!_isCapstoneAdmin) 'year_level': _pitLeadYear ?? '3rd Year',
+      'member_ids': <String>[],
+      'leader_id': '',
+      'adviser_id': '',
+    };
+    _deriveLevelOnRow(row);
+    setState(() {
+      _parsedBulkRows = [..._parsedBulkRows, row];
+      _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+    });
+    _refreshBulkPreview();
+  }
+
+  void _deleteBulkRow(int index) {
+    setState(() {
+      _parsedBulkRows = [
+        for (var i = 0; i < _parsedBulkRows.length; i++)
+          if (i != index) _parsedBulkRows[i],
+      ];
+      _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+    });
+    _refreshBulkPreview();
+  }
+
+  Future<void> _exportBulkCsv() async {
+    if (_parsedBulkRows.isEmpty) {
+      return;
+    }
+    await downloadTextFile(
+      filename: 'defensys-team-import-draft.csv',
+      content: rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      ),
+    );
+  }
+
+  Widget _bulkUploadDropZone(StudentTeamsState state) {
+    final csv = _csvDraft;
+    final parsedRows = _parsedBulkRows.isNotEmpty
+        ? _parsedBulkRows.length
+        : _parseCsv(csv).length;
+
+    return InkWell(
+      onTap: state.isSaving ? null : _pickBulkCsvFile,
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        width: double.infinity,
+        height: 136,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFCBD5E1), width: 1.5),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.cloud_upload_rounded,
+              color: Color(0xFF98A2B3),
+              size: 34,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              csv.trim().isEmpty
+                  ? 'Click to choose a CSV file'
+                  : 'CSV content ready for preflight',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              csv.trim().isEmpty
+                  ? 'Only .csv files accepted'
+                  : '$parsedRows valid row${parsedRows == 1 ? '' : 's'} detected',
+              style: const TextStyle(
+                color: Color(0xFF98A2B3),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _fieldLabel(String label) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: Color(0xFF667085),
+        fontSize: 11,
+        fontWeight: FontWeight.w900,
+        letterSpacing: 0.5,
+      ),
+    );
+  }
+
+  Widget _dropdownBox({
+    required String? value,
+    required String hint,
+    required List<DropdownMenuItem<String>> items,
+    required ValueChanged<String?>? onChanged,
+  }) {
+    return Container(
+      height: 43,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: onChanged == null ? const Color(0xFFF3F4F6) : Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: value,
+          hint: Text(hint),
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 19),
+          style: const TextStyle(
+            color: _ink,
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: 13,
+            fontWeight: FontWeight.w500,
+          ),
+          items: items,
+          onChanged: onChanged,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickBulkCsvFile() async {
     try {
       final csv = await pickCsvTextFile();
       if (!mounted || csv == null) {
         return;
       }
 
-      final rows = _parseCsv(csv);
+      final rows = parseTeamBulkCsvWithContext(
+        csv,
+        isCapstoneAdmin: _isCapstoneAdmin,
+        pitLeadYear: _pitLeadYear,
+      );
       if (rows.isEmpty) {
         _snack('Selected file is not a valid DefenSYS team CSV template.');
         return;
       }
 
-      await ref.read(studentTeamsProvider.notifier).bulkImport(rows);
+      _applyParsedRows(rows);
     } catch (e) {
       _snack('Could not read CSV file: $e');
     }
   }
 
-  Future<void> _showTeamDialog([Map<String, dynamic>? team]) async {
-    final editing = team != null;
-    final state = ref.read(studentTeamsProvider);
-    
-    // Check if user is PIT Lead (from dashboard provider)
-    final dashState = ref.read(dashboardProvider('faculty'));
-    final roles = (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
-    final isPitLead = roles['pit_lead'] == true;
-    final isAdviser = roles['adviser'] == true;
-    
-    // Filter level options based on user role
-    List<String> levelOptions;
-    if (isPitLead && !isAdviser) {
-      // PIT Lead only - show only PIT levels
-      levelOptions = state.levels.where((level) => level.toUpperCase().contains('PIT')).toList();
-      if (levelOptions.isEmpty) {
-        levelOptions = const ['1st Year PIT', '2nd Year PIT', '3rd Year PIT'];
+  Future<void> _refreshBulkPreview() async {
+    if (_parsedBulkRows.isEmpty) {
+      final rows = parseTeamBulkCsvWithContext(
+        _csvDraft,
+        isCapstoneAdmin: _isCapstoneAdmin,
+        pitLeadYear: _pitLeadYear,
+      );
+      if (rows.isEmpty) {
+        setState(() => _bulkPreview = null);
+        return;
       }
-    } else {
-      // Admin or Adviser - show all levels
-      levelOptions = state.levels.isEmpty
-          ? const ['3rd Year Capstone', '4th Year Capstone']
-          : state.levels;
+      final normalized = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+      _deriveLevelsOnRows(normalized);
+      setState(() => _parsedBulkRows = normalized);
     }
-    
+
+    _deriveLevelsOnRows(_parsedBulkRows);
+
+    if (_parsedBulkRows.isEmpty) {
+      setState(() => _bulkPreview = null);
+      return;
+    }
+
+    final preview = await ref.read(studentTeamsProvider.notifier).bulkImportPreview(
+      _parsedBulkRows,
+      adviserFilter: _selectedBulkAdviserFilter,
+    );
+    if (!mounted) return;
+    setState(() => _bulkPreview = preview);
+    _scheduleDraftSave();
+  }
+
+  List<Map<String, dynamic>> _readyRowsForImport() {
+    final previewRows = (_bulkPreview?['rows'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+    if (previewRows.isEmpty) {
+      return _parsedBulkRows;
+    }
+
+    final readyNumbers = previewRows
+        .where((item) => item['ready'] == true)
+        .map((item) => item['row'] as int)
+        .toSet();
+
+    if (readyNumbers.isEmpty) {
+      return [];
+    }
+
+    final ready = <Map<String, dynamic>>[];
+    for (var index = 0; index < _parsedBulkRows.length; index++) {
+      if (readyNumbers.contains(index + 1)) {
+        ready.add(Map<String, dynamic>.from(_parsedBulkRows[index]));
+      }
+    }
+    return ready;
+  }
+
+  Future<void> _importBulkTeams() async {
+    if (_parsedBulkRows.isEmpty) {
+      _snack('Upload a CSV or add rows to import.');
+      return;
+    }
+
+    if (_bulkPreview == null) {
+      await _refreshBulkPreview();
+    }
+
+    final rows = _readyRowsForImport();
+    if (rows.isEmpty) {
+      _snack('No ready rows to import. Fix issues in the table first.');
+      return;
+    }
+
+    final result = await ref.read(studentTeamsProvider.notifier).bulkImport(
+      rows,
+      adviserFilter: _selectedBulkAdviserFilter,
+    );
+
+    if (!mounted || result == null) {
+      return;
+    }
+
+    final created = _asInt(result['created_count']) ?? 0;
+    final errorCount = _asInt(result['error_count']) ?? 0;
+    final importedRows = result['imported_rows'] as List? ?? const [];
+
+    if (errorCount > 0) {
+      _showImportResultDialog(result);
+    }
+
+    final remaining = trimRowsAfterImport(
+      rows: _parsedBulkRows,
+      importedRows: importedRows,
+    );
+
+    if (remaining.isEmpty) {
+      await _discardBulkDraft();
+      if (!mounted) return;
+      setState(() {
+        _showBulkImport = false;
+        _parsedBulkRows = [];
+        _bulkCsv = '';
+        _bulkPreview = null;
+      });
+      _snack('$created team${created == 1 ? '' : 's'} imported.');
+      return;
+    }
+
+    setState(() {
+      _parsedBulkRows = remaining;
+      _bulkCsv = rowsToTeamCsv(
+        _parsedBulkRows,
+        isCapstoneAdmin: _isCapstoneAdmin,
+      );
+    });
+    await _refreshBulkPreview();
+    _snack(
+      'Imported $created team${created == 1 ? '' : 's'}. '
+      '${remaining.length} row${remaining.length == 1 ? '' : 's'} still need fixes — draft saved.',
+    );
+  }
+
+  Future<void> _showImportResultDialog(Map<String, dynamic> result) async {
+    final errors = (result['errors'] as List? ?? const [])
+        .map((item) => Map<String, dynamic>.from(item as Map))
+        .toList();
+
+    if (errors.isEmpty || !mounted) {
+      return;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Import issues'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: errors.map((error) {
+                final row = error['row'];
+                final teamName = error['team_name']?.toString() ?? '-';
+                final sheetRow = error['sheet_row'] ?? ((row is int) ? row + 1 : null);
+                final issueLines = _formatBulkImportErrorLines(error['errors']);
+
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Row $row · $teamName${sheetRow != null ? ' (sheet row $sheetRow)' : ''}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      ...issueLines.map(
+                        (line) => Text(
+                          '• $line',
+                          style: const TextStyle(fontSize: 12.5),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _showTeamDialog() async {
+    final state = ref.read(studentTeamsProvider);
+
+    final isCapstoneAdmin = _isCapstoneAdmin;
+    final isPitLead = _isPitLeadManager;
+    const yearOptions = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
+
     final statusOptions = state.statuses.isEmpty
         ? const ['Pending', 'Approved', 'Failed', 'Delayed/Extended']
         : state.statuses;
-    final name = TextEditingController(text: team?['name']?.toString() ?? '');
-    final projectTitle = TextEditingController(
-      text: team?['project_title']?.toString() ?? '',
-    );
-    var level =
-        team?['level']?.toString() ??
-        (levelOptions.isNotEmpty ? levelOptions.first : '3rd Year Capstone');
-    if (!levelOptions.contains(level)) {
-      level = levelOptions.first;
+    final name = TextEditingController();
+    final projectTitle = TextEditingController();
+    var yearLevel = isCapstoneAdmin ? '3rd Year' : (_pitLeadYear ?? '3rd Year');
+    if (!yearOptions.contains(yearLevel)) {
+      yearLevel = isCapstoneAdmin ? '3rd Year' : (_pitLeadYear ?? '3rd Year');
     }
-    var status = team?['status']?.toString() ?? 'Pending';
+    var level = isPitLead
+        ? '$yearLevel PIT'
+        : '${yearLevel.trim()} Capstone';
+    var status = 'Pending';
     if (!statusOptions.contains(status)) {
       status = statusOptions.first;
     }
-    var adviserId = _asInt(team?['adviser_id']);
-    final selectedMembers = <int>{..._readIntList(team?['member_ids'])};
-    var leaderId =
-        _asInt(team?['leader_id']) ??
-        (selectedMembers.isNotEmpty ? selectedMembers.first : null);
+    int? adviserId;
+    if (!mounted) {
+      name.dispose();
+      projectTitle.dispose();
+      return;
+    }
+    final selectedMembers = <int>{};
+    int? leaderId;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -710,7 +2005,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             return AlertDialog(
-              title: Text(editing ? 'Edit Team' : 'Create New Team'),
+              surfaceTintColor: Colors.transparent,
+              title: const Text('Create New Team'),
               content: SizedBox(
                 width: 660,
                 child: SingleChildScrollView(
@@ -731,56 +2027,48 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: level,
-                              decoration: const InputDecoration(
-                                labelText: 'Year Level',
-                              ),
-                              items: levelOptions
-                                  .map(
-                                    (item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(item),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                setDialogState(() {
-                                  level = value ?? level;
-                                });
-                              },
-                            ),
+                      if (isPitLead)
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Program',
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: status,
-                              decoration: const InputDecoration(
-                                labelText: 'Team Result',
-                              ),
-                              items: statusOptions
-                                  .map(
-                                    (item) => DropdownMenuItem(
-                                      value: item,
-                                      child: Text(item),
-                                    ),
-                                  )
-                                  .toList(),
-                              onChanged: (value) {
-                                setDialogState(() {
-                                  status = value ?? status;
-                                });
-                              },
-                            ),
+                          child: Text(
+                            '$yearLevel PIT',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
                           ),
-                        ],
+                        )
+                      else
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Program',
+                          ),
+                          child: Text(
+                            'Capstone · $yearLevel',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                        ),
+                      const SizedBox(height: 12),
+                      DropdownButtonFormField<String>(
+                        initialValue: status,
+                        decoration: const InputDecoration(
+                          labelText: 'Team Result',
+                        ),
+                        items: statusOptions
+                            .map(
+                              (item) => DropdownMenuItem(
+                                value: item,
+                                child: Text(item),
+                              ),
+                            )
+                            .toList(),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            status = value ?? status;
+                          });
+                        },
                       ),
                       const SizedBox(height: 12),
-                      // Hide adviser dropdown for PIT Leads (they don't assign advisers)
-                      if (!isPitLead || isAdviser) ...[
+                      if (!isPitLead && level.toUpperCase().contains('CAPSTONE')) ...[
                         DropdownButtonFormField<int?>(
                           initialValue: adviserId,
                           decoration: const InputDecoration(labelText: 'Adviser'),
@@ -902,7 +2190,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                           name.text.trim().isEmpty
                       ? null
                       : () => Navigator.pop(dialogContext, true),
-                  child: Text(editing ? 'Save Changes' : 'Create Team'),
+                  child: const Text('Create Team'),
                 ),
               ],
             );
@@ -917,116 +2205,40 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
 
+    final isCapstone = level.toUpperCase().contains('CAPSTONE');
+    if (!isCapstone) {
+      adviserId = null;
+    }
+
+    if (isPitLead) {
+      yearLevel = _pitLeadYear ?? yearLevel;
+      level = '$yearLevel PIT';
+    }
+
     final payload = {
       'name': name.text.trim(),
       'project_title': projectTitle.text.trim().isEmpty
           ? name.text.trim()
           : projectTitle.text.trim(),
-      'level': level,
-      'year_level': _yearLevelFor(level),
+      if (isPitLead) 'level': level,
+      if (isPitLead) 'year_level': yearLevel,
       'leader_id': leaderId,
       'member_ids': selectedMembers.toList(),
-      'adviser_id': adviserId,
+      'adviser_id': isCapstone ? adviserId : null,
       'status': status,
     };
 
     name.dispose();
     projectTitle.dispose();
 
-    if (editing) {
-      await ref
-          .read(studentTeamsProvider.notifier)
-          .updateTeam(_asInt(team['id'])!, payload);
-    } else {
-      await ref.read(studentTeamsProvider.notifier).addTeam(payload);
-    }
+    await ref.read(studentTeamsProvider.notifier).addTeam(payload);
   }
 
-  Future<void> _confirmDelete(int teamId, String teamName) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete Team'),
-        content: Text('Delete $teamName? This cannot be undone.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: _red),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
-    );
-
-    if (!mounted || confirmed != true) {
-      return;
-    }
-
-    await ref.read(studentTeamsProvider.notifier).deleteTeam(teamId);
-  }
-
-  List<Map<String, dynamic>> _parseCsv(String csv) {
-    final lines = csv
-        .split(RegExp(r'\r?\n'))
-        .map((line) => line.trim())
-        .where((line) => line.isNotEmpty)
-        .toList();
-    if (lines.length < 2) {
-      return [];
-    }
-
-    final headers = lines.first
-        .split(',')
-        .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
-        .toList();
-    int index(String name) => headers.indexOf(name);
-    final teamNameIndex = index('team_name');
-    final projectTitleIndex = index('project_title');
-    final levelIndex = index('level');
-    final yearLevelIndex = index('year_level');
-    final memberIdsIndex = index('member_ids');
-    final leaderIdIndex = index('leader_id');
-    final adviserIdIndex = index('adviser_id');
-
-    if ([
-      teamNameIndex,
-      levelIndex,
-      memberIdsIndex,
-      leaderIdIndex,
-    ].contains(-1)) {
-      return [];
-    }
-
-    return lines
-        .skip(1)
-        .map((line) {
-          final columns = line.split(',').map((cell) => cell.trim()).toList();
-          String read(int columnIndex) =>
-              columnIndex >= 0 && columnIndex < columns.length
-              ? columns[columnIndex]
-              : '';
-
-          return {
-            'team_name': read(teamNameIndex),
-            'project_title': read(projectTitleIndex),
-            'level': read(levelIndex),
-            'year_level': read(yearLevelIndex),
-            'member_ids': read(memberIdsIndex)
-                .split('|')
-                .map((item) => item.trim())
-                .where((item) => item.isNotEmpty)
-                .toList(),
-            'leader_id': read(leaderIdIndex),
-            'adviser_id': read(adviserIdIndex),
-          };
-        })
-        .where((row) => row['team_name'].toString().isNotEmpty)
-        .toList();
-  }
+  List<Map<String, dynamic>> _parseCsv(String csv) => parseTeamBulkCsvWithContext(
+        csv,
+        isCapstoneAdmin: _isCapstoneAdmin,
+        pitLeadYear: _pitLeadYear,
+      );
 
   String _projectTitle(Map<String, dynamic> team) {
     final title = team['project_title']?.toString();
@@ -1039,6 +2251,17 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   String _defenseContext(Map<String, dynamic> team) {
     final context = team['defense_context'];
     if (context is Map) {
+      if (context['is_pit'] == true || _teamIsPit(team)) {
+        final label = context['event_label']?.toString() ?? '';
+        final date = context['scheduled_date']?.toString() ?? '';
+        if (label.isNotEmpty && date.isNotEmpty) {
+          return '$label ($date)';
+        }
+        if (label.isNotEmpty) {
+          return label;
+        }
+        return 'No PIT event scheduled';
+      }
       final stage = context['current_stage']?.toString();
       if (stage != null && stage.isNotEmpty) {
         return stage;
@@ -1051,22 +2274,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     if (context is String && context.trim().isNotEmpty) {
       return context;
     }
-    return 'No defense scheduled';
-  }
-
-  String _yearLevelFor(String level) {
-    if (level.startsWith('1st Year')) return '1st Year';
-    if (level.startsWith('2nd Year')) return '2nd Year';
-    if (level.startsWith('3rd Year')) return '3rd Year';
-    if (level.startsWith('4th Year')) return '4th Year';
-    return '';
-  }
-
-  List<int> _readIntList(dynamic value) {
-    if (value is! List) {
-      return [];
-    }
-    return value.map(_asInt).whereType<int>().toList();
+    return _teamIsPit(team) ? 'No PIT event scheduled' : 'No defense scheduled';
   }
 
   int _count(StudentTeamsState state, String key) {
@@ -1100,9 +2308,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     ).showSnackBar(SnackBar(content: Text(message)));
   }
 
-  static const _sampleTeamCsvTemplate =
-      'team_name,project_title,level,year_level,member_ids,leader_id,adviser_id\n'
-      'Team VaultSync,Cloud File Sync,3rd Year Capstone,3rd Year,2024-0001|2024-0002,2024-0001,faculty-1\n';
 }
 
 class _ColumnSpec {

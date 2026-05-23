@@ -80,7 +80,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
           ),
           const _ContentViewport(child: AcademicPeriodsScreen()),
           const UserManagementScreen(),
-          const StudentTeamsScreen(),
+          StudentTeamsScreen(
+            mode: TeamListMode.capstoneAdmin,
+            onOpenStudentRecords: () =>
+                _setActiveSection(DefensysAdminSection.studentAcademicRecords),
+          ),
           const StudentAcademicRecordsScreen(),
           const GradeCenterScreen(),
           const RubricEngineScreen(),

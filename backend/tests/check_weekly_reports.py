@@ -2,7 +2,7 @@ import os, django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
-from student_weekly_progress.models import WeeklyProgressReport
+from student_teams.weekly_progress.models import WeeklyProgressReport
 from django.conf import settings
 
 print('='*80)
@@ -16,7 +16,7 @@ print(f'Total weekly progress reports: {reports.count()}')
 print()
 
 if reports.count() == 0:
-    print('❌ No weekly progress reports found in database')
+    print('No weekly progress reports found in database')
     print()
 else:
     print('='*80)
@@ -26,26 +26,26 @@ else:
     
     for report in reports:
         print(f'Report ID: {report.id}')
-        print(f'  Team: {report.team.name} (ID: {report.team.id})')
-        print(f'  Student: {report.student.username} ({report.student.first_name} {report.student.last_name})')
-        print(f'  Week: {report.week_number}')
-        print(f'  Report date: {report.report_date}')
-        print(f'  Report file field: "{report.report_file}"')
+        print(f'Team: {report.team.name} (ID: {report.team.id})')
+        print(f'Student: {report.student.username} ({report.student.first_name} {report.student.last_name})')
+        print(f'Week: {report.week_number}')
+        print(f'Report date: {report.report_date}')
+        print(f'Report file field: "{report.report_file}"')
         
         # Check if file exists on disk
         if report.report_file:
             file_path = report.report_file.path
             exists = os.path.exists(file_path)
-            print(f'  File path: {file_path}')
-            print(f'  File exists on disk: {"✅ YES" if exists else "❌ NO"}')
+            print(f'File path: {file_path}')
+            print(f'File exists on disk: {" YES" if exists else " NO"}')
             if exists:
                 size = os.path.getsize(file_path)
-                print(f'  File size: {size / 1024:.2f} KB')
-            print(f'  File URL: {report.report_file.url}')
+                print(f'File size: {size / 1024:.2f} KB')
+            print(f'File URL: {report.report_file.url}')
         else:
-            print(f'  ❌ No file attached (report_file field is empty)')
+            print(f'No file attached (report_file field is empty)')
         
-        print(f'  Submitted at: {report.submitted_at}')
+        print(f'Submitted at: {report.submitted_at}')
         print()
 
     print('='*80)
@@ -70,7 +70,7 @@ else:
     print()
     
     if os.path.exists(reports_path):
-        print(f'✅ Weekly reports folder exists: {reports_path}')
+        print(f'Weekly reports folder exists: {reports_path}')
         print()
         # List files
         for root, dirs, files in os.walk(reports_path):
@@ -83,4 +83,4 @@ else:
                 size = os.path.getsize(file_path)
                 print(f'{subindent}{file} ({size / 1024:.2f} KB)')
     else:
-        print(f'❌ Weekly reports folder does not exist: {reports_path}')
+        print(f'Weekly reports folder does not exist: {reports_path}')

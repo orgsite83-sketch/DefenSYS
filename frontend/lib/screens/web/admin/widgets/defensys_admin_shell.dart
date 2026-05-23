@@ -95,6 +95,41 @@ class DefensysUi {
       ],
     );
   }
+
+  /// Minimal flat pill switch: inactive track `#D1D5DB`, white thumb, no outline or overlay.
+  static const switchInactiveTrack = Color(0xFFD1D5DB);
+
+  static Widget flatSwitch({
+    required bool value,
+    required ValueChanged<bool>? onChanged,
+    Color activeTrackColor = primaryMaroon,
+    double scale = 1.0,
+  }) {
+    final w = Switch(
+      value: value,
+      onChanged: onChanged,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      splashRadius: 0,
+      overlayColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+      trackOutlineColor: const WidgetStatePropertyAll<Color>(Colors.transparent),
+      trackOutlineWidth: const WidgetStatePropertyAll<double>(0),
+      trackColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.selected)) {
+          return activeTrackColor;
+        }
+        return switchInactiveTrack;
+      }),
+      thumbColor: const WidgetStatePropertyAll<Color>(Colors.white),
+    );
+    if (scale == 1.0) {
+      return w;
+    }
+    return Transform.scale(
+      scale: scale,
+      alignment: Alignment.centerLeft,
+      child: w,
+    );
+  }
 }
 
 class DefensysAdminShell extends StatelessWidget {

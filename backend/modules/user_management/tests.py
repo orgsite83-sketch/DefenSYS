@@ -3,11 +3,11 @@ from datetime import date, time
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense_scheduler.models import DefenseSchedule
-from defense_stages.models import DefenseStage
-from student_academic_records.models import StudentAcademicRecord
-from student_teams.models import StudentTeam
-from .models import GuestPanelistCode
+from defense.scheduler.models import DefenseSchedule
+from defense.stages.models import DefenseStage
+from user_management.academic_records.models import StudentAcademicRecord
+from student_teams.models import StudentTeam, TeamAdviserAssignment
+from .models import FacultyRoleAssignment, GuestPanelistCode
 
 
 User = get_user_model()
@@ -129,6 +129,224 @@ class UserManagementApiTests(APITestCase):
         self.assertTrue(faculty.is_pit_lead)
         self.assertEqual(faculty.pit_lead_year, '4th Year')
         self.assertTrue(response.data['user']['facultyRoles']['repoAssistant'])
+
+    def test_update_user_clears_legacy_adviser_phase(self):
+        faculty = User.objects.create_user(
+            username='faculty-adv',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+            adviser_phase='Capstone 1',
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {'first_name': 'Updated'},
+            format='json',
+        )
+
+        faculty.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(faculty.first_name, 'Updated')
+        self.assertIsNone(faculty.adviser_phase)
+        self.assertNotIn('adviserPhase', response.data['user']['facultyRoles'])
+
+    def test_save_backfills_role_history_when_flag_already_on(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        faculty = User.objects.create_user(
+            username='faculty-adv-existing',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {'first_name': 'Updated'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        history = FacultyRoleAssignment.objects.filter(
+            user=faculty,
+            role_key=FacultyRoleAssignment.ROLE_ADVISER,
+        )
+        self.assertEqual(history.count(), 1)
+        self.assertEqual(history.first().action, FacultyRoleAssignment.ACTION_ASSIGNED)
+
+    def test_save_does_not_duplicate_existing_assigned_history(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        faculty = User.objects.create_user(
+            username='faculty-adv-dup',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+        FacultyRoleAssignment.objects.create(
+            user=faculty,
+            role_key=FacultyRoleAssignment.ROLE_ADVISER,
+            semester=semester,
+            action=FacultyRoleAssignment.ACTION_ASSIGNED,
+            changed_by=self.admin,
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {'first_name': 'NoDup'},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            FacultyRoleAssignment.objects.filter(
+                user=faculty,
+                role_key=FacultyRoleAssignment.ROLE_ADVISER,
+                action=FacultyRoleAssignment.ACTION_ASSIGNED,
+            ).count(),
+            1,
+        )
+
+    def test_assigning_adviser_creates_role_history(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        faculty = User.objects.create_user(
+            username='faculty-adv-hist',
+            password='pass12345',
+            role='faculty',
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {'is_adviser': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        faculty.refresh_from_db()
+        self.assertIsNone(faculty.adviser_phase)
+        history = FacultyRoleAssignment.objects.filter(user=faculty)
+        self.assertEqual(history.count(), 1)
+        entry = history.first()
+        self.assertEqual(entry.role_key, FacultyRoleAssignment.ROLE_ADVISER)
+        self.assertEqual(entry.action, FacultyRoleAssignment.ACTION_ASSIGNED)
+        self.assertIsNone(entry.role_detail)
+
+    def test_list_returns_display_role_for_adviser(self):
+        User.objects.create_user(
+            username='faculty-adv-list',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+
+        response = self.client.get('/api/users/')
+
+        self.assertEqual(response.status_code, 200)
+        adviser = next(
+            u for u in response.data['users'] if u['username'] == 'faculty-adv-list'
+        )
+        self.assertEqual(adviser['displayRole']['label'], 'Adviser')
+        self.assertEqual(adviser['displayRole']['tone'], 'adviser')
+
+    def test_filter_by_adviser_role(self):
+        User.objects.create_user(
+            username='faculty-plain',
+            password='pass12345',
+            role='faculty',
+        )
+        User.objects.create_user(
+            username='faculty-adv-filter',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+
+        response = self.client.get('/api/users/?role=adviser')
+
+        self.assertEqual(response.status_code, 200)
+        usernames = {u['username'] for u in response.data['users']}
+        self.assertIn('faculty-adv-filter', usernames)
+        self.assertNotIn('faculty-plain', usernames)
+
+    def test_user_role_assignment_history_endpoint(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        faculty = User.objects.create_user(
+            username='faculty-role-hist',
+            password='pass12345',
+            role='faculty',
+        )
+        self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {'is_adviser': True},
+            format='json',
+        )
+
+        response = self.client.get(f'/api/users/{faculty.id}/role-assignments/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['assignments']), 1)
+        self.assertEqual(response.data['assignments'][0]['role_label'], 'Project Adviser')
+        self.assertEqual(response.data['assignments'][0]['action'], 'assigned')
+
+    def test_user_adviser_assignment_history_endpoint(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        student = User.objects.create_user(
+            username='2024-0099',
+            password='pass12345',
+            role='student',
+        )
+        adviser = User.objects.create_user(
+            username='faculty-adv-2',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+        team = StudentTeam.objects.create(
+            name='Team History',
+            project_title='History Project',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student,
+            adviser=adviser,
+        )
+        TeamAdviserAssignment.objects.create(
+            team=team,
+            adviser=adviser,
+            assigned_by=self.admin,
+            reason='Initial assignment',
+        )
+
+        response = self.client.get(f'/api/users/{adviser.id}/adviser-assignments/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['assignments']), 1)
+        self.assertEqual(response.data['assignments'][0]['team_name'], 'Team History')
+        self.assertEqual(response.data['assignments'][0]['reason'], 'Initial assignment')
 
     def test_bulk_import_creates_new_users_and_skips_duplicates(self):
         User.objects.create_user(username='2024-0001', password='pass12345', role='student')

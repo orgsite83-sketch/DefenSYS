@@ -20,7 +20,7 @@ try:
     user.is_superuser = True
     user.save()
     
-    print("\n✓ Updated successfully!")
+    print("\n Updated successfully!")
     print(f"New role: {user.role}")
     
 except User.DoesNotExist:
@@ -34,8 +34,8 @@ except User.DoesNotExist:
     )
     user.role = 'admin'
     user.save()
-    print(f"✓ Created admin user with role: {user.role}")
+    print(f"Created admin user with role: {user.role}")
 
 print("\nAll users in database:")
 for u in User.objects.all():
-    print(f"  - {u.username}: role={u.role}")
+    print(f" - {u.username}: role={u.role}")

@@ -16,6 +16,7 @@ class RubricEngineState {
   final List<Map<String, dynamic>> rubrics;
   final List<Map<String, dynamic>> semesters;
   final List<Map<String, dynamic>> defenseStages;
+  final List<Map<String, dynamic>> scopes;
   final List<String> scaleOptions;
   final List<String> statuses;
   final Map<String, dynamic> counts;
@@ -23,6 +24,8 @@ class RubricEngineState {
   final String search;
   final String scope;
   final String status;
+  /// API query `evaluation_type`; empty means no filter (show all types).
+  final String evaluationType;
   final String? error;
   final String? message;
 
@@ -32,6 +35,7 @@ class RubricEngineState {
     this.rubrics = const [],
     this.semesters = const [],
     this.defenseStages = const [],
+    this.scopes = const [],
     this.scaleOptions = const [],
     this.statuses = const [],
     this.counts = const {},
@@ -39,6 +43,7 @@ class RubricEngineState {
     this.search = '',
     this.scope = '',
     this.status = '',
+    this.evaluationType = '',
     this.error,
     this.message,
   });
@@ -49,6 +54,7 @@ class RubricEngineState {
     List<Map<String, dynamic>>? rubrics,
     List<Map<String, dynamic>>? semesters,
     List<Map<String, dynamic>>? defenseStages,
+    List<Map<String, dynamic>>? scopes,
     List<String>? scaleOptions,
     List<String>? statuses,
     Map<String, dynamic>? counts,
@@ -56,6 +62,7 @@ class RubricEngineState {
     String? search,
     String? scope,
     String? status,
+    String? evaluationType,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -68,6 +75,7 @@ class RubricEngineState {
       rubrics: rubrics ?? this.rubrics,
       semesters: semesters ?? this.semesters,
       defenseStages: defenseStages ?? this.defenseStages,
+      scopes: scopes ?? this.scopes,
       scaleOptions: scaleOptions ?? this.scaleOptions,
       statuses: statuses ?? this.statuses,
       counts: counts ?? this.counts,
@@ -77,6 +85,7 @@ class RubricEngineState {
       search: search ?? this.search,
       scope: scope ?? this.scope,
       status: status ?? this.status,
+      evaluationType: evaluationType ?? this.evaluationType,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -95,11 +104,13 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     String? search,
     String? scope,
     String? status,
+    String? evaluationType,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextScope = scope ?? state.scope;
     final nextStatus = status ?? state.status;
+    final nextEvaluationType = evaluationType ?? state.evaluationType;
 
     state = state.copyWith(
       isLoading: state.rubrics.isEmpty,
@@ -107,6 +118,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
       search: nextSearch,
       scope: nextScope,
       status: nextStatus,
+      evaluationType: nextEvaluationType,
       clearError: true,
       clearMessage: true,
     );
@@ -117,6 +129,8 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextScope.isNotEmpty) 'scope': nextScope,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
+          if (nextEvaluationType.isNotEmpty)
+            'evaluation_type': nextEvaluationType,
         },
       );
       final response = await http.get(uri, headers: await _headers());
@@ -310,6 +324,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
       rubrics: _readMapList(payload['rubrics']),
       semesters: _readMapList(payload['semesters']),
       defenseStages: _readMapList(payload['defense_stages']),
+      scopes: _readMapList(payload['scopes']),
       scaleOptions: _readStringList(payload['scale_options']),
       statuses: _readStringList(payload['statuses']),
       counts: payload['counts'] is Map

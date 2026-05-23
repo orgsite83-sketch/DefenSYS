@@ -3,7 +3,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
 from student_teams.models import StudentTeam
-from capstone_deliverables.models import DeliverableSubmission
+from repository.deliverables.models import DeliverableSubmission
 
 # Check team 666
 team = StudentTeam.objects.get(id=7)
@@ -21,15 +21,15 @@ vault_subs = DeliverableSubmission.objects.filter(
 
 print(f'Vault submissions for team {team.name}: {vault_subs.count()}')
 for sub in vault_subs:
-    print(f'  - {sub.deliverable_id}: {sub.label}')
-    print(f'    File: {sub.file_name}')
-    print(f'    Stage: {sub.stage_label}')
-    print(f'    Uploaded by: {sub.uploaded_by.username if sub.uploaded_by else "None"}')
-    print(f'    Type: {sub.deliverable_type}')
+    print(f'- {sub.deliverable_id}: {sub.label}')
+    print(f'File: {sub.file_name}')
+    print(f'Stage: {sub.stage_label}')
+    print(f'Uploaded by: {sub.uploaded_by.username if sub.uploaded_by else "None"}')
+    print(f'Type: {sub.deliverable_type}')
     print()
 
 # Check what the API would return
-from digital_vault.services import capstone_visible_queryset, CAPSTONE_VISIBLE_IDS
+from repository.vault.services import capstone_visible_queryset, CAPSTONE_VISIBLE_IDS
 
 print(f'Visible deliverable IDs: {CAPSTONE_VISIBLE_IDS}')
 print()
@@ -37,5 +37,5 @@ print()
 visible_subs = capstone_visible_queryset().filter(team=team)
 print(f'Visible vault submissions for team {team.name}: {visible_subs.count()}')
 for sub in visible_subs:
-    print(f'  - {sub.deliverable_id}: {sub.label}')
-    print(f'    In visible list: {sub.deliverable_id in CAPSTONE_VISIBLE_IDS}')
+    print(f'- {sub.deliverable_id}: {sub.label}')
+    print(f'In visible list: {sub.deliverable_id in CAPSTONE_VISIBLE_IDS}')

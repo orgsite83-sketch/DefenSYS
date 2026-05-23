@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
-import '../../../services/bridge_service.dart';
 import '../../../config/api_config.dart';
 
 const _primaryColor = Color(0xFF7F1D1D);
@@ -27,6 +26,7 @@ class VaultEntry {
   final String extractedText;  // PDF content
   final List<String> topics;  // Keywords/topics
   final String summary;  // Summary
+  final String category;
 
   const VaultEntry({
     required this.id,
@@ -44,24 +44,26 @@ class VaultEntry {
     this.extractedText = '',
     this.topics = const [],
     this.summary = '',
+    this.category = '',
   });
 
   factory VaultEntry.fromJson(Map<String, dynamic> j) => VaultEntry(
         id: j['id']?.toString() ?? '',
-        fileName: j['fileName']?.toString() ?? '',
-        fileUrl: j['file_url']?.toString(),  // Get file URL from API
-        teamName: j['teamName']?.toString() ?? '—',
-        uploadedBy: j['uploadedBy']?.toString() ?? '—',
-        academicYear: j['academicYear']?.toString() ?? '—',
-        status: j['status']?.toString() ?? 'Pending AI Classification',
-        timestamp: j['timestamp']?.toString() ?? '',
-        yearLevel: j['yearLevel']?.toString() ?? '—',
+        fileName: (j['file_name'] ?? j['fileName'])?.toString() ?? '',
+        fileUrl: j['file_url']?.toString(),
+        teamName: (j['team_name'] ?? j['teamName'])?.toString() ?? '—',
+        uploadedBy: (j['uploaded_by'] ?? j['uploadedBy'])?.toString() ?? '—',
+        academicYear: (j['academic_year'] ?? j['academicYear'])?.toString() ?? '—',
+        status: j['status']?.toString() ?? 'Approved',
+        timestamp: (j['uploaded_at'] ?? j['timestamp'])?.toString() ?? '',
+        yearLevel: (j['year_level'] ?? j['yearLevel'])?.toString() ?? '—',
         stage: j['stage']?.toString() ?? '—',
         type: j['type']?.toString() ?? 'pit',
-        deliverableLabel: j['deliverableLabel']?.toString(),
+        deliverableLabel: (j['deliverable_label'] ?? j['deliverableLabel'])?.toString(),
         extractedText: j['extracted_text']?.toString() ?? '',
         topics: (j['topics'] as List?)?.map((e) => e.toString()).toList() ?? [],
         summary: j['summary']?.toString() ?? '',
+        category: j['category']?.toString() ?? '',
       );
 }
 
@@ -79,7 +81,6 @@ class _RepositoryTabState extends State<RepositoryTab> {
   bool _loading = true;
 
   String _selectedYear = '';
-  final String _selectedSemester = '';
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
 
@@ -88,7 +89,7 @@ class _RepositoryTabState extends State<RepositoryTab> {
       final prefs = await SharedPreferences.getInstance();
       return prefs.getString('jwt_token') ?? '';
     } catch (e) {
-      print('❌ Error getting token: $e');
+      print('Error getting token: $e');
       return '';
     }
   }
@@ -105,18 +106,22 @@ class _RepositoryTabState extends State<RepositoryTab> {
     super.dispose();
   }
 
-  Future<void> _loadVault() async {
+  Future<void> _loadVault({String? search}) async {
     try {
-      // Load vault entries from Django backend (includes adviser vault uploads)
-      final vaultUrl = '${ApiConfig.baseUrl}/digital-vault/';
+      final querySearch = search ?? _searchQuery;
+      final vaultUri = Uri.parse('${ApiConfig.digitalVaultUrl}/').replace(
+        queryParameters: querySearch.trim().isEmpty
+            ? null
+            : {'search': querySearch.trim()},
+      );
       final token = await _getToken();
       
-      print('🔍 Fetching vault entries from: $vaultUrl');
-      print('🔑 Token length: ${token.length} chars');
+      print('Fetching vault entries from: $vaultUri');
+      print('Token length: ${token.length} chars');
       
       final vaultResponse = await http
           .get(
-            Uri.parse(vaultUrl),
+            vaultUri,
             headers: {
               'Content-Type': 'application/json',
               'Authorization': 'Bearer $token',
@@ -124,57 +129,43 @@ class _RepositoryTabState extends State<RepositoryTab> {
           )
           .timeout(const Duration(seconds: 8));
       
-      print('📡 Vault API response: ${vaultResponse.statusCode}');
+      print('Vault API response: ${vaultResponse.statusCode}');
       
       List<VaultEntry> vaultEntries = [];
       if (vaultResponse.statusCode == 200) {
         try {
           final responseData = json.decode(vaultResponse.body);
-          print('📄 Vault response keys: ${responseData.keys}');
+          print('Vault response keys: ${responseData.keys}');
           
           final entries = responseData['entries'] as List? ?? [];
-          print('✅ Found ${entries.length} vault entries (includes adviser uploads)');
+          print('Found ${entries.length} vault entries (includes adviser uploads)');
           
           // Log first entry for debugging
           if (entries.isNotEmpty) {
-            print('📝 First vault entry keys: ${entries[0].keys}');
-            print('📝 First vault entry file_name: ${entries[0]['file_name']}');
-            print('📝 First vault entry file_url: ${entries[0]['file_url']}');
-            print('📝 First vault entry type: ${entries[0]['type']}');
+            print('First vault entry keys: ${entries[0].keys}');
+            print('First vault entry file_name: ${entries[0]['file_name']}');
+            print('First vault entry file_url: ${entries[0]['file_url']}');
+            print('First vault entry type: ${entries[0]['type']}');
           }
           
-          // Convert vault entries to VaultEntry format
           for (var entry in entries) {
-            final vaultEntry = VaultEntry(
-              id: entry['id']?.toString() ?? '',
-              fileName: entry['file_name'] ?? 'Unknown',
-              fileUrl: entry['file_url']?.toString(),
-              teamName: entry['team_name'] ?? '—',
-              uploadedBy: entry['uploaded_by'] ?? '—',
-              academicYear: entry['academic_year'] ?? '—',
-              status: entry['status'] ?? 'Vault Submission',
-              timestamp: entry['uploaded_at'] ?? '',
-              yearLevel: entry['year_level'] ?? '—',
-              stage: entry['stage'] ?? '—',
-              type: entry['type'] ?? 'capstone',
-              deliverableLabel: entry['deliverable_label'],
-            );
-            vaultEntries.add(vaultEntry);
-            print('➕ Added vault entry: ${vaultEntry.fileName} (type: ${vaultEntry.type})');
+            if (entry is Map<String, dynamic>) {
+              vaultEntries.add(VaultEntry.fromJson(entry));
+            }
           }
         } catch (e) {
-          print('❌ Error parsing vault response: $e');
-          print('   Response body: ${vaultResponse.body}');
+          print('Error parsing vault response: $e');
+          print('Response body: ${vaultResponse.body}');
         }
       } else {
-        print('❌ Vault API failed: ${vaultResponse.statusCode}');
-        print('   Response: ${vaultResponse.body}');
+        print('Vault API failed: ${vaultResponse.statusCode}');
+        print('Response: ${vaultResponse.body}');
       }
       
       // Load team documents uploaded by uploaders (use ApiConfig for Django backend)
       try {
-        final docsUrl = '${ApiConfig.baseUrl}/documents/';
-        print('🔍 Fetching team documents from: $docsUrl');
+        final docsUrl = '${ApiConfig.teamDocumentsUrl}/';
+        print('Fetching team documents from: $docsUrl');
         
         final docsResponse = await http
             .get(
@@ -185,14 +176,14 @@ class _RepositoryTabState extends State<RepositoryTab> {
             )
             .timeout(const Duration(seconds: 8));
         
-        print('📡 Documents API response: ${docsResponse.statusCode}');
+        print('Documents API response: ${docsResponse.statusCode}');
         
         if (docsResponse.statusCode == 200) {
           final docsData = json.decode(docsResponse.body);
-          print('📄 Documents data keys: ${docsData.keys}');
+          print('Documents data keys: ${docsData.keys}');
           
           final documents = docsData['documents'] as List? ?? [];
-          print('✅ Found ${documents.length} team documents');
+          print('Found ${documents.length} team documents');
           
           // Convert team documents to VaultEntry format
           for (var doc in documents) {
@@ -212,15 +203,15 @@ class _RepositoryTabState extends State<RepositoryTab> {
             ));
           }
         } else {
-          print('❌ Documents API failed: ${docsResponse.statusCode}');
-          print('   Response: ${docsResponse.body}');
+          print('Documents API failed: ${docsResponse.statusCode}');
+          print('Response: ${docsResponse.body}');
         }
       } catch (e) {
         // If team documents fail, continue with vault entries only
-        print('❌ Failed to load team documents: $e');
+        print('Failed to load team documents: $e');
       }
 
-      print('📊 Total entries to display: ${vaultEntries.length}');
+      print('Total entries to display: ${vaultEntries.length}');
 
       // Determine default year/semester from most recent entry
       final years = vaultEntries.map((e) => e.academicYear).where((y) => y != '—').toSet().toList()..sort();
@@ -234,17 +225,12 @@ class _RepositoryTabState extends State<RepositoryTab> {
         });
       }
     } catch (e) {
-      print('❌ Error in _loadVault: $e');
+      print('Error in _loadVault: $e');
       if (mounted) setState(() => _loading = false);
     }
   }
 
   List<VaultEntry> get _filtered {
-    if (_searchQuery.isNotEmpty) {
-      // ML-powered fuzzy search with relevance scoring
-      final results = _mlSearch(_searchQuery, _allEntries);
-      return results;
-    }
     return _allEntries.where((e) {
       final matchYear = _selectedYear.isEmpty || e.academicYear == _selectedYear;
       return matchYear;
@@ -281,7 +267,8 @@ class _RepositoryTabState extends State<RepositoryTab> {
       final summary = entry.summary.toLowerCase();
       
       // Combine all text for document representation (including PDF content)
-      final document = '$fileName $teamName $deliverableLabel $yearLevel $stage $type $extractedText $summary ${topics.join(' ')}';
+      final category = entry.category.toLowerCase();
+      final document = '$fileName $teamName $deliverableLabel $yearLevel $stage $type $category $extractedText $summary ${topics.join(' ')}';
       final docWords = document.split(RegExp(r'\s+'));
       
       // ═══════════════════════════════════════════════════════════════
@@ -603,7 +590,11 @@ class _RepositoryTabState extends State<RepositoryTab> {
               const SizedBox(height: 10),
               TextField(
                 controller: _searchController,
-                onChanged: (v) => setState(() => _searchQuery = v.trim()),
+                onChanged: (v) {
+                  final query = v.trim();
+                  setState(() => _searchQuery = query);
+                  _loadVault(search: query);
+                },
                 decoration: InputDecoration(
                   hintText: 'Smart search: PDF content, topics, file, team...',
                   hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
@@ -611,7 +602,11 @@ class _RepositoryTabState extends State<RepositoryTab> {
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
                           icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-                          onPressed: () { _searchController.clear(); setState(() => _searchQuery = ''); })
+                          onPressed: () {
+                            _searchController.clear();
+                            setState(() => _searchQuery = '');
+                            _loadVault(search: '');
+                          })
                       : const Tooltip(
                           message: 'ML-powered search with PDF content extraction',
                           child: Icon(Icons.psychology, size: 18, color: Colors.grey),
@@ -821,8 +816,8 @@ class _RepositoryTabState extends State<RepositoryTab> {
         ? '${ApiConfig.mediaUrl}${e.fileUrl}'
         : '${ApiConfig.mediaUrl}/media/${e.fileName}';
     
-    print('📄 Opening PDF: $pdfUrl');
-    print('👤 Viewer: $studentId - $displayName');
+    print('Opening PDF: $pdfUrl');
+    print('Viewer: $studentId - $displayName');
     
     if (!mounted) return;
     

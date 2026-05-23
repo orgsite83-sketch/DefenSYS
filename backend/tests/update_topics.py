@@ -9,10 +9,10 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
-from capstone_deliverables.models import DeliverableSubmission
-from digital_vault.models import VaultEntry
-from student_weekly_progress.models import WeeklyProgressReport
-from capstone_deliverables.pdf_processor import extract_topics_tfidf
+from repository.deliverables.models import DeliverableSubmission
+from repository.vault.models import VaultEntry
+from student_teams.weekly_progress.models import WeeklyProgressReport
+from repository.deliverables.pdf_processor import extract_topics_tfidf
 
 
 def update_deliverables():
@@ -23,7 +23,7 @@ def update_deliverables():
     
     submissions = DeliverableSubmission.objects.filter(extracted_text__isnull=False).exclude(extracted_text='')
     total = submissions.count()
-    print(f'\n📊 Found {total} deliverable submissions with extracted text')
+    print(f'\n Found {total} deliverable submissions with extracted text')
     
     updated = 0
     
@@ -31,7 +31,7 @@ def update_deliverables():
         print(f'\n[{i}/{total}] Processing: {submission.file_name}')
         
         if submission.topics:
-            print(f'   ⏭️  Already has topics: {submission.topics}')
+            print(f'Skipped: Already has topics: {submission.topics}')
             continue
         
         try:
@@ -41,15 +41,15 @@ def update_deliverables():
             if topics:
                 submission.topics = topics
                 submission.save()
-                print(f'   ✅ Updated topics: {", ".join(topics[:5])}...')
+                print(f'Updated topics: {", ".join(topics[:5])}...')
                 updated += 1
             else:
-                print(f'   ⚠️  No topics extracted')
+                print(f'Warning: No topics extracted')
                 
         except Exception as e:
-            print(f'   ❌ Error: {e}')
+            print(f'Error: {e}')
     
-    print(f'\n📈 Updated {updated} deliverable submissions')
+    print(f'\n Updated {updated} deliverable submissions')
 
 
 def update_vault_entries():
@@ -60,7 +60,7 @@ def update_vault_entries():
     
     entries = VaultEntry.objects.filter(extracted_text__isnull=False).exclude(extracted_text='')
     total = entries.count()
-    print(f'\n📊 Found {total} vault entries with extracted text')
+    print(f'\n Found {total} vault entries with extracted text')
     
     updated = 0
     
@@ -68,7 +68,7 @@ def update_vault_entries():
         print(f'\n[{i}/{total}] Processing: {entry.file_name}')
         
         if entry.topics:
-            print(f'   ⏭️  Already has topics: {entry.topics}')
+            print(f'Skipped: Already has topics: {entry.topics}')
             continue
         
         try:
@@ -78,15 +78,15 @@ def update_vault_entries():
             if topics:
                 entry.topics = topics
                 entry.save()
-                print(f'   ✅ Updated topics: {", ".join(topics[:5])}...')
+                print(f'Updated topics: {", ".join(topics[:5])}...')
                 updated += 1
             else:
-                print(f'   ⚠️  No topics extracted')
+                print(f'Warning: No topics extracted')
                 
         except Exception as e:
-            print(f'   ❌ Error: {e}')
+            print(f'Error: {e}')
     
-    print(f'\n📈 Updated {updated} vault entries')
+    print(f'\n Updated {updated} vault entries')
 
 
 def update_weekly_reports():
@@ -97,7 +97,7 @@ def update_weekly_reports():
     
     reports = WeeklyProgressReport.objects.filter(extracted_text__isnull=False).exclude(extracted_text='')
     total = reports.count()
-    print(f'\n📊 Found {total} weekly reports with extracted text')
+    print(f'\n Found {total} weekly reports with extracted text')
     
     updated = 0
     
@@ -105,7 +105,7 @@ def update_weekly_reports():
         print(f'\n[{i}/{total}] Processing: Week {report.week_number} - {report.student.username}')
         
         if report.topics:
-            print(f'   ⏭️  Already has topics: {report.topics}')
+            print(f'Skipped: Already has topics: {report.topics}')
             continue
         
         try:
@@ -115,24 +115,24 @@ def update_weekly_reports():
             if topics:
                 report.topics = topics
                 report.save()
-                print(f'   ✅ Updated topics: {", ".join(topics[:5])}...')
+                print(f'Updated topics: {", ".join(topics[:5])}...')
                 updated += 1
             else:
-                print(f'   ⚠️  No topics extracted')
+                print(f'Warning: No topics extracted')
                 
         except Exception as e:
-            print(f'   ❌ Error: {e}')
+            print(f'Error: {e}')
     
-    print(f'\n📈 Updated {updated} weekly reports')
+    print(f'\n Updated {updated} weekly reports')
 
 
 if __name__ == '__main__':
-    print('\n🚀 Starting Topic Extraction...')
+    print('\n Starting Topic Extraction...')
     
     update_deliverables()
     update_vault_entries()
     update_weekly_reports()
     
     print('\n' + '='*80)
-    print('✅ TOPIC EXTRACTION COMPLETE')
+    print('TOPIC EXTRACTION COMPLETE')
     print('='*80)

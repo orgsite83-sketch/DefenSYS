@@ -124,3 +124,41 @@ class TeamMembership(models.Model):
 
     def __str__(self):
         return f'{self.student} -> {self.team}'
+
+
+class TeamAdviserAssignment(models.Model):
+    """Audit trail when a team's capstone adviser is assigned or changed."""
+
+    team = models.ForeignKey(
+        StudentTeam,
+        related_name='adviser_assignments',
+        on_delete=models.CASCADE,
+    )
+    adviser = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='team_adviser_assignments',
+    )
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='adviser_assignments_made',
+    )
+    assigned_at = models.DateTimeField(auto_now_add=True)
+    ended_at = models.DateTimeField(null=True, blank=True)
+    reason = models.CharField(max_length=255, blank=True, default='')
+
+    class Meta:
+        ordering = ['-assigned_at', '-id']
+
+    def __str__(self):
+        adviser_label = self.adviser.username if self.adviser_id else 'Unassigned'
+        return f'{self.team.name}: {adviser_label}'
+
+
+from student_teams.documents.models import TeamDocument  # noqa: E402,F401
+from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: E402,F401

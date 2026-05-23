@@ -1,0 +1,1024 @@
+openapi: 3.0.3
+info:
+  title: DefenSYS API
+  description: |
+    Code-derived OpenAPI specification for the DefenSYS Django REST backend.
+    Base path prefix: /api/
+
+    See DEFENSYS_REAL_SYSTEM_FLOW.md for permissions, data persistence, and gap analysis.
+
+    Demo-fill and seed-demo prototype endpoints have been removed from production builds.
+  version: 1.0.0
+  contact:
+    name: DefenSYS
+
+servers:
+  - url: http://localhost:8000/api
+    description: Local development
+
+tags:
+  - name: auth
+  - name: dashboards
+  - name: academic-periods
+  - name: users
+  - name: student-records
+  - name: teams
+  - name: defense-stages
+  - name: rubrics
+  - name: defense-schedules
+  - name: defense-board
+  - name: grade-center
+  - name: capstone-deliverables
+  - name: digital-vault
+  - name: repository-audit
+  - name: curriculum-analytics
+  - name: weekly-progress
+  - name: documents
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        detail:
+          type: string
+
+security:
+  - bearerAuth: []
+
+paths:
+  /login/:
+    post:
+      tags: [auth]
+      summary: Obtain JWT access and refresh tokens
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [username, password]
+              properties:
+                username: { type: string }
+                password: { type: string, format: password }
+      responses:
+        '200':
+          description: Tokens and user profile
+        '401':
+          description: Invalid credentials
+
+  /token/refresh/:
+    post:
+      tags: [auth]
+      summary: Refresh access token
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh: { type: string }
+      responses:
+        '200':
+          description: New access token
+
+  /dashboards/admin/:
+    get:
+      tags: [dashboards]
+      summary: Admin dashboard KPIs
+      responses:
+        '200':
+          description: Aggregate stats
+
+  /dashboards/faculty/:
+    get:
+      tags: [dashboards]
+      summary: Faculty dashboard
+      responses:
+        '200':
+          description: Advised teams, role flags
+
+  /dashboards/student/:
+    get:
+      tags: [dashboards]
+      summary: Student dashboard
+      responses:
+        '200':
+          description: Team, schedule, grades
+
+  /dashboards/panelist/:
+    get:
+      tags: [dashboards]
+      summary: Panelist dashboard stub
+      responses:
+        '200':
+          description: Assignments placeholder
+
+  /academic-periods/:
+    get:
+      tags: [academic-periods]
+      summary: List school years and semesters
+      responses:
+        '200':
+          description: Periods with active semester
+    post:
+      tags: [academic-periods]
+      summary: Create school year
+      responses:
+        '201':
+          description: Created
+
+  /academic-periods/{school_year_id}/semesters/:
+    post:
+      tags: [academic-periods]
+      summary: Add semester to school year
+      parameters:
+        - name: school_year_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '201':
+          description: Semester created
+
+  /academic-periods/semesters/{semester_id}/:
+    patch:
+      tags: [academic-periods]
+      summary: Update semester (e.g. set active)
+      parameters:
+        - name: semester_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+
+  /users/:
+    get:
+      tags: [users]
+      summary: List users (admin)
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: role
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: User list with counts
+    post:
+      tags: [users]
+      summary: Create user (admin)
+      responses:
+        '201':
+          description: Created
+
+  /users/bulk-import/:
+    post:
+      tags: [users]
+      summary: Bulk import users (admin)
+      responses:
+        '200':
+          description: Import results
+
+  /users/{user_id}/:
+    parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [users]
+      summary: Get user (admin)
+      responses:
+        '200':
+          description: User detail
+    patch:
+      tags: [users]
+      summary: Update user and faculty roles (admin)
+      description: Writes FacultyRoleAssignment rows when role flags change.
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [users]
+      summary: Delete user (admin)
+      responses:
+        '204':
+          description: Deleted
+
+  /users/{user_id}/role-assignments/:
+    get:
+      tags: [users]
+      summary: Faculty role assignment history (admin)
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Role audit rows
+
+  /users/{user_id}/adviser-assignments/:
+    get:
+      tags: [users]
+      summary: Team adviser assignment history for faculty (admin)
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Team adviser audit
+
+  /users/guest-codes/:
+    get:
+      tags: [users]
+      summary: List guest panelist codes (admin)
+      responses:
+        '200':
+          description: Codes list
+    post:
+      tags: [users]
+      summary: Create guest code (admin)
+      responses:
+        '201':
+          description: Created
+
+  /users/guest-codes/{code_id}/:
+    patch:
+      tags: [users]
+      summary: Activate/deactivate guest code (admin)
+      parameters:
+        - name: code_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+
+  /users/guest-codes/validate/{code}/:
+    get:
+      tags: [users]
+      summary: Validate guest panelist code (public)
+      security: []
+      parameters:
+        - name: code
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Schedule and guest info
+        '404':
+          description: Invalid or expired
+
+  /users/academic-records/:
+    get:
+      tags: [student-records]
+      summary: List student academic records (admin)
+      responses:
+        '200':
+          description: Records list
+    post:
+      tags: [student-records]
+      summary: Create record (admin)
+      responses:
+        '201':
+          description: Created
+
+  /users/academic-records/rollover-preview/:
+    get:
+      tags: [student-records]
+      summary: Preview semester rollover (admin)
+      responses:
+        '200':
+          description: Promote/retain preview
+
+  /users/academic-records/rollover/:
+    post:
+      tags: [student-records]
+      summary: Execute semester rollover (admin)
+      responses:
+        '200':
+          description: Rollover applied
+
+  /users/academic-records/{record_id}/:
+    patch:
+      tags: [student-records]
+      summary: Update academic record (admin)
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [student-records]
+      summary: Delete record (admin)
+      parameters:
+        - name: record_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /teams/:
+    get:
+      tags: [teams]
+      summary: List teams (scoped)
+      responses:
+        '200':
+          description: Teams list
+    post:
+      tags: [teams]
+      summary: Create team (admin/PIT)
+      responses:
+        '201':
+          description: Created
+
+  /teams/bulk-import/preview/:
+    post:
+      tags: [teams]
+      summary: Preflight bulk team import (admin/PIT)
+      description: |
+        Validates CSV rows using full names (First Last, case-insensitive) for
+        member_ids, leader_id, and adviser_id. Returns per-row row, sheet_row,
+        team_name, ready flag, and issues[].
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                teams: { type: array, items: { type: object } }
+                adviser_filter:
+                  type: string
+                  enum: [all, with_adviser, without_adviser]
+      responses:
+        '200':
+          description: Preflight rows and summary counts
+
+  /teams/bulk-import/:
+    post:
+      tags: [teams]
+      summary: Bulk import teams (admin/PIT)
+      description: |
+        Creates teams from validated rows. Resolves students and advisers by full
+        name. Response includes imported_rows (1-based data row indices),
+        errors with row, sheet_row, and team_name.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                teams: { type: array, items: { type: object } }
+                adviser_filter:
+                  type: string
+                  enum: [all, with_adviser, without_adviser]
+      responses:
+        '200':
+          description: Import results
+
+  /teams/{team_id}/:
+    parameters:
+      - name: team_id
+        in: path
+        required: true
+        schema: { type: integer }
+    get:
+      tags: [teams]
+      summary: Team detail
+      responses:
+        '200':
+          description: Team with options
+    patch:
+      tags: [teams]
+      summary: Update team (admin/PIT)
+      description: Adviser change writes TeamAdviserAssignment audit.
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [teams]
+      summary: Delete team (admin/PIT)
+      responses:
+        '204':
+          description: Deleted
+
+  /teams/{team_id}/adviser-history/:
+    get:
+      tags: [teams]
+      summary: Team adviser assignment history
+      parameters:
+        - name: team_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Audit rows
+
+  /defense/stages/:
+    get:
+      tags: [defense-stages]
+      summary: List defense stages
+      responses:
+        '200':
+          description: Stages with deliverable templates
+    post:
+      tags: [defense-stages]
+      summary: Create stage (admin)
+      responses:
+        '201':
+          description: Created
+
+  /defense/stages/{stage_id}/:
+    patch:
+      tags: [defense-stages]
+      summary: Update stage (admin)
+      parameters:
+        - name: stage_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [defense-stages]
+      summary: Delete stage (admin)
+      parameters:
+        - name: stage_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /defense/stages/{stage_id}/deliverables/:
+    post:
+      tags: [defense-stages]
+      summary: Add deliverable template (admin)
+      parameters:
+        - name: stage_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '201':
+          description: Created
+
+  /defense/stages/{stage_id}/deliverables/{deliverable_id}/:
+    patch:
+      tags: [defense-stages]
+      summary: Update deliverable template (admin)
+      parameters:
+        - name: stage_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: deliverable_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [defense-stages]
+      summary: Delete deliverable template (admin)
+      parameters:
+        - name: stage_id
+          in: path
+          required: true
+          schema: { type: integer }
+        - name: deliverable_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /grading/rubrics/:
+    get:
+      tags: [rubrics]
+      summary: List rubrics
+      responses:
+        '200':
+          description: Rubrics list
+    post:
+      tags: [rubrics]
+      summary: Create rubric (admin/PIT)
+      responses:
+        '201':
+          description: Created
+
+  /grading/rubrics/{rubric_id}/:
+    patch:
+      tags: [rubrics]
+      summary: Update rubric (admin/PIT)
+      parameters:
+        - name: rubric_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [rubrics]
+      summary: Delete rubric (admin/PIT)
+      parameters:
+        - name: rubric_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /grading/rubrics/{rubric_id}/publish/:
+    post:
+      tags: [rubrics]
+      summary: Publish and lock rubric (admin/PIT)
+      parameters:
+        - name: rubric_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Published
+
+  /grading/rubrics/{rubric_id}/weights/:
+    patch:
+      tags: [rubrics]
+      summary: Set panel/adviser/peer weights (admin/PIT)
+      parameters:
+        - name: rubric_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+
+  /defense/schedules/:
+    get:
+      tags: [defense-schedules]
+      summary: List defense schedules
+      responses:
+        '200':
+          description: Schedules list
+    post:
+      tags: [defense-schedules]
+      summary: Create schedule (admin/PIT)
+      responses:
+        '201':
+          description: Created
+
+  /defense/schedules/generate-plan/:
+    post:
+      tags: [defense-schedules]
+      summary: Generate scheduling plan preview (admin/PIT)
+      responses:
+        '200':
+          description: Plan slots
+
+  /defense/schedules/confirm-plan/:
+    post:
+      tags: [defense-schedules]
+      summary: Persist generated plan (admin/PIT)
+      responses:
+        '201':
+          description: Schedules created
+
+  /defense/schedules/panelist-assignments/:
+    get:
+      tags: [defense-schedules]
+      summary: Panelist assignments (public — uses panelist_id)
+      security: []
+      parameters:
+        - name: panelist_id
+          in: query
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Teams and rubrics for panelist
+
+  /defense/schedules/submit-grades/:
+    post:
+      tags: [defense-schedules]
+      summary: Panelist grade submission (public — uses panelist_id in body)
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [panelist_id, team_id, criteria_scores]
+              properties:
+                panelist_id: { type: integer }
+                team_id: { type: integer }
+                schedule_id: { type: integer }
+                criteria_scores:
+                  type: array
+                  items:
+                    type: object
+                remarks: { type: string }
+      responses:
+        '200':
+          description: Grades saved
+
+  /defense/schedules/{schedule_id}/:
+    patch:
+      tags: [defense-schedules]
+      summary: Update schedule (admin/PIT)
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [defense-schedules]
+      summary: Delete schedule (admin/PIT)
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /defense/board/:
+    get:
+      tags: [defense-board]
+      summary: List board entries
+      responses:
+        '200':
+          description: Board schedules
+
+  /defense/board/{schedule_id}/:
+    patch:
+      tags: [defense-board]
+      summary: Update board status (admin/PIT)
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [defense-board]
+      summary: Remove from board (admin/PIT)
+      parameters:
+        - name: schedule_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /grading/grades/:
+    get:
+      tags: [grade-center]
+      summary: List grades (auto-syncs missing rows)
+      responses:
+        '200':
+          description: Grade list
+
+  /grading/grades/sync/:
+    post:
+      tags: [grade-center]
+      summary: Sync grade rows (admin/PIT)
+      responses:
+        '200':
+          description: Sync complete
+
+  /grading/grades/evaluation-settings/:
+    patch:
+      tags: [grade-center]
+      summary: Capstone peer/adviser toggles (admin)
+      responses:
+        '200':
+          description: Semester flags updated
+
+  /grading/grades/{grade_id}/:
+    patch:
+      tags: [grade-center]
+      summary: Update grade scores (admin/PIT)
+      parameters:
+        - name: grade_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+
+  /grading/grades/{grade_id}/publish/:
+    post:
+      tags: [grade-center]
+      summary: Publish grade (admin/PIT)
+      parameters:
+        - name: grade_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Published
+
+  /grading/grades/adviser-grades/:
+    get:
+      tags: [grade-center]
+      summary: Adviser grade list (adviser scoped)
+      responses:
+        '200':
+          description: Advised team grades
+
+  /grading/grades/adviser-grades/{grade_id}/submit/:
+    post:
+      tags: [grade-center]
+      summary: Submit adviser grade
+      parameters:
+        - name: grade_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Submitted
+
+  /repository/deliverables/:
+    get:
+      tags: [capstone-deliverables]
+      summary: List deliverable status per team
+      responses:
+        '200':
+          description: Teams and submissions
+
+  /repository/deliverables/upload/:
+    post:
+      tags: [capstone-deliverables]
+      summary: Upload deliverable file
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Uploaded
+
+  /repository/deliverables/remove/:
+    post:
+      tags: [capstone-deliverables]
+      summary: Remove deliverable submission
+      responses:
+        '200':
+          description: Removed
+
+  /repository/deliverables/endorse/:
+    post:
+      tags: [capstone-deliverables]
+      summary: Endorse team for stage
+      responses:
+        '200':
+          description: Endorsed
+
+  /repository/deliverables/compile-weekly-reports/:
+    post:
+      tags: [capstone-deliverables]
+      summary: Compile weekly reports PDF
+      responses:
+        '200':
+          description: PDF generated
+
+  /repository/vault/:
+    get:
+      tags: [digital-vault]
+      summary: List vault entries (filtered)
+      responses:
+        '200':
+          description: Vault entries
+
+  /repository/audit/:
+    get:
+      tags: [repository-audit]
+      summary: List repository audit entries
+      responses:
+        '200':
+          description: Entries and stats
+
+  /repository/audit/upload-pit/:
+    post:
+      tags: [repository-audit]
+      summary: Upload PIT document
+      responses:
+        '200':
+          description: Vault entry created
+
+  /repository/audit/classify/:
+    post:
+      tags: [repository-audit]
+      summary: Classify entry
+      responses:
+        '200':
+          description: Classified
+
+  /repository/audit/override-status/:
+    post:
+      tags: [repository-audit]
+      summary: Override approval status (admin)
+      responses:
+        '200':
+          description: Overridden
+
+  /repository/audit/export/:
+    get:
+      tags: [repository-audit]
+      summary: Export entries CSV
+      responses:
+        '200':
+          description: CSV file
+
+  /curriculum-analytics/:
+    get:
+      tags: [curriculum-analytics]
+      summary: Analytics dashboard (admin only in service)
+      parameters:
+        - name: academic_year
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Analytics payload
+
+  /curriculum-analytics/proposal/:
+    post:
+      tags: [curriculum-analytics]
+      summary: Generate curriculum proposal (admin)
+      responses:
+        '200':
+          description: Proposal text
+
+  /teams/weekly-progress/:
+    get:
+      tags: [weekly-progress]
+      summary: List weekly progress reports
+      responses:
+        '200':
+          description: Reports list
+    post:
+      tags: [weekly-progress]
+      summary: Create report (team leader)
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Created
+
+  /teams/weekly-progress/{pk}/:
+    get:
+      tags: [weekly-progress]
+      summary: Get report
+      parameters:
+        - name: pk
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Report detail
+    put:
+      tags: [weekly-progress]
+      summary: Update report (team leader)
+      parameters:
+        - name: pk
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Updated
+    delete:
+      tags: [weekly-progress]
+      summary: Delete report (team leader)
+      parameters:
+        - name: pk
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /teams/weekly-progress/{pk}/file/:
+    get:
+      tags: [weekly-progress]
+      summary: Download report file
+      parameters:
+        - name: pk
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: File content
+
+  /teams/documents/:
+    get:
+      tags: [documents]
+      summary: List team documents
+      parameters:
+        - name: team_id
+          in: query
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Documents list
+
+  /teams/documents/upload/:
+    post:
+      tags: [documents]
+      summary: Upload team document
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Uploaded
+
+  /teams/documents/{document_id}/:
+    get:
+      tags: [documents]
+      summary: Document metadata
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: Metadata
+    delete:
+      tags: [documents]
+      summary: Delete document
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '204':
+          description: Deleted
+
+  /teams/documents/{document_id}/download/:
+    get:
+      tags: [documents]
+      summary: Download document file
+      parameters:
+        - name: document_id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        '200':
+          description: File stream

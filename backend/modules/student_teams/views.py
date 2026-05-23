@@ -6,12 +6,39 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from academic_period_management.capstone_mode import (
+    assert_capstone_team_creation_allowed,
+    capstone_mode_payload,
+)
 from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
-from student_academic_records.serializers import StudentOptionSerializer
+from user_management.academic_records.models import StudentAcademicRecord
+from user_management.academic_records.serializers import StudentOptionSerializer
 from user_management.permissions import IsSystemAdmin, CanManageTeams
-from .models import StudentTeam
-from .serializers import AdviserOptionSerializer, BulkTeamRowSerializer, StudentTeamSerializer, StudentTeamWriteSerializer
+from .bulk_import import (
+    format_bulk_import_errors,
+    ADVISER_FILTER_ALL,
+    build_team_payload_from_row,
+    preview_bulk_teams,
+    prepare_bulk_row,
+    validate_bulk_team_row,
+)
+from .team_levels import levels_for_user, user_is_admin, user_is_pit_lead_only
+from .term_scope import (
+    apply_team_scope,
+    get_active_semester,
+    pit_lead_operating_mode,
+    pit_roster_student_ids,
+    term_scope_payload,
+)
+from .models import StudentTeam, TeamAdviserAssignment, TeamMembership
+from .serializers import (
+    AdviserOptionSerializer,
+    BulkTeamRowSerializer,
+    StudentTeamSerializer,
+    StudentTeamWriteSerializer,
+    TeamAdviserAssignmentSerializer,
+)
 
 
 User = get_user_model()
@@ -31,7 +58,11 @@ def teams_queryset_for_user(user):
     if user.is_superuser or getattr(user, 'role', None) == 'admin':
         return base
     if getattr(user, 'is_pit_lead', False):
-        return base
+        queryset = base.filter(level__icontains='PIT')
+        pit_year = getattr(user, 'pit_lead_year', None)
+        if pit_year:
+            queryset = queryset.filter(year_level=pit_year)
+        return queryset
     if getattr(user, 'is_uploader', False):
         return base
     if getattr(user, 'role', None) == 'faculty':
@@ -54,7 +85,23 @@ def user_can_see_full_team_directory(user):
 
 
 def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+    return get_active_semester()
+
+
+def filter_students_for_pit_roster(students, active, *, pit_lead_year=None, user=None):
+    if not active:
+        return students.none()
+    if user and user_is_pit_lead_only(user) and pit_lead_operating_mode(user, active=active) == 'audit':
+        return students.none()
+
+    pit_year = (pit_lead_year or '').strip() or None
+    if user and user_is_pit_lead_only(user) and not pit_year:
+        pit_year = (getattr(user, 'pit_lead_year', None) or '').strip() or None
+
+    student_ids = pit_roster_student_ids(active, pit_lead_year=pit_year or '', historical=False)
+    if not student_ids:
+        return students.none()
+    return students.filter(pk__in=student_ids)
 
 
 def options_payload(team_id=None, team_level=None, user=None, include_roster_options=True):
@@ -68,13 +115,16 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
         include_roster_options: When False, omits student/adviser pick lists (list API privacy).
     """
     active = active_semester()
+    role_levels = levels_for_user(user) if user else [choice[0] for choice in StudentTeam.LEVEL_CHOICES]
+    capstone_window = capstone_mode_payload(active)
     if not include_roster_options:
         return {
             'active_semester': SemesterSerializer(active).data if active else None,
             'students': [],
             'advisers': [],
-            'levels': [choice[0] for choice in StudentTeam.LEVEL_CHOICES],
+            'levels': role_levels,
             'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES],
+            **capstone_window,
         }
 
     # Get all active students
@@ -99,35 +149,41 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     if is_pit_lead and not is_admin:
         team_level = 'PIT'  # Force PIT filtering for PIT Leads
     
-    # Filter students based on team level (PIT restrictions)
+    # Filter students based on team level (PIT restrictions via academic records)
     if team_level and 'PIT' in team_level.upper():
-        # PIT teams can only have 1st, 2nd, and 3rd year students
-        # But 3rd year students are only available in 1st semester
-        active = active_semester()
-        
-        if active and active.label == Semester.SECOND:
-            # 2nd Semester: Only 1st and 2nd year students (3rd year doing Capstone)
-            # Filter by username pattern: student1-20 (1st and 2nd year)
-            students = students.filter(
-                Q(username__regex=r'^student([1-9]|1[0-9]|20)$')  # student1-20
-            )
-        else:
-            # 1st Semester: 1st, 2nd, and 3rd year students
-            # Filter by username pattern: student1-30 (1st, 2nd, and 3rd year)
-            students = students.filter(
-                Q(username__regex=r'^student([1-9]|[12][0-9]|30)$')  # student1-30
-            )
+        pit_year = None
+        if is_pit_lead and not is_admin:
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip() or None
+        students = filter_students_for_pit_roster(
+            students,
+            active,
+            pit_lead_year=pit_year,
+            user=user,
+        )
     
-    advisers = User.objects.filter(role__in=['faculty', 'admin'], is_active=True).order_by('username')
+    advisers = User.objects.filter(
+        role__in=['faculty', 'admin'],
+        is_active=True,
+        is_adviser=True,
+    ).order_by('username')
+    if not advisers.exists():
+        advisers = User.objects.filter(
+            role__in=['faculty', 'admin'],
+            is_active=True,
+        ).order_by('username')
     active = active_semester()
     
-    return {
+    payload = {
         'active_semester': SemesterSerializer(active).data if active else None,
         'students': StudentOptionSerializer(students, many=True).data,
         'advisers': AdviserOptionSerializer(advisers, many=True).data,
-        'levels': [choice[0] for choice in StudentTeam.LEVEL_CHOICES],
+        'levels': role_levels,
         'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES],
+        **capstone_window,
     }
+    if user:
+        payload.update(term_scope_payload(user))
+    return payload
 
 
 def counts_payload(queryset=None, stats_base=None):
@@ -139,7 +195,10 @@ def counts_payload(queryset=None, stats_base=None):
         'pending': current.filter(status=StudentTeam.STATUS_PENDING).count(),
         'approved': current.filter(status=StudentTeam.STATUS_APPROVED).count(),
         'failed': current.filter(status=StudentTeam.STATUS_FAILED).count(),
-        'no_adviser': current.filter(adviser__isnull=True).count(),
+        'no_adviser': current.filter(
+            adviser__isnull=True,
+            level__icontains='Capstone',
+        ).count(),
     }
 
 
@@ -149,9 +208,17 @@ class StudentTeamListCreateView(APIView):
             return [IsAuthenticated()]
         return [CanManageTeams()]
 
+    def _serialize_teams(self, queryset, user):
+        return StudentTeamSerializer(
+            queryset,
+            many=True,
+            context={'user': user},
+        ).data
+
     def get(self, request):
         visible = teams_queryset_for_user(request.user)
-        queryset = visible
+        scope = request.query_params.get('scope', 'active').strip()
+        queryset = apply_team_scope(visible, scope=scope, user=request.user)
         search = request.query_params.get('search', '').strip()
         level = request.query_params.get('level', '').strip()
         status_filter = request.query_params.get('status', '').strip()
@@ -169,6 +236,8 @@ class StudentTeamListCreateView(APIView):
             )
         if level == 'Capstone':
             queryset = queryset.filter(level__icontains='Capstone')
+        elif level == 'PIT':
+            queryset = queryset.filter(level__icontains='PIT')
         elif level:
             queryset = queryset.filter(level=level)
         if status_filter:
@@ -178,9 +247,11 @@ class StudentTeamListCreateView(APIView):
         team_level_filter = request.query_params.get('team_level', '').strip()
         full_dir = user_can_see_full_team_directory(request.user)
 
+        stats_base = apply_team_scope(visible, scope='active', user=request.user)
+
         return Response({
-            'teams': StudentTeamSerializer(queryset, many=True).data,
-            'counts': counts_payload(queryset, stats_base=visible),
+            'teams': self._serialize_teams(queryset, request.user),
+            'counts': counts_payload(queryset, stats_base=stats_base),
             **options_payload(
                 team_level=team_level_filter if team_level_filter else None,
                 user=request.user,
@@ -189,13 +260,16 @@ class StudentTeamListCreateView(APIView):
         })
 
     def post(self, request):
-        serializer = StudentTeamWriteSerializer(data=request.data)
+        serializer = StudentTeamWriteSerializer(
+            data=request.data,
+            context={'assigned_by': request.user, 'user': request.user},
+        )
         serializer.is_valid(raise_exception=True)
         team = serializer.save()
         team = teams_queryset().get(pk=team.pk)
 
         return Response({
-            'team': StudentTeamSerializer(team).data,
+            'team': StudentTeamSerializer(team, context={'user': request.user}).data,
             'counts': counts_payload(),
         }, status=status.HTTP_201_CREATED)
 
@@ -204,14 +278,14 @@ class StudentTeamDetailView(APIView):
     permission_classes = [CanManageTeams]
 
     def get_object(self, team_id):
-        return get_object_or_404(teams_queryset(), pk=team_id)
+        return get_object_or_404(teams_queryset_for_user(self.request.user), pk=team_id)
 
     def get(self, request, team_id):
         """Get team details with available students for editing"""
         team = self.get_object(team_id)
         return Response({
-            'team': StudentTeamSerializer(team).data,
-            **options_payload(team_id=team_id, team_level=team.level, user=request.user),  # Pass team level for filtering
+            'team': StudentTeamSerializer(team, context={'user': request.user}).data,
+            **options_payload(team_id=team_id, team_level=team.level, user=request.user),
         })
 
     def patch(self, request, team_id):
@@ -219,74 +293,180 @@ class StudentTeamDetailView(APIView):
         serializer = StudentTeamWriteSerializer(
             team,
             data=request.data,
-            context={'team_id': team.id},
+            context={'team_id': team.id, 'assigned_by': request.user, 'user': request.user},
         )
         serializer.is_valid(raise_exception=True)
         team = serializer.save()
         team = teams_queryset().get(pk=team.pk)
 
         return Response({
-            'team': StudentTeamSerializer(team).data,
+            'team': StudentTeamSerializer(team, context={'user': request.user}).data,
             'counts': counts_payload(),
         })
 
     def delete(self, request, team_id):
         team = self.get_object(team_id)
+        from .term_scope import assert_team_writable
+
+        assert_team_writable(request.user, team)
         member_ids = list(team.memberships.values_list('student_id', flat=True))
         team.delete()
         User.objects.filter(pk__in=member_ids, team_id=str(team_id)).update(team_id=None)
         return Response({'counts': counts_payload()}, status=status.HTTP_200_OK)
 
 
-class BulkImportTeamsView(APIView):
+class TeamAdviserHistoryView(APIView):
+    permission_classes = [CanManageTeams]
+
+    def get(self, request, team_id):
+        team = get_object_or_404(teams_queryset(), pk=team_id)
+        assignments = (
+            TeamAdviserAssignment.objects.filter(team=team)
+            .select_related('adviser', 'assigned_by', 'team', 'team__semester')
+            .order_by('-assigned_at', '-id')
+        )
+        return Response({
+            'assignments': TeamAdviserAssignmentSerializer(assignments, many=True).data,
+        })
+
+
+def _normalize_adviser_filter(raw):
+    value = (raw or ADVISER_FILTER_ALL).strip().lower()
+    if value in ('with_adviser', 'without_adviser', 'all'):
+        return value
+    return ADVISER_FILTER_ALL
+
+
+def _reject_capstone_bulk_import_if_closed(user):
+    from .team_levels import user_is_admin
+
+    if not user_is_admin(user):
+        return None
+    active = active_semester()
+    try:
+        assert_capstone_team_creation_allowed(active)
+    except ValueError as exc:
+        return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+    return None
+
+
+class BulkImportTeamsPreviewView(APIView):
     permission_classes = [CanManageTeams]
 
     def post(self, request):
+        blocked = _reject_capstone_bulk_import_if_closed(request.user)
+        if blocked is not None:
+            return blocked
+
         rows = request.data.get('teams', [])
         if not isinstance(rows, list):
             return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
+        preview_rows, summary = preview_bulk_teams(
+            rows,
+            adviser_filter=adviser_filter,
+            user=request.user,
+        )
+
+        return Response({
+            'rows': preview_rows,
+            'summary': summary,
+            'adviser_filter': adviser_filter,
+        })
+
+
+class BulkImportTeamsView(APIView):
+    permission_classes = [CanManageTeams]
+
+    def post(self, request):
+        blocked = _reject_capstone_bulk_import_if_closed(request.user)
+        if blocked is not None:
+            return blocked
+
+        rows = request.data.get('teams', [])
+        if not isinstance(rows, list):
+            return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
         created = []
         skipped = []
         errors = []
+        imported_rows = []
 
         for index, row in enumerate(rows, start=1):
-            row_serializer = BulkTeamRowSerializer(data=row)
-            if not row_serializer.is_valid():
-                errors.append({'row': index, 'errors': row_serializer.errors})
+            team_name = (row.get('team_name') or '').strip()
+            prepared, prep_issues = prepare_bulk_row(row, request.user)
+            if prep_issues:
+                errors.append({
+                    'row': index,
+                    'sheet_row': index + 1,
+                    'team_name': team_name,
+                    'errors': prep_issues,
+                })
                 continue
 
-            data = row_serializer.validated_data
-            member_users = User.objects.filter(username__in=data['member_ids'], role='student')
-            member_id_map = {user.username: user.id for user in member_users}
-            leader = User.objects.filter(username=data['leader_id'], role='student').first()
-            adviser = None
-            if data.get('adviser_id'):
-                adviser = User.objects.filter(username=data['adviser_id'], role__in=['faculty', 'admin']).first()
+            row_serializer = BulkTeamRowSerializer(
+                data=prepared,
+                context={'user': request.user},
+            )
+            if not row_serializer.is_valid():
+                errors.append({
+                    'row': index,
+                    'sheet_row': index + 1,
+                    'team_name': team_name,
+                    'errors': format_bulk_import_errors(row_serializer.errors),
+                })
+                continue
 
-            payload = {
-                'name': data['team_name'],
-                'project_title': data.get('project_title') or data['team_name'],
-                'level': data['level'],
-                'year_level': data.get('year_level') or '',
-                'member_ids': [member_id_map[item] for item in data['member_ids'] if item in member_id_map],
-                'leader_id': leader.id if leader else None,
-                'adviser_id': adviser.id if adviser else None,
-            }
+            result = validate_bulk_team_row(
+                row_serializer.validated_data,
+                adviser_filter=adviser_filter,
+                user=request.user,
+            )
+            team_name = result['team_name']
+            if not result['ready']:
+                if result['issues']:
+                    errors.append({
+                        'row': index,
+                        'sheet_row': index + 1,
+                        'team_name': team_name,
+                        'errors': result['issues'],
+                    })
+                else:
+                    skipped.append({
+                        'row': index,
+                        'sheet_row': index + 1,
+                        'team_name': team_name,
+                        'reason': 'filtered_by_adviser',
+                    })
+                continue
 
-            serializer = StudentTeamWriteSerializer(data=payload)
+            payload = build_team_payload_from_row(result, user=request.user)
+            serializer = StudentTeamWriteSerializer(
+                data=payload,
+                context={'assigned_by': request.user, 'user': request.user},
+            )
             if not serializer.is_valid():
-                errors.append({'row': index, 'errors': serializer.errors})
+                errors.append({
+                    'row': index,
+                    'sheet_row': index + 1,
+                    'team_name': team_name,
+                    'errors': format_bulk_import_errors(serializer.errors),
+                })
                 continue
 
             created.append(serializer.save())
+            imported_rows.append(index)
 
         return Response({
             'created': StudentTeamSerializer(created, many=True).data,
             'created_count': len(created),
+            'imported_rows': imported_rows,
             'skipped': skipped,
             'skipped_count': len(skipped),
             'errors': errors,
             'error_count': len(errors),
             'counts': counts_payload(),
+            'adviser_filter': adviser_filter,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

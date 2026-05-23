@@ -13,12 +13,14 @@ final gradeCenterProvider =
 class GradeCenterState {
   final bool isLoading;
   final bool isSaving;
+  final bool isRefreshingGrade;
   final List<Map<String, dynamic>> grades;
   final List<String> yearLevels;
   final List<String> statuses;
   final List<Map<String, dynamic>> scopes;
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
+  final Map<String, Map<String, dynamic>> groupSettings;
   final String search;
   final String yearLevel;
   final String status;
@@ -29,12 +31,14 @@ class GradeCenterState {
   const GradeCenterState({
     this.isLoading = false,
     this.isSaving = false,
+    this.isRefreshingGrade = false,
     this.grades = const [],
     this.yearLevels = const [],
     this.statuses = const [],
     this.scopes = const [],
     this.counts = const {},
     this.activeSemester,
+    this.groupSettings = const {},
     this.search = '',
     this.yearLevel = '',
     this.status = '',
@@ -46,12 +50,14 @@ class GradeCenterState {
   GradeCenterState copyWith({
     bool? isLoading,
     bool? isSaving,
+    bool? isRefreshingGrade,
     List<Map<String, dynamic>>? grades,
     List<String>? yearLevels,
     List<String>? statuses,
     List<Map<String, dynamic>>? scopes,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
+    Map<String, Map<String, dynamic>>? groupSettings,
     String? search,
     String? yearLevel,
     String? status,
@@ -65,6 +71,7 @@ class GradeCenterState {
     return GradeCenterState(
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
+      isRefreshingGrade: isRefreshingGrade ?? this.isRefreshingGrade,
       grades: grades ?? this.grades,
       yearLevels: yearLevels ?? this.yearLevels,
       statuses: statuses ?? this.statuses,
@@ -73,6 +80,7 @@ class GradeCenterState {
       activeSemester: clearActiveSemester
           ? null
           : activeSemester ?? this.activeSemester,
+      groupSettings: groupSettings ?? this.groupSettings,
       search: search ?? this.search,
       yearLevel: yearLevel ?? this.yearLevel,
       status: status ?? this.status,
@@ -115,14 +123,15 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final uri = Uri.parse(baseUrl).replace(
-        queryParameters: {
-          if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
-          if (nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
-          if (nextStatus.isNotEmpty) 'status': nextStatus,
-          if (nextScope.isNotEmpty) 'scope': nextScope,
-        },
-      );
+      final queryParameters = <String, String>{
+        if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
+        if (nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
+        if (nextStatus.isNotEmpty) 'status': nextStatus,
+      };
+      if (nextScope.isNotEmpty) {
+        queryParameters['scope'] = nextScope;
+      }
+      final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
       final response = await http.get(uri, headers: await _headers());
 
       if (response.statusCode == 200) {
@@ -142,6 +151,46 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         isSaving: false,
         error: 'Connection error: $e',
       );
+    }
+  }
+
+  /// Fetches one grade row (rebuilds peer aggregates on the server) and merges into state.
+  Future<bool> refreshGrade(int gradeId) async {
+    state = state.copyWith(isRefreshingGrade: true, clearError: true);
+
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/$gradeId/'),
+        headers: await _headers(),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final grade = payload['grade'];
+        if (grade is Map) {
+          final updated = Map<String, dynamic>.from(grade);
+          state = state.copyWith(
+            isRefreshingGrade: false,
+            grades: _mergeGradeIntoList(state.grades, updated),
+            clearError: true,
+          );
+          return true;
+        }
+        state = state.copyWith(isRefreshingGrade: false);
+        return false;
+      }
+
+      state = state.copyWith(
+        isRefreshingGrade: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(
+        isRefreshingGrade: false,
+        error: 'Connection error: $e',
+      );
+      return false;
     }
   }
 
@@ -243,6 +292,85 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
+  Future<bool> updateGroupSettings({
+    required String scope,
+    required String stageLabel,
+    bool? isOfficiallyComplete,
+    bool? peerGradingEnabled,
+  }) async {
+    if (isOfficiallyComplete == null && peerGradingEnabled == null) {
+      return true;
+    }
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final body = <String, dynamic>{
+        'scope': scope,
+        'stage_label': stageLabel,
+      };
+      if (isOfficiallyComplete != null) {
+        body['is_officially_complete'] = isOfficiallyComplete;
+      }
+      if (peerGradingEnabled != null) {
+        body['peer_grading_enabled'] = peerGradingEnabled;
+      }
+      final response = await http.patch(
+        Uri.parse('$baseUrl/group-settings/'),
+        headers: await _headers(),
+        body: jsonEncode(body),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final merged = Map<String, Map<String, dynamic>>.from(state.groupSettings);
+        final updated = payload['group_settings'];
+        if (updated is Map) {
+          for (final entry in updated.entries) {
+            if (entry.value is Map) {
+              merged[entry.key.toString()] = Map<String, dynamic>.from(
+                entry.value as Map,
+              );
+            }
+          }
+        }
+        var message = 'Event settings updated.';
+        final autoPublish = payload['auto_publish'] ?? payload['auto_finalize'];
+        if (autoPublish is Map && isOfficiallyComplete == true) {
+          final readyCount = autoPublish['ready_for_archive_count'] ??
+              autoPublish['published_count'];
+          if (readyCount is int && readyCount > 0) {
+            message =
+                'Event marked officially complete. $readyCount passed team(s) are ready to archive in Repository Audit.';
+          } else if (scope == 'pit' || scope == 'capstone') {
+            message =
+                'Stage marked officially complete. Passed teams with complete scores are ready to archive in Repository Audit.';
+          }
+        }
+        state = state.copyWith(
+          isSaving: false,
+          groupSettings: merged,
+          message: message,
+          clearError: true,
+        );
+        if (isOfficiallyComplete == true &&
+            (payload['auto_publish'] != null || payload['auto_finalize'] != null)) {
+          await fetchGrades(scope: state.scope.isNotEmpty ? state.scope : scope);
+        }
+        return true;
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   /// Admin-only: toggles stored on the active semester (Capstone peer / adviser).
   Future<bool> updateCapstoneEvaluationSettings({
     bool? peerEvaluationEnabled,
@@ -323,9 +451,25 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
           ? Map<String, dynamic>.from(payload['active_semester'])
           : null,
       clearActiveSemester: payload['active_semester'] == null,
+      groupSettings: _readGroupSettings(payload['group_settings']),
       message: successMessage,
       clearError: true,
     );
+  }
+
+  Map<String, Map<String, dynamic>> _readGroupSettings(dynamic value) {
+    if (value is! Map) {
+      return {};
+    }
+    final result = <String, Map<String, dynamic>>{};
+    for (final entry in value.entries) {
+      if (entry.value is Map) {
+        result[entry.key.toString()] = Map<String, dynamic>.from(
+          entry.value as Map,
+        );
+      }
+    }
+    return result;
   }
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {
@@ -343,6 +487,26 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       return [];
     }
     return value.map((item) => item.toString()).toList();
+  }
+
+  List<Map<String, dynamic>> _mergeGradeIntoList(
+    List<Map<String, dynamic>> grades,
+    Map<String, dynamic> updated,
+  ) {
+    final updatedId = updated['id'];
+    var found = false;
+    final merged = grades.map((grade) {
+      if (grade['id'] == updatedId ||
+          grade['id']?.toString() == updatedId?.toString()) {
+        found = true;
+        return updated;
+      }
+      return grade;
+    }).toList();
+    if (!found) {
+      merged.add(updated);
+    }
+    return merged;
   }
 
   String _errorFromResponse(http.Response response) {

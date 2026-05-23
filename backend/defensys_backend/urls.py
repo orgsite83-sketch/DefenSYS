@@ -19,29 +19,26 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+from defensys_backend.media_views import AuthenticatedMediaFileView
+
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/', include('authentication_access_control.urls')),
     path('api/dashboards/', include('dashboards.urls')),
     path('api/academic-periods/', include('academic_period_management.urls')),
     path('api/users/', include('user_management.urls')),
-    path('api/student-records/', include('student_academic_records.urls')),
     path('api/teams/', include('student_teams.urls')),
-    path('api/defense-stages/', include('defense_stages.urls')),
-    path('api/rubrics/', include('rubric_engine.urls')),
-    path('api/defense-schedules/', include('defense_scheduler.urls')),
-    path('api/defense-board/', include('defense_board.urls')),
-    path('api/grade-center/', include('grade_center.urls')),
-    path('api/capstone-deliverables/', include('capstone_deliverables.urls')),
-    path('api/digital-vault/', include('digital_vault.urls')),
-    path('api/repository-audit/', include('repository_audit.urls')),
+    path('api/defense/', include('defense.urls')),
+    path('api/grading/', include('grading.urls')),
+    path('api/repository/', include('repository.urls')),
     path('api/curriculum-analytics/', include('curriculum_analytics.urls')),
-    path('api/weekly-progress/', include('student_weekly_progress.urls')),
+    path(
+        'api/media/files/<path:file_path>',
+        AuthenticatedMediaFileView.as_view(),
+        name='media_file_serve',
+    ),
 ]
 
-# Add team documents URL
-urlpatterns.append(path('api/documents/', include('team_documents.urls')))
-
-# Serve media files in development
-if settings.DEBUG:
+# Serve media files in development (local disk only)
+if settings.DEBUG and not getattr(settings, 'USE_S3', False):
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

@@ -26,7 +26,7 @@ def add_uploader_field():
             """)
             
             if cursor.fetchone():
-                print("✓ Column 'is_uploader' already exists")
+                print("Column 'is_uploader' already exists")
                 return
             
             # Add the column
@@ -36,7 +36,7 @@ def add_uploader_field():
                 ADD COLUMN is_uploader BOOLEAN DEFAULT FALSE NOT NULL;
             """)
             
-            print("✓ Column 'is_uploader' added successfully")
+            print("Column 'is_uploader' added successfully")
             
             # Record the migration
             cursor.execute("""
@@ -44,12 +44,12 @@ def add_uploader_field():
                 VALUES ('authentication_access_control', '0002_user_is_uploader', CURRENT_TIMESTAMP);
             """)
             
-            print("✓ Migration recorded")
+            print("Migration recorded")
             
         except Exception as e:
-            print(f"✗ Error: {e}")
+            print(f"Error: {e}")
             raise
 
 if __name__ == '__main__':
     add_uploader_field()
-    print("\n✓ Done! You can now restart the Django server.")
+    print("\n Done! You can now restart the Django server.")

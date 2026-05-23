@@ -3,7 +3,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
 from authentication_access_control.models import User
-from digital_vault.services import digital_vault_payload
+from repository.vault.services import digital_vault_payload
 
 class MockRequest:
     def __init__(self, user):
@@ -26,11 +26,11 @@ print()
 if payload['entries']:
     print('Entries:')
     for entry in payload['entries']:
-        print(f'  - {entry["file_name"]}')
-        print(f'    ID: {entry["id"]}')
-        print(f'    Team: {entry["team_name"]} (ID: {entry.get("team_id")})')
-        print(f'    Type: {entry["type"]}')
-        print(f'    Deliverable: {entry.get("deliverable_id")}')
+        print(f'- {entry["file_name"]}')
+        print(f'ID: {entry["id"]}')
+        print(f'Team: {entry["team_name"]} (ID: {entry.get("team_id")})')
+        print(f'Type: {entry["type"]}')
+        print(f'Deliverable: {entry.get("deliverable_id")}')
         print()
 else:
     print('No entries returned!')

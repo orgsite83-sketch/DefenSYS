@@ -56,11 +56,6 @@ _allowed = os.environ.get(
 )
 ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 
-# Prototype/demo helpers must stay disabled for deployable builds. Tests or
-# local experiments can opt in with override_settings(ENABLE_PROTOTYPE_TOOLS=True).
-ENABLE_PROTOTYPE_TOOLS = _env_bool('ENABLE_PROTOTYPE_TOOLS', default=False)
-
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -70,25 +65,21 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'storages',
     'rest_framework',
     'authentication_access_control',
     'dashboards',
     'academic_period_management',
     'user_management',
-    'student_academic_records',
     'student_teams',
-    'defense_stages',
-    'rubric_engine',
-    'defense_scheduler',
-    'defense_board',
-    'grade_center',
-    'capstone_deliverables',
-    'digital_vault',
-    'repository_audit',
+    'defense',
+    'grading',
+    'repository',
     'curriculum_analytics',
-    'student_weekly_progress',
-    'team_documents',
 ]
+
+# App API tests only; do not collect ad-hoc scripts in backend/tests/ (see tests/README.md).
+TEST_RUNNER = 'defensys_backend.test_runner.AppOnlyDiscoverRunner'
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -139,6 +130,10 @@ if not DATABASES['default']['PASSWORD'] and not DEBUG:
         'POSTGRES_PASSWORD is required when DJANGO_DEBUG is False.'
     )
 
+_db_name = DATABASES['default']['NAME']
+DATABASES['default']['TEST'] = {
+    'NAME': f'test_{_db_name}',
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -176,9 +171,47 @@ USE_TZ = True
 
 STATIC_URL = 'static/'
 
-# Media files (User uploaded files)
+# Media files (User uploaded files) — bytes on disk or S3; metadata in PostgreSQL.
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
+
+USE_S3 = _env_bool('USE_S3', default=False)
+AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', '')
+AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
+AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME', '')
+AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'ap-southeast-1')
+AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL') or None
+AWS_QUERYSTRING_EXPIRE = int(os.environ.get('AWS_QUERYSTRING_EXPIRE', '3600'))
+AWS_DEFAULT_ACL = None
+AWS_S3_FILE_OVERWRITE = False
+AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
+
+if USE_S3:
+    if not AWS_STORAGE_BUCKET_NAME:
+        raise ImproperlyConfigured(
+            'USE_S3 is enabled but AWS_STORAGE_BUCKET_NAME is not set in .env'
+        )
+    STORAGES = {
+        'default': {
+            'BACKEND': 'storages.backends.s3.S3Storage',
+        },
+        'staticfiles': {
+            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        },
+    }
+else:
+    STORAGES = {
+        'default': {
+            'BACKEND': 'django.core.files.storage.FileSystemStorage',
+            'OPTIONS': {
+                'location': MEDIA_ROOT,
+                'base_url': MEDIA_URL,
+            },
+        },
+        'staticfiles': {
+            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+        },
+    }
 
 
 AUTH_USER_MODEL = 'authentication_access_control.User'
@@ -233,7 +266,7 @@ LOGGING = {
         'level': 'INFO',
     },
     'loggers': {
-        'student_weekly_progress': {
+        'student_teams.weekly_progress': {
             'handlers': ['console'],
             'level': 'DEBUG',
             'propagate': False,

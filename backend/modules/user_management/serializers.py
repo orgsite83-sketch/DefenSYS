@@ -1,8 +1,15 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from defense_scheduler.models import DefenseSchedule
-from .models import GuestPanelistCode
+from defense.scheduler.models import DefenseSchedule
+from .models import FacultyRoleAssignment, GuestPanelistCode
+from .role_assignments import (
+    ROLE_LABELS,
+    compute_display_role,
+    ensure_active_role_history,
+    record_role_changes,
+    snapshot_role_flags,
+)
 
 
 User = get_user_model()
@@ -17,9 +24,44 @@ def schedule_label(schedule):
     return f'{team_name} - {stage_label} - {date} {time}{room}'.strip()
 
 
+class FacultyRoleAssignmentSerializer(serializers.ModelSerializer):
+    role_label = serializers.SerializerMethodField()
+    semester = serializers.SerializerMethodField()
+    changed_by_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = FacultyRoleAssignment
+        fields = [
+            'id',
+            'role_key',
+            'role_label',
+            'role_detail',
+            'semester',
+            'year_level',
+            'action',
+            'changed_at',
+            'changed_by_name',
+        ]
+
+    def get_role_label(self, obj):
+        return ROLE_LABELS.get(obj.role_key, obj.role_key)
+
+    def get_semester(self, obj):
+        if obj.semester_id is None:
+            return None
+        return obj.semester.display_name
+
+    def get_changed_by_name(self, obj):
+        if obj.changed_by_id is None:
+            return None
+        full_name = f'{obj.changed_by.first_name} {obj.changed_by.last_name}'.strip()
+        return full_name or obj.changed_by.username
+
+
 class ManagedUserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
+    displayRole = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -38,10 +80,10 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'is_pit_lead',
             'pit_lead_year',
             'is_adviser',
-            'adviser_phase',
             'is_repo_assistant',
             'is_uploader',
             'facultyRoles',
+            'displayRole',
             'password',
         ]
         extra_kwargs = {
@@ -51,7 +93,6 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'last_name': {'required': False, 'allow_blank': True},
             'team_id': {'required': False, 'allow_null': True, 'allow_blank': True},
             'pit_lead_year': {'required': False, 'allow_null': True, 'allow_blank': True},
-            'adviser_phase': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
 
     def get_name(self, obj):
@@ -64,10 +105,12 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'pitLead': obj.is_pit_lead,
             'pitLeadYear': obj.pit_lead_year,
             'adviser': obj.is_adviser,
-            'adviserPhase': obj.adviser_phase,
             'repoAssistant': obj.is_repo_assistant,
             'uploader': obj.is_uploader,
         }
+
+    def get_displayRole(self, obj):
+        return compute_display_role(obj)
 
     def validate_username(self, value):
         queryset = User.objects.filter(username=value)
@@ -86,17 +129,27 @@ class ManagedUserSerializer(serializers.ModelSerializer):
     def create(self, validated_data):
         password = validated_data.pop('password', '') or validated_data['username']
         self._normalize_role_fields(validated_data)
-        return User.objects.create_user(password=password, **validated_data)
+        user = User.objects.create_user(password=password, **validated_data)
+        user.adviser_phase = None
+        user.save(update_fields=['adviser_phase'])
+        return user
 
     def update(self, instance, validated_data):
         password = validated_data.pop('password', '')
+        before_flags = snapshot_role_flags(instance)
         self._normalize_role_fields(validated_data, instance=instance)
 
         for field, value in validated_data.items():
             setattr(instance, field, value)
+        instance.adviser_phase = None
         if password:
             instance.set_password(password)
         instance.save()
+
+        request = self.context.get('request')
+        changed_by = getattr(request, 'user', None) if request else None
+        record_role_changes(instance, before_flags, changed_by=changed_by)
+        ensure_active_role_history(instance, changed_by=changed_by)
         return instance
 
     def _normalize_role_fields(self, attrs, instance=None):
@@ -108,16 +161,12 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             attrs['is_pit_lead'] = False
             attrs['pit_lead_year'] = None
             attrs['is_adviser'] = False
-            attrs['adviser_phase'] = None
             attrs['is_repo_assistant'] = False
             attrs['is_uploader'] = False
 
         if not attrs.get('is_pit_lead', getattr(instance, 'is_pit_lead', False)):
             attrs['pit_lead_year'] = None
             attrs['is_repo_assistant'] = False
-
-        if not attrs.get('is_adviser', getattr(instance, 'is_adviser', False)):
-            attrs['adviser_phase'] = None
 
 
 class BulkUserRowSerializer(serializers.Serializer):

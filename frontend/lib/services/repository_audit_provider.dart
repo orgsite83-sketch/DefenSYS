@@ -17,6 +17,8 @@ class RepositoryAuditState {
   final Map<String, dynamic> counts;
   final Map<String, dynamic> options;
   final Map<String, dynamic> scope;
+  final Map<String, dynamic> uploadWindow;
+  final Map<String, dynamic> capstoneUploadWindow;
   final String search;
   final String type;
   final String yearLevel;
@@ -25,8 +27,14 @@ class RepositoryAuditState {
   final String semester;
   final String teamId;
   final String stage;
+  final String deliverableId;
+  final String submissionKind;
+  final String viewMode;
+  final List<Map<String, dynamic>> groupedByStage;
+  final Map<String, dynamic> deliverableSummary;
   final String? error;
   final String? message;
+  final List<Map<String, dynamic>> lastUploadSkipped;
 
   const RepositoryAuditState({
     this.isLoading = false,
@@ -35,6 +43,8 @@ class RepositoryAuditState {
     this.counts = const {},
     this.options = const {},
     this.scope = const {},
+    this.uploadWindow = const {},
+    this.capstoneUploadWindow = const {},
     this.search = '',
     this.type = '',
     this.yearLevel = '',
@@ -43,8 +53,14 @@ class RepositoryAuditState {
     this.semester = '',
     this.teamId = '',
     this.stage = '',
+    this.deliverableId = '',
+    this.submissionKind = '',
+    this.viewMode = '',
+    this.groupedByStage = const [],
+    this.deliverableSummary = const {},
     this.error,
     this.message,
+    this.lastUploadSkipped = const [],
   });
 
   RepositoryAuditState copyWith({
@@ -54,6 +70,8 @@ class RepositoryAuditState {
     Map<String, dynamic>? counts,
     Map<String, dynamic>? options,
     Map<String, dynamic>? scope,
+    Map<String, dynamic>? uploadWindow,
+    Map<String, dynamic>? capstoneUploadWindow,
     String? search,
     String? type,
     String? yearLevel,
@@ -62,10 +80,17 @@ class RepositoryAuditState {
     String? semester,
     String? teamId,
     String? stage,
+    String? deliverableId,
+    String? submissionKind,
+    String? viewMode,
+    List<Map<String, dynamic>>? groupedByStage,
+    Map<String, dynamic>? deliverableSummary,
     String? error,
     String? message,
+    List<Map<String, dynamic>>? lastUploadSkipped,
     bool clearError = false,
     bool clearMessage = false,
+    bool clearLastUploadSkipped = false,
   }) {
     return RepositoryAuditState(
       isLoading: isLoading ?? this.isLoading,
@@ -74,6 +99,8 @@ class RepositoryAuditState {
       counts: counts ?? this.counts,
       options: options ?? this.options,
       scope: scope ?? this.scope,
+      uploadWindow: uploadWindow ?? this.uploadWindow,
+      capstoneUploadWindow: capstoneUploadWindow ?? this.capstoneUploadWindow,
       search: search ?? this.search,
       type: type ?? this.type,
       yearLevel: yearLevel ?? this.yearLevel,
@@ -82,10 +109,30 @@ class RepositoryAuditState {
       semester: semester ?? this.semester,
       teamId: teamId ?? this.teamId,
       stage: stage ?? this.stage,
+      deliverableId: deliverableId ?? this.deliverableId,
+      submissionKind: submissionKind ?? this.submissionKind,
+      viewMode: viewMode ?? this.viewMode,
+      groupedByStage: groupedByStage ?? this.groupedByStage,
+      deliverableSummary: deliverableSummary ?? this.deliverableSummary,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
+      lastUploadSkipped: clearLastUploadSkipped
+          ? const []
+          : lastUploadSkipped ?? this.lastUploadSkipped,
     );
   }
+}
+
+class UploadPitResult {
+  final bool savedAny;
+  final int createdCount;
+  final List<Map<String, dynamic>> skipped;
+
+  const UploadPitResult({
+    required this.savedAny,
+    required this.createdCount,
+    required this.skipped,
+  });
 }
 
 class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
@@ -105,7 +152,12 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     String? semester,
     String? teamId,
     String? stage,
+    String? deliverableId,
+    String? submissionKind,
+    String? viewMode,
     String? successMessage,
+    bool clearDeliverable = false,
+    bool clearTeam = false,
   }) async {
     final nextSearch = search ?? state.search;
     final nextType = type ?? state.type;
@@ -113,8 +165,19 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     final nextAcademicYear = academicYear ?? state.academicYear;
     final nextStatus = status ?? state.status;
     final nextSemester = semester ?? state.semester;
-    final nextTeamId = teamId ?? state.teamId;
+    final nextTeamId = clearTeam ? '' : (teamId ?? state.teamId);
     final nextStage = stage ?? state.stage;
+    final nextDeliverableId =
+        clearDeliverable ? '' : (deliverableId ?? state.deliverableId);
+    final nextSubmissionKind = submissionKind ?? state.submissionKind;
+    var nextViewMode = viewMode ?? state.viewMode;
+    if (nextDeliverableId.isNotEmpty) {
+      nextViewMode = 'deliverable';
+    } else if (nextTeamId.isNotEmpty) {
+      nextViewMode = 'team';
+    } else {
+      nextViewMode = '';
+    }
 
     state = state.copyWith(
       isLoading: state.entries.isEmpty,
@@ -127,8 +190,12 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       semester: nextSemester,
       teamId: nextTeamId,
       stage: nextStage,
+      deliverableId: nextDeliverableId,
+      submissionKind: nextSubmissionKind,
+      viewMode: nextViewMode,
       clearError: true,
       clearMessage: true,
+      clearLastUploadSkipped: true,
     );
 
     try {
@@ -143,6 +210,9 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
           semester: nextSemester,
           teamId: nextTeamId,
           stage: nextStage,
+          deliverableId: nextDeliverableId,
+          submissionKind: nextSubmissionKind,
+          viewMode: nextViewMode,
         ),
         headers: await _headers(),
       );
@@ -169,22 +239,114 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     }
   }
 
-  Future<bool> uploadPit({
-    required List<String> fileNames,
+  Future<UploadPitResult> uploadPit({
+    List<String>? fileNames,
+    List<http.MultipartFile>? multipartFiles,
     String? yearLevel,
     String? academicYear,
-  }) {
-    return _postAction('upload-pit', {
-      'file_names': fileNames,
+  }) async {
+    if (multipartFiles != null && multipartFiles.isNotEmpty) {
+      return uploadPitMultipart(
+        multipartFiles: multipartFiles,
+        yearLevel: yearLevel,
+        academicYear: academicYear,
+      );
+    }
+    return _postUploadAction({
+      'file_names': fileNames ?? [],
       if ((yearLevel ?? '').isNotEmpty) 'year_level': yearLevel,
       if ((academicYear ?? '').isNotEmpty) 'academic_year': academicYear,
-    }, successMessage: 'PIT upload metadata saved.');
+    });
   }
 
-  Future<bool> classify(String entryId) {
-    return _postAction('classify', {
-      'entry_id': entryId,
-    }, successMessage: 'PIT file classified as approved.');
+  Future<UploadPitResult> uploadPitMultipart({
+    required List<http.MultipartFile> multipartFiles,
+    String? yearLevel,
+    String? academicYear,
+  }) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload-pit/'),
+      );
+      final headers = await _authHeaders();
+      request.headers.addAll(headers);
+      if ((yearLevel ?? '').isNotEmpty) {
+        request.fields['year_level'] = yearLevel!;
+      }
+      if ((academicYear ?? '').isNotEmpty) {
+        request.fields['academic_year'] = academicYear!;
+      }
+      request.files.addAll(multipartFiles);
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        return _applyUploadPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+        );
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    }
+  }
+
+  Future<UploadPitResult> _postUploadAction(Map<String, dynamic> payload) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+      clearLastUploadSkipped: true,
+    );
+
+    try {
+      final response = await http.post(
+        Uri.parse('$baseUrl/upload-pit/'),
+        headers: await _headers(),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        return _applyUploadPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+        );
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    }
   }
 
   Future<bool> overrideStatus(String entryId, String status) {
@@ -212,6 +374,9 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
           semester: state.semester,
           teamId: state.teamId,
           stage: state.stage,
+          deliverableId: state.deliverableId,
+          submissionKind: state.submissionKind,
+          viewMode: state.viewMode,
         ),
         headers: await _headers(),
       );
@@ -242,6 +407,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       isSaving: true,
       clearError: true,
       clearMessage: true,
+      clearLastUploadSkipped: true,
     );
 
     try {
@@ -280,6 +446,9 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     required String semester,
     required String teamId,
     required String stage,
+    String deliverableId = '',
+    String submissionKind = '',
+    String viewMode = '',
   }) {
     return Uri.parse(path.isEmpty ? baseUrl : '$baseUrl/$path/').replace(
       queryParameters: {
@@ -291,25 +460,56 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
         if (semester.isNotEmpty) 'semester': semester,
         if (teamId.isNotEmpty) 'team_id': teamId,
         if (stage.isNotEmpty) 'stage': stage,
+        if (deliverableId.isNotEmpty) 'deliverable_id': deliverableId,
+        if (submissionKind.isNotEmpty) 'submission_kind': submissionKind,
+        if (viewMode.isNotEmpty) 'view': viewMode,
       },
     );
   }
 
+  Future<List<Map<String, dynamic>>> fetchAuditTrail({
+    required String entryType,
+    int? sourceId,
+    String fileName = '',
+  }) async {
+    final query = <String, String>{
+      'entry_type': entryType,
+      if (sourceId != null) 'source_id': '$sourceId',
+      if (fileName.trim().isNotEmpty) 'file_name': fileName.trim(),
+    };
+    final uri = Uri.parse('${baseUrl}/trail/').replace(queryParameters: query);
+    try {
+      final response = await http.get(uri, headers: await _headers());
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return _readMapList(payload['audit_trail']);
+      }
+    } catch (_) {
+      return const [];
+    }
+    return const [];
+  }
+
   Future<Map<String, String>> _headers() async {
+    final auth = await _authHeaders();
+    return {
+      'Content-Type': 'application/json',
+      ...auth,
+    };
+  }
+
+  Future<Map<String, String>> _authHeaders() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString('jwt_token');
     if (token == null) {
       throw Exception('No authentication token found.');
     }
     return {
-      'Content-Type': 'application/json',
       'Authorization': 'Bearer $token',
     };
   }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
-    final skipped = _readMapList(payload['skipped']);
-    final suffix = skipped.isEmpty ? '' : ' ${skipped.length} skipped.';
     state = state.copyWith(
       isLoading: false,
       isSaving: false,
@@ -323,9 +523,161 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       scope: payload['scope'] is Map
           ? Map<String, dynamic>.from(payload['scope'])
           : const {},
-      message: successMessage == null ? null : '$successMessage$suffix',
+      uploadWindow: payload['upload_window'] is Map
+          ? Map<String, dynamic>.from(payload['upload_window'])
+          : const {},
+      capstoneUploadWindow: payload['capstone_upload_window'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_upload_window'])
+          : const {},
+      groupedByStage: _readMapList(payload['grouped_by_stage']),
+      deliverableSummary: payload['deliverable_summary'] is Map
+          ? Map<String, dynamic>.from(payload['deliverable_summary'])
+          : const {},
+      message: successMessage,
       clearError: true,
+      clearLastUploadSkipped: true,
     );
+  }
+
+  UploadPitResult _applyUploadPayload(
+    Map<String, dynamic> payload, {
+    String uploadLabel = 'PIT',
+  }) {
+    final skipped = _readMapList(payload['skipped']);
+    final createdCount = payload['created_count'] is int
+        ? payload['created_count'] as int
+        : int.tryParse('${payload['created_count']}') ?? 0;
+
+    final feedback = _uploadFeedback(createdCount, skipped, uploadLabel: uploadLabel);
+
+    state = state.copyWith(
+      isLoading: false,
+      isSaving: false,
+      entries: _readMapList(payload['entries']),
+      counts: payload['counts'] is Map
+          ? Map<String, dynamic>.from(payload['counts'])
+          : const {},
+      options: payload['options'] is Map
+          ? Map<String, dynamic>.from(payload['options'])
+          : const {},
+      scope: payload['scope'] is Map
+          ? Map<String, dynamic>.from(payload['scope'])
+          : const {},
+      uploadWindow: payload['upload_window'] is Map
+          ? Map<String, dynamic>.from(payload['upload_window'])
+          : const {},
+      capstoneUploadWindow: payload['capstone_upload_window'] is Map
+          ? Map<String, dynamic>.from(payload['capstone_upload_window'])
+          : const {},
+      groupedByStage: _readMapList(payload['grouped_by_stage']),
+      deliverableSummary: payload['deliverable_summary'] is Map
+          ? Map<String, dynamic>.from(payload['deliverable_summary'])
+          : const {},
+      message: feedback.message,
+      error: feedback.error,
+      lastUploadSkipped: skipped,
+      clearError: feedback.error == null,
+      clearMessage: feedback.message == null,
+    );
+
+    return UploadPitResult(
+      savedAny: createdCount > 0,
+      createdCount: createdCount,
+      skipped: skipped,
+    );
+  }
+
+  Future<UploadPitResult> uploadCapstoneMultipart({
+    required List<http.MultipartFile> multipartFiles,
+    String? academicYear,
+  }) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/upload-capstone/'),
+      );
+      final headers = await _authHeaders();
+      request.headers.addAll(headers);
+      if ((academicYear ?? '').isNotEmpty) {
+        request.fields['academic_year'] = academicYear!;
+      }
+      request.files.addAll(multipartFiles);
+      final streamed = await request.send();
+      final response = await http.Response.fromStream(streamed);
+      if (response.statusCode == 200) {
+        return _applyUploadPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+          uploadLabel: 'Capstone',
+        );
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return const UploadPitResult(
+        savedAny: false,
+        createdCount: 0,
+        skipped: [],
+      );
+    }
+  }
+
+  ({String? message, String? error}) _uploadFeedback(
+    int createdCount,
+    List<Map<String, dynamic>> skipped, {
+    String uploadLabel = 'PIT',
+  }) {
+    if (createdCount == 0) {
+      return (
+        message: null,
+        error: skipped.isEmpty
+            ? 'No files were saved to the vault.'
+            : _formatSkippedSummary(skipped, header: 'No files were saved.'),
+      );
+    }
+
+    if (skipped.isEmpty) {
+      return (
+        message: createdCount == 1
+            ? '1 $uploadLabel file saved to the vault.'
+            : '$createdCount $uploadLabel files saved to the vault.',
+        error: null,
+      );
+    }
+
+    return (
+      message:
+          '$createdCount saved, ${skipped.length} skipped. ${_formatSkippedSummary(skipped)}',
+      error: null,
+    );
+  }
+
+  String _formatSkippedSummary(
+    List<Map<String, dynamic>> skipped, {
+    String header = '',
+  }) {
+    final lines = skipped.map((item) {
+      final name = item['file_name']?.toString() ?? 'File';
+      final reason = item['reason']?.toString() ?? 'Unknown reason';
+      return '$name: $reason';
+    });
+    final body = lines.join('\n');
+    if (header.isEmpty) {
+      return body;
+    }
+    return '$header\n$body';
   }
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {

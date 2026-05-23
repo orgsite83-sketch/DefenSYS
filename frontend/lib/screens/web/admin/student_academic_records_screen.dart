@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/student_academic_records_provider.dart';
 import 'widgets/defensys_admin_shell.dart';
+import 'widgets/student_records_rollover_modal.dart';
 
 class StudentAcademicRecordsScreen extends ConsumerStatefulWidget {
   const StudentAcademicRecordsScreen({super.key});
@@ -25,6 +26,10 @@ class _StudentAcademicRecordsScreenState
 
   final _searchController = TextEditingController();
 
+  static const List<int> _rowsPerPageOptions = [10, 25, 50, 100, 200, 500];
+  int _rowsPerPage = 10;
+  int _page = 0;
+
   static const _yearLevels = ['1st Year', '2nd Year', '3rd Year', '4th Year'];
   static const _semesterLabels = ['1st Semester', '2nd Semester', 'Summer'];
 
@@ -42,9 +47,21 @@ class _StudentAcademicRecordsScreenState
     super.dispose();
   }
 
+  void _ensurePageInRange(int recordCount) {
+    final pages = recordCount == 0 ? 1 : (recordCount / _rowsPerPage).ceil();
+    final maxPage = pages - 1;
+    if (_page > maxPage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _page = maxPage);
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
+    _ensurePageInRange(state.records.length);
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -64,9 +81,12 @@ class _StudentAcademicRecordsScreenState
                   label: 'Refresh',
                   onTap: state.isSaving
                       ? null
-                      : () => ref
-                            .read(studentAcademicRecordsProvider.notifier)
-                            .fetchRecords(),
+                      : () {
+                          setState(() => _page = 0);
+                          ref
+                              .read(studentAcademicRecordsProvider.notifier)
+                              .fetchRecords();
+                        },
                 ),
                 const SizedBox(width: 14),
                 _secondaryButton(
@@ -294,6 +314,7 @@ class _StudentAcademicRecordsScreenState
   }
 
   Widget _recordsTableCard(StudentAcademicRecordsState state) {
+    final visibleRecords = _pageRecords(state.records);
     return DefensysCard(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       child: Column(
@@ -317,26 +338,20 @@ class _StudentAcademicRecordsScreenState
             )
           else if (state.records.isEmpty)
             _buildEmptyState()
-          else
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(width: 1120, child: _recordsTable(state)),
+        else
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 640),
+            child: Scrollbar(
+              thumbVisibility: true,
+              child: SingleChildScrollView(
+                child: _recordsTable(state, visibleRecords),
+              ),
             ),
+          ),
           const SizedBox(height: 18),
           Container(height: 1, color: _line),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Text(
-                'Showing ${state.records.length} of ${_count(state, 'filtered')} records',
-                style: const TextStyle(
-                  color: Color(0xFF98A2B3),
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
-          ),
+          const SizedBox(height: 15),
+          _pagination(state),
         ],
       ),
     );
@@ -373,6 +388,7 @@ class _StudentAcademicRecordsScreenState
           ),
         ),
         onSubmitted: (value) {
+          setState(() => _page = 0);
           ref
               .read(studentAcademicRecordsProvider.notifier)
               .fetchRecords(search: value);
@@ -414,6 +430,7 @@ class _StudentAcademicRecordsScreenState
           onChanged: state.isSaving
               ? null
               : (value) {
+                  setState(() => _page = 0);
                   ref
                       .read(studentAcademicRecordsProvider.notifier)
                       .fetchRecords(schoolYear: value ?? '');
@@ -453,6 +470,7 @@ class _StudentAcademicRecordsScreenState
           onChanged: state.isSaving
               ? null
               : (value) {
+                  setState(() => _page = 0);
                   ref
                       .read(studentAcademicRecordsProvider.notifier)
                       .fetchRecords(semester: value ?? '');
@@ -468,6 +486,7 @@ class _StudentAcademicRecordsScreenState
       child: OutlinedButton.icon(
         onPressed: () {
           _searchController.clear();
+          setState(() => _page = 0);
           ref
               .read(studentAcademicRecordsProvider.notifier)
               .fetchRecords(search: '', schoolYear: '', semester: '');
@@ -485,7 +504,10 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  Widget _recordsTable(StudentAcademicRecordsState state) {
+  Widget _recordsTable(
+    StudentAcademicRecordsState state,
+    List<Map<String, dynamic>> visibleRecords,
+  ) {
     return Column(
       children: [
         _tableHeader(const [
@@ -496,8 +518,160 @@ class _StudentAcademicRecordsScreenState
           _ColumnSpec('Created', 0.85),
           _ColumnSpec('Action', 0.7),
         ]),
-        ...state.records.map((record) => _recordRow(state, record)),
+        ...visibleRecords.map((record) => _recordRow(state, record)),
       ],
+    );
+  }
+
+  List<Map<String, dynamic>> _pageRecords(List<Map<String, dynamic>> records) {
+    final pages = records.isEmpty ? 1 : (records.length / _rowsPerPage).ceil();
+    final safePage = _page.clamp(0, pages - 1);
+    final start = safePage * _rowsPerPage;
+    final end = (start + _rowsPerPage).clamp(0, records.length);
+    return records.sublist(start, end);
+  }
+
+  Widget _pagination(StudentAcademicRecordsState state) {
+    final total = state.records.length;
+    final pages = total == 0 ? 1 : (total / _rowsPerPage).ceil();
+    final safePage = _page.clamp(0, pages - 1);
+    final start = total == 0 ? 0 : safePage * _rowsPerPage + 1;
+    final end = total == 0
+        ? 0
+        : (safePage * _rowsPerPage + _rowsPerPage).clamp(0, total);
+
+    return Row(
+      children: [
+        Text(
+          'Showing $start-$end of $total records',
+          style: const TextStyle(
+            color: Color(0xFF5D6678),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 16),
+        _rowsPerPageDropdown(),
+        const Spacer(),
+        _pageButton(Icons.chevron_left_rounded, safePage > 0, () {
+          setState(() => _page = safePage - 1);
+        }),
+        const SizedBox(width: 8),
+        if (pages <= 10)
+          ...List.generate(pages, (index) {
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _numberPageButton(index + 1, safePage == index, () {
+                setState(() => _page = index);
+              }),
+            );
+          })
+        else ...[
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              'Page ${safePage + 1} of $pages',
+              style: const TextStyle(
+                color: Color(0xFF5D6678),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+        _pageButton(Icons.chevron_right_rounded, safePage < pages - 1, () {
+          setState(() => _page = safePage + 1);
+        }),
+      ],
+    );
+  }
+
+  Widget _rowsPerPageDropdown() {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        const Text(
+          'Rows per page',
+          style: TextStyle(
+            color: Color(0xFF5D6678),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            border: Border.all(color: const Color(0xFFD1D5DB)),
+            borderRadius: BorderRadius.circular(7),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: _rowsPerPageOptions.contains(_rowsPerPage)
+                  ? _rowsPerPage
+                  : _rowsPerPageOptions.first,
+              isDense: true,
+              style: const TextStyle(
+                color: Color(0xFF1F2937),
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+              items: _rowsPerPageOptions
+                  .map(
+                    (n) => DropdownMenuItem<int>(
+                      value: n,
+                      child: Text('$n'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _rowsPerPage = value;
+                  _page = 0;
+                });
+              },
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _pageButton(IconData icon, bool enabled, VoidCallback onTap) {
+    return SizedBox(
+      width: 30,
+      height: 36,
+      child: OutlinedButton(
+        onPressed: enabled ? onTap : null,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          side: const BorderSide(color: _line),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+        child: Icon(icon, size: 18),
+      ),
+    );
+  }
+
+  Widget _numberPageButton(int number, bool selected, VoidCallback onTap) {
+    return SizedBox(
+      width: 30,
+      height: 36,
+      child: OutlinedButton(
+        onPressed: selected ? null : onTap,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          disabledForegroundColor: _maroon,
+          foregroundColor: _ink,
+          side: BorderSide(color: selected ? _maroon : _line),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+        child: Text(
+          number.toString(),
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800),
+        ),
+      ),
     );
   }
 
@@ -537,7 +711,7 @@ class _StudentAcademicRecordsScreenState
     Map<String, dynamic> record,
   ) {
     return Container(
-      constraints: const BoxConstraints(minHeight: 62),
+      height: 57,
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: _line)),
@@ -583,7 +757,7 @@ class _StudentAcademicRecordsScreenState
             flex: 1.05,
           ),
           _tableCell(
-            _buildChip(record['year_level']?.toString() ?? '', _maroon),
+            _yearLevelBadge(record['year_level']?.toString() ?? ''),
             flex: 0.95,
           ),
           _tableCell(_bodyText(_dateLabel(record['created_at'])), flex: 0.85),
@@ -907,391 +1081,40 @@ class _StudentAcademicRecordsScreenState
             final nonDropCount =
                 actions.values.where((a) => a != 'drop').length;
 
-            return AlertDialog(
-              title: const Text('Rollover Preview'),
-              content: SizedBox(
-                width: 900,
-                height: 520,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Header info ──────────────────────────────────────────
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.rotate_right_rounded,
-                          size: 16,
-                          color: _muted,
-                        ),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Target semester: $activeLabel',
-                            style: const TextStyle(
-                              color: _muted,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        Text(
-                          '$totalCount student${totalCount == 1 ? '' : 's'} total',
-                          style: const TextStyle(
-                            color: _muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // ── Search + bulk buttons ────────────────────────────────
-                    Row(
-                      children: [
-                        Expanded(
-                          child: SizedBox(
-                            height: 40,
-                            child: TextField(
-                              controller: rolloverSearchCtrl,
-                              style: const TextStyle(fontSize: 13),
-                              decoration: InputDecoration(
-                                prefixIcon: const Icon(
-                                  Icons.search_rounded,
-                                  color: _muted,
-                                  size: 18,
-                                ),
-                                hintText:
-                                    'Search by student name or ID...',
-                                hintStyle: const TextStyle(
-                                  color: _muted,
-                                  fontSize: 13,
-                                ),
-                                filled: true,
-                                fillColor: const Color(0xFFF3F4F6),
-                                contentPadding: const EdgeInsets.symmetric(
-                                  horizontal: 14,
-                                  vertical: 8,
-                                ),
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFFD1D5DB),
-                                  ),
-                                ),
-                                enabledBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide: const BorderSide(
-                                    color: Color(0xFFD1D5DB),
-                                  ),
-                                ),
-                                focusedBorder: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                  borderSide:
-                                      const BorderSide(color: _maroon),
-                                ),
-                                suffixIcon: searchQuery.isNotEmpty
-                                    ? IconButton(
-                                        icon: const Icon(
-                                          Icons.close,
-                                          size: 16,
-                                        ),
-                                        onPressed: () {
-                                          rolloverSearchCtrl.clear();
-                                          setDialogState(
-                                            () => searchQuery = '',
-                                          );
-                                        },
-                                      )
-                                    : null,
-                              ),
-                              onChanged: (value) {
-                                setDialogState(() => searchQuery = value);
-                              },
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        OutlinedButton(
-                          onPressed: () {
-                            setDialogState(() {
-                              actions.updateAll(
-                                (key, value) => 'promote',
-                              );
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _maroon,
-                            side: const BorderSide(color: _maroon),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                            ),
-                          ),
-                          child: const Text('Promote All'),
-                        ),
-                        const SizedBox(width: 8),
-                        OutlinedButton(
-                          onPressed: () {
-                            setDialogState(() {
-                              actions.updateAll(
-                                (key, value) => 'retain',
-                              );
-                            });
-                          },
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: _blue,
-                            side: const BorderSide(color: _blue),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 14,
-                            ),
-                          ),
-                          child: const Text('Retain All'),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
-                    // ── Result count ─────────────────────────────────────────
-                    Text(
-                      searchQuery.isNotEmpty
-                          ? 'Showing ${filtered.length} of $totalCount students'
-                          : '$totalCount student${totalCount == 1 ? '' : 's'}',
-                      style: const TextStyle(
-                        color: _muted,
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // ── Missing semester warning ─────────────────────────────
-                    Builder(builder: (_) {
-                      final missingCount = state.rolloverRows
-                          .where((row) => !_rolloverHasTarget(row, 'promote'))
-                          .length;
-                      if (missingCount == 0) return const SizedBox.shrink();
-                      return Container(
-                        margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 10,
-                        ),
-                        decoration: BoxDecoration(
-                          color: _red.withValues(alpha: 0.07),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(
-                            color: _red.withValues(alpha: 0.3),
-                          ),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(
-                              Icons.warning_amber_rounded,
-                              color: _red,
-                              size: 16,
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                '$missingCount student${missingCount == 1 ? '' : 's'} cannot be promoted — '
-                                'the target semester does not exist in Academic Periods. '
-                                'Create it first, then re-open this preview.',
-                                style: const TextStyle(
-                                  color: _red,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    }),
-                    // ── Table ────────────────────────────────────────────────
-                    Expanded(
-                      child: filtered.isEmpty
-                          ? Center(
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(
-                                    Icons.search_off_rounded,
-                                    size: 36,
-                                    color: _muted,
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Text(
-                                    'No students match "$searchQuery"',
-                                    style: const TextStyle(
-                                      color: _muted,
-                                      fontSize: 13,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          : SingleChildScrollView(
-                              child: SingleChildScrollView(
-                                scrollDirection: Axis.horizontal,
-                                child: DataTable(
-                                  headingRowColor: WidgetStateProperty.all(
-                                    const Color(0xFFF0F1F4),
-                                  ),
-                                  columnSpacing: 28,
-                                  columns: const [
-                                    DataColumn(label: Text('Student')),
-                                    DataColumn(label: Text('Student ID')),
-                                    DataColumn(label: Text('Current')),
-                                    DataColumn(label: Text('Action')),
-                                    DataColumn(label: Text('Result')),
-                                  ],
-                                  rows: filtered.map((row) {
-                                    final record =
-                                        Map<String, dynamic>.from(
-                                          row['record'] as Map,
-                                        );
-                                    final recordId =
-                                        _asInt(record['id'])!;
-                                    final action =
-                                        actions[recordId] ?? 'promote';
-                                    final actionColor = switch (action) {
-                                      'retain' => _blue,
-                                      'drop' => _red,
-                                      _ => _green,
-                                    };
-                                    return DataRow(
-                                      cells: [
-                                        DataCell(
-                                          Text(
-                                            record['student_name']
-                                                    ?.toString() ??
-                                                '-',
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.w700,
-                                              fontSize: 13,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            record['student_username']
-                                                    ?.toString() ??
-                                                '-',
-                                            style: const TextStyle(
-                                              color: _muted,
-                                              fontSize: 12.5,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            '${record['year_level']} | ${record['semester']}',
-                                            style: const TextStyle(
-                                              fontSize: 12.5,
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Container(
-                                            padding:
-                                                const EdgeInsets.symmetric(
-                                              horizontal: 10,
-                                              vertical: 2,
-                                            ),
-                                            decoration: BoxDecoration(
-                                              color: actionColor
-                                                  .withValues(alpha: 0.08),
-                                              borderRadius:
-                                                  BorderRadius.circular(6),
-                                              border: Border.all(
-                                                color: actionColor
-                                                    .withValues(alpha: 0.3),
-                                              ),
-                                            ),
-                                            child: DropdownButtonHideUnderline(
-                                              child: DropdownButton<String>(
-                                                value: action,
-                                                isDense: true,
-                                                style: TextStyle(
-                                                  color: actionColor,
-                                                  fontWeight:
-                                                      FontWeight.w700,
-                                                  fontSize: 12.5,
-                                                  fontFamily:
-                                                      DefensysUi.fontFamily,
-                                                ),
-                                                icon: Icon(
-                                                  Icons
-                                                      .keyboard_arrow_down_rounded,
-                                                  size: 16,
-                                                  color: actionColor,
-                                                ),
-                                                items: const [
-                                                  DropdownMenuItem(
-                                                    value: 'promote',
-                                                    child: Text('Promote'),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: 'retain',
-                                                    child: Text('Retain'),
-                                                  ),
-                                                  DropdownMenuItem(
-                                                    value: 'drop',
-                                                    child: Text('Drop'),
-                                                  ),
-                                                ],
-                                                onChanged: (value) {
-                                                  setDialogState(() {
-                                                    actions[recordId] =
-                                                        value ?? 'promote';
-                                                  });
-                                                },
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                        DataCell(
-                                          Text(
-                                            _rolloverResult(row, action),
-                                            style: TextStyle(
-                                              color: action == 'drop'
-                                                  ? _red
-                                                  : _rolloverHasTarget(row, action)
-                                                      ? actionColor
-                                                      : _red,
-                                              fontWeight: FontWeight.w600,
-                                              fontSize: 12.5,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    );
-                                  }).toList(),
-                                ),
-                              ),
-                            ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: () => Navigator.pop(dialogContext, true),
-                  icon: const Icon(Icons.check_circle_outline, size: 17),
-                  label: Text(
-                    'Create Rollover Records ($nonDropCount)',
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: _maroon,
-                    foregroundColor: _gold,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 12,
-                    ),
-                  ),
-                ),
-              ],
+            final missingCount = state.rolloverRows
+                .where((row) => !_rolloverHasTarget(row, 'promote'))
+                .length;
+            final useWarningChrome = missingCount > 0;
+
+            return StudentRecordsRolloverModal(
+              useWarningChrome: useWarningChrome,
+              activeLabel: activeLabel,
+              totalCount: totalCount,
+              missingCount: missingCount,
+              searchQuery: searchQuery,
+              filtered: filtered,
+              rolloverSearchCtrl: rolloverSearchCtrl,
+              actions: actions,
+              onPromoteAll: () => setDialogState(() {
+                actions.updateAll((key, value) => 'promote');
+              }),
+              onRetainAll: () => setDialogState(() {
+                actions.updateAll((key, value) => 'retain');
+              }),
+              onSearchChanged: (v) => setDialogState(() => searchQuery = v),
+              onSearchClear: () {
+                rolloverSearchCtrl.clear();
+                setDialogState(() => searchQuery = '');
+              },
+              onActionChanged: (id, value) => setDialogState(() {
+                actions[id] = value ?? 'promote';
+              }),
+              onClose: () => Navigator.pop(dialogContext, false),
+              onConfirm: () => Navigator.pop(dialogContext, true),
+              nonDropCount: nonDropCount,
+              rolloverHasTarget: _rolloverHasTarget,
+              rolloverResult: _rolloverResult,
+              asInt: _asInt,
             );
           },
         );
@@ -1352,9 +1175,9 @@ class _StudentAcademicRecordsScreenState
     final result = Map<String, dynamic>.from(row[key] as Map);
     final hasTarget = result['target_semester_id'] != null;
     if (!hasTarget && action == 'promote') {
-      return '${result['year_level']} | ${result['semester']} (semester not found)';
+      return '${result['year_level']} · ${result['semester']} (semester not found)';
     }
-    return '${result['year_level']} | ${result['semester']}';
+    return '${result['year_level']} · ${result['semester']}';
   }
 
   bool _rolloverHasTarget(Map<String, dynamic> row, String action) {
@@ -1424,20 +1247,28 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  Widget _buildChip(String label, Color color) {
+  Widget _yearLevelBadge(String raw) {
+    final label = raw.trim().isEmpty ? '-' : raw.trim();
+    final (Color bg, Color fg) = switch (label) {
+      '1st Year' => (const Color(0xFFEFF6FF), const Color(0xFF1E40AF)),
+      '2nd Year' => (const Color(0xFFF0FDF4), const Color(0xFF166534)),
+      '3rd Year' => (const Color(0xFFEEF2FF), const Color(0xFF4338CA)),
+      '4th Year' => (const Color(0xFFFDE8E8), const Color(0xFF9B1C1C)),
+      _ => (const Color(0xFFF1F5F9), const Color(0xFF334155)),
+    };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
+        color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
-        label.isEmpty ? '-' : label,
+        label,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
-          color: color,
-          fontSize: 12,
+          color: fg,
+          fontSize: 11,
           fontWeight: FontWeight.w800,
         ),
       ),

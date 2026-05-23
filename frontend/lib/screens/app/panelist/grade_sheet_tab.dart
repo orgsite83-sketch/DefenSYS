@@ -9,7 +9,6 @@ const _goldColor = Color(0xFFD97706);
 
 class GradeSheetTab extends StatefulWidget {
   final List<TeamData> teams;
-  final List<Map<String, dynamic>> rubrics;
   final int selectedTeamIndex;
   final String panelistId;
   final void Function(int) onTeamChanged;
@@ -17,7 +16,6 @@ class GradeSheetTab extends StatefulWidget {
   const GradeSheetTab({
     super.key,
     required this.teams,
-    required this.rubrics,
     required this.selectedTeamIndex,
     required this.panelistId,
     required this.onTeamChanged,
@@ -28,34 +26,61 @@ class GradeSheetTab extends StatefulWidget {
 }
 
 class _GradeSheetTabState extends State<GradeSheetTab> {
-  int? _selectedRubricIndex;
   List<Criterion> _criteria = [];
+  int _lastTeamIndex = -1;
 
   @override
   void initState() {
     super.initState();
-    // Auto-select first rubric if available
-    if (widget.rubrics.isNotEmpty) {
-      _selectedRubricIndex = 0;
-      _loadCriteriaFromRubric(0);
+    _syncRubricForCurrentTeam();
+  }
+
+  @override
+  void didUpdateWidget(GradeSheetTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedTeamIndex != widget.selectedTeamIndex ||
+        oldWidget.teams != widget.teams) {
+      _syncRubricForCurrentTeam();
     }
   }
 
-  void _loadCriteriaFromRubric(int index) {
-    if (index < 0 || index >= widget.rubrics.length) return;
-    
-    final rubric = widget.rubrics[index];
+  void _loadCriteriaFromRubricMap(Map<String, dynamic> rubric) {
     final criteriaList = (rubric['criteria'] as List? ?? []).map((c) {
       return Criterion(
         (c['name'] ?? 'Criterion').toString(),
         ((c['max_score'] as num?) ?? 10).toDouble(),
       );
     }).toList();
-    
+
     setState(() {
       _criteria = criteriaList;
     });
   }
+
+  void _syncRubricForCurrentTeam() {
+    if (widget.teams.isEmpty) {
+      return;
+    }
+    if (_lastTeamIndex == widget.selectedTeamIndex && _criteria.isNotEmpty) {
+      return;
+    }
+    _lastTeamIndex = widget.selectedTeamIndex;
+
+    final team = widget.teams[widget.selectedTeamIndex];
+    final embedded = team.panelRubric;
+    if (embedded != null) {
+      _loadCriteriaFromRubricMap(embedded);
+    } else {
+      setState(() {
+        _criteria = [];
+      });
+    }
+  }
+
+  String? _panelRubricName(TeamData team) {
+    return team.panelRubric?['name']?.toString();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (widget.teams.isEmpty) {
@@ -72,23 +97,19 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
     }
 
     final team = widget.teams[widget.selectedTeamIndex];
+    final panelRubricName = _panelRubricName(team);
+    final hasPanelRubric = team.panelRubric != null;
     final isLocked = team.isPosted;
-    
-    // Use selected rubric criteria or team's existing criteria
+    final canPost = hasPanelRubric && _criteria.isNotEmpty && !isLocked;
+
     final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
     final total = criteria.fold(0.0, (s, c) => s + c.score);
     final maxTotal = criteria.fold(0.0, (s, c) => s + c.maxScore);
     final panelPct = maxTotal > 0 ? (total / maxTotal * 100) : 0;
-    
-    // Get rubric weights if rubric is selected
-    int panelWeight = team.panelWeight;
-    int peerWeight = team.peerWeight;
-    if (_selectedRubricIndex != null && _selectedRubricIndex! < widget.rubrics.length) {
-      final rubric = widget.rubrics[_selectedRubricIndex!];
-      final weights = rubric['weights'] as Map<String, dynamic>? ?? {};
-      panelWeight = (weights['panel'] as num?)?.toInt() ?? 50;
-      peerWeight = (weights['peer'] as num?)?.toInt() ?? 20;
-    }
+
+    final panelWeight = team.panelWeight;
+    final peerWeight = team.peerWeight;
+    final showAdviser = team.isCapstone && team.adviserWeight > 0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -97,8 +118,6 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
         children: [
           _sectionHeader('Panel Grade Sheet'),
           const SizedBox(height: 12),
-          
-          // Team Selection
           DropdownButtonFormField<int>(
             value: widget.selectedTeamIndex,
             decoration: InputDecoration(
@@ -115,38 +134,34 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                     DropdownMenuItem(value: e.key, child: Text(e.value.name)))
                 .toList(),
             onChanged: (v) {
-              widget.onTeamChanged(v!);
-              setState(() {});
+              if (v == null) {
+                return;
+              }
+              _lastTeamIndex = -1;
+              widget.onTeamChanged(v);
+              _syncRubricForCurrentTeam();
             },
           ),
-          const SizedBox(height: 12),
-          
-          // Rubric Selection
-          if (widget.rubrics.isNotEmpty)
-            DropdownButtonFormField<int>(
-              value: _selectedRubricIndex,
-              decoration: InputDecoration(
-                labelText: 'Select Rubric',
-                prefixIcon: const Icon(Icons.assignment, size: 20),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                contentPadding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              ),
-              items: widget.rubrics
-                  .asMap()
-                  .entries
-                  .map((e) => DropdownMenuItem(
-                        value: e.key,
-                        child: Text((e.value['name'] ?? 'Rubric').toString()),
-                      ))
-                  .toList(),
-              onChanged: (v) {
-                if (v != null) {
-                  _selectedRubricIndex = v;
-                  _loadCriteriaFromRubric(v);
-                }
-              },
+          if (panelRubricName != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.assignment_outlined,
+                    size: 18, color: _primaryColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Panel rubric: $panelRubricName',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: _primaryColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
+          ],
           const SizedBox(height: 12),
           Card(
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -169,6 +184,14 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                             Text(team.project,
                                 style: const TextStyle(
                                     color: Colors.grey, fontSize: 12)),
+                            Text(
+                              team.isCapstone ? 'Capstone' : 'PIT',
+                              style: const TextStyle(
+                                color: _primaryColor,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -207,14 +230,10 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _weightChip('Panel',
-                          '${panelWeight}%',
-                          _primaryColor),
-                        if (team.isCapstone)
-                          _weightChip('Adviser', '30%', _goldColor),
-                        _weightChip('Peer',
-                          '${peerWeight}%',
-                          const Color(0xFF10B981)),
+                        _weightChip('Panel', '$panelWeight%', _primaryColor),
+                        if (showAdviser)
+                          _weightChip('Adviser', '${team.adviserWeight}%', _goldColor),
+                        _weightChip('Peer', '$peerWeight%', const Color(0xFF10B981)),
                       ],
                     ),
                   ),
@@ -222,7 +241,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                   const Text('Rubric Criteria',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
                   const SizedBox(height: 8),
-                  if (criteria.isEmpty)
+                  if (!hasPanelRubric)
                     Container(
                       padding: const EdgeInsets.all(16),
                       decoration: BoxDecoration(
@@ -236,7 +255,28 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                           SizedBox(width: 8),
                           Expanded(
                             child: Text(
-                              'Please select a rubric to start grading',
+                              'No panel rubric on this schedule. Ask the PIT lead or admin to set it in Defense Scheduler.',
+                              style: TextStyle(color: Colors.orange),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (criteria.isEmpty)
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.orange),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Assigned panel rubric has no criteria yet.',
                               style: TextStyle(color: Colors.orange),
                             ),
                           ),
@@ -268,7 +308,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                       const Text('Score (normalized)',
                           style: TextStyle(fontSize: 13, color: Colors.grey)),
                       Text(
-                        '${panelPct.toStringAsFixed(1)}%  ×  ${panelWeight}%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
+                        '${panelPct.toStringAsFixed(1)}%  ×  $panelWeight%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
                         style: const TextStyle(fontSize: 13, color: Colors.grey),
                       ),
                     ],
@@ -315,7 +355,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8)),
                             ),
-                            onPressed: () => _confirmPost(team),
+                            onPressed: canPost ? () => _confirmPost(team) : null,
                           ),
                         ),
                       ],
@@ -331,10 +371,21 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
   }
 
   void _confirmPost(TeamData team) {
+    if (team.panelRubric == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Panel rubric is not configured for this schedule.',
+          ),
+          backgroundColor: Colors.orange,
+        ),
+      );
+      return;
+    }
     if (_criteria.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Please select a rubric and score all criteria first'),
+          content: Text('Score all criteria before posting.'),
           backgroundColor: Colors.orange,
         ),
       );
@@ -363,8 +414,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                 backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
             onPressed: () async {
               Navigator.pop(context);
-              
-              // Show loading indicator
+
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Row(
@@ -385,38 +435,38 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                 ),
               );
 
-              // Build criteria scores for API
               final criteriaScores = _criteria.map((c) => {
                 'name': c.name,
                 'score': c.score,
                 'max_score': c.maxScore,
               }).toList();
 
+              final payload = <String, dynamic>{
+                'panelist_id': widget.panelistId,
+                'team_id': team.teamId,
+                'criteria_scores': criteriaScores,
+                'remarks': '',
+              };
+              if (team.scheduleId.isNotEmpty) {
+                payload['schedule_id'] = int.tryParse(team.scheduleId) ?? team.scheduleId;
+              }
+
               try {
-                final submitUrl = '${ApiConfig.baseUrl}/defense-schedules/submit-grades/';
-                print('📤 Submitting grades to: $submitUrl');
-                
+                final submitUrl = '${ApiConfig.defenseSchedulesUrl}/submit-grades/';
                 final response = await http.post(
                   Uri.parse(submitUrl),
                   headers: {
                     'Content-Type': 'application/json',
                   },
-                  body: json.encode({
-                    'panelist_id': widget.panelistId,
-                    'team_id': team.teamId,
-                    'criteria_scores': criteriaScores,
-                    'remarks': '',
-                  }),
+                  body: json.encode(payload),
                 ).timeout(const Duration(seconds: 10));
-
-                print('📥 Submit response: ${response.statusCode}');
 
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  
+
                   if (response.statusCode == 201) {
                     setState(() => team.isPosted = true);
-                    
+
                     ScaffoldMessenger.of(context).showSnackBar(
                       const SnackBar(
                         content: Row(
@@ -439,7 +489,6 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                   }
                 }
               } catch (e) {
-                print('❌ Error submitting grades: $e');
                 if (context.mounted) {
                   ScaffoldMessenger.of(context).hideCurrentSnackBar();
                   ScaffoldMessenger.of(context).showSnackBar(

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 const _primaryColor = Color(0xFF7F1D1D);
-const _goldColor = Color(0xFFD97706);
 
 class TeamTab extends StatelessWidget {
   final Map<String, dynamic>? studentData; // from /api/student-data/<id>
@@ -53,12 +52,10 @@ class TeamTab extends StatelessWidget {
     final panelGrade   = grades?['panelist'];
     final adviserGrade = grades?['adviser'];
     final peerGrade    = studentData?['myPeerGrade'] as Map<String, dynamic>?; // student's own peer score
-    final finalGrade   = grades?['finalGrade'];
     final gradeStatus  = grades?['status'] ?? 'pending';
 
-    final panelW   = (weights['panel']   as num?)?.toInt() ?? 50;
-    final adviserW = (weights['adviser'] as num?)?.toInt() ?? 30;
-    final peerW    = (weights['peer']    as num?)?.toInt() ?? 20;
+    final panelW = (weights['panel'] as num?)?.toInt() ?? 50;
+    final peerW = (weights['peer'] as num?)?.toInt() ?? 20;
 
     final allPeerPosted = peerPosted.values.every((v) => v);
 

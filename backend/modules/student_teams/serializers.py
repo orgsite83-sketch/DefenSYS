@@ -4,9 +4,25 @@ from rest_framework import serializers
 
 from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
-from student_academic_records.models import StudentAcademicRecord
-from student_academic_records.serializers import StudentOptionSerializer
-from .models import StudentTeam, TeamMembership
+from user_management.academic_records.models import StudentAcademicRecord
+from user_management.academic_records.serializers import StudentOptionSerializer
+from .adviser_assignments import record_team_adviser_change
+from .team_levels import (
+    infer_year_level_from_members,
+    level_year as team_level_year,
+    resolve_team_level,
+    user_is_admin,
+    user_is_pit_lead_only,
+)
+from defense.scheduler.models import DefenseSchedule
+
+from .models import StudentTeam, TeamAdviserAssignment, TeamMembership
+from .term_scope import (
+    assert_active_semester_for_create,
+    assert_team_writable,
+    team_is_editable,
+    term_status_for_team,
+)
 
 
 User = get_user_model()
@@ -73,6 +89,8 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     is_capstone = serializers.BooleanField(read_only=True)
     deliverable_count = serializers.SerializerMethodField()
     defense_context = serializers.SerializerMethodField()
+    term_status = serializers.SerializerMethodField()
+    is_editable = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentTeam
@@ -102,6 +120,8 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'is_capstone',
             'deliverable_count',
             'defense_context',
+            'term_status',
+            'is_editable',
             'created_at',
             'updated_at',
         ]
@@ -124,19 +144,52 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         return obj.deliverable_submissions.count()
 
     def get_defense_context(self, obj):
-        if not obj.is_capstone:
-            return None
+        if obj.is_capstone:
+            return {
+                'is_pit': False,
+                'current_stage': obj.current_defense_stage or obj.ready_for_stage or 'Concept Proposal',
+                'ready_for_stage': obj.ready_for_stage,
+                'deliverable_count': obj.deliverable_submissions.count(),
+            }
+        schedule = (
+            DefenseSchedule.objects.filter(
+                team=obj,
+                scope=DefenseSchedule.SCOPE_PIT,
+                status=DefenseSchedule.STATUS_SCHEDULED,
+            )
+            .order_by('scheduled_date', 'start_time')
+            .first()
+        )
+        if schedule:
+            return {
+                'is_pit': True,
+                'event_label': schedule.stage_label or 'PIT Event',
+                'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
+            }
         return {
-            'current_stage': obj.current_defense_stage or obj.ready_for_stage or 'Concept Proposal',
-            'ready_for_stage': obj.ready_for_stage,
-            'deliverable_count': obj.deliverable_submissions.count(),
+            'is_pit': True,
+            'event_label': 'No PIT event scheduled',
+            'scheduled_date': '',
         }
+
+    def get_term_status(self, obj):
+        return term_status_for_team(obj)
+
+    def get_is_editable(self, obj):
+        user = self.context.get('user')
+        if user is None:
+            return False
+        return team_is_editable(user, obj)
 
 
 class StudentTeamWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=120)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
-    level = serializers.ChoiceField(choices=[choice[0] for choice in StudentTeam.LEVEL_CHOICES])
+    level = serializers.ChoiceField(
+        choices=[choice[0] for choice in StudentTeam.LEVEL_CHOICES],
+        required=False,
+        allow_blank=True,
+    )
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     semester_id = serializers.IntegerField(required=False)
     leader_id = serializers.IntegerField()
@@ -153,6 +206,12 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     )
     ready_for_stage = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=80)
     current_defense_stage = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=80)
+    adviser_change_reason = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        max_length=255,
+        write_only=True,
+    )
 
     def validate(self, attrs):
         member_ids = list(dict.fromkeys(attrs['member_ids']))
@@ -200,7 +259,51 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
         semester = self._resolve_semester(attrs)
         attrs['semester'] = semester
-        attrs['year_level'] = attrs.get('year_level') or level_year(attrs['level'])
+
+        user = self.context.get('assigned_by') or self.context.get('user')
+        assert_active_semester_for_create(user, semester)
+        if self.instance is not None:
+            assert_team_writable(user, self.instance)
+        from academic_period_management.capstone_mode import assert_capstone_team_creation_allowed
+
+        if user_is_admin(user) and self.instance is None:
+            try:
+                assert_capstone_team_creation_allowed(semester)
+            except ValueError as exc:
+                raise serializers.ValidationError({'non_field_errors': [str(exc)]}) from exc
+        from .team_levels import normalize_year_level
+
+        if user_is_admin(user) and not normalize_year_level(attrs.get('year_level', '')):
+            inferred, year_issues = infer_year_level_from_members(
+                member_ids,
+                semester,
+                leader_id=attrs['leader_id'],
+            )
+            if year_issues:
+                raise serializers.ValidationError({'member_ids': year_issues})
+            attrs['year_level'] = inferred
+
+        if user and (user_is_admin(user) or user_is_pit_lead_only(user)):
+            try:
+                attrs['level'] = resolve_team_level(
+                    user=user,
+                    year_level=attrs.get('year_level', ''),
+                    level=attrs.get('level', ''),
+                    member_ids=member_ids,
+                    semester=semester,
+                    leader_id=attrs['leader_id'],
+                )
+            except ValueError as exc:
+                raise serializers.ValidationError({'level': str(exc)}) from exc
+        elif not attrs.get('level'):
+            raise serializers.ValidationError({'level': 'This field is required.'})
+
+        attrs['year_level'] = attrs.get('year_level') or team_level_year(attrs['level'])
+
+        if user_is_admin(user) and 'PIT' in attrs['level']:
+            raise serializers.ValidationError({'level': 'Admins can only manage capstone teams.'})
+        if user_is_pit_lead_only(user) and 'Capstone' in attrs['level']:
+            raise serializers.ValidationError({'level': 'PIT Leads can only manage PIT teams.'})
 
         existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'])
         team_id = self.context.get('team_id')
@@ -214,6 +317,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
     @transaction.atomic
     def create(self, validated_data):
         member_ids = validated_data.pop('member_ids')
+        reason = validated_data.pop('adviser_change_reason', '')
         team = StudentTeam.objects.create(
             name=validated_data['name'],
             project_title=validated_data.get('project_title') or validated_data['name'],
@@ -228,11 +332,20 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
         self._sync_members(team, member_ids, validated_data['leader'].id)
+        record_team_adviser_change(
+            team,
+            None,
+            team.adviser,
+            assigned_by=self.context.get('assigned_by'),
+            reason=reason,
+        )
         return team
 
     @transaction.atomic
     def update(self, instance, validated_data):
         member_ids = validated_data.pop('member_ids')
+        reason = validated_data.pop('adviser_change_reason', '')
+        previous_adviser_id = instance.adviser_id
         instance.name = validated_data['name']
         instance.project_title = validated_data.get('project_title') or validated_data['name']
         instance.level = validated_data['level']
@@ -246,20 +359,27 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         instance.current_defense_stage = validated_data.get('current_defense_stage') or None
         instance.save()
         self._sync_members(instance, member_ids, validated_data['leader'].id)
+        record_team_adviser_change(
+            instance,
+            previous_adviser_id,
+            instance.adviser,
+            assigned_by=self.context.get('assigned_by'),
+            reason=reason,
+        )
         return instance
 
     def _resolve_semester(self, attrs):
-        semester_id = attrs.get('semester_id')
-        if semester_id:
-            try:
-                return Semester.objects.select_related('school_year').get(pk=semester_id)
-            except Semester.DoesNotExist as exc:
-                raise serializers.ValidationError({'semester_id': 'Semester does not exist.'}) from exc
-
-        semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
-        if semester is None:
+        active = Semester.objects.select_related('school_year').filter(is_active=True).first()
+        if active is None:
             raise serializers.ValidationError({'semester_id': 'No active semester is configured.'})
-        return semester
+
+        semester_id = attrs.get('semester_id')
+        if semester_id and semester_id != active.id:
+            raise serializers.ValidationError({
+                'semester_id': 'Teams can only be created or updated on the active semester.',
+            })
+
+        return active
 
     def _sync_members(self, team, member_ids, leader_id):
         # Remove old memberships for this team
@@ -288,11 +408,70 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 class BulkTeamRowSerializer(serializers.Serializer):
     team_name = serializers.CharField(max_length=120)
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
-    level = serializers.ChoiceField(choices=[choice[0] for choice in StudentTeam.LEVEL_CHOICES])
+    level = serializers.CharField(required=False, allow_blank=True, max_length=30)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     member_ids = serializers.ListField(child=serializers.CharField(), min_length=1, max_length=4)
     leader_id = serializers.CharField()
     adviser_id = serializers.CharField(required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        user = self.context.get('user')
+        if user:
+            try:
+                attrs['level'] = resolve_team_level(
+                    user=user,
+                    year_level=attrs.get('year_level', ''),
+                    level=attrs.get('level', ''),
+                )
+            except ValueError as exc:
+                raise serializers.ValidationError({'level': str(exc)}) from exc
+            attrs['year_level'] = team_level_year(attrs['level'])
+        elif not (attrs.get('level') or '').strip():
+            raise serializers.ValidationError({'level': 'This field is required.'})
+        return attrs
+
+
+class TeamAdviserAssignmentSerializer(serializers.ModelSerializer):
+    team_id = serializers.IntegerField(source='team.id', read_only=True)
+    team_name = serializers.CharField(source='team.name', read_only=True)
+    project_title = serializers.CharField(source='team.project_title', read_only=True)
+    team_level = serializers.CharField(source='team.level', read_only=True)
+    year_level = serializers.CharField(source='team.year_level', read_only=True)
+    semester = serializers.CharField(source='team.semester.display_name', read_only=True)
+    adviser_id = serializers.IntegerField(source='adviser.id', read_only=True, allow_null=True)
+    adviser_name = serializers.SerializerMethodField()
+    assigned_by_id = serializers.IntegerField(source='assigned_by.id', read_only=True, allow_null=True)
+    assigned_by_name = serializers.SerializerMethodField()
+    is_current = serializers.SerializerMethodField()
+
+    class Meta:
+        model = TeamAdviserAssignment
+        fields = [
+            'id',
+            'team_id',
+            'team_name',
+            'project_title',
+            'team_level',
+            'year_level',
+            'semester',
+            'adviser_id',
+            'adviser_name',
+            'assigned_by_id',
+            'assigned_by_name',
+            'assigned_at',
+            'ended_at',
+            'reason',
+            'is_current',
+        ]
+
+    def get_adviser_name(self, obj):
+        return display_name(obj.adviser) if obj.adviser_id else 'Unassigned'
+
+    def get_assigned_by_name(self, obj):
+        return display_name(obj.assigned_by) if obj.assigned_by_id else None
+
+    def get_is_current(self, obj):
+        return obj.ended_at is None
 
 
 class StudentTeamOptionsSerializer(serializers.Serializer):

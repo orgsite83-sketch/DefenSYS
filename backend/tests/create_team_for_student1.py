@@ -20,24 +20,24 @@ def create_team_for_student1():
     # Get student1
     try:
         student1 = User.objects.get(username='student1')
-        print(f"✓ Found student1: {student1.first_name} {student1.last_name}")
+        print(f"Found student1: {student1.first_name} {student1.last_name}")
     except User.DoesNotExist:
-        print("✗ student1 not found!")
+        print("student1 not found!")
         return
     
     # Get a semester
     semester = Semester.objects.first()
     if not semester:
-        print("✗ No semester found! Please create a semester first.")
+        print("No semester found! Please create a semester first.")
         return
-    print(f"✓ Using semester: {semester}")
+    print(f"Using semester: {semester}")
     
     # Remove student1 from any existing teams
     existing_memberships = TeamMembership.objects.filter(student=student1)
     if existing_memberships.exists():
         print(f"\n  Removing student1 from existing teams...")
         for membership in existing_memberships:
-            print(f"    - Removed from {membership.team.name}")
+            print(f"- Removed from {membership.team.name}")
             membership.delete()
     
     # Create new team
@@ -51,16 +51,16 @@ def create_team_for_student1():
             project_title='Student1 Capstone Project',
             leader=student1
         )
-        print(f"\n✓ Created new team: {team.name} (ID: {team.id})")
-        print(f"  Leader: {team.leader.username}")
-        print(f"  Project: {team.project_title}")
+        print(f"\n Created new team: {team.name} (ID: {team.id})")
+        print(f" Leader: {team.leader.username}")
+        print(f" Project: {team.project_title}")
         
         # Add student1 as a member
         membership = TeamMembership.objects.create(
             team=team,
             student=student1
         )
-        print(f"\n✓ Added student1 as team member")
+        print(f"\n Added student1 as team member")
         
         # Optionally add other students without teams
         print(f"\n=== Adding other available students ===")
@@ -74,7 +74,7 @@ def create_team_for_student1():
         
         for student in available_students:
             TeamMembership.objects.create(team=team, student=student)
-            print(f"  + Added {student.username}")
+            print(f" + Added {student.username}")
         
         # Show final team roster
         print(f"\n=== Final Team Roster ===")
@@ -83,12 +83,12 @@ def create_team_for_student1():
         print(f"Members:")
         for m in TeamMembership.objects.filter(team=team):
             is_leader = " ⭐ (Leader - Can Submit Reports)" if m.student == team.leader else ""
-            print(f"  - {m.student.username}{is_leader}")
+            print(f" - {m.student.username}{is_leader}")
         
-        print(f"\n✅ SUCCESS! student1 can now submit weekly progress reports!")
+        print(f"\n SUCCESS! student1 can now submit weekly progress reports!")
             
     except Exception as e:
-        print(f"\n✗ Error creating team: {e}")
+        print(f"\n Error creating team: {e}")
         import traceback
         traceback.print_exc()
 

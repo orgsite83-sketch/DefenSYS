@@ -30,7 +30,7 @@ def fix_team_ids():
         updated = User.objects.filter(pk__in=member_ids).exclude(team_id=str(team.id)).update(team_id=str(team.id))
         
         if updated > 0:
-            print(f"✓ Fixed {updated} members in Team {team.id} ({team.name})")
+            print(f"Fixed {updated} members in Team {team.id} ({team.name})")
             fixed_count += updated
     
     # Clear team_id for students not in any team
@@ -38,7 +38,7 @@ def fix_team_ids():
     
     for student in students_no_membership:
         if student.team_id:
-            print(f"  Clearing team_id for {student.username} (was: {student.team_id})")
+            print(f" Clearing team_id for {student.username} (was: {student.team_id})")
             student.team_id = None
             student.save()
             cleared_count += 1

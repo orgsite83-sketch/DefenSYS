@@ -76,6 +76,14 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     return const UserManagementState();
   }
 
+  void clearNotice() {
+    state = state.copyWith(clearMessage: true);
+  }
+
+  void clearError() {
+    state = state.copyWith(clearError: true);
+  }
+
   Future<void> fetchUsers({
     String? search,
     String? role,
@@ -180,6 +188,46 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchAdviserAssignmentHistory(
+    int userId,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/$userId/adviser-assignments/'),
+        headers: await _headers(),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return (payload['assignments'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (_) {
+      // Caller shows empty state on failure.
+    }
+    return const [];
+  }
+
+  Future<List<Map<String, dynamic>>> fetchRoleAssignmentHistory(
+    int userId,
+  ) async {
+    try {
+      final response = await http.get(
+        Uri.parse('$baseUrl/$userId/role-assignments/'),
+        headers: await _headers(),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return (payload['assignments'] as List? ?? const [])
+            .map((item) => Map<String, dynamic>.from(item as Map))
+            .toList();
+      }
+    } catch (_) {
+      // Caller shows empty state on failure.
+    }
+    return const [];
   }
 
   Future<bool> deleteUser(int userId) async {

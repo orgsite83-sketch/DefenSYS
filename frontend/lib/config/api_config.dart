@@ -71,17 +71,19 @@ class ApiConfig {
   static String get authUrl => baseUrl;
   static String get usersUrl => '$baseUrl/users';
   static String get teamsUrl => '$baseUrl/teams';
-  static String get studentRecordsUrl => '$baseUrl/student-records';
-  static String get rubricsUrl => '$baseUrl/rubrics';
-  static String get repositoryAuditUrl => '$baseUrl/repository-audit';
-  static String get gradeCenterUrl => '$baseUrl/grade-center';
-  static String get digitalVaultUrl => '$baseUrl/digital-vault';
-  static String get defenseStagesUrl => '$baseUrl/defense-stages';
-  static String get defenseSchedulesUrl => '$baseUrl/defense-schedules';
-  static String get defenseBoardUrl => '$baseUrl/defense-board';
+  static String get studentRecordsUrl => '$baseUrl/users/academic-records';
+  static String get teamDocumentsUrl => '$baseUrl/teams/documents';
+  static String get weeklyProgressUrl => '$baseUrl/teams/weekly-progress';
+  static String get rubricsUrl => '$baseUrl/grading/rubrics';
+  static String get repositoryAuditUrl => '$baseUrl/repository/audit';
+  static String get gradeCenterUrl => '$baseUrl/grading/grades';
+  static String get digitalVaultUrl => '$baseUrl/repository/vault';
+  static String get defenseStagesUrl => '$baseUrl/defense/stages';
+  static String get defenseSchedulesUrl => '$baseUrl/defense/schedules';
+  static String get defenseBoardUrl => '$baseUrl/defense/board';
   static String get dashboardsUrl => '$baseUrl/dashboards';
   static String get academicPeriodsUrl => '$baseUrl/academic-periods';
-  static String get capstoneDeliverablesUrl => '$baseUrl/capstone-deliverables';
+  static String get capstoneDeliverablesUrl => '$baseUrl/repository/deliverables';
   static String get curriculumAnalyticsUrl => '$baseUrl/curriculum-analytics';
 
   /// Helper method to get all possible base URLs for connection testing

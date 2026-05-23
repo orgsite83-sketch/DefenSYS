@@ -154,6 +154,56 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
+  Future<Map<String, dynamic>?> fetchStageDetail(
+    int stageId, {
+    int? semesterId,
+  }) async {
+    try {
+      final uri = Uri.parse('$baseUrl/$stageId/').replace(
+        queryParameters:
+            semesterId != null ? {'semester_id': '$semesterId'} : null,
+      );
+      final response = await http.get(uri, headers: await _headers());
+      if (response.statusCode == 200) {
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+      state = state.copyWith(error: _errorFromResponse(response));
+    } catch (e) {
+      state = state.copyWith(error: 'Connection error: $e');
+    }
+    return null;
+  }
+
+  Future<bool> updateGradingConfig(
+    int stageId,
+    int semesterId,
+    Map<String, dynamic> weights,
+  ) async {
+    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    try {
+      final response = await http.patch(
+        Uri.parse('$baseUrl/$stageId/grading-config/?semester_id=$semesterId'),
+        headers: await _headers(),
+        body: jsonEncode(weights),
+      );
+      if (response.statusCode == 200) {
+        state = state.copyWith(
+          isSaving: false,
+          message: 'Grade weights updated.',
+        );
+        return true;
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<bool> deleteStage(int stageId) async {
     state = state.copyWith(
       isSaving: true,

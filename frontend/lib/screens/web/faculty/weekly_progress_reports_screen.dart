@@ -5,7 +5,6 @@ import '../../../services/weekly_progress_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../config/api_config.dart';
 import 'package:intl/intl.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:http/http.dart' as http;
 import '../../../utils/pdf_viewer.dart';
 
@@ -335,7 +334,6 @@ class _WeeklyProgressReportsScreenState
   }
 
   Widget _buildDocumentView(Map<String, dynamic> report, Map<String, dynamic> team) {
-    final weekNumber = report['week_number'] ?? 0;
     final reportDate = report['report_date'] ?? '';
     final studentName = report['student_name'] ?? 'Unknown';
     final submittedAt = report['submitted_at'] ?? '';

@@ -14,7 +14,6 @@ class CurriculumAnalyticsState {
   final bool isLoading;
   final bool isSaving;
   final Map<String, dynamic> data;
-  final Map<String, dynamic>? classifier;
   final Map<String, dynamic>? proposal;
   final String selectedAcademicYear;
   final String? error;
@@ -24,7 +23,6 @@ class CurriculumAnalyticsState {
     this.isLoading = false,
     this.isSaving = false,
     this.data = const {},
-    this.classifier,
     this.proposal,
     this.selectedAcademicYear = '',
     this.error,
@@ -35,12 +33,10 @@ class CurriculumAnalyticsState {
     bool? isLoading,
     bool? isSaving,
     Map<String, dynamic>? data,
-    Map<String, dynamic>? classifier,
     Map<String, dynamic>? proposal,
     String? selectedAcademicYear,
     String? error,
     String? message,
-    bool clearClassifier = false,
     bool clearProposal = false,
     bool clearError = false,
     bool clearMessage = false,
@@ -49,7 +45,6 @@ class CurriculumAnalyticsState {
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
       data: data ?? this.data,
-      classifier: clearClassifier ? null : classifier ?? this.classifier,
       proposal: clearProposal ? null : proposal ?? this.proposal,
       selectedAcademicYear: selectedAcademicYear ?? this.selectedAcademicYear,
       error: clearError ? null : error ?? this.error,
@@ -97,38 +92,6 @@ class CurriculumAnalyticsNotifier extends Notifier<CurriculumAnalyticsState> {
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
-    }
-  }
-
-  Future<void> classify(String text) async {
-    state = state.copyWith(
-      isSaving: true,
-      clearError: true,
-      clearMessage: true,
-      clearClassifier: true,
-    );
-
-    try {
-      final response = await http.post(
-        Uri.parse('$baseUrl/classify/'),
-        headers: await _headers(),
-        body: jsonEncode({'text': text}),
-      );
-      if (response.statusCode == 200) {
-        state = state.copyWith(
-          isSaving: false,
-          classifier: Map<String, dynamic>.from(jsonDecode(response.body)),
-          message: 'Document classified.',
-          clearError: true,
-        );
-        return;
-      }
-      state = state.copyWith(
-        isSaving: false,
-        error: _errorFromResponse(response),
-      );
-    } catch (e) {
-      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
     }
   }
 

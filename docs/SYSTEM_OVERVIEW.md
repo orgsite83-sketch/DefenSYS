@@ -40,24 +40,16 @@ flowchart LR
 | `authentication_access_control` | Custom `User` model, JWT login |
 | `dashboards` | Dashboard aggregates |
 | `academic_period_management` | School years / semesters |
-| `user_management` | Users, guest panelist codes |
-| `student_academic_records` | Academic records (admin-heavy) |
-| `student_teams` | Teams, members, advisers |
-| `defense_stages` | Stages and stage deliverables |
-| `rubric_engine` | Rubrics and criteria |
-| `defense_scheduler` | Schedules, generation, panel assignments |
-| `defense_board` | Board views over schedules |
-| `grade_center` | Grading workflows |
-| `capstone_deliverables` | Submissions, PDF/ML helpers |
-| `digital_vault` | Curated vault listing (aggregates submissions + PIT entries) |
-| `repository_audit` | Repository audit flows |
+| `user_management` | Users, guest panelist codes; `academic_records` submodule |
+| `student_teams` | Teams, members, advisers; `documents`, `weekly_progress` submodules |
+| `defense` | `stages`, `scheduler`, `board` submodules |
+| `grading` | `rubrics` and `grades` (grade center, peer eval) |
+| `repository` | `vault`, `deliverables`, `audit` submodules |
 | `curriculum_analytics` | Curriculum-related analytics |
-| `student_weekly_progress` | Weekly progress reports |
-| `team_documents` | Team document uploads and downloads |
 
 **Stack notes:** Django 6.x, `rest_framework`, `rest_framework_simplejwt`. Dependencies live in **`backend/requirements.txt`** (and `requirements_ml.txt` pulls the same set via `-r`). Use one virtualenv at **`backend/venv/`** (see `ACTIVATE_AND_INSTALL.bat` or `setup_venv.ps1`).
 
-**Prototype / demo gates:** `ENABLE_PROTOTYPE_TOOLS` in settings (default `False`). Some endpoints call `require_prototype_tools()` and return 404 when disabled (e.g. parts of capstone deliverables, grade center, repository audit, rubric engine).
+**Prototype demo-fill APIs** (`demo-fill`, `seed-demo`) were removed for deployment. Use normal admin workflows, imports, and mobile peer evaluation (`POST /api/grading/grades/peer-evaluations/`).
 
 ---
 

@@ -19,6 +19,8 @@ class SemesterSerializer(serializers.ModelSerializer):
             'display_name',
             'capstone_peer_evaluation_enabled',
             'capstone_adviser_grading_enabled',
+            'capstone_team_creation_enabled',
+            'capstone_program_phase',
         ]
 
 
@@ -66,7 +68,15 @@ class SemesterCreateSerializer(serializers.Serializer):
         return attrs
 
     def create(self, validated_data):
-        return Semester.objects.create(
+        from .capstone_mode import default_capstone_flags_for_label, normalize_capstone_flags
+
+        label = validated_data['label']
+        _, phase = default_capstone_flags_for_label(label)
+        semester = Semester.objects.create(
             school_year=self.context['school_year'],
-            label=validated_data['label'],
+            label=label,
+            capstone_program_phase=phase,
         )
+        normalize_capstone_flags(semester)
+        semester.save(update_fields=['capstone_program_phase', 'capstone_team_creation_enabled'])
+        return semester

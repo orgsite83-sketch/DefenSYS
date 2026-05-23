@@ -18,14 +18,14 @@ print("=" * 60)
 uploaders = User.objects.filter(is_uploader=True)
 
 if not uploaders.exists():
-    print("\n❌ No uploader users found!")
+    print("\n No uploader users found!")
     print("\nTo create an uploader user:")
     print("1. Go to User Management in admin dashboard")
     print("2. Create or edit a faculty user")
     print("3. Check the 'Uploader' checkbox")
     print("4. Save the user")
 else:
-    print(f"\n✅ Found {uploaders.count()} uploader user(s):\n")
+    print(f"\n Found {uploaders.count()} uploader user(s):\n")
     
     for user in uploaders:
         print(f"Username: {user.username}")
@@ -46,9 +46,9 @@ else:
         )
         
         if is_only_uploader:
-            print("✅ This user is ONLY an uploader (will see dedicated dashboard)")
+            print("This user is ONLY an uploader (will see dedicated dashboard)")
         else:
-            print("ℹ️  This user has multiple roles (will see sidebar)")
+            print(" This user has multiple roles (will see sidebar)")
         
         print("-" * 60)
 

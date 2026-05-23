@@ -3,11 +3,15 @@ import 'package:flutter/material.dart';
 class TeamData {
   final String name, project, defenseDate;
   final String teamId;
+  final String scheduleId;
+  final String scope;
   final bool isCapstone;
   final List<String> members;
   final List<Criterion> criteria;
   final int panelWeight;
   final int peerWeight;
+  final int adviserWeight;
+  final Map<String, dynamic>? panelRubric;
   bool isPosted;
 
   TeamData({
@@ -15,12 +19,16 @@ class TeamData {
     required this.project,
     required this.defenseDate,
     required this.teamId,
+    this.scheduleId = '',
+    this.scope = 'capstone',
     required this.isCapstone,
     required this.members,
     required this.criteria,
     required this.isPosted,
     this.panelWeight = 50,
     this.peerWeight = 20,
+    this.adviserWeight = 0,
+    this.panelRubric,
   });
 }
 

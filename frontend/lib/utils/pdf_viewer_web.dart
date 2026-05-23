@@ -74,7 +74,7 @@ Future<void> viewPdfInDialog({
                     icon: const Icon(Icons.download, color: Colors.white),
                     tooltip: 'Download PDF',
                     onPressed: () {
-                      final anchor = html.AnchorElement(href: blobUrl)
+                      html.AnchorElement(href: blobUrl)
                         ..setAttribute('download', fileName)
                         ..click();
                       

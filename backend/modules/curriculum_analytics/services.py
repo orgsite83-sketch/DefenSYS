@@ -2,10 +2,24 @@ from collections import Counter, defaultdict
 
 from django.core.exceptions import PermissionDenied
 
-from capstone_deliverables.models import DeliverableSubmission
-from capstone_deliverables.services import display_name
-from digital_vault.models import VaultEntry
+from repository.deliverables.models import DeliverableSubmission
+from repository.deliverables.services import display_name
+from repository.vault.models import VaultEntry
 
+
+NB_CATEGORY_TO_STACK = {
+    'Web Development': 'React / Node.js',
+    'Mobile Development': 'Flutter / Mobile',
+    'Machine Learning': 'Django / Python',
+    'Data Science': 'Django / Python',
+    'Cloud Computing': 'Cloud / AWS',
+    'IoT': 'IoT / Embedded',
+    'Game Development': 'AR / Unity',
+    'Database Systems': 'Django / Python',
+    'Network Systems': 'Cloud / AWS',
+    'Cybersecurity': 'Django / Python',
+    'Desktop Applications': 'Django / Python',
+}
 
 TECH_STACKS = [
     {
@@ -50,118 +64,6 @@ TECH_STACKS = [
     },
 ]
 
-DOMAIN_TAXONOMY = [
-    {
-        'domain': 'Machine Learning / AI',
-        'keywords': [
-            'predict',
-            'ai',
-            'machine learning',
-            'neural',
-            'deep learning',
-            'model',
-            'training',
-            'dataset',
-            'classification',
-            'regression',
-            'nlp',
-            'computer vision',
-            'tensorflow',
-            'pytorch',
-            'accuracy',
-        ],
-    },
-    {
-        'domain': 'Web Development',
-        'keywords': [
-            'django',
-            'react',
-            'vue',
-            'angular',
-            'laravel',
-            'api',
-            'rest',
-            'frontend',
-            'backend',
-            'html',
-            'css',
-            'javascript',
-            'node',
-            'database',
-            'sql',
-            'crud',
-            'authentication',
-        ],
-    },
-    {
-        'domain': 'Mobile Development',
-        'keywords': [
-            'flutter',
-            'android',
-            'ios',
-            'mobile',
-            'dart',
-            'kotlin',
-            'swift',
-            'react native',
-            'app',
-            'ui',
-            'ux',
-            'responsive',
-        ],
-    },
-    {
-        'domain': 'IoT / Embedded Systems',
-        'keywords': [
-            'iot',
-            'sensor',
-            'arduino',
-            'raspberry',
-            'embedded',
-            'firmware',
-            'microcontroller',
-            'mqtt',
-            'smart',
-            'automation',
-            'hardware',
-        ],
-    },
-    {
-        'domain': 'Cybersecurity',
-        'keywords': [
-            'security',
-            'encryption',
-            'vulnerability',
-            'penetration',
-            'firewall',
-            'authentication',
-            'hash',
-            'ssl',
-            'threat',
-            'audit',
-        ],
-    },
-    {
-        'domain': 'Data Analytics / DSS',
-        'keywords': [
-            'analytics',
-            'dashboard',
-            'visualization',
-            'chart',
-            'report',
-            'insight',
-            'trend',
-            'statistics',
-            'bi',
-            'decision support',
-            'data warehouse',
-            'etl',
-            'tableau',
-            'power bi',
-        ],
-    },
-]
-
 
 def ensure_admin(user):
     if getattr(user, 'role', None) != 'admin' and not getattr(user, 'is_superuser', False):
@@ -188,6 +90,11 @@ def source_entries():
             'status': entry.status,
             'uploaded_by': entry.uploaded_by_name or display_name(entry.uploaded_by) or 'PIT Lead',
             'uploaded_at': entry.uploaded_at,
+            'extracted_text': entry.extracted_text or '',
+            'topics': entry.topics or [],
+            'summary': entry.summary or '',
+            'category': entry.category or '',
+            'category_confidence': entry.category_confidence,
         })
 
     submissions = DeliverableSubmission.objects.select_related(
@@ -213,25 +120,43 @@ def source_entries():
             'status': 'Vault Submission' if submission.deliverable_type == DeliverableSubmission.TYPE_VAULT else 'Pre-Defense',
             'uploaded_by': display_name(submission.uploaded_by) or 'System',
             'uploaded_at': submission.uploaded_at,
+            'extracted_text': submission.extracted_text or '',
+            'topics': submission.topics or [],
+            'summary': submission.summary or '',
+            'category': submission.category or '',
+            'category_confidence': submission.category_confidence,
         })
     return sorted(entries, key=lambda item: item['uploaded_at'], reverse=True)
 
 
 def text_for_entry(entry):
-    return ' '.join(
-        str(entry.get(key) or '')
-        for key in [
-            'file_name',
-            'team_name',
-            'project_title',
-            'deliverable_label',
-            'stage',
-            'year_level',
-        ]
-    ).lower()
+    parts = [
+        entry.get('file_name'),
+        entry.get('team_name'),
+        entry.get('project_title'),
+        entry.get('deliverable_label'),
+        entry.get('stage'),
+        entry.get('year_level'),
+        entry.get('summary'),
+        entry.get('category'),
+    ]
+    topics = entry.get('topics') or []
+    if topics:
+        parts.append(' '.join(str(topic) for topic in topics))
+    extracted = (entry.get('extracted_text') or '')[:4000]
+    if extracted:
+        parts.append(extracted)
+    return ' '.join(str(part) for part in parts if part).lower()
 
 
 def extract_tech(entry):
+    category = (entry.get('category') or '').strip()
+    confidence = entry.get('category_confidence')
+    if category and confidence is not None and confidence >= 35:
+        mapped = NB_CATEGORY_TO_STACK.get(category)
+        if mapped:
+            return mapped
+
     text = text_for_entry(entry)
     best = None
     best_score = 0
@@ -391,54 +316,6 @@ def suggestions_payload(entries, breakdown, trends):
     return suggestions
 
 
-def classify_text(text):
-    lower = (text or '').lower()
-    scored = []
-    for domain in DOMAIN_TAXONOMY:
-        hits = []
-        score = 0
-        for keyword in domain['keywords']:
-            count = lower.count(keyword)
-            if count:
-                hits.append(keyword)
-                score += count
-        scored.append({'domain': domain['domain'], 'score': score, 'matched_keywords': hits[:6]})
-    scored.sort(key=lambda item: item['score'], reverse=True)
-    top = scored[0]
-    total = sum(item['score'] for item in scored)
-    if top['score'] == 0:
-        return {'domain': 'Unclassified', 'confidence': 0, 'matched_keywords': []}
-    confidence = min(95, round((top['score'] / max(total, 1)) * 100 + 40))
-    return {
-        'domain': top['domain'],
-        'confidence': confidence,
-        'matched_keywords': top['matched_keywords'],
-    }
-
-
-def similar_projects(entries, keywords):
-    if not keywords:
-        return []
-    matches = []
-    for entry in entries:
-        text = text_for_entry(entry)
-        score = sum(1 for keyword in keywords if keyword.lower() in text)
-        if score:
-            matches.append((score, entry))
-    matches.sort(key=lambda item: item[0], reverse=True)
-    return [
-        {
-            'file_name': entry['file_name'],
-            'team_name': entry['team_name'],
-            'project_title': entry.get('project_title') or '',
-            'academic_year': entry['academic_year'],
-            'type': entry['type'],
-            'tech_stack': entry['tech_stack'],
-        }
-        for _score, entry in matches[:5]
-    ]
-
-
 def analytics_payload(user, academic_year=None):
     ensure_admin(user)
     entries = enrich_entries(source_entries())
@@ -458,22 +335,6 @@ def analytics_payload(user, academic_year=None):
         'suggestions': suggestions_payload(entries, breakdown, trends),
         'recent_entries': entries[:8],
         'taxonomy': [{'label': item['label'], 'color': item['color']} for item in TECH_STACKS],
-    }
-
-
-def classify_payload(user, text):
-    ensure_admin(user)
-    entries = enrich_entries(source_entries())
-    result = classify_text(text)
-    return {
-        **result,
-        'pipeline': [
-            {'label': 'Regex Validation', 'status': 'done'},
-            {'label': 'TF-IDF Vectorization', 'status': 'done'},
-            {'label': 'Naive Bayes Classification', 'status': 'done'},
-            {'label': 'Curriculum Mapping', 'status': 'done'},
-        ],
-        'similar_projects': similar_projects(entries, result['matched_keywords']),
     }
 
 

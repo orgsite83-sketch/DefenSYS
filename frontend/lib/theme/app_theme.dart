@@ -98,5 +98,29 @@ class AppTheme {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           side: BorderSide.none,
         ),
+        dialogTheme: DialogThemeData(
+          backgroundColor: AppColors.surface,
+          surfaceTintColor: Colors.transparent,
+          elevation: 8,
+          shadowColor: Colors.black26,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: const BorderSide(color: Color(0xFFE5E7EB)),
+          ),
+          titleTextStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            color: Color(0xFF1F2937),
+            fontSize: 18,
+            fontWeight: FontWeight.w700,
+            letterSpacing: -0.25,
+          ),
+          contentTextStyle: const TextStyle(
+            fontFamily: 'Poppins',
+            color: AppColors.textSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+            height: 1.45,
+          ),
+        ),
       );
 }

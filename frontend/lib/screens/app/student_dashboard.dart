@@ -144,10 +144,18 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                                 .toList(),
                             peerCriteria: (dataToPass['peerCriteria'] as List? ?? [])
                                 .cast<Map<String, dynamic>>(),
+                            myPeerSubmissions:
+                                (dataToPass['myPeerSubmissions'] as List? ?? [])
+                                    .cast<Map<String, dynamic>>(),
                             studentId: widget.userData?['id']?.toString() ?? '',
                             teamId: dataToPass['team']?['id']?.toString() ?? '',
                             peerWeight:
                                 (dataToPass['weights']?['peer'] as num?)?.toInt() ?? 20,
+                            onPeerSubmitted: () {
+                              ref
+                                  .read(dashboardProvider('student').notifier)
+                                  .fetchDashboardData();
+                            },
                           ),
                         ],
                       ),

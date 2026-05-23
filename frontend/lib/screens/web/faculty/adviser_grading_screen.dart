@@ -9,8 +9,6 @@ import '../../../theme/app_theme.dart';
 // ---------------------------------------------------------------------------
 
 const _maroon = Color(0xFF7F1D1D);
-const _maroonDark = Color(0xFF5E0D08);
-const _gold = Color(0xFFFFC107);
 const _bgLight = Color(0xFFF3F4F6);
 const _neutralBorder = Color(0xFFE5E7EB);
 const _steelGrey = Color(0xFF6B7280);
@@ -68,7 +66,7 @@ class _AdviserGradingScreenState extends ConsumerState<AdviserGradingScreen> {
                 ),
                 const SizedBox(height: 4),
                 const Text(
-                  'Select a team from the list, choose an adviser rubric, score each criterion, then submit.',
+                  'Select a team, score each criterion using the rubric assigned by your administrator, then submit.',
                   style: TextStyle(fontSize: 13, color: _steelGrey),
                 ),
                 const SizedBox(height: 16),
@@ -178,9 +176,8 @@ class _AdviserGradingScreenState extends ConsumerState<AdviserGradingScreen> {
           child: _selectedGradeIndex == null
               ? _buildSelectPrompt()
               : _GradeForm(
-                  key: ValueKey(_selectedGradeIndex),
+                  key: ValueKey(state.grades[_selectedGradeIndex!]['id']),
                   grade: state.grades[_selectedGradeIndex!],
-                  adviserRubrics: state.adviserRubrics,
                   isSaving: state.isSaving,
                   onSubmit: ({
                     required int gradeId,
@@ -394,16 +391,28 @@ typedef _OnSubmit = Future<void> Function({
   required List<Map<String, dynamic>> criteriaScores,
 });
 
+Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
+  final rubricId = grade['assigned_adviser_rubric_id'];
+  if (rubricId == null) {
+    return null;
+  }
+  final criteria = grade['assigned_adviser_criteria'];
+  return {
+    'id': rubricId,
+    'name': grade['assigned_adviser_rubric_name']?.toString() ?? 'Adviser rubric',
+    'scale': grade['assigned_adviser_rubric_scale'],
+    'criteria': criteria is List ? criteria : [],
+  };
+}
+
 class _GradeForm extends StatefulWidget {
   final Map<String, dynamic> grade;
-  final List<Map<String, dynamic>> adviserRubrics;
   final bool isSaving;
   final _OnSubmit onSubmit;
 
   const _GradeForm({
     super.key,
     required this.grade,
-    required this.adviserRubrics,
     required this.isSaving,
     required this.onSubmit,
   });
@@ -424,14 +433,13 @@ class _GradeFormState extends State<_GradeForm> {
   @override
   void initState() {
     super.initState();
-    // Pre-fill existing adviser score if already graded
     final existing = widget.grade['adviser_score'];
     if (existing != null) {
       _manualScoreCtrl.text = existing.toString();
     }
-    // Auto-select first available rubric
-    if (widget.adviserRubrics.isNotEmpty) {
-      _selectRubric(widget.adviserRubrics.first);
+    final assigned = _assignedRubricFromGrade(widget.grade);
+    if (assigned != null) {
+      _selectRubric(assigned, hydrateFromGrade: true);
     }
   }
 
@@ -444,19 +452,37 @@ class _GradeFormState extends State<_GradeForm> {
     super.dispose();
   }
 
-  void _selectRubric(Map<String, dynamic>? rubric) {
-    // Dispose old controllers
+  void _selectRubric(
+    Map<String, dynamic>? rubric, {
+    bool hydrateFromGrade = false,
+  }) {
     for (final c in _scoreCtrl.values) {
       c.dispose();
     }
     _scoreCtrl.clear();
 
     _selectedRubric = rubric;
-    if (rubric != null) {
-      for (final c in (rubric['criteria'] as List? ?? [])) {
-        final name = (c as Map)['name']?.toString() ?? '';
-        _scoreCtrl[name] = TextEditingController();
+    if (rubric == null) {
+      return;
+    }
+
+    final savedScores = <String, String>{};
+    if (hydrateFromGrade && widget.grade['breakdowns'] is List) {
+      for (final row in widget.grade['breakdowns'] as List) {
+        if (row is! Map) continue;
+        if (row['evaluation_type']?.toString() != 'adviser') continue;
+        final name = row['criterion_name']?.toString() ?? '';
+        if (name.isNotEmpty) {
+          savedScores[name] = row['score']?.toString() ?? '';
+        }
       }
+    }
+
+    for (final c in (rubric['criteria'] as List? ?? [])) {
+      final cMap = c as Map;
+      final name = cMap['name']?.toString() ?? '';
+      final ctrl = TextEditingController(text: savedScores[name] ?? '');
+      _scoreCtrl[name] = ctrl;
     }
   }
 
@@ -574,10 +600,9 @@ class _GradeFormState extends State<_GradeForm> {
           ),
           const SizedBox(height: 20),
 
-          // ─ Rubric selector ───────────────────────────────────────────────
-          _sectionLabel('Select Adviser Rubric'),
+          _sectionLabel('Assigned adviser rubric'),
           const SizedBox(height: 8),
-          widget.adviserRubrics.isEmpty
+          _selectedRubric == null
               ? Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(
@@ -591,32 +616,30 @@ class _GradeFormState extends State<_GradeForm> {
                       SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'No published adviser rubrics found. Ask your administrator to create and publish adviser rubrics first.',
+                          'No adviser rubric is assigned for this defense stage yet. '
+                          'Ask your administrator to set panel, adviser, and peer rubrics in Defense Stages or the scheduler.',
                           style: TextStyle(color: AppColors.warning, fontSize: 13),
                         ),
                       ),
                     ],
                   ),
                 )
-              : DropdownButtonFormField<int>(
-                  value: _selectedRubric?['id'] as int?,
-                  isExpanded: true,
-                  decoration: _inputDec('Choose a rubric…'),
-                  items: widget.adviserRubrics
-                      .map((r) => DropdownMenuItem<int>(
-                            value: r['id'] as int,
-                            child: Text('${r['name']} (${r['scale'] ?? ''})'),
-                          ))
-                      .toList(),
-                  onChanged: (id) {
-                    setState(() {
-                      final r = widget.adviserRubrics.firstWhere(
-                        (r) => r['id'] == id,
-                        orElse: () => {},
-                      );
-                      _selectRubric(r.isEmpty ? null : r);
-                    });
-                  },
+              : Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: _maroon.withValues(alpha: 0.06),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _maroon.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    '${_selectedRubric!['name']} (${_selectedRubric!['scale'] ?? 'Rubric'})',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w700,
+                      color: _textDark,
+                      fontSize: 14,
+                    ),
+                  ),
                 ),
           const SizedBox(height: 22),
 

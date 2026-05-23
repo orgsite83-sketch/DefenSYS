@@ -12,7 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'name', 'role',
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
-            'adviser_phase', 'is_repo_assistant', 'is_uploader', 'facultyRoles',
+            'is_repo_assistant', 'repo_assistant_year', 'is_uploader', 'facultyRoles',
         ]
 
     def get_name(self, obj):
@@ -25,8 +25,8 @@ class UserSerializer(serializers.ModelSerializer):
             'pitLead': obj.is_pit_lead,
             'pitLeadYear': obj.pit_lead_year,
             'adviser': obj.is_adviser,
-            'adviserPhase': obj.adviser_phase,
             'repoAssistant': obj.is_repo_assistant,
+            'repoAssistantYear': getattr(obj, 'repo_assistant_year', '') or '',
             'uploader': obj.is_uploader,
         }
 

@@ -9,7 +9,7 @@ class GuestPanelistCode(models.Model):
     guest_name = models.CharField(max_length=150)
     email = models.EmailField(blank=True)
     defense_schedule = models.ForeignKey(
-        'defense_scheduler.DefenseSchedule',
+        'defense.DefenseSchedule',
         related_name='guest_panelist_codes',
         on_delete=models.CASCADE,
     )
@@ -46,3 +46,58 @@ class GuestPanelistCode(models.Model):
 
     def __str__(self):
         return f'{self.code} - {self.guest_name}'
+
+
+class FacultyRoleAssignment(models.Model):
+    ROLE_PANELIST = 'panelist'
+    ROLE_PIT_LEAD = 'pit_lead'
+    ROLE_ADVISER = 'adviser'
+    ROLE_REPO_ASSISTANT = 'repo_assistant'
+
+    ROLE_KEY_CHOICES = (
+        (ROLE_PANELIST, 'Defense Panelist'),
+        (ROLE_PIT_LEAD, 'PIT Lead'),
+        (ROLE_ADVISER, 'Project Adviser'),
+        (ROLE_REPO_ASSISTANT, 'Repository Assistant'),
+    )
+
+    ACTION_ASSIGNED = 'assigned'
+    ACTION_REVOKED = 'revoked'
+    ACTION_CHOICES = (
+        (ACTION_ASSIGNED, 'Assigned'),
+        (ACTION_REVOKED, 'Revoked'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='faculty_role_assignments',
+        on_delete=models.CASCADE,
+    )
+    role_key = models.CharField(max_length=32, choices=ROLE_KEY_CHOICES)
+    role_detail = models.CharField(max_length=100, blank=True, null=True)
+    semester = models.ForeignKey(
+        'academic_period_management.Semester',
+        related_name='faculty_role_assignments',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    year_level = models.CharField(max_length=50, blank=True, null=True)
+    action = models.CharField(max_length=16, choices=ACTION_CHOICES)
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='faculty_role_changes_made',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    changed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-changed_at', '-id']
+
+    def __str__(self):
+        return f'{self.user_id} {self.role_key} {self.action}'
+
+
+from user_management.academic_records.models import StudentAcademicRecord  # noqa: E402,F401

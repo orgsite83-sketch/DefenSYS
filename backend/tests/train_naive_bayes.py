@@ -9,7 +9,7 @@ import django
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
-from capstone_deliverables.naive_bayes_classifier import train_and_save_model, classify_document
+from repository.deliverables.naive_bayes_classifier import train_and_save_model, classify_document
 
 
 def main():
@@ -73,35 +73,35 @@ def main():
     
     for i, doc in enumerate(test_documents, 1):
         print(f'\n[{i}/{total}] Testing document:')
-        print(f'   Text: "{doc["text"][:80]}..."')
-        print(f'   Expected: {doc["expected"]}')
+        print(f'Text: "{doc["text"][:80]}..."')
+        print(f'Expected: {doc["expected"]}')
         
         result = classify_document(doc['text'])
         
-        print(f'   Predicted: {result["predicted_category"]} ({result["confidence"]})')
-        print(f'   Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in result["top_3"]]}')
+        print(f'Predicted: {result["predicted_category"]} ({result["confidence"]})')
+        print(f'Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in result["top_3"]]}')
         
         if result['predicted_category'] == doc['expected']:
-            print(f'   ✅ CORRECT')
+            print(f'CORRECT')
             correct += 1
         else:
-            print(f'   ❌ INCORRECT')
+            print(f'INCORRECT')
     
     accuracy = (correct / total) * 100
     
     print('\n' + '='*80)
     print('TRAINING COMPLETE')
     print('='*80)
-    print(f'\n✅ Accuracy: {correct}/{total} ({accuracy:.1f}%)')
-    print(f'   Correct predictions: {correct}')
-    print(f'   Incorrect predictions: {total - correct}')
+    print(f'\n Accuracy: {correct}/{total} ({accuracy:.1f}%)')
+    print(f'Correct predictions: {correct}')
+    print(f'Incorrect predictions: {total - correct}')
     
     if accuracy >= 80:
-        print(f'\n🎉 Excellent! Classifier is ready for production use.')
+        print(f'\n Excellent! Classifier is ready for production use.')
     elif accuracy >= 60:
-        print(f'\n⚠️ Good, but could be improved with more training data.')
+        print(f'\nWarning: Good, but could be improved with more training data.')
     else:
-        print(f'\n❌ Poor accuracy. Consider adding more training data or adjusting parameters.')
+        print(f'\n Poor accuracy. Consider adding more training data or adjusting parameters.')
 
 
 if __name__ == '__main__':

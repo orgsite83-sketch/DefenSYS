@@ -15,7 +15,6 @@ class AdviserGradingState {
   final bool isSaving;
   final bool adviserGradingEnabled;
   final List<Map<String, dynamic>> grades;
-  final List<Map<String, dynamic>> adviserRubrics;
   final Map<String, dynamic> counts;
   final String? error;
   final String? message;
@@ -25,7 +24,6 @@ class AdviserGradingState {
     this.isSaving = false,
     this.adviserGradingEnabled = true,
     this.grades = const [],
-    this.adviserRubrics = const [],
     this.counts = const {},
     this.error,
     this.message,
@@ -36,7 +34,6 @@ class AdviserGradingState {
     bool? isSaving,
     bool? adviserGradingEnabled,
     List<Map<String, dynamic>>? grades,
-    List<Map<String, dynamic>>? adviserRubrics,
     Map<String, dynamic>? counts,
     String? error,
     bool clearError = false,
@@ -48,7 +45,6 @@ class AdviserGradingState {
       isSaving: isSaving ?? this.isSaving,
       adviserGradingEnabled: adviserGradingEnabled ?? this.adviserGradingEnabled,
       grades: grades ?? this.grades,
-      adviserRubrics: adviserRubrics ?? this.adviserRubrics,
       counts: counts ?? this.counts,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
@@ -62,7 +58,6 @@ class AdviserGradingState {
 
 class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
   static String get _gradesUrl => '${ApiConfig.gradeCenterUrl}/adviser-grades/';
-  static String get _rubricsUrl => ApiConfig.rubricsUrl;
 
   @override
   AdviserGradingState build() => const AdviserGradingState();
@@ -97,36 +92,19 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
     return v.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
   }
 
-  /// Loads both grade records and available adviser rubrics in parallel.
+  /// Loads capstone grade records for teams this adviser supervises.
   Future<void> fetchAll() async {
     state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
     try {
       final headers = await _headers();
-      final results = await Future.wait([
-        http.get(Uri.parse(_gradesUrl), headers: headers),
-        http.get(
-          Uri.parse(_rubricsUrl).replace(queryParameters: {
-            'evaluation_type': 'adviser',
-            'status': 'published',
-          }),
-          headers: headers,
-        ),
-      ]);
-
-      final gradesResp = results[0];
-      final rubricsResp = results[1];
+      final gradesResp = await http.get(Uri.parse(_gradesUrl), headers: headers);
 
       if (gradesResp.statusCode != 200) {
         state = state.copyWith(isLoading: false, error: _errorFromResponse(gradesResp));
         return;
       }
-      if (rubricsResp.statusCode != 200) {
-        state = state.copyWith(isLoading: false, error: _errorFromResponse(rubricsResp));
-        return;
-      }
 
       final gradesPayload = Map<String, dynamic>.from(jsonDecode(gradesResp.body));
-      final rubricsPayload = Map<String, dynamic>.from(jsonDecode(rubricsResp.body));
       final adviserOn = gradesPayload['adviser_grading_enabled'] != false;
 
       state = state.copyWith(
@@ -136,14 +114,13 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
         counts: gradesPayload['counts'] is Map
             ? Map<String, dynamic>.from(gradesPayload['counts'])
             : const {},
-        adviserRubrics: _readMapList(rubricsPayload['rubrics']),
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
 
-  /// Submits the adviser score (and optional per-criterion breakdown) for a grade.
+  /// Submits the adviser score (and per-criterion breakdown) for a grade.
   Future<bool> submitGrade({
     required int gradeId,
     required double adviserScore,
@@ -165,21 +142,9 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
       );
 
       if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-        final updatedGrade = Map<String, dynamic>.from(data['grade'] as Map);
-        // Patch the grade in local list without a full reload
-        final updated = state.grades.map((g) {
-          return (g['id'] == updatedGrade['id']) ? updatedGrade : g;
-        }).toList();
-        final graded = updated.where((g) => g['adviser_score'] != null).length;
+        await fetchAll();
         state = state.copyWith(
           isSaving: false,
-          grades: updated,
-          counts: {
-            ...state.counts,
-            'graded': graded,
-            'pending': updated.length - graded,
-          },
           message: 'Grade submitted successfully.',
         );
         return true;
@@ -189,8 +154,8 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
       return false;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
-      return false;
     }
+    return false;
   }
 }
 

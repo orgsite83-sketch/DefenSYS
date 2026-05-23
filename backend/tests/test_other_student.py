@@ -5,7 +5,7 @@ django.setup()
 from django.test import RequestFactory
 from rest_framework.test import force_authenticate
 from authentication_access_control.models import User
-from digital_vault.views import DigitalVaultListView
+from repository.vault.views import DigitalVaultListView
 
 # Get a student NOT in team 666
 student = User.objects.filter(role='student').exclude(student_teams__id=7).first()
@@ -19,7 +19,7 @@ print()
 
 # Create request
 factory = RequestFactory()
-request = factory.get('/api/digital-vault/')
+request = factory.get('/api/repository/vault/')
 force_authenticate(request, user=student)
 
 # Call view
@@ -34,9 +34,9 @@ print()
 if entries:
     print('Vault entries visible to this student (NOT in team 666):')
     for entry in entries:
-        print(f'  - {entry["file_name"]}')
-        print(f'    Team: {entry["team_name"]} (ID: {entry.get("team_id")})')
+        print(f'- {entry["file_name"]}')
+        print(f'Team: {entry["team_name"]} (ID: {entry.get("team_id")})')
         print()
-    print('✅ SUCCESS: Student from different team can see vault entries!')
+    print('SUCCESS: Student from different team can see vault entries!')
 else:
-    print('❌ FAIL: No entries visible to student from different team')
+    print('FAIL: No entries visible to student from different team')
