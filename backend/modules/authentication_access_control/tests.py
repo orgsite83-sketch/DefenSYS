@@ -40,8 +40,92 @@ class LoginApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertIn('access', response.data)
+        self.assertIn('refresh', response.data)
         self.assertEqual(response.data['user']['name'], 'Ada Lovelace')
         self.assertTrue(response.data['user']['is_panelist'])
         self.assertTrue(response.data['user']['is_adviser'])
         self.assertTrue(response.data['user']['facultyRoles']['panelist'])
         self.assertTrue(response.data['user']['facultyRoles']['adviser'])
+
+
+class JwtSessionApiTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='session-user',
+            password='pass12345',
+            role='admin',
+        )
+
+    def _login(self):
+        response = self.client.post(
+            '/api/login/',
+            {'username': 'session-user', 'password': 'pass12345'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        return response.data
+
+    def test_refresh_with_valid_refresh_returns_new_access(self):
+        tokens = self._login()
+        response = self.client.post(
+            '/api/token/refresh/',
+            {'refresh': tokens['refresh']},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        if 'refresh' in response.data:
+            self.assertNotEqual(response.data['refresh'], tokens['refresh'])
+
+    def test_refresh_with_invalid_refresh_returns_401(self):
+        response = self.client.post(
+            '/api/token/refresh/',
+            {'refresh': 'not-a-valid-token'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_reuse_old_refresh_after_rotation_returns_401(self):
+        tokens = self._login()
+        old_refresh = tokens['refresh']
+        refresh_response = self.client.post(
+            '/api/token/refresh/',
+            {'refresh': old_refresh},
+            format='json',
+        )
+        self.assertEqual(refresh_response.status_code, 200)
+        reuse_response = self.client.post(
+            '/api/token/refresh/',
+            {'refresh': old_refresh},
+            format='json',
+        )
+        self.assertEqual(reuse_response.status_code, 401)
+
+    def test_logout_blacklists_refresh(self):
+        tokens = self._login()
+        logout_response = self.client.post(
+            '/api/logout/',
+            {'refresh': tokens['refresh']},
+            format='json',
+        )
+        self.assertEqual(logout_response.status_code, 200)
+        refresh_response = self.client.post(
+            '/api/token/refresh/',
+            {'refresh': tokens['refresh']},
+            format='json',
+        )
+        self.assertEqual(refresh_response.status_code, 401)
+
+    def test_me_requires_authentication(self):
+        response = self.client.get('/api/me/')
+        self.assertEqual(response.status_code, 401)
+
+    def test_me_returns_current_user_with_valid_access(self):
+        tokens = self._login()
+        response = self.client.get(
+            '/api/me/',
+            HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['username'], 'session-user')
+        self.assertEqual(response.data['role'], 'admin')

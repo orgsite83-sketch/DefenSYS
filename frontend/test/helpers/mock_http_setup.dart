@@ -21,6 +21,24 @@ Future<http.Response> _defaultHandler(http.Request request) async {
     return http.Response(loginSuccessJson, 200);
   }
 
+  if (path.endsWith('/token/refresh/') && method == 'POST') {
+    return http.Response(
+      '{"access": "test-jwt-token-refreshed", "refresh": "test-refresh-token-rotated"}',
+      200,
+    );
+  }
+
+  if (path.endsWith('/me/') && method == 'GET') {
+    return http.Response(
+      '{"id": 1, "username": "admin", "role": "admin", "name": "Admin User", "facultyRoles": {}}',
+      200,
+    );
+  }
+
+  if (path.endsWith('/logout/') && method == 'POST') {
+    return http.Response('{}', 200);
+  }
+
   if (path.endsWith('/dashboards/admin/') && method == 'GET') {
     return http.Response(dashboardAdminJson, 200);
   }

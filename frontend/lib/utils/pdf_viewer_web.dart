@@ -2,7 +2,23 @@
 import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
-import '../theme/app_theme.dart';
+import '../theme/defensys_tokens.dart';
+
+Future<void> downloadBytesFile({
+  required List<int> bytes,
+  required String fileName,
+  String mimeType = 'application/octet-stream',
+}) async {
+  final blob = html.Blob([bytes], mimeType);
+  final url = html.Url.createObjectUrlFromBlob(blob);
+  final anchor = html.AnchorElement(href: url)
+    ..download = fileName
+    ..style.display = 'none';
+  html.document.body?.append(anchor);
+  anchor.click();
+  anchor.remove();
+  html.Url.revokeObjectUrl(url);
+}
 
 Future<void> viewPdfInDialog({
   required BuildContext context,
@@ -48,7 +64,7 @@ Future<void> viewPdfInDialog({
             Container(
               padding: const EdgeInsets.all(16),
               decoration: const BoxDecoration(
-                color: Color(0xFF7F1D1D),
+                color: DefensysTokens.maroon,
                 borderRadius: BorderRadius.only(
                   topLeft: Radius.circular(12),
                   topRight: Radius.circular(12),
@@ -81,7 +97,7 @@ Future<void> viewPdfInDialog({
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
                           content: Text('PDF downloaded'),
-                          backgroundColor: AppColors.success,
+                          backgroundColor: DefensysTokens.success,
                           duration: Duration(seconds: 2),
                         ),
                       );

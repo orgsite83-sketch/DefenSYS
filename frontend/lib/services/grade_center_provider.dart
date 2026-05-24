@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final gradeCenterProvider =
     NotifierProvider<GradeCenterNotifier, GradeCenterState>(
@@ -21,6 +22,7 @@ class GradeCenterState {
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
   final Map<String, Map<String, dynamic>> groupSettings;
+  final List<Map<String, dynamic>> capstoneStages;
   final String search;
   final String yearLevel;
   final String status;
@@ -39,6 +41,7 @@ class GradeCenterState {
     this.counts = const {},
     this.activeSemester,
     this.groupSettings = const {},
+    this.capstoneStages = const [],
     this.search = '',
     this.yearLevel = '',
     this.status = '',
@@ -58,6 +61,7 @@ class GradeCenterState {
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
     Map<String, Map<String, dynamic>>? groupSettings,
+    List<Map<String, dynamic>>? capstoneStages,
     String? search,
     String? yearLevel,
     String? status,
@@ -81,6 +85,7 @@ class GradeCenterState {
           ? null
           : activeSemester ?? this.activeSemester,
       groupSettings: groupSettings ?? this.groupSettings,
+      capstoneStages: capstoneStages ?? this.capstoneStages,
       search: search ?? this.search,
       yearLevel: yearLevel ?? this.yearLevel,
       status: status ?? this.status,
@@ -132,7 +137,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         queryParameters['scope'] = nextScope;
       }
       final uri = Uri.parse(baseUrl).replace(queryParameters: queryParameters);
-      final response = await http.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -159,9 +164,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     state = state.copyWith(isRefreshingGrade: true, clearError: true);
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/$gradeId/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -202,9 +207,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/sync/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -239,9 +244,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/$gradeId/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -269,9 +274,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/$gradeId/publish/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -317,9 +322,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       if (peerGradingEnabled != null) {
         body['peer_grading_enabled'] = peerGradingEnabled;
       }
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/group-settings/'),
-        headers: await _headers(),
+        
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
@@ -392,9 +397,9 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       if (adviserGradingEnabled != null) {
         body['capstone_adviser_grading_enabled'] = adviserGradingEnabled;
       }
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/evaluation-settings/'),
-        headers: await _headers(),
+        
         body: jsonEncode(body),
       );
       if (response.statusCode == 200) {
@@ -422,19 +427,8 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -452,6 +446,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
           : null,
       clearActiveSemester: payload['active_semester'] == null,
       groupSettings: _readGroupSettings(payload['group_settings']),
+      capstoneStages: _readMapList(payload['capstone_stages']),
       message: successMessage,
       clearError: true,
     );

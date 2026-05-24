@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
+import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_snackbar.dart';
 
-const _primaryColor = Color(0xFF7F1D1D);
-const _goldColor = Color(0xFFD97706);
-
-class PeerEvalTab extends StatefulWidget {
+class PeerEvalTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final bool peerEvalAllowed;
   final List<Map<String, dynamic>> teammates; // from studentData members (excluding self)
@@ -29,10 +31,10 @@ class PeerEvalTab extends StatefulWidget {
   });
 
   @override
-  State<PeerEvalTab> createState() => _PeerEvalTabState();
+  ConsumerState<PeerEvalTab> createState() => _PeerEvalTabState();
 }
 
-class _PeerEvalTabState extends State<PeerEvalTab> {
+class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   late Map<String, Map<String, double>> _scores;
   late Map<String, bool> _posted;
 
@@ -69,7 +71,7 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
       _posted.putIfAbsent(name, () => false);
       _scores.putIfAbsent(name, () => {
         for (final c in _effectiveCriteria)
-          (c['name'] as String): ((c['maxScore'] as num?) ?? 5).toDouble() * 0.8
+          (c['name'] as String): 0.0,
       });
     }
     _hydrateFromSubmissions();
@@ -148,16 +150,16 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: _goldColor.withOpacity(0.07),
+              color: DefensysTokens.gold.withOpacity(0.07),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: _goldColor.withOpacity(0.4)),
+              border: Border.all(color: DefensysTokens.gold.withOpacity(0.4)),
             ),
             child: Row(
               children: [
-                Icon(Icons.info_outline, color: _goldColor, size: 16),
+                Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
                 const SizedBox(width: 8),
                 Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
-                    style: TextStyle(fontSize: 12, color: _goldColor)),
+                    style: TextStyle(fontSize: 12, color: DefensysTokens.gold)),
               ],
             ),
           ),
@@ -203,9 +205,9 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: _primaryColor.withOpacity(0.1),
+                      backgroundColor: DefensysTokens.maroon.withOpacity(0.1),
                       child: Text(name[0].toUpperCase(),
-                          style: const TextStyle(color: _primaryColor, fontWeight: FontWeight.bold)),
+                          style: const TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(width: 12),
                     Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -279,60 +281,65 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
     );
   }
 
-  void _confirmPost(String name, Map<String, double> scores) {
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Row(children: [
-          Icon(Icons.warning_amber, color: Colors.red),
-          SizedBox(width: 8),
-          Text('Submit Peer Evaluation?', style: TextStyle(fontSize: 15)),
-        ]),
-        content: Text('Your evaluation for $name will be permanently locked.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () async {
-              setState(() => _posted[name] = true);
-              Navigator.pop(context);
+  bool _hasUnratedCriteria(Map<String, double> scores) {
+    for (final c in _effectiveCriteria) {
+      final criteriaName = c['name'] as String;
+      final score = scores[criteriaName] ?? 0;
+      if (score <= 0) {
+        return true;
+      }
+    }
+    return false;
+  }
 
-              // Submit to server
-              final breakdown = scores.entries.map((e) => {
-                'criteriaName': e.key,
-                'score': e.value,
-                'max': _effectiveCriteria.firstWhere(
-                  (c) => (c['name'] as String?) == e.key, 
-                  orElse: () => <String, Object>{'maxScore': 5}
-                )['maxScore'],
-              }).toList();
-              final total = scores.values.fold(0.0, (s, v) => s + v);
-              final max   = _effectiveCriteria.fold(0.0, (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0));
+  Future<void> _confirmPost(String name, Map<String, double> scores) async {
+    if (_hasUnratedCriteria(scores)) {
+      showValidationSnackBar(
+        context,
+        'Please rate every criterion before submitting.',
+      );
+      return;
+    }
 
-              await BridgeService.submitPeerGrade(
-                teamId: widget.teamId,
-                evaluatorId: widget.studentId,
-                evaluateeName: name,
-                breakdown: breakdown,
-                total: total,
-                max: max,
-              );
-
-              widget.onPeerSubmitted?.call();
-
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Peer evaluation for $name submitted.'),
-                      backgroundColor: Colors.red.shade700),
-                );
-              }
-            },
-            child: const Text('Submit & Lock'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Submit Peer Evaluation?',
+      message: 'Your evaluation for $name will be permanently locked.',
+      confirmLabel: 'Submit & Lock',
     );
+    if (!confirmed || !mounted) return;
+
+    setState(() => _posted[name] = true);
+
+    final breakdown = scores.entries.map((e) => {
+      'criteriaName': e.key,
+      'score': e.value,
+      'max': _effectiveCriteria.firstWhere(
+        (c) => (c['name'] as String?) == e.key,
+        orElse: () => <String, Object>{'maxScore': 5},
+      )['maxScore'],
+    }).toList();
+    final total = scores.values.fold(0.0, (s, v) => s + v);
+    final max = _effectiveCriteria.fold(
+      0.0,
+      (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0),
+    );
+
+    await BridgeService.submitPeerGrade(
+      httpClient: ref.read(authenticatedHttpClientProvider),
+      teamId: widget.teamId,
+      evaluatorId: widget.studentId,
+      evaluateeName: name,
+      breakdown: breakdown,
+      total: total,
+      max: max,
+    );
+
+    widget.onPeerSubmitted?.call();
+
+    if (mounted) {
+      showSuccessSnackBar(context, 'Peer evaluation for $name submitted.');
+    }
   }
 
   Widget _starRow(String name, String criterion, double value, double maxScore, bool locked) {
@@ -361,9 +368,9 @@ class _PeerEvalTabState extends State<PeerEvalTab> {
     return Row(
       children: [
         Container(width: 4, height: 20,
-            decoration: BoxDecoration(color: _primaryColor, borderRadius: BorderRadius.circular(2))),
+            decoration: BoxDecoration(color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primaryColor)),
+        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
       ],
     );
   }

@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final userManagementProvider =
     NotifierProvider<UserManagementNotifier, UserManagementState>(
@@ -108,7 +109,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
           if (nextRole.isNotEmpty) 'role': nextRole,
         },
       );
-      final response = await http.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -138,9 +139,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -168,9 +169,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/$userId/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -194,9 +195,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     int userId,
   ) async {
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/$userId/adviser-assignments/'),
-        headers: await _headers(),
+        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -214,9 +215,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     int userId,
   ) async {
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/$userId/role-assignments/'),
-        headers: await _headers(),
+        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -238,9 +239,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.delete(
+      final response = await _client.delete(
         Uri.parse('$baseUrl/$userId/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -275,9 +276,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/'),
-        headers: await _headers(),
+        
         body: jsonEncode({
           'users': rows,
           if (studentContext != null) 'student_context': studentContext,
@@ -315,9 +316,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     state = state.copyWith(clearError: true);
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/guest-codes/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -345,9 +346,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/guest-codes/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -385,9 +386,9 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/guest-codes/$codeId/'),
-        headers: await _headers(),
+        
         body: jsonEncode({'is_active': false}),
       );
 
@@ -408,19 +409,8 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

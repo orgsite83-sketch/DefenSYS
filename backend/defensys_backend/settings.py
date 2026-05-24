@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'storages',
     'rest_framework',
+    'rest_framework_simplejwt.token_blacklist',
     'authentication_access_control',
     'dashboards',
     'academic_period_management',
@@ -220,17 +221,24 @@ AUTH_USER_MODEL = 'authentication_access_control.User'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
-    )
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+    'EXCEPTION_HANDLER': 'defensys_backend.exception_handlers.defensys_exception_handler',
+    'DEFAULT_THROTTLE_RATES': {
+        'token_refresh': '10/min',
+    },
 }
 
 # JWT Settings
 from datetime import timedelta
 
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(days=7),  # Token valid for 7 days
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=30),  # Refresh token valid for 30 days
-    'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': False,
+    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=45),
+    'REFRESH_TOKEN_LIFETIME': timedelta(hours=10),
+    'ROTATE_REFRESH_TOKENS': True,
+    'BLACKLIST_AFTER_ROTATION': True,
     'UPDATE_LAST_LOGIN': True,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
@@ -266,6 +274,11 @@ LOGGING = {
         'level': 'INFO',
     },
     'loggers': {
+        'defensys.authz': {
+            'handlers': ['console'],
+            'level': 'WARNING',
+            'propagate': False,
+        },
         'student_teams.weekly_progress': {
             'handlers': ['console'],
             'level': 'DEBUG',

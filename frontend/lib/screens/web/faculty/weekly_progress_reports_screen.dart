@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/weekly_progress_provider.dart';
+import '../../../widgets/empty_state.dart';
 import '../../../theme/app_theme.dart';
+import '../../../theme/defensys_tokens.dart';
 import '../../../config/api_config.dart';
 import 'package:intl/intl.dart';
-import 'package:http/http.dart' as http;
+import '../../../services/authenticated_client.dart';
 import '../../../utils/pdf_viewer.dart';
 
 class WeeklyProgressReportsScreen extends ConsumerStatefulWidget {
@@ -30,6 +32,48 @@ class _WeeklyProgressReportsScreenState
     });
   }
 
+  Future<void> _refreshData() async {
+    await Future.wait([
+      ref.read(dashboardProvider('faculty').notifier).fetchDashboardData(),
+      ref.read(weeklyProgressProvider.notifier).fetchReports(),
+    ]);
+  }
+
+  Widget _buildLoadError(String message) {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: AppColors.danger),
+            const SizedBox(height: 16),
+            const Text(
+              'Failed to load weekly progress reports',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton.icon(
+              onPressed: _refreshData,
+              icon: const Icon(Icons.refresh),
+              label: const Text('Retry'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.maroon,
+                foregroundColor: Colors.white,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('faculty'));
@@ -40,6 +84,7 @@ class _WeeklyProgressReportsScreenState
         .cast<Map<String, dynamic>>();
     
     final isLoading = dashState.isLoading || progressState.isLoading;
+    final loadError = dashState.error ?? progressState.error;
 
     // Filter reports by selected team
     final filteredReports = selectedTeamId != null
@@ -51,7 +96,9 @@ class _WeeklyProgressReportsScreenState
       appBar: null, // Remove AppBar since it's embedded in faculty dashboard
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : Column(
+          : loadError != null
+              ? _buildLoadError(loadError)
+              : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header with title
@@ -81,7 +128,7 @@ class _WeeklyProgressReportsScreenState
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF7F1D1D).withOpacity(0.05),
+                          color: DefensysTokens.maroon.withOpacity(0.05),
                           border: Border(
                             bottom: BorderSide(color: Colors.grey.shade200),
                           ),
@@ -97,35 +144,61 @@ class _WeeklyProgressReportsScreenState
                       
                       // Team Selection List
                       if (advisedTeams.isEmpty)
-                        Padding(
-                          padding: const EdgeInsets.all(20),
-                          child: Container(
-                            padding: const EdgeInsets.all(16),
-                            decoration: BoxDecoration(
-                              color: Colors.orange.shade50,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: Colors.orange.shade200),
-                            ),
-                            child: Row(
-                              children: [
-                                Icon(Icons.info_outline, color: Colors.orange.shade700),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Text(
-                                    'No teams assigned yet.',
-                                    style: TextStyle(color: Colors.orange.shade700),
+                        Expanded(
+                          child: RefreshIndicator(
+                            onRefresh: _refreshData,
+                            color: DefensysTokens.maroon,
+                            child: LayoutBuilder(
+                              builder: (context, constraints) {
+                                return SingleChildScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(),
+                                  child: ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      minHeight: constraints.maxHeight,
+                                    ),
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(20),
+                                      child: Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.orange.shade50,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(
+                                            color: Colors.orange.shade200,
+                                          ),
+                                        ),
+                                        child: Row(
+                                          children: [
+                                            Icon(Icons.info_outline,
+                                                color: Colors.orange.shade700),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: Text(
+                                                'No teams assigned yet.',
+                                                style: TextStyle(
+                                                    color: Colors.orange.shade700),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                );
+                              },
                             ),
                           ),
                         )
                       else
                         Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: advisedTeams.length,
-                            itemBuilder: (context, index) {
+                          child: RefreshIndicator(
+                            onRefresh: _refreshData,
+                            color: DefensysTokens.maroon,
+                            child: ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(12),
+                              itemCount: advisedTeams.length,
+                              itemBuilder: (context, index) {
                               final team = advisedTeams[index];
                               final teamId = team['id']?.toString() ?? team['name'];
                               final isSelected = selectedTeamId == teamId;
@@ -133,10 +206,10 @@ class _WeeklyProgressReportsScreenState
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? const Color(0xFF7F1D1D).withOpacity(0.1) : Colors.transparent,
+                                  color: isSelected ? DefensysTokens.maroon.withOpacity(0.1) : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
-                                    color: isSelected ? const Color(0xFF7F1D1D) : Colors.grey.shade300,
+                                    color: isSelected ? DefensysTokens.maroon : Colors.grey.shade300,
                                     width: isSelected ? 2 : 1,
                                   ),
                                 ),
@@ -183,13 +256,14 @@ class _WeeklyProgressReportsScreenState
                             },
                           ),
                         ),
+                        ),
                       
                       // Reports list for selected team
                       if (selectedTeamId != null && filteredReports.isNotEmpty) ...[
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF7F1D1D).withOpacity(0.05),
+                            color: DefensysTokens.maroon.withOpacity(0.05),
                             border: Border(
                               top: BorderSide(color: Colors.grey.shade200),
                               bottom: BorderSide(color: Colors.grey.shade200),
@@ -218,16 +292,20 @@ class _WeeklyProgressReportsScreenState
                                         ),
                                 icon: const Icon(Icons.folder_zip_outlined, size: 20),
                                 tooltip: 'Compile All',
-                                color: const Color(0xFF7F1D1D),
+                                color: DefensysTokens.maroon,
                               ),
                             ],
                           ),
                         ),
                         Expanded(
-                          child: ListView.builder(
-                            padding: const EdgeInsets.all(12),
-                            itemCount: filteredReports.length,
-                            itemBuilder: (context, index) {
+                          child: RefreshIndicator(
+                            onRefresh: _refreshData,
+                            color: DefensysTokens.maroon,
+                            child: ListView.builder(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.all(12),
+                              itemCount: filteredReports.length,
+                              itemBuilder: (context, index) {
                               final report = filteredReports[index];
                               final isSelected = selectedReportIndex == index;
                               
@@ -281,6 +359,7 @@ class _WeeklyProgressReportsScreenState
                             },
                           ),
                         ),
+                        ),
                       ],
                     ],
                   ),
@@ -289,11 +368,20 @@ class _WeeklyProgressReportsScreenState
                 // Right side - Document view
                 Expanded(
                   child: selectedTeamId == null
-                      ? _buildEmptyState('Select a team to view their progress reports')
+                      ? const EmptyState(
+                          icon: Icons.groups_outlined,
+                          message: 'Select a team to view their progress reports',
+                        )
                       : filteredReports.isEmpty
-                          ? _buildEmptyState('No weekly progress reports submitted yet')
+                          ? const EmptyState(
+                              icon: Icons.assignment_outlined,
+                              message: 'No weekly progress reports submitted yet',
+                            )
                           : selectedReportIndex == null
-                              ? _buildEmptyState('Select a report to view details')
+                              ? const EmptyState(
+                                  icon: Icons.description_outlined,
+                                  message: 'Select a report to view details',
+                                )
                               : _buildDocumentView(
                                   filteredReports[selectedReportIndex!],
                                   advisedTeams.firstWhere(
@@ -303,29 +391,6 @@ class _WeeklyProgressReportsScreenState
                                 ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState(String message) {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            Icons.assignment_outlined,
-            size: 80,
-            color: Colors.grey.shade300,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            message,
-            style: TextStyle(
-              fontSize: 16,
-              color: Colors.grey.shade600,
             ),
           ),
         ],
@@ -432,10 +497,10 @@ class _WeeklyProgressReportsScreenState
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF7F1D1D).withOpacity(0.05),
+                            color: DefensysTokens.maroon.withOpacity(0.05),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: const Color(0xFF7F1D1D).withOpacity(0.3),
+                              color: DefensysTokens.maroon.withOpacity(0.3),
                               width: 2,
                             ),
                           ),
@@ -447,14 +512,14 @@ class _WeeklyProgressReportsScreenState
                                   Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF7F1D1D).withOpacity(0.1),
+                                      color: DefensysTokens.maroon.withOpacity(0.1),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(
                                       reportFile.toLowerCase().endsWith('.pdf')
                                           ? Icons.picture_as_pdf
                                           : Icons.description,
-                                      color: const Color(0xFF7F1D1D),
+                                      color: DefensysTokens.maroon,
                                       size: 32,
                                     ),
                                   ),
@@ -468,7 +533,7 @@ class _WeeklyProgressReportsScreenState
                                           style: TextStyle(
                                             fontSize: 16,
                                             fontWeight: FontWeight.bold,
-                                            color: Color(0xFF7F1D1D),
+                                            color: DefensysTokens.maroon,
                                           ),
                                         ),
                                         const SizedBox(height: 4),
@@ -506,7 +571,7 @@ class _WeeklyProgressReportsScreenState
                                   icon: const Icon(Icons.visibility),
                                   label: const Text('View PDF Report'),
                                   style: ElevatedButton.styleFrom(
-                                    backgroundColor: const Color(0xFF7F1D1D),
+                                    backgroundColor: DefensysTokens.maroon,
                                     foregroundColor: Colors.white,
                                     padding: const EdgeInsets.symmetric(vertical: 16),
                                     shape: RoundedRectangleBorder(
@@ -1068,7 +1133,7 @@ class _WeeklyProgressReportsScreenState
             style: const TextStyle(
               fontWeight: FontWeight.w600,
               fontSize: 13,
-              color: Color(0xFF7F1D1D),
+              color: DefensysTokens.maroon,
             ),
           ),
         ),
@@ -1102,9 +1167,12 @@ class _WeeklyProgressReportsScreenState
   void _viewReportFile(Map<String, dynamic> report) async {
     final fileUrl = report['file_url'] as String?;
     final reportFile = report['report_file'] as String?;
+    final fileRef = (fileUrl != null && fileUrl.isNotEmpty)
+        ? fileUrl
+        : reportFile;
     final fileName = reportFile?.split('/').last ?? 'Report';
-    
-    if (fileUrl == null || reportFile == null) {
+
+    if (fileRef == null || fileRef.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('No file attached to this report'),
@@ -1114,56 +1182,32 @@ class _WeeklyProgressReportsScreenState
       return;
     }
 
-    // Show loading dialog
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (context) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFF7F1D1D)),
+        child: CircularProgressIndicator(color: DefensysTokens.maroon),
       ),
     );
 
     try {
-      // Remove any leading "media/" from reportFile if it exists
-      String cleanPath = reportFile;
-      if (cleanPath.startsWith('media/')) {
-        cleanPath = cleanPath.substring(6);
-      }
-      if (cleanPath.startsWith('/media/')) {
-        cleanPath = cleanPath.substring(7);
-      }
-      
-      // Construct the correct URL
-      final directFileUrl = 'http://${ApiConfig.baseIp}:${ApiConfig.basePort}/media/$cleanPath';
-      print('Fetching PDF: $directFileUrl');
-      
-      final response = await http.get(Uri.parse(directFileUrl));
-      
-      // Close loading dialog
+      final pdfBytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileRef);
+
       if (mounted) Navigator.pop(context);
-      
-      if (response.statusCode == 200) {
-        final pdfBytes = response.bodyBytes;
-        print('PDF loaded successfully: ${pdfBytes.length} bytes');
-        
-        // Use the platform-specific PDF viewer
-        if (mounted) {
-          await viewPdfInDialog(
-            context: context,
-            pdfBytes: pdfBytes,
-            fileName: fileName,
-          );
-        }
-      } else {
-        throw 'Failed to fetch PDF: ${response.statusCode}';
+
+      if (mounted) {
+        await viewPdfInDialog(
+          context: context,
+          pdfBytes: pdfBytes,
+          fileName: fileName,
+        );
       }
     } catch (e) {
-      // Close loading dialog if still open
       if (mounted && Navigator.canPop(context)) {
         Navigator.pop(context);
       }
-      
-      print('Error in _viewReportFile: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -1196,7 +1240,7 @@ class _WeeklyProgressReportsScreenState
       builder: (dialogContext) => AlertDialog(
         title: Row(
           children: [
-            const Icon(Icons.folder_zip, color: Color(0xFF7F1D1D)),
+            const Icon(Icons.folder_zip, color: DefensysTokens.maroon),
             const SizedBox(width: 10),
             Text('Compile Weekly Reports - ${team['name']}'),
           ],
@@ -1334,7 +1378,7 @@ class _WeeklyProgressReportsScreenState
             icon: const Icon(Icons.download),
             label: const Text('Download Report'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF7F1D1D),
+              backgroundColor: DefensysTokens.maroon,
               foregroundColor: Colors.white,
             ),
           ),

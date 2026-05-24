@@ -16,7 +16,10 @@ imports resolve:
 cd backend
 python -m tests.check_server
 python -m tests.test_endpoint
+python -m tests.train_naive_bayes   # refreshes deliverables/naive_bayes_model.pkl
 ```
+
+Superseded one-off scripts live in **`archive/`** (Phase 3 hygiene).
 
 Do **not** add `tests` to `INSTALLED_APPS`.
 

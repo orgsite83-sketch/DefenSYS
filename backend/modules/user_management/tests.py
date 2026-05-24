@@ -487,3 +487,81 @@ class UserManagementApiTests(APITestCase):
         response = self.client.get('/api/users/guest-codes/')
 
         self.assertEqual(response.status_code, 403)
+
+    def test_guest_code_exchange_returns_access_token(self):
+        schedule = self.create_defense_schedule()
+        guest_code = GuestPanelistCode.objects.create(
+            guest_name='External Panelist',
+            defense_schedule=schedule,
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            '/api/users/guest-codes/exchange/',
+            {'code': guest_code.code},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('access', response.data)
+        self.assertEqual(response.data['user']['role'], 'guest_panelist')
+        self.assertEqual(response.data['user']['team_id'], schedule.team_id)
+
+    def test_guest_code_exchange_rejects_invalid_code(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.post(
+            '/api/users/guest-codes/exchange/',
+            {'code': 'DEF-INVALID'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 401)
+
+    def test_guest_assignments_and_submit_grades(self):
+        schedule = self.create_defense_schedule()
+        guest_code = GuestPanelistCode.objects.create(
+            guest_name='External Panelist',
+            defense_schedule=schedule,
+            created_by=self.admin,
+        )
+
+        self.client.force_authenticate(user=None)
+        exchange = self.client.post(
+            '/api/users/guest-codes/exchange/',
+            {'code': guest_code.code},
+            format='json',
+        )
+        access = exchange.data['access']
+
+        self.client.credentials(HTTP_AUTHORIZATION=f'Bearer {access}')
+        assignments = self.client.get('/api/defense/schedules/guest-assignments/')
+        self.assertEqual(assignments.status_code, 200)
+        self.assertEqual(len(assignments.data['teams']), 1)
+        self.assertEqual(assignments.data['teams'][0]['id'], schedule.team_id)
+
+        submit = self.client.post(
+            '/api/defense/schedules/guest-submit-grades/',
+            {
+                'team_id': schedule.team_id,
+                'schedule_id': schedule.id,
+                'criteria_scores': [
+                    {'name': 'Technical', 'score': 8, 'max_score': 10},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(submit.status_code, 201)
+        self.assertTrue(submit.data['success'])
+
+        wrong_team = self.client.post(
+            '/api/defense/schedules/guest-submit-grades/',
+            {
+                'team_id': schedule.team_id + 9999,
+                'schedule_id': schedule.id,
+                'criteria_scores': [
+                    {'name': 'Technical', 'score': 8, 'max_score': 10},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(wrong_team.status_code, 403)

@@ -3,26 +3,19 @@
 /// - Web on localhost uses 127.0.0.1 so API calls match a local Django server
 /// - Web opened via a LAN hostname uses that same host for the API
 /// - Android emulator: use 10.0.2.2 to reach Django on the host PC (not the LAN IP).
-///   Override any host: `flutter run --dart-define=DEFENSYS_API_HOST=192.168.1.67`
-/// - Physical phone on Wi‑Fi: either
-///   `flutter run --dart-define=DEFENSYS_ANDROID_EMULATOR=false` (uses [fallbackLanIp]), or
-///   `flutter run --dart-define=DEFENSYS_API_HOST=192.168.1.67`
+///   Override any host: `flutter run --dart-define=DEFENSYS_API_HOST=<your-lan-ip>`
+/// - Physical phone on Wi‑Fi: set your PC LAN IP via dart-define (see DEMO_SETUP_GUIDE.md)
 library;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform, kIsWeb;
 
 class ApiConfig {
-  // List of possible server IPs (add your network IPs here)
-  static const List<String> serverIps = [
-    '192.168.1.67', // Current network IP
-    '10.0.22.97', // Alternative network IP
-    '10.60.121.199', // Another network IP
-    '127.0.0.1', // Localhost fallback
-  ];
+  /// Hosts tried by [getAllPossibleUrls] for connection probing only.
+  static const List<String> serverIps = ['127.0.0.1'];
 
-  /// PC LAN IP when testing from a **physical** device on the same Wi‑Fi (not used on Android emulator by default).
-  static const String fallbackLanIp = '192.168.1.67';
+  /// Default when no dart-define on mobile (use DEFENSYS_API_HOST for physical devices).
+  static const String fallbackLanIp = '127.0.0.1';
 
   /// Android emulator loopback to the host machine (where `runserver` usually listens).
   static const String androidEmulatorHost = '10.0.2.2';
@@ -67,6 +60,27 @@ class ApiConfig {
   static String get baseUrl => 'http://$baseIp:$basePort/api';
 
   static String get mediaUrl => 'http://$baseIp:$basePort';
+
+  /// Absolute URL for JWT-protected file GET (production `/api/media/files/...`).
+  static String authenticatedMediaUrl(String fileRef) {
+    if (fileRef.isEmpty) return fileRef;
+
+    final parsed = Uri.tryParse(fileRef);
+    if (parsed != null && parsed.hasScheme) {
+      return fileRef;
+    }
+
+    var path = fileRef.startsWith('/') ? fileRef : '/$fileRef';
+
+    if (path.startsWith('/media/')) {
+      path = '/api/media/files/${path.substring('/media/'.length)}';
+    } else if (!path.startsWith('/api/')) {
+      final trimmed = path.startsWith('/') ? path.substring(1) : path;
+      path = '/api/media/files/$trimmed';
+    }
+
+    return '$mediaUrl$path';
+  }
 
   static String get authUrl => baseUrl;
   static String get usersUrl => '$baseUrl/users';

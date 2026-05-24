@@ -1,14 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../navigation/admin_route_paths.dart';
+import '../../../navigation/app_router.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/auth_provider.dart';
+import '../../../widgets/confirm_dialog.dart';
 import '../../../services/dashboard_provider.dart';
-import '../../login_screen.dart';
-import '../shared/repository_audit_screen.dart';
 import 'academic_periods_screen.dart';
 import 'admin_dashboard_content.dart';
 import 'curriculum_analytics_screen.dart';
+import 'defense_board_screen.dart';
 import 'defense_scheduler_screen.dart';
 import 'defense_stages_screen.dart';
 import 'grade_center_screen.dart';
@@ -16,8 +19,8 @@ import 'rubric_engine_screen.dart';
 import 'student_academic_records_screen.dart';
 import 'student_teams_screen.dart';
 import 'user_management_screen.dart';
+import '../shared/repository_audit_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
-import 'defense_board_screen.dart';
 
 final activeAdminSectionProvider =
     NotifierProvider<ActiveAdminSectionNotifier, DefensysAdminSection>(
@@ -35,8 +38,9 @@ class ActiveAdminSectionNotifier extends Notifier<DefensysAdminSection> {
 
 class AdminShell extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
+  final Widget? routeChild;
 
-  const AdminShell({super.key, this.userData});
+  const AdminShell({super.key, this.userData, this.routeChild});
 
   @override
   ConsumerState<AdminShell> createState() => _AdminShellState();
@@ -47,9 +51,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref
-          .read(activeAdminSectionProvider.notifier)
-          .setSection(DefensysAdminSection.overview);
       ref.read(dashboardProvider('admin').notifier).fetchDashboardData();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
     });
@@ -57,9 +58,25 @@ class _AdminShellState extends ConsumerState<AdminShell> {
 
   @override
   Widget build(BuildContext context) {
-    final activeSection = ref.watch(activeAdminSectionProvider);
     final dashboardState = ref.watch(dashboardProvider('admin'));
     final academicState = ref.watch(academicPeriodProvider);
+    final routerState = GoRouterState.of(context);
+    final location = routerState.uri.path;
+    final routeSection = AdminRoutes.sectionForLocation(location);
+    final activeSection =
+        routeSection ?? DefensysAdminSection.overview;
+
+    if (routeSection != null &&
+        routeSection != ref.read(activeAdminSectionProvider)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
+      });
+    }
+
+    final isDetail = _isAdminDetailRoute(routerState);
+    final shellContent = isDetail
+        ? (widget.routeChild ?? const SizedBox.shrink())
+        : _buildSectionContent(context, activeSection);
 
     return DefensysAdminShell(
       activeSection: activeSection,
@@ -68,46 +85,71 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         dashboardState.data?['active_semester'],
       ),
       scrollContent: false,
-      onNavigate: (section) {
-        ref.read(activeAdminSectionProvider.notifier).setSection(section);
-      },
+      onNavigate: (section) => _goToSection(section),
       onLogout: _logout,
-      child: IndexedStack(
-        index: activeSection.index,
-        children: [
-          _ContentViewport(
-            child: AdminDashboardContent(onNavigate: _setActiveSection),
-          ),
-          const _ContentViewport(child: AcademicPeriodsScreen()),
-          const UserManagementScreen(),
-          StudentTeamsScreen(
-            mode: TeamListMode.capstoneAdmin,
-            onOpenStudentRecords: () =>
-                _setActiveSection(DefensysAdminSection.studentAcademicRecords),
-          ),
-          const StudentAcademicRecordsScreen(),
-          const GradeCenterScreen(),
-          const RubricEngineScreen(),
-          const RepositoryAuditScreen(),
-          const CurriculumAnalyticsScreen(),
-          const DefenseSchedulerScreen(),
-          const DefenseBoardScreen(),
-          const DefenseStagesScreen(),
-        ],
-      ),
+      child: shellContent,
     );
   }
 
-  void _setActiveSection(DefensysAdminSection section) {
-    ref.read(activeAdminSectionProvider.notifier).setSection(section);
+  void _goToSection(DefensysAdminSection section) {
+    ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
   }
 
-  void _logout() {
-    ref.read(authProvider.notifier).logout();
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(builder: (_) => const LoginScreen()),
-    );
+  /// Detail / nested routes use [routeChild] from go_router; top-level sections
+  /// are built locally so sidebar navigation works even when shell child is empty.
+  bool _isAdminDetailRoute(GoRouterState state) {
+    final params = state.pathParameters;
+    if (params.containsKey('teamId') ||
+        params.containsKey('gradeId') ||
+        params.containsKey('groupKey') ||
+        params.containsKey('stageId') ||
+        params.containsKey('rubricId')) {
+      return true;
+    }
+    return state.uri.path.endsWith('/bulk-import');
+  }
+
+  Widget _buildSectionContent(
+    BuildContext context,
+    DefensysAdminSection section,
+  ) {
+    switch (section) {
+      case DefensysAdminSection.overview:
+        return AdminDashboardContent(
+          onNavigate: _goToSection,
+        );
+      case DefensysAdminSection.academicPeriods:
+        return const AcademicPeriodsScreen();
+      case DefensysAdminSection.userManagement:
+        return const UserManagementScreen();
+      case DefensysAdminSection.studentTeams:
+        return const StudentTeamsScreen(mode: TeamListMode.capstoneAdmin);
+      case DefensysAdminSection.studentAcademicRecords:
+        return const StudentAcademicRecordsScreen();
+      case DefensysAdminSection.gradeCenter:
+        return const GradeCenterScreen();
+      case DefensysAdminSection.rubricEngine:
+        return const RubricEngineScreen();
+      case DefensysAdminSection.repositoryAudit:
+        return const RepositoryAuditScreen();
+      case DefensysAdminSection.curriculumAnalytics:
+        return const CurriculumAnalyticsScreen();
+      case DefensysAdminSection.scheduling:
+        return const DefenseSchedulerScreen();
+      case DefensysAdminSection.defenseBoard:
+        return const DefenseBoardScreen();
+      case DefensysAdminSection.defenseStages:
+        return const DefenseStagesScreen();
+    }
+  }
+
+  Future<void> _logout() async {
+    if (await confirmLogout(context)) {
+      await ref.read(authProvider.notifier).logout();
+      if (context.mounted) {
+        context.go(AppRoutes.login);
+      }
+    }
   }
 
   String _topSemesterLabel(
@@ -125,19 +167,5 @@ class _AdminShellState extends ConsumerState<AdminShell> {
 
     final schoolYear = RegExp(r'\d{4}-\d{4}').firstMatch(label)?.group(0);
     return 'Active Sem: ${schoolYear ?? label}';
-  }
-}
-
-class _ContentViewport extends StatelessWidget {
-  final Widget child;
-
-  const _ContentViewport({required this.child});
-
-  @override
-  Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      padding: DefensysUi.contentPadding,
-      child: child,
-    );
   }
 }

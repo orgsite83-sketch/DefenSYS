@@ -31,7 +31,7 @@ flowchart TB
     FacultyWeb[Faculty Web Flutter]
     StudentMobile[Student Mobile Flutter]
     PanelistMobile[Panelist Mobile Flutter]
-    GuestPanelist[Guest Panelist no JWT]
+    GuestPanelist[Guest Panelist guest JWT]
     UploaderWeb[Uploader Web Flutter]
   end
 
@@ -53,21 +53,36 @@ flowchart TB
   FacultyWeb -->|Bearer JWT| Modules
   StudentMobile -->|Bearer JWT| Modules
   UploaderWeb -->|Bearer JWT| Modules
-  PanelistMobile -->|panelist_id no JWT| Modules
-  GuestPanelist -->|public validate| Auth
+  PanelistMobile -->|Bearer JWT| Modules
+  GuestPanelist -->|guest JWT exchange| Auth
   Auth --> UserTable
   Modules --> db
 ```
 
-### Authentication
+### Authentication and session policy
 
 | Step | Detail |
 |------|--------|
-| Login | `POST /api/login/` → JWT `access` (7 days) + `refresh` (30 days) + embedded `user` object |
-| Storage | Flutter `SharedPreferences`: `jwt_token`, `user_data` |
-| API calls | `Authorization: Bearer <access>` on almost all endpoints |
-| Refresh | `POST /api/token/refresh/` exists; **Flutter does not use it** |
+| Login | `POST /api/login/` → JWT `access` (45 min) + `refresh` (10 h) + embedded `user` object |
+| Profile | `GET /api/me/` after refresh or restore |
+| Logout | `POST /api/logout/` blacklists refresh token |
+| Refresh | `POST /api/token/refresh/` with rotation + blacklist (`BLACKLIST_AFTER_ROTATION`) |
 | Custom user | `AUTH_USER_MODEL = authentication_access_control.User` |
+
+**Flutter client (`auth_provider.dart`, `authenticated_client.dart`, `session_storage.dart`):**
+
+| Platform | Refresh storage | Behavior |
+|----------|-----------------|----------|
+| Web (default) | `sessionStorage` | Session ends when all browser windows/tabs close |
+| Web (Remember me) | `localStorage` | Persists across browser restarts until refresh expires or logout |
+| Mobile | `flutter_secure_storage` | Persistent login across app restarts |
+
+- Access token kept **in memory** only; attached via `AuthenticatedHttpClient`.
+- **Proactive refresh** ~90s before JWT `exp`; on **401**, refresh once then retry.
+- Unrecoverable auth failure → `SessionExpiredException` → redirect to login with SnackBar (no inline HTTP errors on dashboards).
+- Legacy `jwt_token` in SharedPreferences is cleared on bootstrap.
+
+**Media files:** use `GET /api/media/files/<path>` with Bearer token (not bare `/media/` URLs).
 
 ### Installed backend apps (17 modules)
 
@@ -112,8 +127,8 @@ Toggling `is_adviser` does **not** assign a team adviser automatically.
 
 | Identity | Mechanism |
 |----------|-----------|
-| Guest panelist | `GuestPanelistCode` + `GET /api/users/guest-codes/validate/<code>/` (no JWT) |
-| Mobile panelist grading | `panelist_id` in query/body on defense-scheduler endpoints (no JWT) |
+| Guest panelist | `POST /api/users/guest-codes/exchange/` → guest JWT; guest schedule routes under `/api/defense/schedules/guest-*` |
+| Mobile panelist grading | JWT required (`IsAuthenticated` + `IsPanelist`); assignments from authenticated user |
 
 ### 2.5 Permission classes (backend)
 
@@ -259,12 +274,12 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/student-records/` | Admin | Read |
-| POST | `/api/student-records/` | Admin | `StudentAcademicRecord` |
-| PATCH | `/api/student-records/<record_id>/` | Admin | Update record |
-| DELETE | `/api/student-records/<record_id>/` | Admin | Delete record |
-| GET | `/api/student-records/rollover-preview/` | Admin | Read (computed) |
-| POST | `/api/student-records/rollover/` | Admin | New records + capstone team phase advance |
+| GET | `/api/users/academic-records/` | Admin | Read |
+| POST | `/api/users/academic-records/` | Admin | `StudentAcademicRecord` |
+| PATCH | `/api/users/academic-records/<record_id>/` | Admin | Update record |
+| DELETE | `/api/users/academic-records/<record_id>/` | Admin | Delete record |
+| GET | `/api/users/academic-records/rollover-preview/` | Admin | Read (computed) |
+| POST | `/api/users/academic-records/rollover/` | Admin | New records + capstone team phase advance |
 
 **Flutter:** `student_academic_records_provider.dart` → `student_academic_records_screen.dart`
 
@@ -308,14 +323,12 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/rubrics/` | JWT (drafts hidden for non-managers) | Read |
-| POST | `/api/rubrics/` | PIT | `Rubric`, `RubricCriterion` |
-| PATCH | `/api/rubrics/<rubric_id>/` | PIT | Update + sync criteria |
-| DELETE | `/api/rubrics/<rubric_id>/` | PIT | Delete |
-| POST | `/api/rubrics/<rubric_id>/publish/` | PIT | `is_locked=True` |
-| PATCH | `/api/rubrics/<rubric_id>/weights/` | PIT | panel/adviser/peer weights |
-| POST | `/api/rubrics/seed-demo/` | PIT | **Prototype** demo rubrics |
-
+| GET | `/api/grading/rubrics/` | JWT (drafts hidden for non-managers) | Read |
+| POST | `/api/grading/rubrics/` | PIT | `Rubric`, `RubricCriterion` |
+| PATCH | `/api/grading/rubrics/<rubric_id>/` | PIT | Update + sync criteria |
+| DELETE | `/api/grading/rubrics/<rubric_id>/` | PIT | Delete |
+| POST | `/api/grading/rubrics/<rubric_id>/publish/` | PIT | `is_locked=True` |
+| PATCH | `/api/grading/rubrics/<rubric_id>/weights/` | PIT | panel/adviser/peer weights |
 **Flutter:** `rubric_engine_provider.dart`, `adviser_grading_provider.dart` → `rubric_engine_screen.dart`, `adviser_grading_screen.dart`
 
 ---
@@ -330,8 +343,10 @@ erDiagram
 | POST | `/api/defense/schedules/confirm-plan/` | PIT | Batch schedules + panelists |
 | PATCH | `/api/defense/schedules/<schedule_id>/` | PIT | Update schedule |
 | DELETE | `/api/defense/schedules/<schedule_id>/` | PIT | Delete schedule |
-| GET | `/api/defense/schedules/panelist-assignments/?panelist_id=` | **Public** | Read schedules/teams/rubrics |
-| POST | `/api/defense/schedules/submit-grades/` | **Public** | `TeamGrade`, `GradeBreakdown`, `panel_score` |
+| GET | `/api/defense/schedules/panelist-assignments/` | `IsAuthenticated` + `IsPanelist` | Read schedules/teams/rubrics for `request.user` |
+| POST | `/api/defense/schedules/submit-grades/` | `IsAuthenticated` + `IsPanelist` | `TeamGrade`, `GradeBreakdown`, `panel_score` (must be assigned) |
+| GET | `/api/defense/schedules/panelist-results/` | Panelist JWT | Completed grading results |
+| GET/POST | `/api/defense/schedules/guest-*` | Guest JWT | Guest panelist assignments/submit/results |
 
 **Gap:** Schedule create does **not** create `TeamGrade`; grade-center sync required.
 
@@ -355,18 +370,18 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/grade-center/` | Scoped JWT | Read; auto-runs `sync_missing_grade_rows()` |
-| POST | `/api/grade-center/sync/` | PIT | Create/update `TeamGrade` from schedules/teams |
-| PATCH | `/api/grade-center/<grade_id>/` | PIT | panel/adviser/peer scores |
-| POST | `/api/grade-center/<grade_id>/publish/` | PIT | Publish; may set schedule `done`, team Approved/Failed |
-| PATCH | `/api/grade-center/evaluation-settings/` | Admin | `Semester.capstone_peer_evaluation_enabled`, `capstone_adviser_grading_enabled` |
-| GET | `/api/grade-center/adviser-grades/` | JWT (adviser scoped) | Read advised team grades |
-| POST | `/api/grade-center/adviser-grades/<grade_id>/submit/` | JWT (adviser) | `adviser_score`, `GradeBreakdown` |
-| POST | `/api/grade-center/demo-fill/` | PIT | **Prototype** fill + publish demo grades |
+| GET | `/api/grading/grades/` | Scoped JWT | Read; auto-runs `sync_missing_grade_rows()` |
+| POST | `/api/grading/grades/sync/` | PIT | Create/update `TeamGrade` from schedules/teams |
+| PATCH | `/api/grading/grades/<grade_id>/` | PIT | panel/adviser/peer scores |
+| POST | `/api/grading/grades/<grade_id>/publish/` | PIT | Publish; may set schedule `done`, team Approved/Failed |
+| PATCH | `/api/grading/grades/group-settings/` | PIT/Admin | Per-event peer grading, stage settings |
+| GET | `/api/grading/grades/adviser-grades/` | JWT (adviser scoped) | Read advised team grades |
+| POST | `/api/grading/grades/adviser-grades/<grade_id>/submit/` | JWT (adviser) | `adviser_score`, `GradeBreakdown` |
+| POST | `/api/grading/grades/peer-evaluations/` | Student (team leader) | `PeerEvaluationSubmission` when semester peer eval enabled |
 
-**No student peer-submit endpoint exists** — see Gap #1.
+Term-wide **peer eval** and **adviser grading** toggles: `PATCH /api/academic-periods/semesters/<id>/` (`capstone_peer_evaluation_enabled`, `capstone_adviser_grading_enabled`) — Academic Periods UI (Phase 2b).
 
-**Flutter:** `grade_center_provider.dart`, `adviser_grading_provider.dart` → `grade_center_screen.dart`, `adviser_grading_screen.dart`
+**Flutter:** `grade_center_provider.dart`, `adviser_grading_provider.dart` → `grade_center_screen.dart`, `adviser_grading_screen.dart`; `peer_eval_tab.dart` → peer-evaluations POST
 
 ---
 
@@ -374,13 +389,11 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/capstone-deliverables/` | Scoped JWT | Read submission status per team/stage |
-| POST | `/api/capstone-deliverables/upload/` | `CanManageDeliverables` | `DeliverableSubmission` (+ PDF extract on save) |
-| POST | `/api/capstone-deliverables/remove/` | `CanManageDeliverables` | Remove submission |
-| POST | `/api/capstone-deliverables/endorse/` | `CanManageDeliverables` | `StudentTeam.ready_for_stage`, `current_defense_stage` |
-| POST | `/api/capstone-deliverables/compile-weekly-reports/` | `CanManageDeliverables` | PDF generation (no new model) |
-| POST | `/api/capstone-deliverables/demo-fill/` | `CanManageDeliverables` | **Prototype** |
-
+| GET | `/api/repository/deliverables/` | Scoped JWT | Read submission status per team/stage |
+| POST | `/api/repository/deliverables/upload/` | `CanManageDeliverables` | `DeliverableSubmission` (+ PDF extract on save) |
+| POST | `/api/repository/deliverables/remove/` | `CanManageDeliverables` | Remove submission |
+| POST | `/api/repository/deliverables/endorse/` | `CanManageDeliverables` | `StudentTeam.ready_for_stage`, `current_defense_stage` |
+| POST | `/api/repository/deliverables/compile-weekly-reports/` | `CanManageDeliverables` | PDF generation (no new model) |
 **Flutter:** `capstone_deliverables_provider.dart` + direct multipart in `capstone_deliverables_screen.dart`
 
 ---
@@ -389,9 +402,9 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/digital-vault/` | JWT | Read `VaultEntry` (filtered by role) |
+| GET | `/api/repository/vault/` | JWT | Read `VaultEntry` (filtered by role) |
 
-**Flutter:** `digital_vault_provider.dart` → `digital_vault_screen.dart`, `repository_tab.dart`
+**Flutter:** `digital_vault_provider.dart` → `repository_tab.dart` (student mobile)
 
 ---
 
@@ -399,14 +412,16 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/repository-audit/` | JWT + `repository_scope()` | Read entries |
-| POST | `/api/repository-audit/upload-pit/` | Scoped | `VaultEntry`, `RepositoryAuditLog` |
-| POST | `/api/repository-audit/classify/` | Scoped | Vault metadata + log |
-| POST | `/api/repository-audit/override-status/` | Admin only in scope | Vault + log |
-| GET | `/api/repository-audit/export/` | Scoped | CSV download |
-| POST | `/api/repository-audit/demo-fill/` | Admin | **Prototype** |
+| GET | `/api/repository/audit/` | JWT + `repository_scope()` | Read entries |
+| POST | `/api/repository/audit/upload-pit/` | Scoped | `VaultEntry`, `RepositoryAuditLog` |
+| POST | `/api/repository/audit/upload-capstone/` | Scoped | Capstone upload to audit trail |
+| GET | `/api/repository/audit/trail/` | Scoped | Audit trail entries |
+| POST | `/api/repository/audit/override-status/` | Admin only in scope | Vault + log |
+| GET | `/api/repository/audit/export/` | Scoped | CSV download |
 
-**Scope:** admin → full; PIT lead → year-scoped PIT; repo assistant → PIT upload/classify; others → 403.
+ML classification runs internally on deliverable upload (no public `classify/` endpoint).
+
+**Scope:** admin → full; PIT lead → year-scoped PIT; repo assistant → PIT upload; others → 403.
 
 **Flutter:** `repository_audit_provider.dart` → `repository_audit_screen.dart`
 
@@ -427,12 +442,12 @@ erDiagram
 
 | Method | Path | Permission | DB writes |
 |--------|------|------------|-----------|
-| GET | `/api/weekly-progress/` | Scoped JWT | Student own / adviser teams / admin all |
-| POST | `/api/weekly-progress/` | JWT (team leaders) | `WeeklyProgressReport` |
-| GET | `/api/weekly-progress/<pk>/` | Scoped | Read |
-| PUT | `/api/weekly-progress/<pk>/` | Team leader | Update |
-| DELETE | `/api/weekly-progress/<pk>/` | Team leader | Delete |
-| GET | `/api/weekly-progress/<pk>/file/` | Scoped | File download (`?token=` supported) |
+| GET | `/api/teams/weekly-progress/` | Scoped JWT | Student own / adviser teams / admin all |
+| POST | `/api/teams/weekly-progress/` | JWT (team leaders) | `WeeklyProgressReport` |
+| GET | `/api/teams/weekly-progress/<pk>/` | Scoped | Read |
+| PUT | `/api/teams/weekly-progress/<pk>/` | Team leader | Update |
+| DELETE | `/api/teams/weekly-progress/<pk>/` | Team leader | Delete |
+| GET | `/api/teams/weekly-progress/<pk>/file/` | Scoped | File download (`?token=` supported) |
 
 **Flutter:** `weekly_progress_provider.dart` + direct POST in `weekly_report_tab.dart`
 
@@ -517,7 +532,7 @@ sequenceDiagram
   API->>DB: One active Semester
   Admin->>API: POST /api/users/ or bulk-import
   API->>DB: User
-  Admin->>API: POST /api/student-records/
+  Admin->>API: POST /api/users/academic-records/
   API->>DB: StudentAcademicRecord
   Admin->>API: PATCH user is_adviser=true
   API->>DB: User + FacultyRoleAssignment
@@ -551,10 +566,10 @@ sequenceDiagram
 
 | Step | Actor | API | Tables |
 |------|-------|-----|--------|
-| Upload deliverable | Student / adviser | POST `/api/capstone-deliverables/upload/` | `DeliverableSubmission` |
-| Endorse ready | Adviser | POST `/api/capstone-deliverables/endorse/` | `StudentTeam` stage flags |
-| Weekly report | Team leader (student) | POST `/api/weekly-progress/` | `WeeklyProgressReport` |
-| Compile reports PDF | Adviser | POST `/api/capstone-deliverables/compile-weekly-reports/` | Generated file |
+| Upload deliverable | Student / adviser | POST `/api/repository/deliverables/upload/` | `DeliverableSubmission` |
+| Endorse ready | Adviser | POST `/api/repository/deliverables/endorse/` | `StudentTeam` stage flags |
+| Weekly report | Team leader (student) | POST `/api/teams/weekly-progress/` | `WeeklyProgressReport` |
+| Compile reports PDF | Adviser | POST `/api/repository/deliverables/compile-weekly-reports/` | Generated file |
 
 **Screens:** `capstone_deliverables_screen.dart`, `weekly_progress_reports_screen.dart`, `weekly_report_tab.dart`
 
@@ -578,10 +593,10 @@ flowchart LR
 | Step | API | Tables |
 |------|-----|--------|
 | Define stages | `/api/defense/stages/` | `DefenseStage`, `StageDeliverable` |
-| Publish rubric | POST `/api/rubrics/<id>/publish/` | `Rubric` locked |
+| Publish rubric | POST `/api/grading/rubrics/<id>/publish/` | `Rubric` locked |
 | Schedule defense | POST `/api/defense/schedules/` | `DefenseSchedule`, `SchedulePanelist` |
 | Board status | PATCH `/api/defense/board/<id>/` | `DefenseSchedule.status` |
-| Ensure grade rows | GET `/api/grade-center/` or POST `sync/` | `TeamGrade` |
+| Ensure grade rows | GET `/api/grading/grades/` or POST `sync/` | `TeamGrade` |
 | Panelist scores | POST `submit-grades/` | `GradeBreakdown`, `panel_score` |
 | Adviser scores | POST `adviser-grades/<id>/submit/` | `adviser_score`, breakdown |
 | Publish final | POST `/<grade_id>/publish/` | Published grade + team outcome |
@@ -592,7 +607,7 @@ flowchart LR
 
 | Step | API | Tables |
 |------|-----|--------|
-| Upload PIT | POST `/api/repository-audit/upload-pit/` | `VaultEntry`, `RepositoryAuditLog` |
+| Upload PIT | POST `/api/repository/audit/upload-pit/` | `VaultEntry`, `RepositoryAuditLog` |
 | Classify | POST `classify/` | Vault + log |
 | Override (admin) | POST `override-status/` | Vault + log |
 | Analytics view | GET `/api/curriculum-analytics/` | Read-only |
@@ -603,8 +618,8 @@ flowchart LR
 
 | Step | API | Tables |
 |------|-----|--------|
-| Preview | GET `/api/student-records/rollover-preview/` | Computed |
-| Execute | POST `/api/student-records/rollover/` | New `StudentAcademicRecord`, team phase advance |
+| Preview | GET `/api/users/academic-records/rollover-preview/` | Computed |
+| Execute | POST `/api/users/academic-records/rollover/` | New `StudentAcademicRecord`, team phase advance |
 
 **Screen:** `student_academic_records_screen.dart` + `student_records_rollover_modal.dart`
 
@@ -620,20 +635,22 @@ flowchart LR
 | `academic_period_provider` | `/api/academic-periods/` | academic_period_management |
 | `user_management_provider` | `/api/users/` | user_management |
 | `student_teams_provider` | `/api/teams/` | student_teams |
-| `student_academic_records_provider` | `/api/student-records/` | student_academic_records |
+| `student_academic_records_provider` | `/api/users/academic-records/` | student_academic_records |
 | `defense_stages_provider` | `/api/defense/stages/` | defense_stages |
-| `rubric_engine_provider` | `/api/rubrics/` | rubric_engine |
+| `rubric_engine_provider` | `/api/grading/rubrics/` | rubric_engine |
 | `defense_scheduler_provider` | `/api/defense/schedules/` | defense_scheduler |
 | `defense_board_provider` | `/api/defense/board/` | defense_board |
-| `grade_center_provider` | `/api/grade-center/` | grade_center |
-| `adviser_grading_provider` | grade-center + rubrics | grade_center, rubric_engine |
-| `capstone_deliverables_provider` | `/api/capstone-deliverables/` | capstone_deliverables |
-| `digital_vault_provider` | `/api/digital-vault/` | digital_vault |
-| `repository_audit_provider` | `/api/repository-audit/` | repository_audit |
+| `grade_center_provider` | `/api/grading/grades/` | grading.grades |
+| `adviser_grading_provider` | grading grades + rubrics | grading |
+| `capstone_deliverables_provider` | `/api/repository/deliverables/` | repository.deliverables |
+| `digital_vault_provider` | `/api/repository/vault/` | repository.vault |
+| `repository_audit_provider` | `/api/repository/audit/` | repository.audit |
+| `pit_lead_cohort_provider` | `/api/dashboards/pit-lead/cohort/` | dashboards |
+| `pit_repository_assistant_provider` | `/api/dashboards/pit-lead/repository-assistant/` | dashboards |
 | `curriculum_analytics_provider` | `/api/curriculum-analytics/` | curriculum_analytics |
 | `dashboard_provider` | `/api/dashboards/{role}/` | dashboards |
-| `weekly_progress_provider` | `/api/weekly-progress/` | student_weekly_progress |
-| `bridge_service` | guest validate (Django); rest **mock** | mixed |
+| `weekly_progress_provider` | `/api/teams/weekly-progress/` | student_teams.weekly_progress |
+| `bridge_service` | guest exchange + peer submit | user_management, grading.grades |
 
 ### 7.2 Admin web (`AdminShell`)
 
@@ -645,7 +662,7 @@ flowchart LR
 | `user_management_screen.dart` | userManagement, academicPeriod | users CRUD, role-assignments, bulk-import, guest-codes |
 | `student_teams_screen.dart` | studentTeams, dashboard faculty | teams CRUD, adviser-history |
 | `student_academic_records_screen.dart` | studentAcademicRecords | student-records CRUD, rollover |
-| `grade_center_screen.dart` | gradeCenter | grade-center list/patch/publish, evaluation-settings |
+| `grade_center_screen.dart` | gradeCenter | grading/grades list/patch/publish, group-settings |
 | `rubric_engine_screen.dart` | rubricEngine | rubrics CRUD, publish, weights |
 | `rubric_full_page_editor.dart` | rubricEngine | rubrics PATCH |
 | `repository_audit_screen.dart` | repositoryAudit | repository-audit all actions |
@@ -653,7 +670,6 @@ flowchart LR
 | `defense_scheduler_screen.dart` | defenseScheduler | schedules list, generate/confirm plan |
 | `defense_board_screen.dart` | defenseBoard | defense-board GET/PATCH/DELETE |
 | `defense_stages_screen.dart` | defenseStages | defense-stages CRUD + deliverables |
-| `adviser_criteria_screen.dart` | inline provider | rubrics (orphan — not in nav) |
 
 ### 7.3 Faculty web
 
@@ -671,7 +687,7 @@ flowchart LR
 |--------|-----------------|-----------|
 | `student_dashboard.dart` | dashboard | GET dashboards/student |
 | `weekly_report_tab.dart` | direct multipart | POST weekly-progress |
-| `repository_tab.dart` | direct | GET digital-vault, GET documents |
+| `repository_tab.dart` | digitalVault + authenticated client | GET repository/vault, GET teams/documents, media API |
 | `peer_eval_tab.dart` | Django API | `POST /api/grading/grades/peer-evaluations/` |
 | `team_tab.dart` | none | Displays data from dashboard payload |
 
@@ -679,17 +695,15 @@ flowchart LR
 
 | Screen | HTTP | Endpoints |
 |--------|------|-----------|
-| `panelist_dashboard.dart` | direct, no Bearer | GET panelist-assignments |
-| `dev_panelist_dashboard.dart` | direct | same |
-| `grade_sheet_tab.dart` | direct | POST submit-grades |
+| `panelist_dashboard.dart` | `AuthenticatedHttpClient` | GET panelist-assignments, panelist-results |
+| `grade_sheet_tab.dart` | authenticated client | POST submit-grades |
 
 ### 7.6 Other
 
 | Screen | HTTP | Endpoints |
 |--------|------|-----------|
-| `login_screen.dart` | auth, bridge | POST login; GET guest-codes/validate |
-| `uploader_dashboard.dart` | direct | GET documents, GET teams, POST upload, DELETE document |
-| `digital_vault_screen.dart` | digitalVault | GET digital-vault |
+| `login_screen.dart` | auth, bridge | POST login; guest-codes exchange |
+| `uploader_dashboard.dart` | authenticated client | GET documents, GET teams, POST upload, DELETE document |
 
 ### 7.7 Provider methods not used by any screen
 
@@ -700,57 +714,53 @@ flowchart LR
 
 ## 8. Gap checklist and prioritized fixes
 
-### 8.1 Full gap list
+### 8.1 Open gaps
 
 | # | Issue | Evidence | Impact |
 |---|--------|----------|--------|
-| 1 | ~~Student peer eval not on Django API~~ | Resolved: mobile submits via `POST /api/grading/grades/peer-evaluations/` | — |
-| 2 | Panelist APIs unauthenticated | `PanelistAssignmentsView`, `PanelistGradeSubmissionView` — no `permission_classes` | Impersonation / grade tampering risk |
-| 3 | Academic period writes open to any JWT | `IsAuthenticated` only on POST/PATCH | Non-admin can mutate terms via API |
-| 4 | Dashboard endpoints not role-gated | All dashboards `IsAuthenticated` | Any role can read admin KPIs |
-| 5 | Grades lag schedules | No `TeamGrade` on schedule create | Grade UI incomplete until sync |
-| 6 | Two adviser audits | `FacultyRoleAssignment` vs `TeamAdviserAssignment` | UX confusion between User Mgmt and Teams |
-| 7 | `adviser_phase` legacy field | On `User` model; cleared on save | Stale schema |
-| 8 | ~~BridgeService mock paths~~ | `bridge_service.dart` now guest validate + peer submit only | — |
-| 9 | Document upload weak team check | `TeamDocumentUploadView` — team exists only | Wrong-team uploads possible |
-| 10 | JWT refresh unused | Flutter stores access only | Sessions die at 7 days with no silent refresh |
+| 1 | Grades lag schedules | No `TeamGrade` on schedule create | Grade UI incomplete until GET list sync or POST sync |
+| 2 | Two adviser audits | `FacultyRoleAssignment` vs `TeamAdviserAssignment` | UX confusion between User Mgmt and Teams |
+| 3 | `adviser_phase` legacy field | On `User` model; cleared on save | Stale schema |
+| 4 | Unused `syncGrades()` | No screen calls provider sync explicitly | Sync happens on GET list; dead code or wire after schedule changes |
+| 5 | Panelist Results tab | UI tab may be hidden until API wired | Panelist cannot see completed grades in-app |
 
-### 8.2 Prioritized remediation
+### 8.2 Resolved (Phase 1–2)
 
-#### P0 — Security and data integrity (fix before production)
+| Former gap | Resolution |
+|------------|------------|
+| Student peer eval | `POST /api/grading/grades/peer-evaluations/` + Academic Periods toggles |
+| Panelist unauthenticated APIs | JWT + `IsPanelist`; guest routes use guest JWT |
+| Academic period writes | `IsSystemAdmin` on POST/PATCH semesters |
+| Dashboard cross-role access | Per-role permission classes on dashboard views |
+| Document upload team check | `user_can_access_team` on upload |
+| JWT refresh unused | `session_storage`, proactive refresh, `/api/me/`, logout blacklist |
+| Bridge mock paths | `bridge_service.dart`: guest exchange + peer submit only |
 
-| Gap | Recommended fix |
-|-----|-----------------|
-| **#2 Panelist auth** | Require JWT; verify `request.user.id == panelist_id` and user `is_panelist`; or issue short-lived panelist tokens tied to schedule |
-| **#3 Academic periods** | Change POST/PATCH semester views to `IsSystemAdmin` |
-| **#4 Dashboards** | Add role checks per endpoint (`admin` only for `/admin/`, etc.) |
-| **#9 Document upload** | Reuse `user_can_access_team_document` or require uploader role + team scope on POST |
+### 8.3 Prioritized remediation
 
-#### P1 — Core capstone workflow completeness
+#### P1 — Workflow
 
 | Gap | Recommended fix |
 |-----|-----------------|
-| **#1 Peer eval** | Add `POST /api/grade-center/peer-grades/` (team leader, semester flag `capstone_peer_evaluation_enabled`); wire `peer_eval_tab.dart` to Django |
-| **#5 Grade sync** | Create `TeamGrade` in `DefenseScheduleWriteSerializer` or auto-sync on schedule confirm |
-| **#6 Adviser clarity** | UI copy only: label capability vs team assignment; optional link from Access Control to team |
+| **#1 Grade sync** | Create `TeamGrade` on schedule confirm or auto-sync in confirm-plan |
+| **#2 Adviser clarity** | UI copy: capability vs team assignment |
+| **#5 Panelist results** | Wire Results tab to `panelist-results` or hide tab |
 
-#### P2 — Maintainability and polish
+#### P2 — Maintainability
 
 | Gap | Recommended fix |
 |-----|-----------------|
-| **#8 BridgeService** | Remove or gate mock paths behind `kDebugMode`; document guest validate as only production bridge call |
-| **#10 JWT refresh** | Store refresh token; call `/api/token/refresh/` before access expiry |
-| **#7 adviser_phase** | Migration to remove field after data audit |
-| Unused `syncGrades()` | Call from grade center screen after schedule changes, or remove dead code |
+| **#3 adviser_phase** | Migration to remove field after data audit |
+| **#4 syncGrades()** | Call after schedule changes or remove dead code |
 
-### 8.3 Prototype-only endpoints
+### 8.4 Prototype-only endpoints
 
 Removed prototype endpoints (no env flag):
 
-- ~~`POST /api/rubrics/seed-demo/`~~
-- ~~`POST /api/grade-center/demo-fill/`~~
-- ~~`POST /api/capstone-deliverables/demo-fill/`~~
-- ~~`POST /api/repository-audit/demo-fill/`~~
+- ~~`POST /api/grading/rubrics/seed-demo/`~~
+- ~~`POST /api/grading/grades/demo-fill/`~~
+- ~~`POST /api/repository/deliverables/demo-fill/`~~
+- ~~`POST /api/repository/audit/demo-fill/`~~
 
 ---
 
@@ -766,7 +776,7 @@ Walk your intended capstone lifecycle and check each step against Sections 4–6
 | 4. Work | `capstone-deliverables` + `weekly-progress` |
 | 5. Defense config | `defense-stages` + `rubrics` publish |
 | 6. Execution | `defense-schedules` → `defense-board` → `submit-grades` |
-| 7. Closure | `grade-center` sync → adviser grades → publish → `rollover` |
+| 7. Closure | `grading/grades` sync → adviser grades → publish → `academic-records` rollover |
 
 If any step fails your policy, see **Section 8** for the matching gap and priority.
 

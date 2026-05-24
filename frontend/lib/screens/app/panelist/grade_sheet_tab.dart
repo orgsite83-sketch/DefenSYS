@@ -1,31 +1,35 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'panelist_models.dart';
 import '../../../config/api_config.dart';
+import '../../../services/auth_provider.dart';
+import '../../../services/authenticated_client.dart';
+import '../../../services/authz_errors.dart';
+import '../../../services/session_expired.dart';
+import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_snackbar.dart';
 
-const _primaryColor = Color(0xFF7F1D1D);
-const _goldColor = Color(0xFFD97706);
-
-class GradeSheetTab extends StatefulWidget {
+class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
   final int selectedTeamIndex;
-  final String panelistId;
   final void Function(int) onTeamChanged;
+  final VoidCallback? onGradesSubmitted;
 
   const GradeSheetTab({
     super.key,
     required this.teams,
     required this.selectedTeamIndex,
-    required this.panelistId,
     required this.onTeamChanged,
+    this.onGradesSubmitted,
   });
 
   @override
-  State<GradeSheetTab> createState() => _GradeSheetTabState();
+  ConsumerState<GradeSheetTab> createState() => _GradeSheetTabState();
 }
 
-class _GradeSheetTabState extends State<GradeSheetTab> {
+class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   List<Criterion> _criteria = [];
   int _lastTeamIndex = -1;
 
@@ -147,7 +151,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
             Row(
               children: [
                 const Icon(Icons.assignment_outlined,
-                    size: 18, color: _primaryColor),
+                    size: 18, color: DefensysTokens.maroon),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -155,7 +159,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                     style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.w600,
-                      color: _primaryColor,
+                      color: DefensysTokens.maroon,
                     ),
                   ),
                 ),
@@ -187,7 +191,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                             Text(
                               team.isCapstone ? 'Capstone' : 'PIT',
                               style: const TextStyle(
-                                color: _primaryColor,
+                                color: DefensysTokens.maroon,
                                 fontSize: 11,
                                 fontWeight: FontWeight.w600,
                               ),
@@ -224,15 +228,15 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: _primaryColor.withOpacity(0.05),
+                      color: DefensysTokens.maroon.withOpacity(0.05),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceAround,
                       children: [
-                        _weightChip('Panel', '$panelWeight%', _primaryColor),
+                        _weightChip('Panel', '$panelWeight%', DefensysTokens.maroon),
                         if (showAdviser)
-                          _weightChip('Adviser', '${team.adviserWeight}%', _goldColor),
+                          _weightChip('Adviser', '${team.adviserWeight}%', DefensysTokens.gold),
                         _weightChip('Peer', '$peerWeight%', const Color(0xFF10B981)),
                       ],
                     ),
@@ -297,7 +301,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                         style: const TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 14,
-                            color: _primaryColor),
+                            color: DefensysTokens.maroon),
                       ),
                     ],
                   ),
@@ -332,15 +336,13 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                             icon: const Icon(Icons.save, size: 16),
                             label: const Text('Save Draft'),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: _primaryColor),
-                              foregroundColor: _primaryColor,
+                              side: const BorderSide(color: DefensysTokens.maroon),
+                              foregroundColor: DefensysTokens.maroon,
                               shape: RoundedRectangleBorder(
                                   borderRadius: BorderRadius.circular(8)),
                             ),
                             onPressed: () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Draft saved.')),
-                              );
+                              showSuccessSnackBar(context, 'Draft saved.');
                             },
                           ),
                         ),
@@ -370,141 +372,105 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
     );
   }
 
-  void _confirmPost(TeamData team) {
+  Future<void> _confirmPost(TeamData team) async {
     if (team.panelRubric == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Panel rubric is not configured for this schedule.',
-          ),
-          backgroundColor: Colors.orange,
-        ),
+      showValidationSnackBar(
+        context,
+        'Panel rubric is not configured for this schedule.',
       );
       return;
     }
     if (_criteria.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Score all criteria before posting.'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      showValidationSnackBar(context, 'Score all criteria before posting.');
       return;
     }
 
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Row(
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Post Grades?',
+      message:
+          'Once posted, grades are permanently saved to the database.\n\nAre you sure?',
+      confirmLabel: 'Submit to Database',
+    );
+    if (!confirmed || !mounted) return;
+
+    await _submitGrades(team);
+  }
+
+  Future<void> _submitGrades(TeamData team) async {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Row(
           children: [
-            Icon(Icons.warning_amber, color: Colors.red),
-            SizedBox(width: 8),
-            Text('Post Grades?', style: TextStyle(fontSize: 16)),
+            SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+              ),
+            ),
+            SizedBox(width: 16),
+            Text('Submitting grades...'),
           ],
         ),
-        content: const Text(
-            'Once posted, grades are permanently saved to the database.\n\nAre you sure?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.red.shade700, foregroundColor: Colors.white),
-            onPressed: () async {
-              Navigator.pop(context);
-
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Row(
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                        ),
-                      ),
-                      SizedBox(width: 16),
-                      Text('Submitting grades...'),
-                    ],
-                  ),
-                  duration: Duration(seconds: 30),
-                ),
-              );
-
-              final criteriaScores = _criteria.map((c) => {
-                'name': c.name,
-                'score': c.score,
-                'max_score': c.maxScore,
-              }).toList();
-
-              final payload = <String, dynamic>{
-                'panelist_id': widget.panelistId,
-                'team_id': team.teamId,
-                'criteria_scores': criteriaScores,
-                'remarks': '',
-              };
-              if (team.scheduleId.isNotEmpty) {
-                payload['schedule_id'] = int.tryParse(team.scheduleId) ?? team.scheduleId;
-              }
-
-              try {
-                final submitUrl = '${ApiConfig.defenseSchedulesUrl}/submit-grades/';
-                final response = await http.post(
-                  Uri.parse(submitUrl),
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: json.encode(payload),
-                ).timeout(const Duration(seconds: 10));
-
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-
-                  if (response.statusCode == 201) {
-                    setState(() => team.isPosted = true);
-
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Row(
-                          children: [
-                            Icon(Icons.check_circle, color: Colors.white),
-                            SizedBox(width: 8),
-                            Text('Grades saved to database successfully!'),
-                          ],
-                        ),
-                        backgroundColor: Colors.green,
-                      ),
-                    );
-                  } else {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Text('Failed to submit grades: ${response.body}'),
-                        backgroundColor: Colors.red,
-                      ),
-                    );
-                  }
-                }
-              } catch (e) {
-                if (context.mounted) {
-                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('Error: $e'),
-                      backgroundColor: Colors.red,
-                    ),
-                  );
-                }
-              }
-            },
-            child: const Text('Submit to Database'),
-          ),
-        ],
+        duration: Duration(seconds: 30),
       ),
     );
+
+    final criteriaScores = _criteria
+        .map((c) => {
+              'name': c.name,
+              'score': c.score,
+              'max_score': c.maxScore,
+            })
+        .toList();
+
+    final payload = <String, dynamic>{
+      'team_id': int.tryParse(team.teamId) ?? team.teamId,
+      'criteria_scores': criteriaScores,
+      'remarks': '',
+    };
+    if (team.scheduleId.isNotEmpty) {
+      payload['schedule_id'] = int.tryParse(team.scheduleId) ?? team.scheduleId;
+    }
+
+    try {
+      final isGuest = ref.read(authProvider).user?['role'] == 'guest_panelist';
+      final httpClient = ref.read(authenticatedHttpClientProvider);
+      final submitPath = isGuest ? 'guest-submit-grades/' : 'submit-grades/';
+      final submitUrl = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$submitPath');
+      final response = await httpClient.post(
+        submitUrl,
+        body: json.encode(payload),
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+      if (response.statusCode == 201) {
+        setState(() => team.isPosted = true);
+        widget.onGradesSubmitted?.call();
+        showSuccessSnackBar(
+          context,
+          'Grades saved to database successfully!',
+        );
+      } else {
+        showErrorSnackBar(
+          context,
+          friendlyHttpErrorMessage(response.statusCode, response.body),
+        );
+      }
+    } on SessionExpiredException {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        showErrorSnackBar(context, 'Error: $e');
+      }
+    }
   }
 
   Widget _criterionRow(Criterion c, bool locked) {
@@ -522,7 +488,7 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
                 '${c.score.toStringAsFixed(0)} / ${c.maxScore.toStringAsFixed(0)}',
                 style: TextStyle(
                     fontSize: 13,
-                    color: locked ? Colors.grey : _primaryColor,
+                    color: locked ? Colors.grey : DefensysTokens.maroon,
                     fontWeight: FontWeight.bold),
               ),
             ],
@@ -530,8 +496,8 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
           const SizedBox(height: 4),
           SliderTheme(
             data: SliderTheme.of(context).copyWith(
-              activeTrackColor: locked ? Colors.grey : _primaryColor,
-              thumbColor: locked ? Colors.grey : _primaryColor,
+              activeTrackColor: locked ? Colors.grey : DefensysTokens.maroon,
+              thumbColor: locked ? Colors.grey : DefensysTokens.maroon,
               disabledActiveTrackColor: Colors.grey,
               disabledThumbColor: Colors.grey.shade400,
             ),
@@ -591,11 +557,11 @@ class _GradeSheetTabState extends State<GradeSheetTab> {
             width: 4,
             height: 20,
             decoration: BoxDecoration(
-                color: _primaryColor, borderRadius: BorderRadius.circular(2))),
+                color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
         Text(title,
             style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: _primaryColor)),
+                fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
       ],
     );
   }

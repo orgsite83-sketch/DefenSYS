@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
+
+import '../navigation/app_router.dart';
+import '../services/terms_acceptance.dart';
 import '../theme/app_theme.dart';
-import 'app/panelist_dashboard.dart';
-import 'app/dev_panelist_dashboard.dart';
-import 'app/student_dashboard.dart';
-import 'web/admin/admin_dashboard.dart';
-import 'web/faculty/faculty_dashboard.dart';
 
 class TermsAgreementScreen extends StatefulWidget {
   final String role;
@@ -280,18 +279,11 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                       Expanded(
                         child: ElevatedButton(
                           onPressed: _agreed
-                              ? () => Navigator.pushReplacement(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) {
-                                      if (widget.role == 'Admin') return AdminDashboard(userData: widget.userData);
-                                      if (widget.role == 'Faculty') return FacultyDashboard(userData: widget.userData);
-                                      if (widget.role == 'Panelist') return PanelistDashboard(userData: widget.userData);
-                                      if (widget.role == 'DevPanelist') return DevPanelistDashboard(userData: widget.userData);
-                                      return StudentDashboard(userData: widget.userData);
-                                    },
-                                  ),
-                                )
+                              ? () async {
+                                  await TermsAcceptance.recordAcceptance();
+                                  if (!context.mounted) return;
+                                  context.go(homeRouteForRoleLabel(widget.role));
+                                }
                               : null,
                           style: ElevatedButton.styleFrom(
                             backgroundColor: AppColors.maroon,

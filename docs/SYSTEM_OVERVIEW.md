@@ -47,7 +47,7 @@ flowchart LR
 | `repository` | `vault`, `deliverables`, `audit` submodules |
 | `curriculum_analytics` | Curriculum-related analytics |
 
-**Stack notes:** Django 6.x, `rest_framework`, `rest_framework_simplejwt`. Dependencies live in **`backend/requirements.txt`** (and `requirements_ml.txt` pulls the same set via `-r`). Use one virtualenv at **`backend/venv/`** (see `ACTIVATE_AND_INSTALL.bat` or `setup_venv.ps1`).
+**Stack notes:** Django 6.x, `rest_framework`, `rest_framework_simplejwt`. Dependencies live in **`backend/requirements.txt`** (includes PDF and ML packages). Use one virtualenv at **`backend/venv/`** (see `setup_venv.ps1` or [DEMO_SETUP_GUIDE.md](DEMO_SETUP_GUIDE.md)).
 
 **Prototype demo-fill APIs** (`demo-fill`, `seed-demo`) were removed for deployment. Use normal admin workflows, imports, and mobile peer evaluation (`POST /api/grading/grades/peer-evaluations/`).
 
@@ -123,7 +123,7 @@ Findings are ordered by severity for production readiness. This is a **point-in-
    `digital_vault/services.py` documents that **all authenticated users** see the same visible vault corpus (no per-team isolation for the main visible set). Appropriate for a school-wide archive policy or a privacy issue depending on requirements.
 
 8. **JWT lifetimes**  
-   Access token lifetime is **7 days**, refresh **30 days** — convenient for dev, long for high-assurance environments.
+   Access token lifetime is **45 minutes**, refresh **10 hours** with rotation and blacklist on logout — see `SIMPLE_JWT` in `settings.py`.
 
 9. **Guest panelist code validation**  
    `GuestCodeValidateView` is intentionally public (`permission_classes = []`). It returns defense/team/stage context for a valid code. Ensure rate limiting and code entropy meet your threat model.
@@ -131,7 +131,7 @@ Findings are ordered by severity for production readiness. This is a **point-in-
 ### Low / operational
 
 10. **Dependencies**  
-    Only `requirements_ml.txt` was found for Python extras; a full pinned `requirements.txt` (or `pyproject.toml`) for the Django app improves reproducibility and security patching.
+    Pin versions in `backend/requirements.txt` (or adopt `pyproject.toml`) for reproducible installs in CI and production.
 
 11. **Repository hygiene**  
     Git status showed many `__pycache__` paths and `db.sqlite3`; confirm `.gitignore` at repo root excludes secrets, bytecode, and local databases for teams that commit to shared remotes.

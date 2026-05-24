@@ -3,7 +3,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter/services.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/csv_file_io.dart';
@@ -11,7 +13,12 @@ import '../../../utils/student_bulk_import_csv.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
-  const UserManagementScreen({super.key});
+  const UserManagementScreen({
+    super.key,
+    this.initialBulkImport = false,
+  });
+
+  final bool initialBulkImport;
 
   @override
   ConsumerState<UserManagementScreen> createState() =>
@@ -80,6 +87,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       ref.read(userManagementProvider.notifier).fetchUsers();
       ref.read(userManagementProvider.notifier).fetchGuestCodes();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
+      if (widget.initialBulkImport && mounted) {
+        setState(() => _showBulkImport = true);
+      }
     });
   }
 
@@ -208,7 +218,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           label: 'Bulk Import CSV',
           onTap: state.isSaving
               ? null
-              : () => setState(() => _showBulkImport = true),
+              : () => context.go(AdminRoutes.usersBulkImport),
         ),
         const SizedBox(width: 14),
         _goldButton(

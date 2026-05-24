@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 // ---------------------------------------------------------------------------
 // State
@@ -62,15 +63,7 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
   @override
   AdviserGradingState build() => const AdviserGradingState();
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) throw Exception('No authentication token found.');
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
   String _errorFromResponse(http.Response response) {
     try {
@@ -83,7 +76,9 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
           return firstValue.toString();
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Non-JSON error body — use status line below.
+    }
     return 'Request failed (${response.statusCode})';
   }
 
@@ -96,8 +91,7 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
   Future<void> fetchAll() async {
     state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
     try {
-      final headers = await _headers();
-      final gradesResp = await http.get(Uri.parse(_gradesUrl), headers: headers);
+      final gradesResp = await _client.get(Uri.parse(_gradesUrl));
 
       if (gradesResp.statusCode != 200) {
         state = state.copyWith(isLoading: false, error: _errorFromResponse(gradesResp));
@@ -115,6 +109,8 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
             ? Map<String, dynamic>.from(gradesPayload['counts'])
             : const {},
       );
+    } on SessionExpiredException {
+      rethrow;
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
@@ -135,9 +131,8 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
         if (criteriaScores.isNotEmpty) 'criteria_scores': criteriaScores,
       };
 
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('${ApiConfig.gradeCenterUrl}/adviser-grades/$gradeId/submit/'),
-        headers: await _headers(),
         body: jsonEncode(body),
       );
 
@@ -152,6 +147,8 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
 
       state = state.copyWith(isSaving: false, error: _errorFromResponse(response));
       return false;
+    } on SessionExpiredException {
+      rethrow;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
     }

@@ -1,15 +1,79 @@
 from rest_framework.permissions import BasePermission
 
 
+def _authenticated_user(request):
+    user = request.user
+    return user if user and user.is_authenticated else None
+
+
 class IsSystemAdmin(BasePermission):
     message = 'Only administrators can manage users.'
 
     def has_permission(self, request, view):
-        user = request.user
+        user = _authenticated_user(request)
         return bool(
             user
-            and user.is_authenticated
             and (getattr(user, 'role', None) == 'admin' or user.is_superuser)
+        )
+
+
+class IsAdminRole(BasePermission):
+    message = 'Only administrators can access this dashboard.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(
+            user
+            and (getattr(user, 'role', None) == 'admin' or user.is_superuser)
+        )
+
+
+class IsFacultyRole(BasePermission):
+    message = 'Only faculty can access this dashboard.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(
+            user
+            and (
+                getattr(user, 'role', None) in ('faculty', 'admin')
+                or user.is_superuser
+            )
+        )
+
+
+class IsStudentRole(BasePermission):
+    message = 'Only students can access this dashboard.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(user and getattr(user, 'role', None) == 'student')
+
+
+class IsPanelist(BasePermission):
+    message = 'Only assigned panelists can access this dashboard.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(
+            user
+            and (
+                getattr(user, 'is_panelist', False)
+                or getattr(user, 'role', None) == 'admin'
+                or user.is_superuser
+            )
+        )
+
+
+class IsPitLead(BasePermission):
+    message = 'Only PIT Leads can access this resource.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(
+            user
+            and getattr(user, 'is_pit_lead', False)
+            and bool((getattr(user, 'pit_lead_year', None) or '').strip())
         )
 
 

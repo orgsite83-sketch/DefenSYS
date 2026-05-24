@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/grade_center_provider.dart';
 import 'grade_center_shared.dart';
 import 'widgets/defensys_admin_shell.dart';
+import '../../../widgets/error_banner.dart';
 
 class GradeCenterTeamDetailScreen extends ConsumerStatefulWidget {
   const GradeCenterTeamDetailScreen({
@@ -54,6 +55,28 @@ class _GradeCenterTeamDetailScreenState
             ),
             const SizedBox(height: 40),
             const Center(child: CircularProgressIndicator()),
+          ],
+        ),
+      );
+    }
+
+    if (state.error != null && grade == null) {
+      return SingleChildScrollView(
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _detailHeader(
+              title: 'Team grades',
+              subtitle: '',
+              onBack: widget.onBack,
+            ),
+            const SizedBox(height: 24),
+            ErrorBanner(
+              title: 'Failed to load grade details',
+              message: state.error!,
+              onRetry: _reloadGrade,
+            ),
           ],
         ),
       );
@@ -158,6 +181,14 @@ class _GradeCenterTeamDetailScreenState
                 ),
             ],
           ),
+          if (state.error != null) ...[
+            const SizedBox(height: 12),
+            ErrorBanner(
+              title: 'Failed to load grade details',
+              message: state.error!,
+              onRetry: _reloadGrade,
+            ),
+          ],
             if (widget.isLocked) ...[
               const SizedBox(height: 12),
               Container(

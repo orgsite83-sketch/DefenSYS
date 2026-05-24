@@ -70,6 +70,12 @@ class StudentWeeklyProgressListCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        if not team.is_capstone:
+            return Response(
+                {'detail': 'Weekly progress reports apply to capstone teams only.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         if team.leader != user:
             return Response(
                 {'detail': 'Only the team leader can submit weekly progress reports.'},

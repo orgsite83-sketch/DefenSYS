@@ -1,17 +1,20 @@
 import 'package:flutter/material.dart';
-import '../login_screen.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
-import '../web/shared/digital_vault_screen.dart';
 import 'student/team_tab.dart';
 import 'student/repository_tab.dart';
 import 'student/peer_eval_tab.dart';
 import 'student/weekly_report_tab.dart';
+import 'student/my_grades_tab.dart';
 import 'student/profile_edit_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
+import '../../theme/defensys_tokens.dart';
+import '../../l10n/l10n_ext.dart';
+import '../../widgets/confirm_dialog.dart';
+import '../../widgets/offline_banner.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -23,7 +26,6 @@ class StudentDashboard extends ConsumerStatefulWidget {
 
 class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   int _selectedIndex = 0;
-  static const _primaryColor = Color(0xFF7F1D1D);
   late final StudentProfile _profile;
 
   final Map<String, bool> _peerPosted = {};
@@ -52,21 +54,71 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     );
 
     final team = dataToPass['team'] as Map<String, dynamic>?;
+    final isCapstone = team?['isCapstone'] == true;
 
-    return Scaffold(
+    final tabChildren = <Widget>[
+      TeamTab(
+        studentData: dataToPass,
+        peerPosted: _peerPosted,
+        onRefresh: () =>
+            ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+      ),
+      const RepositoryTab(),
+      isCapstone
+          ? const WeeklyReportTab()
+          : MyGradesTab(studentData: dataToPass),
+      PeerEvalTab(
+        isCapstone: isCapstone,
+        peerEvalAllowed: dataToPass['peerEvalEnabled'] == true,
+        teammates: (dataToPass['members'] as List? ?? [])
+            .cast<Map<String, dynamic>>()
+            .where(
+              (m) => m['id']?.toString() != widget.userData?['id']?.toString(),
+            )
+            .toList(),
+        peerCriteria: (dataToPass['peerCriteria'] as List? ?? [])
+            .cast<Map<String, dynamic>>(),
+        myPeerSubmissions: (dataToPass['myPeerSubmissions'] as List? ?? [])
+            .cast<Map<String, dynamic>>(),
+        studentId: widget.userData?['id']?.toString() ?? '',
+        teamId: dataToPass['team']?['id']?.toString() ?? '',
+        peerWeight: (dataToPass['weights']?['peer'] as num?)?.toInt() ?? 20,
+        onPeerSubmitted: () {
+          ref.read(dashboardProvider('student').notifier).fetchDashboardData();
+        },
+      ),
+    ];
+
+    final l10n = context.l10n;
+    final destinations = <NavigationDestination>[
+      NavigationDestination(icon: const Icon(Icons.group), label: l10n.navTeam),
+      NavigationDestination(
+        icon: const Icon(Icons.folder_open),
+        label: l10n.navDigitalVault,
+      ),
+      NavigationDestination(
+        icon: Icon(isCapstone ? Icons.assignment : Icons.grade),
+        label: isCapstone ? l10n.navWeeklyReport : l10n.navMyGrades,
+      ),
+      NavigationDestination(
+        icon: const Icon(Icons.star_rate),
+        label: l10n.navPeerEval,
+      ),
+    ];
+
+    final safeIndex = _selectedIndex.clamp(0, tabChildren.length - 1);
+
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Scaffold(
       appBar: AppBar(
-        backgroundColor: _primaryColor,
+        backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
-        title: const Text(
-          'Student Dashboard',
-          style: TextStyle(fontWeight: FontWeight.bold),
+        title: Text(
+          context.l10n.studentDashboardTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.security_outlined),
-            tooltip: 'Digital Vault',
-            onPressed: _openDigitalVault,
-          ),
           IconButton(
             icon: _profile.avatarBytes != null
                 ? CircleAvatar(
@@ -79,7 +131,8 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ),
         ],
       ),
-      body: dashState.isLoading
+      body: OfflineBanner(
+        child: dashState.isLoading
           ? const Center(child: CircularProgressIndicator())
           : dashState.error != null
               ? Center(
@@ -111,7 +164,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                           icon: const Icon(Icons.refresh),
                           label: const Text('Retry'),
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: _primaryColor,
+                            backgroundColor: DefensysTokens.maroon,
                             foregroundColor: Colors.white,
                           ),
                         ),
@@ -126,62 +179,20 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     // Main Content
                     Expanded(
                       child: IndexedStack(
-                        index: _selectedIndex,
-                        children: [
-                          TeamTab(studentData: dataToPass, peerPosted: _peerPosted),
-                          const RepositoryTab(),
-                          const WeeklyReportTab(),
-                          PeerEvalTab(
-                            isCapstone: dataToPass['team']?['isCapstone'] == true,
-                            peerEvalAllowed: dataToPass['peerEvalEnabled'] == true,
-                            teammates: (dataToPass['members'] as List? ?? [])
-                                .cast<Map<String, dynamic>>()
-                                .where(
-                                  (m) =>
-                                      m['id']?.toString() !=
-                                      widget.userData?['id']?.toString(),
-                                )
-                                .toList(),
-                            peerCriteria: (dataToPass['peerCriteria'] as List? ?? [])
-                                .cast<Map<String, dynamic>>(),
-                            myPeerSubmissions:
-                                (dataToPass['myPeerSubmissions'] as List? ?? [])
-                                    .cast<Map<String, dynamic>>(),
-                            studentId: widget.userData?['id']?.toString() ?? '',
-                            teamId: dataToPass['team']?['id']?.toString() ?? '',
-                            peerWeight:
-                                (dataToPass['weights']?['peer'] as num?)?.toInt() ?? 20,
-                            onPeerSubmitted: () {
-                              ref
-                                  .read(dashboardProvider('student').notifier)
-                                  .fetchDashboardData();
-                            },
-                          ),
-                        ],
+                        index: safeIndex,
+                        children: tabChildren,
                       ),
                     ),
                   ],
                 ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        indicatorColor: _primaryColor.withOpacity(0.15),
-        destinations: const [
-          NavigationDestination(icon: Icon(Icons.group), label: 'Team'),
-          NavigationDestination(
-            icon: Icon(Icons.folder_open),
-            label: 'Digital Vault',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.assignment),
-            label: 'Weekly Report',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.star_rate),
-            label: 'Peer Eval',
-          ),
-        ],
       ),
+      bottomNavigationBar: NavigationBar(
+        selectedIndex: safeIndex,
+        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
+        indicatorColor: DefensysTokens.maroon.withOpacity(0.15),
+        destinations: destinations,
+      ),
+    ),
     );
   }
 
@@ -204,14 +215,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       margin: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         gradient: LinearGradient(
-          colors: [_primaryColor, _primaryColor.withOpacity(0.8)],
+          colors: [DefensysTokens.maroon, DefensysTokens.maroon.withOpacity(0.8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
           BoxShadow(
-            color: _primaryColor.withOpacity(0.3),
+            color: DefensysTokens.maroon.withOpacity(0.3),
             blurRadius: 8,
             offset: const Offset(0, 4),
           ),
@@ -372,13 +383,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     );
   }
 
-  Future<void> _openDigitalVault() async {
-    await Navigator.push(
-      context,
-      MaterialPageRoute(builder: (_) => const DigitalVaultScreen()),
-    );
-  }
-
   void _showProfileSheet(BuildContext context) {
     showModalBottomSheet(
       context: context,
@@ -404,7 +408,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               ListTile(
                 leading: CircleAvatar(
                   radius: 24,
-                  backgroundColor: _primaryColor.withOpacity(0.15),
+                  backgroundColor: DefensysTokens.maroon.withOpacity(0.15),
                   backgroundImage: _profile.avatarBytes != null
                       ? MemoryImage(_profile.avatarBytes!)
                       : null,
@@ -412,7 +416,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       ? Text(
                           _profile.name[0].toUpperCase(),
                           style: const TextStyle(
-                            color: _primaryColor,
+                            color: DefensysTokens.maroon,
                             fontWeight: FontWeight.bold,
                             fontSize: 18,
                           ),
@@ -430,11 +434,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               ),
               const Divider(),
               ListTile(
-                leading: const Icon(Icons.edit_outlined, color: _primaryColor),
+                leading: const Icon(Icons.edit_outlined, color: DefensysTokens.maroon),
                 title: const Text(
                   'Edit Profile',
                   style: TextStyle(
-                    color: _primaryColor,
+                    color: DefensysTokens.maroon,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -489,12 +493,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   'Logout',
                   style: TextStyle(color: Colors.red),
                 ),
-                onTap: () {
-                  ref.read(authProvider.notifier).logout();
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()),
-                  );
+                onTap: () async {
+                  Navigator.pop(context);
+                  if (await confirmLogout(context)) {
+                    await ref.read(authProvider.notifier).logout();
+                  }
                 },
               ),
             ],

@@ -1,6 +1,10 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../services/grade_center_provider.dart';
@@ -20,6 +24,8 @@ class GradeCenterScreen extends ConsumerStatefulWidget {
 
 class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   final _searchController = TextEditingController();
+  Timer? _searchDebounce;
+  bool _searchFieldFocused = false;
 
   String? _eventGroupKey;
   String? _eventScope;
@@ -35,8 +41,11 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       final isAdmin = _isGradeCenterAdmin(user);
+      final pitLeadOnly = _isPitLeadOnly(user);
       ref.read(gradeCenterProvider.notifier).fetchGrades(
-            scope: isAdmin ? 'capstone' : null,
+            scope: isAdmin
+                ? 'capstone'
+                : (pitLeadOnly ? 'pit' : null),
           );
       if (isAdmin) {
         _ensureDefenseStagesLoaded();
@@ -52,18 +61,46 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   String _effectiveScope(GradeCenterState state) {
-    return state.scope.isEmpty ? 'capstone' : state.scope;
+    if (state.scope.isNotEmpty) return state.scope;
+    final user = ref.read(authProvider).user;
+    if (_isPitLeadOnly(user)) return 'pit';
+    return 'capstone';
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _syncSearchController(String search) {
+    if (_searchFieldFocused) return;
+    if (_searchController.text != search) {
+      _searchController.text = search;
+    }
+  }
+
+  void _onSearchChanged(String value) {
+    _searchDebounce?.cancel();
+    _searchDebounce = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      ref.read(gradeCenterProvider.notifier).fetchGrades(search: value);
+    });
+  }
+
+  void _onSearchSubmitted(String value) {
+    _searchDebounce?.cancel();
+    ref.read(gradeCenterProvider.notifier).fetchGrades(search: value);
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(gradeCenterProvider);
+
+    ref.listen<GradeCenterState>(gradeCenterProvider, (previous, next) {
+      _syncSearchController(next.search);
+    });
 
     ref.listen(activeAdminSectionProvider, (previous, next) {
       if (previous == DefensysAdminSection.gradeCenter &&
@@ -80,11 +117,14 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           previous != DefensysAdminSection.gradeCenter) {
         final user = ref.read(authProvider).user;
         final isAdmin = _isGradeCenterAdmin(user);
+        final pitLeadOnly = _isPitLeadOnly(user);
         final currentScope = state.scope;
         ref.read(gradeCenterProvider.notifier).fetchGrades(
               scope: currentScope.isNotEmpty
                   ? currentScope
-                  : (isAdmin ? 'capstone' : null),
+                  : (isAdmin
+                      ? 'capstone'
+                      : (pitLeadOnly ? 'pit' : null)),
             );
         if (isAdmin) {
           _ensureDefenseStagesLoaded();
@@ -92,28 +132,33 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       }
     });
 
-    if (_teamDetailGradeId != null) {
-      return GradeCenterTeamDetailScreen(
-        key: ValueKey('grade-detail-$_teamDetailGradeId'),
-        gradeId: _teamDetailGradeId!,
-        isLocked: _teamDetailIsLocked,
-        onBack: _closeTeamDetail,
-      );
-    }
+    final onAdminGradeCenter =
+        GoRouterState.of(context).uri.path == AdminRoutes.gradeCenter;
 
-    if (_eventGroupKey != null &&
-        _eventScope != null &&
-        _eventStageLabel != null &&
-        _eventTitle != null) {
-      return GradeCenterEventTeamsScreen(
-        key: ValueKey('event-$_eventGroupKey'),
-        groupKey: _eventGroupKey!,
-        scope: _eventScope!,
-        stageLabel: _eventStageLabel!,
-        title: _eventTitle!,
-        onBack: _closeEventTeams,
-        onOpenTeamDetail: _openTeamDetail,
-      );
+    if (!onAdminGradeCenter) {
+      if (_teamDetailGradeId != null) {
+        return GradeCenterTeamDetailScreen(
+          key: ValueKey('grade-detail-$_teamDetailGradeId'),
+          gradeId: _teamDetailGradeId!,
+          isLocked: _teamDetailIsLocked,
+          onBack: _closeTeamDetail,
+        );
+      }
+
+      if (_eventGroupKey != null &&
+          _eventScope != null &&
+          _eventStageLabel != null &&
+          _eventTitle != null) {
+        return GradeCenterEventTeamsScreen(
+          key: ValueKey('event-$_eventGroupKey'),
+          groupKey: _eventGroupKey!,
+          scope: _eventScope!,
+          stageLabel: _eventStageLabel!,
+          title: _eventTitle!,
+          onBack: _closeEventTeams,
+          onOpenTeamDetail: _openTeamDetail,
+        );
+      }
     }
 
     return _buildListView(state);
@@ -125,6 +170,17 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     required String stageLabel,
     required String title,
   }) {
+    if (GoRouterState.of(context).uri.path.startsWith('/admin/')) {
+      context.push(
+        AdminRoutes.gradeEventTeams(
+          groupKey,
+          scope: scope,
+          stageLabel: stageLabel,
+          title: title,
+        ),
+      );
+      return;
+    }
     setState(() {
       _eventGroupKey = groupKey;
       _eventScope = scope;
@@ -150,6 +206,12 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   void _openTeamDetail(int gradeId, bool isLocked) {
+    if (GoRouterState.of(context).uri.path.startsWith('/admin/')) {
+      context.push(
+        '${AdminRoutes.gradeDetail(gradeId)}?locked=${isLocked ? 1 : 0}',
+      );
+      return;
+    }
     setState(() {
       _teamDetailGradeId = gradeId;
       _teamDetailIsLocked = isLocked;
@@ -208,8 +270,22 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     );
   }
 
+  bool _filtersActive(GradeCenterState state) {
+    return state.search.trim().isNotEmpty ||
+        state.yearLevel.isNotEmpty ||
+        state.status.isNotEmpty;
+  }
+
+  int _kpiTotal(GradeCenterState state) {
+    if (_filtersActive(state)) {
+      return _count(state, 'filtered');
+    }
+    return _count(state, 'all');
+  }
+
   Widget _buildStats(GradeCenterState state) {
-    final total = _count(state, 'all');
+    final filtersActive = _filtersActive(state);
+    final total = _kpiTotal(state);
     final publishedPct = total == 0 ? 0.0 : _count(state, 'published') / total;
     final pendingPct = total == 0 ? 0.0 : _count(state, 'pending') / total;
 
@@ -217,7 +293,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       children: [
         Expanded(
           child: gradeCenterKpiStatCard(
-            title: 'Total teams',
+            title: filtersActive ? 'Filtered teams' : 'Total teams',
             value: total.toString(),
             icon: Icons.groups_rounded,
             accent: DefensysUi.techBlue,
@@ -259,19 +335,34 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     return false;
   }
 
+  /// PIT lead without admin/superuser — default Grade Center to PIT scope (matches defense scheduler).
+  bool _isPitLeadOnly(Map<String, dynamic>? user) {
+    if (user == null) return false;
+    if (_isGradeCenterAdmin(user)) return false;
+    return user['is_pit_lead'] == true;
+  }
+
+  String _defaultScopeForUser(Map<String, dynamic>? user) {
+    if (_isGradeCenterAdmin(user)) return 'capstone';
+    if (_isPitLeadOnly(user)) return 'pit';
+    return 'capstone';
+  }
+
   Widget _buildMainCard(GradeCenterState state) {
     final isAdmin = _isGradeCenterAdmin(ref.watch(authProvider).user);
     final scope = _effectiveScope(state);
     final stagesState = ref.watch(defenseStagesProvider);
-    final stages = stagesState.activeStages.isNotEmpty
-        ? stagesState.activeStages
-        : stagesState.stages;
+    final stages = state.capstoneStages.isNotEmpty
+        ? state.capstoneStages
+        : stagesState.activeStages;
+    final stagesLoading =
+        state.capstoneStages.isEmpty && stagesState.isLoading;
 
     if (scope == 'capstone') {
       return CapstoneStagesUnifiedCard(
         state: state,
         stages: stages,
-        stagesLoading: stagesState.isLoading,
+        stagesLoading: stagesLoading,
         isAdmin: isAdmin,
         searchController: _searchController,
         scopeFilter: _scopeFilter(state),
@@ -291,19 +382,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                 peerGradingEnabled: value ? false : null,
               );
         },
-        onPeerEvaluationChanged: (value) {
-          ref.read(gradeCenterProvider.notifier).updateCapstoneEvaluationSettings(
-                peerEvaluationEnabled: value,
-              );
-        },
-        onAdviserGradingChanged: (value) {
-          ref.read(gradeCenterProvider.notifier).updateCapstoneEvaluationSettings(
-                adviserGradingEnabled: value,
-              );
-        },
-        onSearchSubmitted: (value) {
-          ref.read(gradeCenterProvider.notifier).fetchGrades(search: value);
-        },
+        onSearchChanged: _onSearchChanged,
+        onSearchSubmitted: _onSearchSubmitted,
+        onSearchFocusChanged: (focused) => _searchFieldFocused = focused,
       );
     }
 
@@ -322,9 +403,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       yearLevelFilter: _yearLevelFilter(state),
       statusFilter: _statusFilter(state),
       listContent: _buildGroupedListContent(state),
-      onSearchSubmitted: (value) {
-        ref.read(gradeCenterProvider.notifier).fetchGrades(search: value);
-      },
+      onSearchChanged: _onSearchChanged,
+      onSearchSubmitted: _onSearchSubmitted,
+      onSearchFocusChanged: (focused) => _searchFieldFocused = focused,
     );
   }
 
@@ -352,13 +433,14 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       DropdownMenuItem(value: 'pit', child: Text('PIT')),
       DropdownMenuItem(value: 'all', child: Text('All scopes')),
     ];
-    final currentScope = state.scope.isEmpty ? 'capstone' : state.scope;
+    final defaultScope = _defaultScopeForUser(ref.read(authProvider).user);
+    final currentScope = state.scope.isEmpty ? defaultScope : state.scope;
 
     return DropdownButtonHideUnderline(
       child: DropdownButton<String>(
         value: scopeItems.any((item) => item.value == currentScope)
             ? currentScope
-            : 'capstone',
+            : defaultScope,
         isExpanded: true,
         icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
         style: const TextStyle(
@@ -597,7 +679,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   int _percent(GradeCenterState state, String key) {
-    final total = _count(state, 'all');
+    final total = _kpiTotal(state);
     if (total == 0) {
       return 0;
     }

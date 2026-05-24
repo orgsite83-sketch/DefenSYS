@@ -1,2 +1,0 @@
-# ML/PDF lines are merged into requirements.txt. Use that file for installs.
--r requirements.txt

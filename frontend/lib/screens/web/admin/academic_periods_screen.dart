@@ -52,10 +52,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
           icon: Icons.calendar_month_rounded,
           title: 'Academic Period Management',
           subtitle:
-              'Configure school years and toggle active semesters to enforce read-only vault rules.',
+              'Configure school years, capstone intake, and active semesters.',
         ),
         const SizedBox(height: 28),
         _statusBanner(state),
+        if (state.activeSemester != null) ...[
+          const SizedBox(height: 16),
+          _capstoneProgramCard(state),
+        ],
         if (state.error != null) ...[
           const SizedBox(height: 12),
           _notice(state.error!, warning: true),
@@ -130,7 +134,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 const SizedBox(height: 6),
                 Text(
                   isActive
-                      ? 'All uploads, evaluations, and peer rubrics are routing to this period.'
+                      ? _activeBannerSubtitle(active)
                       : 'Add a school year and activate a semester to begin.',
                   style: TextStyle(
                     color: Colors.white.withValues(alpha: 0.88),
@@ -232,9 +236,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         children: [
           _tableHeader(
             columns: const [
-              _ColumnSpec('Term', 1.35),
-              _ColumnSpec('System Status', 2.2),
-              _ColumnSpec('Action', 1),
+              _ColumnSpec('Term', 1.2),
+              _ColumnSpec('Capstone', 1.1),
+              _ColumnSpec('System Status', 1.6),
+              _ColumnSpec('Action', 0.9),
             ],
           ),
           if (selectedYear == null)
@@ -490,6 +495,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   ) {
     final semesterId = _asInt(semester['id']);
     final isActive = semester['is_active'] == true;
+    final capstoneLabel = _capstonePhaseLabel(
+      semester['capstone_program_phase']?.toString(),
+    );
 
     return Container(
       height: _rowHeight,
@@ -502,7 +510,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            flex: 135,
+            flex: 120,
             child: Text(
               semester['label']?.toString() ?? 'Unknown semester',
               style: const TextStyle(
@@ -513,7 +521,11 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             ),
           ),
           Expanded(
-            flex: 220,
+            flex: 110,
+            child: _capstoneChip(capstoneLabel),
+          ),
+          Expanded(
+            flex: 160,
             child: isActive
                 ? const DefensysStatusBadge.success(
                     label: 'Active (Write-Enabled)',
@@ -522,7 +534,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 : const DefensysStatusBadge.inactive(label: 'Inactive'),
           ),
           Expanded(
-            flex: 100,
+            flex: 90,
             child: DefensysUi.flatSwitch(
               value: isActive,
               scale: 0.88,
@@ -537,6 +549,315 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         ],
       ),
     );
+  }
+
+  Widget _capstoneProgramCard(AcademicPeriodState state) {
+    final active = state.activeSemester!;
+    final semesterId = _asInt(active['id']);
+    final phaseLabel = _capstonePhaseLabel(
+      active['capstone_program_phase']?.toString(),
+    );
+    final teamCreationOn = active['capstone_team_creation_enabled'] == true;
+    final peerOn = active['capstone_peer_evaluation_enabled'] != false;
+    final adviserOn = active['capstone_adviser_grading_enabled'] != false;
+    final saving = state.isSaving;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _line),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Row(
+            children: [
+              Icon(
+                Icons.rocket_launch_rounded,
+                color: _maroon,
+                size: 20,
+              ),
+              SizedBox(width: 8),
+              Text(
+                'Capstone program',
+                style: TextStyle(
+                  color: _ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _capstoneSettingRow(
+            label: 'Program phase',
+            child: Row(
+              children: [
+                _capstoneChip(phaseLabel, emphasized: true),
+                const SizedBox(width: 10),
+                const Expanded(
+                  child: Text(
+                    'Auto-derived when 2nd Semester is active.',
+                    style: TextStyle(
+                      color: _muted,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          _capstoneSettingRow(
+            label: 'Team creation',
+            child: Row(
+              children: [
+                _capstoneChip(
+                  teamCreationOn ? 'Open' : 'Closed',
+                  emphasized: teamCreationOn,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    active['capstone_mode_message']?.toString() ??
+                        (teamCreationOn
+                            ? 'New capstone teams can be created on Student Teams.'
+                            : 'Team creation follows the active term calendar.'),
+                    style: const TextStyle(
+                      color: _muted,
+                      fontSize: 12,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 14),
+            child: Divider(height: 1, color: _line),
+          ),
+          const Text(
+            'Evaluation (term-wide)',
+            style: TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 10),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stacked = constraints.maxWidth < 720;
+              final peerPanel = _evaluationTogglePanel(
+                title: 'Peer evaluation',
+                subtitle: 'Student Peer Eval tab for Capstone teams.',
+                value: peerOn,
+                enabled: !saving && semesterId != null,
+                onChanged: (value) {
+                  if (semesterId == null) return;
+                  ref
+                      .read(academicPeriodProvider.notifier)
+                      .updateSemesterEvaluationSettings(
+                        semesterId,
+                        peerEvaluationEnabled: value,
+                      );
+                },
+              );
+              final adviserPanel = _evaluationTogglePanel(
+                title: 'Adviser grading',
+                subtitle: 'Advisers can submit scores for teams they advise.',
+                value: adviserOn,
+                enabled: !saving && semesterId != null,
+                onChanged: (value) {
+                  if (semesterId == null) return;
+                  ref
+                      .read(academicPeriodProvider.notifier)
+                      .updateSemesterEvaluationSettings(
+                        semesterId,
+                        adviserGradingEnabled: value,
+                      );
+                },
+              );
+              if (stacked) {
+                return Column(
+                  children: [
+                    peerPanel,
+                    const SizedBox(height: 10),
+                    adviserPanel,
+                  ],
+                );
+              }
+              return Row(
+                children: [
+                  Expanded(child: peerPanel),
+                  const SizedBox(width: 12),
+                  Expanded(child: adviserPanel),
+                ],
+              );
+            },
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: const Text(
+              'PIT peer grading is configured per event in Grade Center.',
+              style: TextStyle(
+                color: Color(0xFF1E40AF),
+                fontSize: 12,
+                height: 1.35,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _capstoneSettingRow({
+    required String label,
+    required Widget child,
+  }) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        SizedBox(
+          width: 120,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        Expanded(child: child),
+      ],
+    );
+  }
+
+  Widget _evaluationTogglePanel({
+    required String title,
+    required String subtitle,
+    required bool value,
+    required bool enabled,
+    required ValueChanged<bool> onChanged,
+  }) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 11.5,
+                    height: 1.3,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Switch(
+            value: value,
+            onChanged: enabled ? onChanged : null,
+            activeThumbColor: _maroon,
+            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _capstoneChip(String label, {bool emphasized = false}) {
+    final isOpen = label == 'Capstone 1' || label == 'Open';
+    final bg = emphasized && isOpen
+        ? const Color(0xFFECFDF5)
+        : const Color(0xFFF3F4F6);
+    final fg = emphasized && isOpen
+        ? const Color(0xFF047857)
+        : const Color(0xFF5D6678);
+    final border = emphasized && isOpen
+        ? const Color(0xFF86EFAC)
+        : const Color(0xFFE5E7EB);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  String _capstonePhaseLabel(String? phase) {
+    switch (phase) {
+      case 'capstone_1':
+        return 'Capstone 1';
+      case 'capstone_2':
+        return 'Capstone 2';
+      case 'none':
+      default:
+        return 'Closed';
+    }
+  }
+
+  String _activeBannerSubtitle(Map<String, dynamic> active) {
+    final mode = active['capstone_mode']?.toString();
+    if (mode == 'capstone_1_intake') {
+      return 'Capstone 1 intake — peer evaluation and adviser grading apply to this term.';
+    }
+    if (mode == 'capstone_2_continue') {
+      return 'Capstone 2 term — manage existing teams; new capstone team creation is closed.';
+    }
+    return 'All uploads, evaluations, and peer rubrics are routing to this period.';
   }
 
   Widget _notice(String message, {bool warning = false}) {

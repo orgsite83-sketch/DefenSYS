@@ -1,22 +1,62 @@
 import 'package:flutter/material.dart';
 
-const _primaryColor = Color(0xFF7F1D1D);
-const _goldColor = Color(0xFFD97706);
+import '../../../theme/defensys_tokens.dart';
 
 class OverallResultsTab extends StatelessWidget {
   final List<Map<String, dynamic>> results;
   final bool loading;
+  final String? error;
+  final VoidCallback? onRetry;
 
   const OverallResultsTab({
     super.key,
     required this.results,
     this.loading = false,
+    this.error,
+    this.onRetry,
   });
 
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const Center(child: CircularProgressIndicator(color: _primaryColor));
+      return const Center(child: CircularProgressIndicator(color: DefensysTokens.maroon));
+    }
+
+    if (error != null && results.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.error_outline, size: 48, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'Failed to load results',
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: Colors.grey),
+              ),
+              if (onRetry != null) ...[
+                const SizedBox(height: 16),
+                ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Retry'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: DefensysTokens.maroon,
+                    foregroundColor: Colors.white,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      );
     }
 
     if (results.isEmpty) {
@@ -68,7 +108,7 @@ class OverallResultsTab extends StatelessWidget {
       const Color(0xFF6B7280),
       const Color(0xFFB45309),
     ];
-    final rankColor = rank <= 3 ? medalColors[rank - 1] : _primaryColor;
+    final rankColor = rank <= 3 ? medalColors[rank - 1] : DefensysTokens.maroon;
 
     final statusColor = teamStatus == 'Approved'
         ? Colors.green
@@ -151,7 +191,7 @@ class OverallResultsTab extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: _primaryColor.withOpacity(0.04),
+                color: DefensysTokens.maroon.withOpacity(0.04),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -163,7 +203,7 @@ class OverallResultsTab extends StatelessWidget {
                           style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
                       Text('${total.toStringAsFixed(1)} / ${max.toStringAsFixed(0)} pts',
                           style: const TextStyle(fontSize: 12,
-                              fontWeight: FontWeight.bold, color: _primaryColor)),
+                              fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
                     ],
                   ),
                   const SizedBox(height: 8),
@@ -174,7 +214,7 @@ class OverallResultsTab extends StatelessWidget {
                       minHeight: 8,
                       backgroundColor: Colors.grey.shade200,
                       valueColor: AlwaysStoppedAnimation<Color>(
-                          pct >= 75 ? Colors.green : pct >= 60 ? _goldColor : Colors.red),
+                          pct >= 75 ? Colors.green : pct >= 60 ? DefensysTokens.gold : Colors.red),
                     ),
                   ),
                 ],
@@ -214,7 +254,7 @@ class OverallResultsTab extends StatelessWidget {
                           backgroundColor: Colors.grey.shade200,
                           valueColor: AlwaysStoppedAnimation<Color>(
                               cPct >= 0.85 ? const Color(0xFF10B981)
-                                  : cPct >= 0.65 ? _goldColor
+                                  : cPct >= 0.65 ? DefensysTokens.gold
                                   : const Color(0xFFEF4444)),
                         ),
                       ),
@@ -222,7 +262,7 @@ class OverallResultsTab extends StatelessWidget {
                     const SizedBox(width: 8),
                     Text('${cScore.toStringAsFixed(0)}/${cMax.toStringAsFixed(0)}',
                         style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700,
-                            color: _primaryColor)),
+                            color: DefensysTokens.maroon)),
                   ],
                 ),
               );
@@ -299,7 +339,7 @@ class OverallResultsTab extends StatelessWidget {
                                 children: [
                                   CircleAvatar(
                                     radius: 12,
-                                    backgroundColor: isLeader ? _primaryColor : const Color(0xFFE5E7EB),
+                                    backgroundColor: isLeader ? DefensysTokens.maroon : const Color(0xFFE5E7EB),
                                     child: Text(
                                       name.isNotEmpty ? name[0].toUpperCase() : '?',
                                       style: TextStyle(fontSize: 10,
@@ -409,11 +449,11 @@ class OverallResultsTab extends StatelessWidget {
         Container(
             width: 4, height: 20,
             decoration: BoxDecoration(
-                color: _primaryColor, borderRadius: BorderRadius.circular(2))),
+                color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
         Text(title,
             style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: _primaryColor)),
+                fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
       ],
     );
   }
@@ -424,7 +464,7 @@ class OverallResultsTab extends StatelessWidget {
         Container(
           width: 3, height: 14,
           decoration: BoxDecoration(
-            color: _primaryColor.withOpacity(0.3),
+            color: DefensysTokens.maroon.withOpacity(0.3),
             borderRadius: BorderRadius.circular(2),
           ),
         ),

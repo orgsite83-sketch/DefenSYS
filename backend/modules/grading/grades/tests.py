@@ -353,6 +353,37 @@ class GradeCenterApiTests(APITestCase):
         capstone_key = f'capstone|{self.stage.label}'
         self.assertIn(capstone_key, response.data['group_settings'])
 
+    def test_group_settings_includes_zero_team_capstone_stage_after_complete(self):
+        empty_stage = DefenseStage.objects.create(
+            label='Zero Team Stage',
+            display_order=99,
+            is_active=True,
+        )
+        patch_response = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_CAPSTONE,
+                'stage_label': empty_stage.label,
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(patch_response.status_code, 200)
+
+        list_response = self.client.get('/api/grading/grades/')
+        self.assertEqual(list_response.status_code, 200)
+        key = f'capstone|{empty_stage.label}'
+        self.assertIn(key, list_response.data['group_settings'])
+        self.assertTrue(list_response.data['group_settings'][key]['is_officially_complete'])
+
+    def test_list_includes_capstone_stages_for_admin(self):
+        response = self.client.get('/api/grading/grades/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('capstone_stages', response.data)
+        labels = [stage['label'] for stage in response.data['capstone_stages']]
+        self.assertIn(self.stage.label, labels)
+
     def test_patch_pit_group_settings(self):
         pit_panel = Rubric.objects.create(
             name='PIT Panel Active',

@@ -19,9 +19,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required this.statusFilter,
     required this.onOpenStage,
     required this.onOfficiallyCompleteChanged,
-    required this.onPeerEvaluationChanged,
-    required this.onAdviserGradingChanged,
+    required this.onSearchChanged,
     required this.onSearchSubmitted,
+    required this.onSearchFocusChanged,
   });
 
   final GradeCenterState state;
@@ -33,10 +33,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   final Widget yearLevelFilter;
   final Widget statusFilter;
   final void Function(CapstoneStageRow row) onOpenStage;
-  final ValueChanged<bool> onPeerEvaluationChanged;
-  final ValueChanged<bool> onAdviserGradingChanged;
   final void Function(CapstoneStageRow row, bool value) onOfficiallyCompleteChanged;
+  final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
+  final ValueChanged<bool> onSearchFocusChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -81,6 +81,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                           height: 1.35,
                         ),
                       ),
+                      if (isAdmin) ...[
+                        const SizedBox(height: 8),
+                        capstoneTermStatusBadgeRow(
+                          state,
+                          showPeerEvaluation: true,
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'Change term-wide peer and adviser settings in Academic Periods.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF98A2B3),
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -96,13 +112,6 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFE5E7EB)),
-          if (isAdmin) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
-              child: _termSettingsInset(state),
-            ),
-            const Divider(height: 1, color: Color(0xFFE5E7EB)),
-          ],
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 16, 24, 0),
             child: _filterToolbar(),
@@ -120,6 +129,14 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          if (unscheduledCapstoneTeamCount(state) > 0) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+              child: gradeCenterUnscheduledBanner(
+                teamCount: unscheduledCapstoneTeamCount(state),
+              ),
+            ),
+          ],
           _tableBody(rows),
         ],
       ),
@@ -141,74 +158,6 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           fontWeight: FontWeight.w700,
           color: Color(0xFF5D6678),
         ),
-      ),
-    );
-  }
-
-  Widget _termSettingsInset(GradeCenterState state) {
-    final sem = state.activeSemester;
-    if (sem == null) {
-      return Row(
-        children: [
-          Icon(Icons.info_outline_rounded, color: DefensysUi.steelGrey, size: 20),
-          const SizedBox(width: 10),
-          const Expanded(
-            child: Text(
-              'Set an active academic term under Academic Periods to use term settings.',
-              style: TextStyle(
-                color: Color(0xFF5D6678),
-                fontSize: 13,
-                height: 1.35,
-              ),
-            ),
-          ),
-        ],
-      );
-    }
-
-    final peerOn = sem['capstone_peer_evaluation_enabled'] != false;
-    final advOn = sem['capstone_adviser_grading_enabled'] != false;
-
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'TERM SETTINGS',
-            style: TextStyle(
-              color: Color(0xFF98A2B3),
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.4,
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              gradeCenterTermTogglePanel(
-                title: 'Peer evaluation',
-                subtitle: 'Students can use the Peer Eval tab for Capstone teams.',
-                value: peerOn,
-                enabled: !state.isSaving,
-                onChanged: onPeerEvaluationChanged,
-              ),
-              const SizedBox(width: 12),
-              gradeCenterTermTogglePanel(
-                title: 'Adviser grading',
-                subtitle: 'Advisers can submit scores for teams they advise.',
-                value: advOn,
-                enabled: !state.isSaving,
-                onChanged: onAdviserGradingChanged,
-              ),
-            ],
-          ),
-        ],
       ),
     );
   }
@@ -282,11 +231,29 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
                   ),
                 ),
+                onChanged: onSearchChanged,
                 onSubmitted: onSearchSubmitted,
+                onTap: () => onSearchFocusChanged(true),
+                onEditingComplete: () => onSearchFocusChanged(false),
               ),
             ),
           ),
         ),
+      ],
+    );
+  }
+
+  static const double _tableMinWidth = 1100;
+  Widget _tableColumn(List<CapstoneStageRow> rows) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
+          child: _tableHeaderRow(),
+        ),
+        ...rows.map(_tableDataRow),
+        const SizedBox(height: 8),
       ],
     );
   }
@@ -314,16 +281,31 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
       );
     }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-          child: _tableHeaderRow(),
+    if (rows.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.all(32),
+        child: Center(
+          child: Text(
+            'No active stages to display. Activate stages under Defense Stages.',
+            style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+            textAlign: TextAlign.center,
+          ),
         ),
-        ...rows.map(_tableDataRow),
-        const SizedBox(height: 8),
-      ],
+      );
+    }
+
+    final tableHeight = capstoneStagesTableBodyHeight(rows.length);
+    return SizedBox(
+      height: tableHeight,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: SizedBox(
+          width: _tableMinWidth,
+          child: SingleChildScrollView(
+            child: _tableColumn(rows),
+          ),
+        ),
+      ),
     );
   }
 
@@ -462,7 +444,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
     required this.yearLevelFilter,
     required this.statusFilter,
     required this.listContent,
+    required this.onSearchChanged,
     required this.onSearchSubmitted,
+    required this.onSearchFocusChanged,
   });
 
   final String title;
@@ -474,7 +458,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
   final Widget yearLevelFilter;
   final Widget statusFilter;
   final Widget listContent;
+  final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
+  final ValueChanged<bool> onSearchFocusChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -579,7 +565,10 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                             borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
                           ),
                         ),
+                        onChanged: onSearchChanged,
                         onSubmitted: onSearchSubmitted,
+                        onTap: () => onSearchFocusChanged(true),
+                        onEditingComplete: () => onSearchFocusChanged(false),
                       ),
                     ),
                   ),

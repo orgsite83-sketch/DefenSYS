@@ -6,8 +6,10 @@ import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../../config/api_config.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../services/repository_audit_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/pdf_viewer.dart';
 
 class RepositoryAuditScreen extends ConsumerStatefulWidget {
   const RepositoryAuditScreen({super.key});
@@ -2007,7 +2009,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     );
   }
 
-  void _viewPdf(String fileUrl, String fileName) {
+  Future<void> _viewPdf(String fileUrl, String fileName) async {
     if (fileUrl.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
@@ -2018,45 +2020,71 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       return;
     }
 
-    // Construct full URL
-    final fullUrl = fileUrl.startsWith('http')
-        ? fileUrl
-        : '${ApiConfig.mediaUrl}$fileUrl';
-
-    // Open in new tab using url_launcher
-    launchUrl(Uri.parse(fullUrl), mode: LaunchMode.externalApplication);
-  }
-
-  void _downloadFile(String fileUrl, String fileName) {
-    if (fileUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('File URL not available'),
-          backgroundColor: Colors.red,
-        ),
-      );
-      return;
-    }
-
-    // Construct full URL
-    final fullUrl = fileUrl.startsWith('http')
-        ? fileUrl
-        : '${ApiConfig.mediaUrl}$fileUrl';
-
-    // For web, use url_launcher to trigger download
-    // The browser will handle the download
-    launchUrl(
-      Uri.parse(fullUrl),
-      mode: LaunchMode.externalApplication,
-    );
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('Opening $fileName...'),
-        backgroundColor: Colors.green,
-        duration: const Duration(seconds: 2),
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.maroon),
       ),
     );
+
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      await viewPdfInDialog(
+        context: context,
+        pdfBytes: bytes,
+        fileName: fileName,
+      );
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error opening file: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _downloadFile(String fileUrl, String fileName) async {
+    if (fileUrl.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('File URL not available'),
+          backgroundColor: Colors.red,
+        ),
+      );
+      return;
+    }
+
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      await downloadBytesFile(bytes: bytes, fileName: fileName);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Downloaded $fileName'),
+          backgroundColor: Colors.green,
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Download failed: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   Future<void> _exportCsv() async {

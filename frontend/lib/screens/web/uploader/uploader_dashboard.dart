@@ -5,9 +5,10 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
+import '../../../services/authenticated_client.dart';
+import '../../../theme/defensys_tokens.dart';
 import '../../../theme/app_theme.dart';
-import '../../login_screen.dart';
-
+import '../../../widgets/confirm_dialog.dart';
 class UploaderDashboard extends ConsumerStatefulWidget {
   const UploaderDashboard({super.key});
 
@@ -16,9 +17,6 @@ class UploaderDashboard extends ConsumerStatefulWidget {
 }
 
 class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
-  static const _maroon = Color(0xFF7F1D1D);
-  static const _gold = Color(0xFFD97706);
-  
   List<Map<String, dynamic>> _documents = [];
   List<Map<String, dynamic>> _teams = [];
   bool _isLoading = true;
@@ -69,15 +67,9 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
   }
 
   Future<void> _loadDocuments() async {
-    final authState = ref.read(authProvider);
-    final token = authState.token;
-
-    final response = await http.get(
+    final client = ref.read(authenticatedHttpClientProvider);
+    final response = await client.get(
       Uri.parse('${ApiConfig.teamDocumentsUrl}/'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
     );
 
     if (response.statusCode == 200) {
@@ -89,23 +81,12 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
   }
 
   Future<void> _loadTeams() async {
-    final authState = ref.read(authProvider);
-    final token = authState.token;
-
-    print('Loading teams...');
-    print('API URL: ${ApiConfig.baseUrl}/teams/');
-    print('Token: ${token?.substring(0, 20)}...');
+    final client = ref.read(authenticatedHttpClientProvider);
 
     try {
-      final response = await http.get(
+      final response = await client.get(
         Uri.parse('${ApiConfig.baseUrl}/teams/'),
-        headers: {
-          'Authorization': 'Bearer $token',
-          'Content-Type': 'application/json',
-        },
       );
-
-      print('Response status: ${response.statusCode}');
       
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -253,8 +234,8 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                   ? null
                   : () => Navigator.pop(context, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _maroon,
-                foregroundColor: _gold,
+                backgroundColor: DefensysTokens.maroon,
+                foregroundColor: DefensysTokens.gold,
               ),
               child: const Text('Upload'),
             ),
@@ -281,15 +262,12 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
     });
 
     try {
-      final authState = ref.read(authProvider);
-      final token = authState.token;
-
+      final client = ref.read(authenticatedHttpClientProvider);
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConfig.teamDocumentsUrl}/upload/'),
       );
 
-      request.headers['Authorization'] = 'Bearer $token';
       request.fields['team_id'] = teamId.toString();
       request.fields['document_type'] = docType;
       request.fields['description'] = description;
@@ -302,7 +280,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
         ));
       }
 
-      final response = await request.send();
+      final response = await client.sendAuthenticated(request);
       final responseBody = await response.stream.bytesToString();
 
       if (response.statusCode == 201) {
@@ -583,7 +561,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                         end: Alignment.bottomRight,
                         colors: [
                           const Color(0xFFFFD54F), // Light yellow
-                          const Color(0xFFFFC107), // Darker yellow
+                          DefensysTokens.gold, // Darker yellow
                         ],
                       ),
                       borderRadius: BorderRadius.circular(3),
@@ -609,7 +587,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                           end: Alignment.bottomCenter,
                           colors: [
                             Color(0xFFFFB300), // Darker yellow-orange
-                            Color(0xFFFFC107), // Medium yellow
+                            DefensysTokens.gold, // Medium yellow
                           ],
                         ),
                         borderRadius: const BorderRadius.only(
@@ -671,7 +649,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _maroon,
+                          color: DefensysTokens.maroon,
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
@@ -744,8 +722,8 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                 icon: const Icon(Icons.upload_file),
                 label: const Text('Upload First Document'),
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: _maroon,
-                  foregroundColor: _gold,
+                  backgroundColor: DefensysTokens.maroon,
+                  foregroundColor: DefensysTokens.gold,
                 ),
               ),
             ],
@@ -915,14 +893,9 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
     );
 
     if (confirmed == true) {
-      final authState = ref.read(authProvider);
-      final token = authState.token;
-
-      final response = await http.delete(
+      final client = ref.read(authenticatedHttpClientProvider);
+      final response = await client.delete(
         Uri.parse('${ApiConfig.teamDocumentsUrl}/$docId/'),
-        headers: {
-          'Authorization': 'Bearer $token',
-        },
       );
 
       if (response.statusCode == 200) {
@@ -940,7 +913,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
   Widget _buildPermanentSidebar() {
     return Container(
       width: 260,
-      color: _maroon,
+      color: DefensysTokens.maroon,
       child: Column(
         children: [
           // Upload Document Button
@@ -951,8 +924,8 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
               icon: const Icon(Icons.upload_file, size: 18),
               label: const Text('Upload Document'),
               style: ElevatedButton.styleFrom(
-                backgroundColor: _gold,
-                foregroundColor: _maroon,
+                backgroundColor: DefensysTokens.gold,
+                foregroundColor: DefensysTokens.maroon,
                 minimumSize: const Size(double.infinity, 48),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(8),
@@ -1046,12 +1019,10 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
           Material(
             color: Colors.transparent,
             child: InkWell(
-              onTap: () {
-                ref.read(authProvider.notifier).logout();
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (_) => const LoginScreen()),
-                );
+              onTap: () async {
+                if (await confirmLogout(context)) {
+                  await ref.read(authProvider.notifier).logout();
+                }
               },
               hoverColor: Colors.white.withOpacity(0.05),
               child: Container(
@@ -1091,7 +1062,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
     required VoidCallback onTap,
     bool isActive = false,
   }) {
-    final color = isActive ? const Color(0xFFFFC107) : const Color(0xFFD1D5DB);
+    final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
     
     return Material(
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
@@ -1103,7 +1074,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
           decoration: BoxDecoration(
             border: isActive
                 ? const Border(
-                    left: BorderSide(color: Color(0xFFFFC107), width: 4),
+                    left: BorderSide(color: DefensysTokens.gold, width: 4),
                   )
                 : null,
           ),
@@ -1128,13 +1099,13 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                   decoration: BoxDecoration(
-                    color: _gold,
+                    color: DefensysTokens.gold,
                     borderRadius: BorderRadius.circular(10),
                   ),
                   child: Text(
                     badge,
                     style: TextStyle(
-                      color: _maroon,
+                      color: DefensysTokens.maroon,
                       fontSize: 11,
                       fontWeight: FontWeight.bold,
                     ),

@@ -92,6 +92,30 @@ paths:
         '200':
           description: New access token
 
+  /logout/:
+    post:
+      tags: [auth]
+      summary: Blacklist refresh token on logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refresh]
+              properties:
+                refresh: { type: string }
+      responses:
+        '200':
+          description: Logged out
+
+  /me/:
+    get:
+      tags: [auth]
+      summary: Current user profile (same shape as login user)
+      responses:
+        '200':
+          description: User object
+
   /dashboards/admin/:
     get:
       tags: [dashboards]
@@ -123,6 +147,33 @@ paths:
       responses:
         '200':
           description: Assignments placeholder
+
+  /dashboards/pit-lead/cohort/:
+    get:
+      tags: [dashboards]
+      summary: PIT lead cohort roster
+      parameters:
+        - name: search
+          in: query
+          schema: { type: string }
+        - name: team_status
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Students and team status
+        '403':
+          description: Not a PIT lead
+
+  /dashboards/pit-lead/repository-assistant/:
+    get:
+      tags: [dashboards]
+      summary: PIT lead repository assistant view
+      responses:
+        '200':
+          description: Repository assistant payload
+        '403':
+          description: Not a PIT lead
 
   /academic-periods/:
     get:
@@ -619,30 +670,26 @@ paths:
   /defense/schedules/panelist-assignments/:
     get:
       tags: [defense-schedules]
-      summary: Panelist assignments (public — uses panelist_id)
-      security: []
-      parameters:
-        - name: panelist_id
-          in: query
-          required: true
-          schema: { type: integer }
+      summary: Panelist assignments (authenticated panelist)
       responses:
         '200':
           description: Teams and rubrics for panelist
+        '401':
+          description: Unauthenticated
+        '403':
+          description: Not a panelist
 
   /defense/schedules/submit-grades/:
     post:
       tags: [defense-schedules]
-      summary: Panelist grade submission (public — uses panelist_id in body)
-      security: []
+      summary: Panelist grade submission (authenticated; must be assigned)
       requestBody:
         content:
           application/json:
             schema:
               type: object
-              required: [panelist_id, team_id, criteria_scores]
+              required: [team_id, criteria_scores]
               properties:
-                panelist_id: { type: integer }
                 team_id: { type: integer }
                 schedule_id: { type: integer }
                 criteria_scores:
@@ -653,6 +700,51 @@ paths:
       responses:
         '200':
           description: Grades saved
+        '403':
+          description: Not assigned to team
+
+  /defense/schedules/panelist-results/:
+    get:
+      tags: [defense-schedules]
+      summary: Completed panelist grading results
+      responses:
+        '200':
+          description: Results list
+
+  /defense/schedules/pit-event-config/:
+    get:
+      tags: [defense-schedules]
+      summary: PIT event configuration for grade center
+      responses:
+        '200':
+          description: Event config
+
+  /defense/schedules/guest-assignments/:
+    get:
+      tags: [defense-schedules]
+      summary: Guest panelist assignments (guest JWT)
+      security: []
+      responses:
+        '200':
+          description: Assignments
+
+  /defense/schedules/guest-submit-grades/:
+    post:
+      tags: [defense-schedules]
+      summary: Guest panelist grade submission (guest JWT)
+      security: []
+      responses:
+        '200':
+          description: Grades saved
+
+  /defense/schedules/guest-panelist-results/:
+    get:
+      tags: [defense-schedules]
+      summary: Guest panelist results (guest JWT)
+      security: []
+      responses:
+        '200':
+          description: Results
 
   /defense/schedules/{schedule_id}/:
     patch:
@@ -850,13 +942,21 @@ paths:
         '200':
           description: Vault entry created
 
-  /repository/audit/classify/:
+  /repository/audit/upload-capstone/:
     post:
       tags: [repository-audit]
-      summary: Classify entry
+      summary: Upload capstone document to audit trail
       responses:
         '200':
-          description: Classified
+          description: Vault entry created
+
+  /repository/audit/trail/:
+    get:
+      tags: [repository-audit]
+      summary: Repository audit trail
+      responses:
+        '200':
+          description: Trail entries
 
   /repository/audit/override-status/:
     post:
@@ -1022,3 +1122,55 @@ paths:
       responses:
         '200':
           description: File stream
+
+  /grading/grades/group-settings/:
+    patch:
+      tags: [grade-center]
+      summary: Update per-event or capstone group settings (PIT/admin)
+      responses:
+        '200':
+          description: Updated
+
+  /grading/grades/peer-evaluations/:
+    post:
+      tags: [grade-center]
+      summary: Student peer evaluation submission
+      responses:
+        '201':
+          description: Submitted
+
+  /users/guest-codes/exchange/:
+    post:
+      tags: [users]
+      summary: Exchange guest code for guest JWT
+      security: []
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [code]
+              properties:
+                code: { type: string }
+      responses:
+        '200':
+          description: access token and panelist context
+        '400':
+          description: Invalid or revoked code
+
+  /media/files/{file_path}:
+    get:
+      tags: [documents]
+      summary: JWT-protected media file download
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: file_path
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: File stream
+        '401':
+          description: Unauthenticated

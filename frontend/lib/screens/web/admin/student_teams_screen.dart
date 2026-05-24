@@ -1,13 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../l10n/l10n_ext.dart';
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../utils/team_bulk_import_csv.dart';
 import '../../../utils/team_bulk_import_draft.dart';
+import '../../../widgets/confirm_dialog.dart';
 import 'team_detail_page.dart';
 import 'widgets/defensys_admin_shell.dart';
 import 'widgets/team_bulk_import_review_table.dart';
@@ -48,12 +53,14 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
     super.key,
     this.mode = TeamListMode.capstoneAdmin,
     this.onOpenStudentRecords,
+    this.initialBulkImport = false,
   });
 
   final TeamListMode mode;
 
   /// Opens Student Academic Records (rollover) from the admin shell.
   final VoidCallback? onOpenStudentRecords;
+  final bool initialBulkImport;
 
   @override
   ConsumerState<StudentTeamsScreen> createState() => _StudentTeamsScreenState();
@@ -83,6 +90,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   TeamBulkImportDraft? _savedDraft;
   Timer? _draftSaveTimer;
   Timer? _rowPreviewTimer;
+  String? _bulkImportSessionBaseline;
+  String? _bulkImportPersistedSnapshot;
 
   bool get _isBulkImportVisible => _showBulkImport == true;
   String get _selectedBulkAdviserFilter => _bulkAdviserFilter ?? 'all';
@@ -152,7 +161,17 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadBulkDraft();
       _fetchTeamsForCurrentRole();
+      if (widget.initialBulkImport && mounted) {
+        _openBulkImport();
+      }
     });
+  }
+
+  void _openTeamDetailRoute(int teamId) {
+    final route = _isPitLeadManager
+        ? FacultyRoutes.teamDetail(teamId)
+        : AdminRoutes.teamDetail(teamId);
+    context.push(route);
   }
 
   void _fetchTeamsForCurrentRole({String? scope}) {
@@ -180,22 +199,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     if (_isBulkImportVisible) {
       return _bulkImportPage(state);
-    }
-
-    if (_openTeamId != null) {
-      return TeamDetailPage(
-        teamId: _openTeamId!,
-        canManage: _openTeamCanManage,
-        isPitLead: _isPitLeadManager,
-        pitLeadYear: _pitLeadYear,
-        onBack: () {
-          setState(() => _openTeamId = null);
-          ref.read(studentTeamsProvider.notifier).fetchTeams();
-        },
-        onDeleted: () {
-          setState(() => _openTeamId = null);
-        },
-      );
     }
 
     return SingleChildScrollView(
@@ -313,6 +316,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
     if (!_canManageTeams(state) || state.isSaving) {
+      return;
+    }
+    if (!_isPitLeadManager) {
+      context.go(AdminRoutes.studentTeamsBulkImport);
       return;
     }
     _openBulkImport();
@@ -822,10 +829,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       child: InkWell(
         onTap: state.isSaving || teamId == null
             ? null
-            : () => setState(() {
-                _openTeamId = teamId;
-                _openTeamCanManage = team['is_editable'] == true;
-              }),
+            : () => _openTeamDetailRoute(teamId),
         borderRadius: BorderRadius.circular(6),
         child: const Padding(
           padding: EdgeInsets.all(4),
@@ -1030,6 +1034,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     await saveTeamBulkImportDraft(draft);
     if (mounted) {
       setState(() => _savedDraft = draft);
+      _bulkImportPersistedSnapshot = _bulkImportSnapshot();
     }
   }
 
@@ -1040,7 +1045,58 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     });
   }
 
-  Future<void> _discardBulkDraft() async {
+  String _bulkImportSnapshot() {
+    return jsonEncode({
+      'rows': _parsedBulkRows,
+      'filter': _selectedBulkAdviserFilter,
+    });
+  }
+
+  void _captureBulkImportBaseline({bool persisted = false}) {
+    final snap = _bulkImportSnapshot();
+    _bulkImportSessionBaseline ??= snap;
+    if (persisted) {
+      _bulkImportPersistedSnapshot = snap;
+    }
+  }
+
+  bool get _isBulkImportDirty {
+    if (!_isBulkImportVisible || _parsedBulkRows.isEmpty) return false;
+    if (_draftSaveTimer?.isActive ?? false) return true;
+    final current = _bulkImportSnapshot();
+    final baseline = _bulkImportPersistedSnapshot ?? _bulkImportSessionBaseline;
+    return baseline != null && current != baseline;
+  }
+
+  Future<void> _requestCloseBulkImport() async {
+    if (_isBulkImportDirty) {
+      final leave = await showConfirmDialog(
+        context,
+        title: context.l10n.leaveBulkImportTitle,
+        message: context.l10n.leaveBulkImportMessage,
+        confirmLabel: context.l10n.saveAndLeave,
+        cancelLabel: context.l10n.stay,
+      );
+      if (!leave || !mounted) return;
+      _draftSaveTimer?.cancel();
+      await _persistBulkDraft();
+      _bulkImportPersistedSnapshot = _bulkImportSnapshot();
+    } else {
+      _scheduleDraftSave();
+    }
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go(
+      _isPitLeadManager
+          ? FacultyRoutes.studentTeams
+          : AdminRoutes.studentTeams,
+    );
+  }
+
+  Future<void> _discardBulkDraftConfirmed() async {
     await clearTeamBulkImportDraft();
     if (!mounted) {
       return;
@@ -1053,7 +1109,20 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     });
   }
 
+  Future<void> _discardBulkDraft() async {
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Discard draft?',
+      message: 'Your saved bulk import draft will be permanently deleted.',
+      confirmLabel: 'Discard',
+    );
+    if (!confirmed || !mounted) return;
+    await _discardBulkDraftConfirmed();
+  }
+
   void _openBulkImport({bool resumeDraft = false}) {
+    _bulkImportSessionBaseline = null;
+    _bulkImportPersistedSnapshot = null;
     if (resumeDraft && _savedDraft != null) {
       setState(() {
         _showBulkImport = true;
@@ -1067,11 +1136,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         isCapstoneAdmin: _isCapstoneAdmin,
       );
       });
+      _captureBulkImportBaseline(persisted: true);
       _refreshBulkPreview();
       return;
     }
 
     setState(() => _showBulkImport = true);
+    _captureBulkImportBaseline();
   }
 
   void _closeBulkImport({bool clearDraft = false}) {
@@ -1147,7 +1218,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _bulkImportPage(StudentTeamsState state) {
-    return SingleChildScrollView(
+    return PopScope(
+      canPop: !_isBulkImportDirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _requestCloseBulkImport();
+      },
+      child: SingleChildScrollView(
       padding: DefensysUi.contentPadding,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1160,7 +1237,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             actions: _secondaryButton(
               icon: Icons.arrow_back_rounded,
               label: 'Back to Teams',
-              onTap: state.isSaving ? null : () => _closeBulkImport(),
+              onTap: state.isSaving ? null : () => _requestCloseBulkImport(),
             ),
           ),
           if (state.error != null) ...[
@@ -1176,6 +1253,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           const SizedBox(height: 20),
           _teamUploadCsvCard(state),
         ],
+      ),
       ),
     );
   }
@@ -1459,7 +1537,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     _secondaryButton(
                       icon: Icons.close_rounded,
                       label: 'Cancel',
-                      onTap: state.isSaving ? null : () => _closeBulkImport(),
+                      onTap: state.isSaving ? null : () => _requestCloseBulkImport(),
                     ),
                   ],
                 ),
@@ -1880,7 +1958,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
 
     if (remaining.isEmpty) {
-      await _discardBulkDraft();
+      await _discardBulkDraftConfirmed();
       if (!mounted) return;
       setState(() {
         _showBulkImport = false;

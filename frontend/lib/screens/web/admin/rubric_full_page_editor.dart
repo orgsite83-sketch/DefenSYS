@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/unsaved_changes.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 const _kDefaultScales = [
@@ -80,6 +81,35 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late int? _defenseStageId;
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
+  bool _isDirty = false;
+
+  void _markDirty() {
+    if (widget.readOnly || _isDirty) return;
+    setState(() => _isDirty = true);
+  }
+
+  void _attachCriteriaListeners() {
+    for (final draft in _criteria) {
+      draft.name.removeListener(_markDirty);
+      draft.description.removeListener(_markDirty);
+      draft.maxScore.removeListener(_markDirty);
+      draft.weight.removeListener(_markDirty);
+      draft.displayOrder.removeListener(_markDirty);
+      draft.name.addListener(_markDirty);
+      draft.description.addListener(_markDirty);
+      draft.maxScore.addListener(_markDirty);
+      draft.weight.addListener(_markDirty);
+      draft.displayOrder.addListener(_markDirty);
+    }
+  }
+
+  Future<void> _handleBack() async {
+    await guardUnsavedExit(
+      context,
+      isDirty: _isDirty,
+      onExit: widget.onBack,
+    );
+  }
 
   bool get _editing => widget.rubric != null;
 
@@ -125,6 +155,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         }
       }
     });
+    _markDirty();
   }
 
   List<DropdownMenuItem<String>> _scopeDropdownItems(
@@ -178,6 +209,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     if (_scope == 'pit' && _evaluationType == 'adviser') {
       _evaluationType = 'panel';
     }
+    _name.addListener(_markDirty);
+    _attachCriteriaListeners();
   }
 
   @override
@@ -586,7 +619,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       ),
     ];
 
-    return ColoredBox(
+    return PopScope(
+      canPop: widget.readOnly || !_isDirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop || widget.readOnly) return;
+        await _handleBack();
+      },
+      child: ColoredBox(
       color: const Color(0xFFF3F4F6),
       child: SingleChildScrollView(
         padding: DefensysUi.contentPadding,
@@ -606,7 +645,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       ? 'Update rubric details, criteria, and evaluation settings.'
                       : _createSubtitle()),
               actions: OutlinedButton.icon(
-                onPressed: saving ? null : widget.onBack,
+                onPressed: saving ? null : _handleBack,
                 icon: Icon(
                   Icons.arrow_back_rounded,
                   size: 16,
@@ -746,7 +785,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                   ),
                                 ],
                                 onChanged: canEdit
-                                    ? (v) => setState(() => _semesterId = v)
+                                    ? (v) {
+                                        setState(() => _semesterId = v);
+                                        _markDirty();
+                                      }
                                     : null,
                               ),
                             ),
@@ -763,10 +805,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                 decoration: _outlineInputDec(),
                                 items: evalItems,
                                 onChanged: canEdit
-                                    ? (v) => setState(
+                                    ? (v) {
+                                        setState(
                                           () => _evaluationType =
                                               v ?? _evaluationType,
-                                        )
+                                        );
+                                        _markDirty();
+                                      }
                                     : null,
                               ),
                             ),
@@ -812,7 +857,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               ),
                             ],
                             onChanged: canEdit
-                                ? (v) => setState(() => _defenseStageId = v)
+                                ? (v) {
+                                    setState(() => _defenseStageId = v);
+                                    _markDirty();
+                                  }
                                 : null,
                           ),
                         ),
@@ -855,8 +903,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                     d.dispose();
                                     _criteria.removeAt(i);
                                   });
+                                  _attachCriteriaListeners();
+                                  _markDirty();
                                 },
-                          onChanged: () => setState(() {}),
+                          onChanged: () {
+                            setState(() {});
+                            _markDirty();
+                          },
                         );
                       }),
                       if (canEdit) ...[
@@ -870,6 +923,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                   RubricCriterionDraft(scales: _scales),
                                 );
                               });
+                              _attachCriteriaListeners();
+                              _markDirty();
                             },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: DefensysUi.primaryMaroon,
@@ -997,6 +1052,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
               ],
             ),
           ),
+      ),
     );
   }
 }

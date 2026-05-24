@@ -5,6 +5,8 @@ from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
 from student_teams.models import StudentTeam, TeamMembership
+from decimal import Decimal
+
 from grading.grades.models import TeamGrade
 
 from .models import DefenseSchedule, PitEventGradingConfig, SchedulePanelist
@@ -187,6 +189,102 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.data['stats']['upcoming_defenses'], 1)
         self.assertEqual(response.data['migration']['phase'], 15)
 
+    def test_two_panelists_panel_score_is_mean_of_percentages(self):
+        """
+        panel_score = mean(panelist_i percentage).
+        Panelist A: 8/10 = 80%, Panelist B: 6/10 = 60% -> 70.00.
+        Re-submit from A: 9/10 = 90% -> mean(90%, 60%) = 75.00.
+        """
+        self.client.post(
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.schedule_payload(),
+                'slots': [{'team_id': self.team.id}],
+            },
+            format='json',
+        )
+        schedule = DefenseSchedule.objects.get()
+        submit_url = '/api/defense/schedules/submit-grades/'
+        payload_base = {
+            'team_id': self.team.id,
+            'schedule_id': schedule.id,
+            'criteria_scores': [
+                {'name': 'Technical Feasibility', 'score': 8, 'max_score': 10},
+            ],
+        }
+
+        self.client.force_authenticate(user=self.panelist)
+        response_a = self.client.post(submit_url, payload_base, format='json')
+        self.assertEqual(response_a.status_code, 201)
+
+        self.client.force_authenticate(user=self.second_panelist)
+        response_b = self.client.post(
+            submit_url,
+            {
+                **payload_base,
+                'criteria_scores': [
+                    {'name': 'Technical Feasibility', 'score': 6, 'max_score': 10},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response_b.status_code, 201)
+
+        grade = TeamGrade.objects.get(team=self.team, schedule=schedule)
+        self.assertEqual(grade.panel_score, Decimal('70.00'))
+
+        self.client.force_authenticate(user=self.panelist)
+        response_a2 = self.client.post(
+            submit_url,
+            {
+                **payload_base,
+                'criteria_scores': [
+                    {'name': 'Technical Feasibility', 'score': 9, 'max_score': 10},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response_a2.status_code, 201)
+        grade.refresh_from_db()
+        self.assertEqual(grade.panel_score, Decimal('75.00'))
+
+    def test_panelist_results_lists_submitted_teams(self):
+        self.client.post(
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.schedule_payload(),
+                'slots': [{'team_id': self.team.id}],
+            },
+            format='json',
+        )
+        schedule = DefenseSchedule.objects.get()
+        self.client.force_authenticate(user=self.panelist)
+        submit = self.client.post(
+            '/api/defense/schedules/submit-grades/',
+            {
+                'team_id': self.team.id,
+                'schedule_id': schedule.id,
+                'criteria_scores': [
+                    {'name': 'Technical Feasibility', 'score': 8, 'max_score': 10},
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(submit.status_code, 201)
+
+        response = self.client.get('/api/defense/schedules/panelist-results/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['results']), 1)
+        result = response.data['results'][0]
+        self.assertEqual(result['teamName'], self.team.name)
+        self.assertEqual(result['percentage'], 80.0)
+        self.assertEqual(len(result['criteria']), 1)
+
+    def test_panelist_results_forbidden_for_student(self):
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get('/api/defense/schedules/panelist-results/')
+        self.assertEqual(response.status_code, 403)
+
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):
@@ -316,10 +414,8 @@ class PitEventGradingConfigTests(APITestCase):
             format='json',
         )
 
-        response = self.client.get(
-            '/api/defense/schedules/panelist-assignments/',
-            {'panelist_id': self.panelist.id},
-        )
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.get('/api/defense/schedules/panelist-assignments/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['schedules_count'], 1)
@@ -330,3 +426,55 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(team['grade_weights']['peer'], 25)
         self.assertNotIn('adviser', team['grade_weights'])
         self.assertEqual(team['panel_rubric']['id'], self.panel_rubric.id)
+
+    def test_panelist_assignments_requires_authentication(self):
+        self.client.force_authenticate(user=None)
+        response = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(response.status_code, 401)
+
+    def test_panelist_assignments_forbidden_for_student(self):
+        self.client.force_authenticate(user=self.student)
+        response = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_panelist_cannot_view_other_panelist_assignments(self):
+        other_panelist = User.objects.create_user(
+            username='panel-other',
+            password='pass12345',
+            role='faculty',
+            is_panelist=True,
+        )
+        self.client.post(
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.pit_payload(),
+                'slots': [{'team_id': self.team.id}],
+            },
+            format='json',
+        )
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.get(
+            '/api/defense/schedules/panelist-assignments/',
+            {'panelist_id': other_panelist.id},
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_panelist_cannot_submit_grades_for_unassigned_team(self):
+        other_team = StudentTeam.objects.create(
+            name='Other Team',
+            project_title='Other',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=self.student,
+        )
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.post(
+            '/api/defense/schedules/submit-grades/',
+            {
+                'team_id': other_team.id,
+                'criteria_scores': [{'name': 'Test', 'score': 8, 'max_score': 10}],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)

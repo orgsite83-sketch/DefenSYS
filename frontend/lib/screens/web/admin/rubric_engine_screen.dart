@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
@@ -81,6 +83,13 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     String? initialScope,
     bool readOnly = false,
   }) {
+    if (GoRouterState.of(context).uri.path == AdminRoutes.rubrics) {
+      final id = rubric != null ? _asInt(rubric['id']) : null;
+      context.push(
+        id != null ? AdminRoutes.rubricEdit(id) : AdminRoutes.rubricCreate,
+      );
+      return;
+    }
     setState(() {
       _rubricEditorOpen = true;
       _rubricEditorReadOnly = readOnly;
@@ -117,7 +126,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       }
     });
 
-    if (_rubricEditorOpen) {
+    final onAdminList =
+        GoRouterState.of(context).uri.path == AdminRoutes.rubrics;
+
+    if (!onAdminList && _rubricEditorOpen) {
       final target = _rubricEditorTarget;
       final rubricId = target != null ? _asInt(target['id']) : null;
       return RubricFullPageEditor(

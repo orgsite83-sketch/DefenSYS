@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import 'api_http.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final teamDetailProvider =
     NotifierProvider.family<TeamDetailNotifier, TeamDetailState, int>(
@@ -95,10 +96,8 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
 
     try {
-      final headers = await _headers();
-      final teamResponse = await apiHttpClient.get(
+      final teamResponse = await _client.get(
         Uri.parse('${ApiConfig.teamsUrl}/$_teamId/'),
-        headers: headers,
       );
 
       if (teamResponse.statusCode != 200) {
@@ -126,12 +125,12 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
 
       List<Map<String, dynamic>> adviserHistory = const [];
       if (isCapstone) {
-        adviserHistory = await _fetchAdviserHistory(headers);
+        adviserHistory = await _fetchAdviserHistory();
       }
 
-      final documents = await _fetchDocuments(headers);
-      final weeklyReports = await _fetchWeeklyReports(headers);
-      final deliverableData = await _fetchDeliverableTeam(headers);
+      final documents = await _fetchDocuments();
+      final weeklyReports = await _fetchWeeklyReports();
+      final deliverableData = await _fetchDeliverableTeam();
 
       state = state.copyWith(
         isLoading: false,
@@ -157,9 +156,9 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
 
     try {
-      final response = await apiHttpClient.patch(
+      final response = await _client.patch(
         Uri.parse('${ApiConfig.teamsUrl}/$_teamId/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -169,7 +168,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         final level = team['level']?.toString() ?? '';
         var adviserHistory = state.adviserHistory;
         if (level.toUpperCase().contains('CAPSTONE')) {
-          adviserHistory = await _fetchAdviserHistory(await _headers());
+          adviserHistory = await _fetchAdviserHistory();
         }
         state = state.copyWith(
           isSaving: false,
@@ -196,20 +195,17 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
 
   Future<void> refreshDocuments() async {
     try {
-      final documents = await _fetchDocuments(await _headers());
+      final documents = await _fetchDocuments();
       state = state.copyWith(documents: documents);
     } catch (_) {
       // Keep existing list on failure.
     }
   }
 
-  Future<List<Map<String, dynamic>>> _fetchAdviserHistory(
-    Map<String, String> headers,
-  ) async {
+  Future<List<Map<String, dynamic>>> _fetchAdviserHistory() async {
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse('${ApiConfig.teamsUrl}/$_teamId/adviser-history/'),
-        headers: headers,
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -221,13 +217,10 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<List<Map<String, dynamic>>> _fetchDocuments(
-    Map<String, String> headers,
-  ) async {
+  Future<List<Map<String, dynamic>>> _fetchDocuments() async {
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse('${ApiConfig.teamDocumentsUrl}/?team_id=$_teamId'),
-        headers: headers,
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -239,13 +232,10 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<List<Map<String, dynamic>>> _fetchWeeklyReports(
-    Map<String, String> headers,
-  ) async {
+  Future<List<Map<String, dynamic>>> _fetchWeeklyReports() async {
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse('${ApiConfig.weeklyProgressUrl}/?team_id=$_teamId'),
-        headers: headers,
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -257,13 +247,10 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(
-    Map<String, String> headers,
-  ) async {
+  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam() async {
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse(ApiConfig.capstoneDeliverablesUrl),
-        headers: headers,
       );
       if (response.statusCode != 200) {
         return (null, <String>[]);
@@ -285,17 +272,8 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {
     if (value is! List) {

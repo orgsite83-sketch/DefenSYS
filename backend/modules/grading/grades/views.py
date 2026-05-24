@@ -7,6 +7,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academic_period_management.serializers import SemesterSerializer
+from defense.stages.models import DefenseStage
+from defense.stages.serializers import DefenseStageSerializer
 from user_management.permissions import IsSystemAdmin
 from .models import TeamGrade
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
@@ -141,6 +143,15 @@ def grade_center_payload(request, queryset=None, sync_info=None):
         'group_settings': build_group_settings_map(current, semester),
         **options_payload(base),
     }
+    if CanManageGradeCenter().has_permission(request, None):
+        active_stages = list(
+            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
+        )
+        payload['capstone_stages'] = DefenseStageSerializer(
+            active_stages,
+            many=True,
+            context={'ordered_stages': active_stages},
+        ).data
     if sync_info is not None:
         payload['sync'] = sync_info
     return payload

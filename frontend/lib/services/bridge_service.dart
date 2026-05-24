@@ -1,21 +1,32 @@
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 /// Thin client for mobile-only flows that are not covered by Riverpod providers.
 class BridgeService {
-  static Future<Map<String, String>?> _authHeaders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) {
-      return null;
+  /// Exchanges a guest code for a short-lived access JWT and user payload.
+  static Future<Map<String, dynamic>?> exchangeGuestCode(String code) async {
+    try {
+      final response = await http
+          .post(
+            Uri.parse('${ApiConfig.baseUrl}/users/guest-codes/exchange/'),
+            headers: {'Content-Type': 'application/json'},
+            body: json.encode({'code': code.trim().toUpperCase()}),
+          )
+          .timeout(const Duration(seconds: 8));
+
+      if (response.statusCode == 200) {
+        return json.decode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      if (kDebugMode) {
+        debugPrint('[Bridge] Could not exchange guest code. $e');
+      }
     }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
+    return null;
   }
 
   /// Validates a guest panelist code (e.g. "DEF-A8X2K3") against the Django API.
@@ -29,13 +40,16 @@ class BridgeService {
         return json.decode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      debugPrint('[Bridge] Could not validate guest code. $e');
+      if (kDebugMode) {
+        debugPrint('[Bridge] Could not validate guest code. $e');
+      }
     }
     return null;
   }
 
   /// Submits a locked peer evaluation for one teammate.
   static Future<bool> submitPeerGrade({
+    required AuthenticatedHttpClient httpClient,
     required String teamId,
     required String evaluatorId,
     required String evaluateeName,
@@ -43,33 +57,32 @@ class BridgeService {
     required double total,
     required double max,
   }) async {
-    final headers = await _authHeaders();
-    if (headers == null) {
-      debugPrint('[Bridge] No JWT token for peer evaluation submit.');
-      return false;
-    }
-
     try {
-      final response = await http
-          .post(
-            Uri.parse('${ApiConfig.gradeCenterUrl}/peer-evaluations/'),
-            headers: headers,
-            body: json.encode({
-              'teamId': int.tryParse(teamId) ?? teamId,
-              'evaluateeName': evaluateeName,
-              'breakdown': breakdown,
-              'total': total,
-              'max': max,
-            }),
-          )
-          .timeout(const Duration(seconds: 12));
+      final response = await httpClient.post(
+        Uri.parse('${ApiConfig.gradeCenterUrl}/peer-evaluations/'),
+        body: json.encode({
+          'teamId': int.tryParse(teamId) ?? teamId,
+          'evaluateeName': evaluateeName,
+          'breakdown': breakdown,
+          'total': total,
+          'max': max,
+        }),
+      );
 
       if (response.statusCode == 200) {
         return true;
       }
-      debugPrint('[Bridge] Peer evaluation failed: ${response.statusCode} ${response.body}');
+      if (kDebugMode) {
+        debugPrint(
+          '[Bridge] Peer evaluation failed: ${response.statusCode} ${response.body}',
+        );
+      }
+    } on SessionExpiredException {
+      rethrow;
     } catch (e) {
-      debugPrint('[Bridge] Could not submit peer grade. $e');
+      if (kDebugMode) {
+        debugPrint('[Bridge] Could not submit peer grade. $e');
+      }
     }
     return false;
   }

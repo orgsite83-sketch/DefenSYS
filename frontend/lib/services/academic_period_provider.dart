@@ -1,9 +1,12 @@
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'grade_center_provider.dart';
+import 'student_teams_provider.dart';
 
 final academicPeriodProvider =
     NotifierProvider<AcademicPeriodNotifier, AcademicPeriodState>(
@@ -72,9 +75,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -111,9 +114,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
         body: jsonEncode({'school_year': trimmed}),
       );
 
@@ -141,9 +144,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/$schoolYearId/semesters/'),
-        headers: await _headers(),
+        
         body: jsonEncode({'label': label}),
       );
 
@@ -171,9 +174,9 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/semesters/$semesterId/'),
-        headers: await _headers(),
+        
         body: jsonEncode({'is_active': isActive}),
       );
 
@@ -183,6 +186,53 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
               ? 'Active semester updated.'
               : 'Semester deactivated.',
         );
+        await _refreshDependentProviders();
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateSemesterEvaluationSettings(
+    int semesterId, {
+    bool? peerEvaluationEnabled,
+    bool? adviserGradingEnabled,
+  }) async {
+    if (peerEvaluationEnabled == null && adviserGradingEnabled == null) {
+      return false;
+    }
+
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final body = <String, dynamic>{};
+      if (peerEvaluationEnabled != null) {
+        body['capstone_peer_evaluation_enabled'] = peerEvaluationEnabled;
+      }
+      if (adviserGradingEnabled != null) {
+        body['capstone_adviser_grading_enabled'] = adviserGradingEnabled;
+      }
+
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/semesters/$semesterId/'),
+        body: jsonEncode(body),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchPeriods(successMessage: 'Evaluation settings updated.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -201,19 +251,27 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     state = state.copyWith(selectedSchoolYearId: id, clearMessage: true);
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-
-    if (token == null) {
-      throw Exception('No authentication token found.');
+  Future<void> _refreshDependentProviders() async {
+    try {
+      await ref.read(studentTeamsProvider.notifier).fetchTeams();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('studentTeams refresh after period save failed: $e\n$st');
+        return true;
+      }());
     }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
+    try {
+      await ref.read(gradeCenterProvider.notifier).fetchGrades();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('gradeCenter refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
   }
+
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     final schoolYears = _readMapList(payload['school_years']);

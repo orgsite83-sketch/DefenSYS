@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final repositoryAuditProvider =
     NotifierProvider<RepositoryAuditNotifier, RepositoryAuditState>(
@@ -199,7 +200,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     );
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         _uri(
           '',
           search: nextSearch,
@@ -214,7 +215,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
           submissionKind: nextSubmissionKind,
           viewMode: nextViewMode,
         ),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -274,8 +275,6 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
         'POST',
         Uri.parse('$baseUrl/upload-pit/'),
       );
-      final headers = await _authHeaders();
-      request.headers.addAll(headers);
       if ((yearLevel ?? '').isNotEmpty) {
         request.fields['year_level'] = yearLevel!;
       }
@@ -283,7 +282,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
         request.fields['academic_year'] = academicYear!;
       }
       request.files.addAll(multipartFiles);
-      final streamed = await request.send();
+      final streamed = await _client.sendAuthenticated(request);
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 200) {
         return _applyUploadPayload(
@@ -318,9 +317,9 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/upload-pit/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -363,7 +362,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       clearMessage: true,
     );
     try {
-      final response = await http.get(
+      final response = await _client.get(
         _uri(
           'export',
           search: state.search,
@@ -378,7 +377,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
           submissionKind: state.submissionKind,
           viewMode: state.viewMode,
         ),
-        headers: await _headers(),
+        
       );
       if (response.statusCode == 200) {
         state = state.copyWith(
@@ -411,9 +410,9 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/$action/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -479,7 +478,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     };
     final uri = Uri.parse('${baseUrl}/trail/').replace(queryParameters: query);
     try {
-      final response = await http.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         return _readMapList(payload['audit_trail']);
@@ -490,24 +489,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     return const [];
   }
 
-  Future<Map<String, String>> _headers() async {
-    final auth = await _authHeaders();
-    return {
-      'Content-Type': 'application/json',
-      ...auth,
-    };
-  }
-
-  Future<Map<String, String>> _authHeaders() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-    return {
-      'Authorization': 'Bearer $token',
-    };
-  }
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -601,13 +583,11 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
         'POST',
         Uri.parse('$baseUrl/upload-capstone/'),
       );
-      final headers = await _authHeaders();
-      request.headers.addAll(headers);
       if ((academicYear ?? '').isNotEmpty) {
         request.fields['academic_year'] = academicYear!;
       }
       request.files.addAll(multipartFiles);
-      final streamed = await request.send();
+      final streamed = await _client.sendAuthenticated(request);
       final response = await http.Response.fromStream(streamed);
       if (response.statusCode == 200) {
         return _applyUploadPayload(

@@ -57,4 +57,44 @@ void main() {
       CapstoneStageWorkflowStatus.inProgress,
     );
   });
+
+  test('capstoneStagesTableBodyHeight is positive and capped', () {
+    expect(capstoneStagesTableBodyHeight(1), greaterThan(0));
+    expect(capstoneStagesTableBodyHeight(4), lessThanOrEqualTo(520));
+    expect(capstoneStagesTableBodyHeight(20), 520);
+  });
+
+  test('buildCapstoneStageRows appends unscheduled row when needed', () {
+    const state = GradeCenterState(
+      grades: [
+        {
+          'id': 1,
+          'scope': 'capstone',
+          'stage_label': 'Unscheduled',
+          'team_name': 'Team B',
+        },
+        {
+          'id': 2,
+          'scope': 'capstone',
+          'stage_label': '',
+          'team_name': 'Team C',
+        },
+      ],
+    );
+
+    final rows = buildCapstoneStageRows(
+      state: state,
+      defenseStages: [
+        {
+          'label': 'Concept Proposal',
+          'display_order': 1,
+          'is_active': true,
+        },
+      ],
+    );
+
+    expect(rows.length, 2);
+    expect(rows.last.label, kUnscheduledStageLabel);
+    expect(rows.last.teamCount, 2);
+  });
 }

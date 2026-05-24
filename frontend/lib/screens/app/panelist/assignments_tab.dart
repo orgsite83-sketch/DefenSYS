@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'panelist_models.dart';
 
-const _primaryColor = Color(0xFF7F1D1D);
+import '../../../theme/defensys_tokens.dart';
+import 'panelist_models.dart';
 
 class AssignmentsTab extends StatelessWidget {
   final List<TeamData> teams;
@@ -15,6 +15,37 @@ class AssignmentsTab extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (teams.isEmpty) {
+      return ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _sectionHeader('My Panel Assignments'),
+          const SizedBox(height: 48),
+          Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.assignment_outlined,
+                    size: 48, color: Colors.grey.shade300),
+                const SizedBox(height: 12),
+                const Text(
+                  'No panel assignments yet.',
+                  style: TextStyle(color: Colors.grey, fontSize: 15),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  "You'll see teams here once you're assigned to a defense panel.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                ),
+              ],
+            ),
+          ),
+        ],
+      );
+    }
+
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -33,7 +64,7 @@ class AssignmentsTab extends StatelessWidget {
       elevation: 3,
       child: ExpansionTile(
         leading: CircleAvatar(
-          backgroundColor: _primaryColor,
+          backgroundColor: DefensysTokens.maroon,
           child: Text(t.name.split(' ').last[0],
               style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
         ),
@@ -55,10 +86,10 @@ class AssignmentsTab extends StatelessWidget {
                         style: const TextStyle(fontSize: 13)),
                     const SizedBox(width: 12),
                     Icon(t.isCapstone ? Icons.school : Icons.book,
-                        size: 14, color: _primaryColor),
+                        size: 14, color: DefensysTokens.maroon),
                     const SizedBox(width: 4),
                     Text(t.isCapstone ? 'Capstone' : 'PIT',
-                        style: const TextStyle(fontSize: 12, color: _primaryColor)),
+                        style: const TextStyle(fontSize: 12, color: DefensysTokens.maroon)),
                   ],
                 ),
                 const SizedBox(height: 8),
@@ -80,7 +111,7 @@ class AssignmentsTab extends StatelessWidget {
                     icon: Icon(isPosted ? Icons.visibility : Icons.edit, size: 16),
                     label: Text(isPosted ? 'View Grades' : 'Open Grade Sheet'),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: _primaryColor,
+                      backgroundColor: DefensysTokens.maroon,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8)),
@@ -128,11 +159,11 @@ class AssignmentsTab extends StatelessWidget {
             width: 4,
             height: 20,
             decoration: BoxDecoration(
-                color: _primaryColor, borderRadius: BorderRadius.circular(2))),
+                color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
         Text(title,
             style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: _primaryColor)),
+                fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
       ],
     );
   }

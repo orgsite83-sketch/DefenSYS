@@ -1,10 +1,11 @@
 import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import 'api_http.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final pitLeadCohortProvider =
     NotifierProvider<PitLeadCohortNotifier, PitLeadCohortState>(
@@ -73,6 +74,8 @@ class PitLeadCohortState {
 }
 
 class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
   @override
   PitLeadCohortState build() => PitLeadCohortState();
 
@@ -92,16 +95,6 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
     );
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
-      if (token == null) {
-        state = state.copyWith(
-          isLoading: false,
-          error: 'No authentication token found.',
-        );
-        return;
-      }
-
       final query = <String, String>{};
       if (nextSearch.trim().isNotEmpty) {
         query['search'] = nextSearch.trim();
@@ -116,13 +109,7 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
       final uri = Uri.parse('${ApiConfig.dashboardsUrl}/pit-lead/cohort/')
           .replace(queryParameters: query.isEmpty ? null : query);
 
-      final response = await apiHttpClient.get(
-        uri,
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
-      );
+      final response = await _client.get(uri);
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));

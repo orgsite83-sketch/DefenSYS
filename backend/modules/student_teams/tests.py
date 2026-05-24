@@ -954,3 +954,31 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['count'], 1)
         self.assertEqual(response.data['reports'][0]['team'], team_a.id)
+
+    def test_pit_team_leader_cannot_submit_weekly_progress(self):
+        pit_team = StudentTeam.objects.create(
+            name='PIT Team',
+            project_title='PIT Project',
+            level=StudentTeam.LEVEL_2_PIT,
+            year_level='2nd Year',
+            semester=self.first_semester,
+            leader=self.student_1,
+        )
+        TeamMembership.objects.create(
+            team=pit_team, student=self.student_1, is_leader=True, order=0,
+        )
+        self.client.force_authenticate(user=self.student_1)
+        response = self.client.post(
+            '/api/teams/weekly-progress/',
+            {
+                'week_number': 1,
+                'report_date': '2026-05-10',
+                'accomplishments': '[]',
+                'contributions': '[]',
+                'issues': '[]',
+                'plans': '[]',
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('capstone', response.data['detail'].lower())

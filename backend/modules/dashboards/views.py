@@ -5,6 +5,14 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from user_management.permissions import (
+    IsAdminRole,
+    IsFacultyRole,
+    IsPanelist,
+    IsPitLead,
+    IsStudentRole,
+)
+
 from academic_period_management.models import Semester
 from repository.deliverables.models import DeliverableSubmission
 from curriculum_analytics.services import (
@@ -401,7 +409,7 @@ def _schedule_payload(schedule):
 
 
 class AdminDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsAdminRole]
 
     def get(self, request):
         student_count = User.objects.filter(role='student').count()
@@ -477,16 +485,11 @@ class AdminDashboardView(APIView):
 
 
 class PitLeadCohortView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPitLead]
 
     def get(self, request):
         user = request.user
         pit_year, _active = _pit_lead_scope(user)
-        if not pit_year:
-            return Response(
-                {'detail': 'Only PIT Leads with an assigned year level can view the cohort roster.'},
-                status=status.HTTP_403_FORBIDDEN,
-            )
 
         search = request.query_params.get('search', '').strip()
         team_status = request.query_params.get('team_status', 'all').strip() or 'all'
@@ -505,7 +508,8 @@ class PitLeadCohortView(APIView):
 
 
 class FacultyDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    """Faculty dashboard: scoped to request.user (advised teams, PIT scope). No cross-adviser PII."""
+    permission_classes = [IsAuthenticated, IsFacultyRole]
 
     def get(self, request):
         user = request.user
@@ -548,7 +552,7 @@ class FacultyDashboardView(APIView):
 
 
 class PitLeadRepositoryAssistantView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPitLead]
 
     def get(self, request):
         from .pit_repository_assistant import repository_assistant_assignment_payload
@@ -564,7 +568,7 @@ class PitLeadRepositoryAssistantView(APIView):
 
 
 class StudentDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsStudentRole]
 
     def get(self, request):
         user = request.user
@@ -684,7 +688,7 @@ class StudentDashboardView(APIView):
 
 
 class PanelistDashboardView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPanelist]
 
     def get(self, request):
         return Response({

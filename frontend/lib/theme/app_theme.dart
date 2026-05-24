@@ -1,126 +1,129 @@
 import 'package:flutter/material.dart';
 
+import 'defensys_tokens.dart';
+
+/// Backward-compatible color aliases — prefer [DefensysTokens] in new code.
 class AppColors {
-  static const maroon = Color(0xFF7F1D1D);
-  static const maroonDark = Color(0xFF5C1414);
-  static const maroonLight = Color(0xFFB91C1C);
-  static const gold = Color(0xFFD97706);
-  static const goldLight = Color(0xFFF59E0B);
-  static const background = Color(0xFFF3F4F6);
-  static const surface = Colors.white;
-  static const textPrimary = Color(0xFF111827);
-  static const textSecondary = Color(0xFF6B7280);
-  static const success = Color(0xFF10B981);
-  static const warning = Color(0xFFF59E0B);
-  static const danger = Color(0xFFDC2626);
+  static const maroon = DefensysTokens.maroon;
+  static const maroonDark = DefensysTokens.maroonDark;
+  static const maroonLight = DefensysTokens.maroonLight;
+  static const gold = DefensysTokens.gold;
+  static const goldLight = DefensysTokens.goldLight;
+  static const background = DefensysTokens.background;
+  static const surface = DefensysTokens.surface;
+  static const textPrimary = DefensysTokens.textPrimary;
+  static const textSecondary = DefensysTokens.textSecondary;
+  static const success = DefensysTokens.success;
+  static const warning = DefensysTokens.warning;
+  static const danger = DefensysTokens.danger;
 }
 
 class AppTheme {
   static ThemeData get theme => ThemeData(
         useMaterial3: true,
-        fontFamily: 'Inter',
-        scaffoldBackgroundColor: AppColors.background,
+        fontFamily: DefensysTokens.fontFamily,
+        scaffoldBackgroundColor: DefensysTokens.background,
         colorScheme: ColorScheme.fromSeed(
-          seedColor: AppColors.maroon,
-          primary: AppColors.maroon,
-          secondary: AppColors.gold,
-          surface: AppColors.surface,
+          seedColor: DefensysTokens.maroon,
+          primary: DefensysTokens.maroon,
+          secondary: DefensysTokens.gold,
+          surface: DefensysTokens.surface,
           brightness: Brightness.light,
         ),
-        appBarTheme: const AppBarTheme(
-          backgroundColor: AppColors.maroon,
+        appBarTheme: AppBarTheme(
+          backgroundColor: DefensysTokens.maroon,
           foregroundColor: Colors.white,
           elevation: 0,
           centerTitle: false,
-          titleTextStyle: TextStyle(
-            fontFamily: 'Inter',
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            color: Colors.white,
-            letterSpacing: -0.3,
-          ),
+          titleTextStyle: DefensysTokens.appBarTitle,
         ),
         navigationBarTheme: NavigationBarThemeData(
           backgroundColor: Colors.white,
-          indicatorColor: AppColors.maroon.withOpacity(0.12),
+          indicatorColor: DefensysTokens.maroon.withOpacity(0.12),
           labelTextStyle: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
               return const TextStyle(
-                  fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.maroon);
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: DefensysTokens.maroon);
             }
-            return const TextStyle(fontSize: 11, color: AppColors.textSecondary);
+            return const TextStyle(
+                fontSize: 12, color: DefensysTokens.textPrimary);
           }),
           iconTheme: WidgetStateProperty.resolveWith((states) {
             if (states.contains(WidgetState.selected)) {
-              return const IconThemeData(color: AppColors.maroon, size: 22);
+              return const IconThemeData(
+                  color: DefensysTokens.maroon, size: 22);
             }
-            return const IconThemeData(color: AppColors.textSecondary, size: 22);
+            return const IconThemeData(
+                color: DefensysTokens.textSecondary, size: 22);
           }),
           elevation: 8,
           shadowColor: Colors.black12,
         ),
         cardTheme: CardThemeData(
-          color: AppColors.surface,
+          color: DefensysTokens.surface,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusXl)),
           margin: EdgeInsets.zero,
         ),
         elevatedButtonTheme: ElevatedButtonThemeData(
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.maroon,
+            backgroundColor: DefensysTokens.maroon,
             foregroundColor: Colors.white,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+            shape: RoundedRectangleBorder(
+                borderRadius:
+                    BorderRadius.circular(DefensysTokens.radiusMd)),
             textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
           ),
         ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
-          fillColor: AppColors.background,
+          fillColor: DefensysTokens.background,
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius:
+                BorderRadius.circular(DefensysTokens.radiusMd),
             borderSide: BorderSide.none,
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+            borderRadius:
+                BorderRadius.circular(DefensysTokens.radiusMd),
+            borderSide: const BorderSide(color: DefensysTokens.border),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.maroon, width: 2),
+            borderRadius:
+                BorderRadius.circular(DefensysTokens.radiusMd),
+            borderSide:
+                const BorderSide(color: DefensysTokens.maroon, width: 2),
           ),
-          labelStyle: const TextStyle(color: AppColors.textSecondary, fontSize: 14),
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+          labelStyle: const TextStyle(
+              color: DefensysTokens.textSecondary, fontSize: 14),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         ),
-        dividerTheme: const DividerThemeData(color: Color(0xFFF3F4F6), thickness: 1),
+        dividerTheme: const DividerThemeData(
+            color: DefensysTokens.background, thickness: 1),
         chipTheme: ChipThemeData(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          shape: RoundedRectangleBorder(
+              borderRadius:
+                  BorderRadius.circular(DefensysTokens.radiusPill)),
           side: BorderSide.none,
         ),
         dialogTheme: DialogThemeData(
-          backgroundColor: AppColors.surface,
+          backgroundColor: DefensysTokens.surface,
           surfaceTintColor: Colors.transparent,
           elevation: 8,
           shadowColor: Colors.black26,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Color(0xFFE5E7EB)),
+            borderRadius:
+                BorderRadius.circular(DefensysTokens.radiusLg),
+            side: const BorderSide(color: DefensysTokens.border),
           ),
-          titleTextStyle: const TextStyle(
-            fontFamily: 'Poppins',
-            color: Color(0xFF1F2937),
-            fontSize: 18,
-            fontWeight: FontWeight.w700,
-            letterSpacing: -0.25,
-          ),
-          contentTextStyle: const TextStyle(
-            fontFamily: 'Poppins',
-            color: AppColors.textSecondary,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            height: 1.45,
-          ),
+          titleTextStyle: DefensysTokens.dialogTitle,
+          contentTextStyle: DefensysTokens.dialogContent,
         ),
       );
 }

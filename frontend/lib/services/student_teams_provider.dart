@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'api_http.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final studentTeamsProvider =
     NotifierProvider<StudentTeamsNotifier, StudentTeamsState>(
@@ -143,7 +144,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (scope != null && scope.isNotEmpty) 'scope': scope,
         },
       );
-      final response = await apiHttpClient.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -173,9 +174,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await apiHttpClient.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -203,9 +204,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await apiHttpClient.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/$teamId/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -233,9 +234,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await apiHttpClient.delete(
+      final response = await _client.delete(
         Uri.parse('$baseUrl/$teamId/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -266,9 +267,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     state = state.copyWith(clearError: true, clearMessage: true);
 
     try {
-      final response = await apiHttpClient.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/preview/'),
-        headers: await _headers(),
+        
         body: jsonEncode({
           'teams': rows,
           'adviser_filter': adviserFilter,
@@ -303,9 +304,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
-      final response = await apiHttpClient.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/'),
-        headers: await _headers(),
+        
         body: jsonEncode({
           'teams': rows,
           'adviser_filter': adviserFilter,
@@ -335,9 +336,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
 
   Future<List<Map<String, dynamic>>> fetchAdviserHistory(int teamId) async {
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/$teamId/adviser-history/'),
-        headers: await _headers(),
+        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -351,19 +352,8 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     return const [];
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

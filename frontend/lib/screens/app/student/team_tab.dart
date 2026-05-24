@@ -1,12 +1,18 @@
 import 'package:flutter/material.dart';
 
-const _primaryColor = Color(0xFF7F1D1D);
+import '../../../theme/defensys_tokens.dart';
 
 class TeamTab extends StatelessWidget {
   final Map<String, dynamic>? studentData; // from /api/student-data/<id>
   final Map<String, bool> peerPosted;
+  final Future<void> Function()? onRefresh;
 
-  const TeamTab({super.key, required this.studentData, required this.peerPosted});
+  const TeamTab({
+    super.key,
+    required this.studentData,
+    required this.peerPosted,
+    this.onRefresh,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +24,7 @@ class TeamTab extends StatelessWidget {
     final isCapstone = team?['isCapstone'] == true;
 
     if (team == null) {
-      return const Center(
+      final emptyContent = const Center(
         child: Padding(
           padding: EdgeInsets.all(32),
           child: Column(
@@ -34,6 +40,24 @@ class TeamTab extends StatelessWidget {
             ],
           ),
         ),
+      );
+
+      if (onRefresh == null) return emptyContent;
+
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return RefreshIndicator(
+            color: DefensysTokens.maroon,
+            onRefresh: onRefresh!,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: emptyContent,
+              ),
+            ),
+          );
+        },
       );
     }
 
@@ -68,91 +92,105 @@ class TeamTab extends StatelessWidget {
       myFinalGrade = double.parse(myFinalGrade.toStringAsFixed(1));
     }
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionHeader('My Team Profile'),
-          const SizedBox(height: 16),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            elevation: 3,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 28,
-                        backgroundColor: _primaryColor,
-                        child: Text(initials,
-                            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+    final scrollContent = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('My Team Profile'),
+        const SizedBox(height: 16),
+        Card(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 3,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    CircleAvatar(
+                      radius: 28,
+                      backgroundColor: DefensysTokens.maroon,
+                      child: Text(initials,
+                          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 18)),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(teamName,
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+                          Row(
+                            children: [
+                              Icon(isCapstone ? Icons.school : Icons.book, size: 13, color: DefensysTokens.maroon),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(level,
+                                    style: const TextStyle(color: Colors.grey, fontSize: 12),
+                                    overflow: TextOverflow.ellipsis),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(teamName,
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
-                            Row(
-                              children: [
-                                Icon(isCapstone ? Icons.school : Icons.book, size: 13, color: _primaryColor),
-                                const SizedBox(width: 4),
-                                Flexible(
-                                  child: Text(level,
-                                      style: const TextStyle(color: Colors.grey, fontSize: 12),
-                                      overflow: TextOverflow.ellipsis),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      _statusChip(status),
-                    ],
-                  ),
-                  const Divider(height: 24),
-                  _infoRow(Icons.book, 'Project Title', projectTitle),
-                  if (isCapstone) _infoRow(Icons.person_pin, 'Adviser', adviserName),
-                  _infoRow(Icons.calendar_today, 'Defense Schedule', scheduleStr),
-                  if (schedule != null) _infoRow(Icons.room, 'Room', roomStr),
-                  const Divider(height: 24),
-                  const Text('Team Members',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  const SizedBox(height: 8),
-                  ...members.map((m) => _memberTile(
-                    m['name'] ?? m['id'] ?? '—',
-                    m['isLeader'] == true ? 'Team Leader' : 'Member',
-                  )),
-                ],
-              ),
+                    ),
+                    _statusChip(status),
+                  ],
+                ),
+                const Divider(height: 24),
+                _infoRow(Icons.book, 'Project Title', projectTitle),
+                if (isCapstone) _infoRow(Icons.person_pin, 'Adviser', adviserName),
+                _infoRow(Icons.calendar_today, 'Defense Schedule', scheduleStr),
+                if (schedule != null) _infoRow(Icons.room, 'Room', roomStr),
+                const Divider(height: 24),
+                const Text('Team Members',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                const SizedBox(height: 8),
+                ...members.map((m) => _memberTile(
+                  m['name'] ?? m['id'] ?? '—',
+                  m['isLeader'] == true ? 'Team Leader' : 'Member',
+                )),
+              ],
             ),
           ),
-          const SizedBox(height: 16),
-          _sectionHeader('Defense Progress'),
-          const SizedBox(height: 12),
-          Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            elevation: 3,
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                children: [
-                  _progressStep('Team Registered', true),
-                  _progressStep('Defense Scheduled', schedule != null),
-                  _progressStep('Panel Evaluation', panelGrade != null),
-                  if (isCapstone) _progressStep('Adviser Grading', adviserGrade != null),
-                  _progressStep('Peer Evaluation', allPeerPosted),
-                  _progressStep('Grades Published', gradeStatus == 'published'),
-                ],
-              ),
+        ),
+        const SizedBox(height: 16),
+        _sectionHeader('Defense Progress'),
+        const SizedBox(height: 12),
+        Card(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          elevation: 3,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              children: [
+                _progressStep('Team Registered', true),
+                _progressStep('Defense Scheduled', schedule != null),
+                _progressStep('Panel Evaluation', panelGrade != null),
+                if (isCapstone) _progressStep('Adviser Grading', adviserGrade != null),
+                _progressStep('Peer Evaluation', allPeerPosted),
+                _progressStep('Grades Published', gradeStatus == 'published'),
+              ],
             ),
           ),
-        ],
+        ),
+      ],
+    );
+
+    if (onRefresh == null) {
+      return SingleChildScrollView(
+        padding: const EdgeInsets.all(16),
+        child: scrollContent,
+      );
+    }
+
+    return RefreshIndicator(
+      color: DefensysTokens.maroon,
+      onRefresh: onRefresh!,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        child: scrollContent,
       ),
     );
   }
@@ -197,7 +235,7 @@ class TeamTab extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, size: 16, color: _primaryColor),
+          Icon(icon, size: 16, color: DefensysTokens.maroon),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -223,10 +261,10 @@ class TeamTab extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: _primaryColor.withOpacity(0.1),
+              color: DefensysTokens.maroon.withOpacity(0.1),
               borderRadius: BorderRadius.circular(10),
             ),
-            child: Text(role, style: const TextStyle(fontSize: 11, color: _primaryColor)),
+            child: Text(role, style: const TextStyle(fontSize: 11, color: DefensysTokens.maroon)),
           ),
         ],
       ),
@@ -237,10 +275,10 @@ class TeamTab extends StatelessWidget {
     return Row(
       children: [
         Container(width: 4, height: 20,
-            decoration: BoxDecoration(color: _primaryColor, borderRadius: BorderRadius.circular(2))),
+            decoration: BoxDecoration(color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
         const SizedBox(width: 8),
         Text(title,
-            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: _primaryColor)),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
       ],
     );
   }

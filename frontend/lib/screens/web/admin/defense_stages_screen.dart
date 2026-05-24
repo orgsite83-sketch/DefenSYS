@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../navigation/admin_route_paths.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'defense_stage_editor_screen.dart';
@@ -30,6 +32,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   void _openStageEditor(Map<String, dynamic> stage) {
     final stageId = _asInt(stage['id']);
     if (stageId == null) return;
+    if (GoRouterState.of(context).uri.path == AdminRoutes.defenseStages) {
+      context.push(AdminRoutes.defenseStageEdit(stageId));
+      return;
+    }
     setState(() {
       _stageEditorOpen = true;
       _editingStageId = stageId;
@@ -48,7 +54,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_stageEditorOpen && _editingStageId != null) {
+    final onAdminList =
+        GoRouterState.of(context).uri.path == AdminRoutes.defenseStages;
+
+    if (!onAdminList && _stageEditorOpen && _editingStageId != null) {
       return DefenseStageEditorScreen(
         key: ValueKey(_editingStageId),
         stageId: _editingStageId!,

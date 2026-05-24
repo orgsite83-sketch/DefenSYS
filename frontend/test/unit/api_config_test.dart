@@ -19,5 +19,10 @@ void main() {
       expect(urls.length, ApiConfig.serverIps.length);
       expect(urls.first, contains('http://'));
     });
+
+    test('serverIps defaults to localhost only', () {
+      expect(ApiConfig.serverIps, ['127.0.0.1']);
+      expect(ApiConfig.fallbackLanIp, '127.0.0.1');
+    });
   });
 }

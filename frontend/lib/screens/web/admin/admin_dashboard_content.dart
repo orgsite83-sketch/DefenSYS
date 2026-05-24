@@ -216,10 +216,12 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       actionLabel: 'View All',
       onActionTap: () => widget.onNavigate(DefensysAdminSection.scheduling),
       child: Center(
-        child: Text(
-          dashState.isLoading ? 'Loading...' : 'No scheduled defenses yet',
-          style: const TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
-        ),
+        child: dashState.isLoading
+            ? const CircularProgressIndicator()
+            : const Text(
+                'No scheduled defenses yet',
+                style: TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
+              ),
       ),
     );
   }
@@ -231,12 +233,12 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       actionLabel: 'Manage',
       onActionTap: () => widget.onNavigate(DefensysAdminSection.studentTeams),
       child: Center(
-        child: Text(
-          dashState.isLoading
-              ? 'Loading...'
-              : 'Open team management to review active teams',
-          style: const TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
-        ),
+        child: dashState.isLoading
+            ? const CircularProgressIndicator()
+            : const Text(
+                'Open team management to review active teams',
+                style: TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
+              ),
       ),
     );
   }

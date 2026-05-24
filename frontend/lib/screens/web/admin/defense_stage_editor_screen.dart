@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/unsaved_changes.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class DefenseStageEditorScreen extends ConsumerStatefulWidget {
@@ -39,6 +40,34 @@ class _DefenseStageEditorScreenState
   int? _semesterId;
   List<Map<String, dynamic>> _deliverables = [];
   Map<String, dynamic>? _stage;
+  bool _isDirty = false;
+
+  void _markDirty() {
+    if (_loading || _isDirty) return;
+    setState(() => _isDirty = true);
+  }
+
+  Future<void> _handleBack() async {
+    await guardUnsavedExit(
+      context,
+      isDirty: _isDirty,
+      onExit: widget.onBack,
+    );
+  }
+
+  void _attachFieldListeners() {
+    for (final controller in [
+      _label,
+      _description,
+      _order,
+      _panel,
+      _adviser,
+      _peer,
+    ]) {
+      controller.removeListener(_markDirty);
+      controller.addListener(_markDirty);
+    }
+  }
 
   @override
   void initState() {
@@ -46,6 +75,7 @@ class _DefenseStageEditorScreenState
     if (widget.initialStage != null) {
       _applyStage(widget.initialStage!);
     }
+    _attachFieldListeners();
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
@@ -91,7 +121,10 @@ class _DefenseStageEditorScreenState
       }
     }
 
-    setState(() => _loading = false);
+    setState(() {
+      _loading = false;
+      _isDirty = false;
+    });
   }
 
   void _applyStage(Map<String, dynamic> stage) {
@@ -219,7 +252,13 @@ class _DefenseStageEditorScreenState
       );
     }
 
-    return ColoredBox(
+    return PopScope(
+      canPop: !_isDirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: ColoredBox(
       color: const Color(0xFFF3F4F6),
       child: SingleChildScrollView(
         padding: DefensysUi.contentPadding,
@@ -231,7 +270,7 @@ class _DefenseStageEditorScreenState
               title: stageTitle,
               subtitle: 'Stage details, grade composition, and deliverables.',
               actions: OutlinedButton.icon(
-                onPressed: _saving ? null : widget.onBack,
+                onPressed: _saving ? null : _handleBack,
                 icon: const Icon(
                   Icons.arrow_back_rounded,
                   size: 16,
@@ -284,7 +323,10 @@ class _DefenseStageEditorScreenState
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Published stage'),
                           value: _isActive,
-                          onChanged: (v) => setState(() => _isActive = v),
+                          onChanged: (v) {
+                            setState(() => _isActive = v);
+                            _markDirty();
+                          },
                         ),
                       ],
                     ),
@@ -394,6 +436,7 @@ class _DefenseStageEditorScreenState
                             'vault_note': '',
                           });
                         });
+                        _markDirty();
                       },
                       icon: const Icon(Icons.add, size: 16),
                       label: const Text('Add deliverable'),
@@ -420,7 +463,7 @@ class _DefenseStageEditorScreenState
                   Row(
                     children: [
                       TextButton(
-                        onPressed: _saving ? null : widget.onBack,
+                        onPressed: _saving ? null : _handleBack,
                         child: const Text('Cancel'),
                       ),
                       const Spacer(),
@@ -443,6 +486,7 @@ class _DefenseStageEditorScreenState
                   ),
           ],
         ),
+      ),
       ),
     );
   }
@@ -503,7 +547,10 @@ class _DefenseStageEditorScreenState
                 isDense: true,
                 border: OutlineInputBorder(),
               ),
-              onChanged: (v) => item['label'] = v,
+              onChanged: (v) {
+                item['label'] = v;
+                _markDirty();
+              },
             ),
           ),
           const SizedBox(width: 12),
@@ -520,24 +567,33 @@ class _DefenseStageEditorScreenState
                 DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
                 DropdownMenuItem(value: 'vault', child: Text('Vault')),
               ],
-              onChanged: (v) => setState(() {
-                item['deliverable_type'] = v;
-                if (v == 'vault') {
-                  item['required'] = false;
-                } else if (v == 'pre') {
-                  item['required'] = true;
-                }
-              }),
+              onChanged: (v) {
+                setState(() {
+                  item['deliverable_type'] = v;
+                  if (v == 'vault') {
+                    item['required'] = false;
+                  } else if (v == 'pre') {
+                    item['required'] = true;
+                  }
+                });
+                _markDirty();
+              },
             ),
           ),
           Checkbox(
             value: item['required'] == true,
-            onChanged: (v) => setState(() => item['required'] = v ?? false),
+            onChanged: (v) {
+              setState(() => item['required'] = v ?? false);
+              _markDirty();
+            },
           ),
           const Text('Required', style: TextStyle(fontSize: 12)),
           IconButton(
             icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-            onPressed: () => setState(() => _deliverables.removeAt(index)),
+            onPressed: () {
+              setState(() => _deliverables.removeAt(index));
+              _markDirty();
+            },
           ),
         ],
       ),

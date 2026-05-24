@@ -4,6 +4,8 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from user_management.permissions import IsSystemAdmin
+
 from .capstone_mode import capstone_mode_payload, normalize_capstone_flags
 from .models import SchoolYear, Semester
 from .serializers import (
@@ -18,13 +20,28 @@ def active_semester():
     return Semester.objects.select_related('school_year').filter(is_active=True).first()
 
 
+def semester_payload(semester, *, include_capstone_mode=False):
+    if semester is None:
+        return None
+    payload = SemesterSerializer(semester).data
+    if include_capstone_mode:
+        mode_semester = semester if semester.is_active else active_semester()
+        if mode_semester is not None:
+            payload.update(capstone_mode_payload(mode_semester))
+    return payload
+
+
 def active_semester_payload():
-    semester = active_semester()
-    return SemesterSerializer(semester).data if semester else None
+    return semester_payload(active_semester(), include_capstone_mode=True)
 
 
 class AcademicPeriodListCreateView(APIView):
     permission_classes = [IsAuthenticated]
+
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [IsAuthenticated(), IsSystemAdmin()]
 
     def get(self, request):
         school_years = SchoolYear.objects.prefetch_related('semesters').all()
@@ -45,7 +62,7 @@ class AcademicPeriodListCreateView(APIView):
 
 
 class SemesterCreateView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
 
     def post(self, request, school_year_id):
         school_year = get_object_or_404(SchoolYear, pk=school_year_id)
@@ -63,7 +80,7 @@ class SemesterCreateView(APIView):
 
 
 class SemesterStatusView(APIView):
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
 
     def patch(self, request, semester_id):
         semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
@@ -78,16 +95,30 @@ class SemesterStatusView(APIView):
             semester.is_active = is_active
             update_fields.append('is_active')
 
+        if 'capstone_peer_evaluation_enabled' in request.data:
+            value = request.data['capstone_peer_evaluation_enabled']
+            if isinstance(value, str):
+                value = value.lower() in ['1', 'true', 'yes', 'on']
+            semester.capstone_peer_evaluation_enabled = bool(value)
+            update_fields.append('capstone_peer_evaluation_enabled')
+
+        if 'capstone_adviser_grading_enabled' in request.data:
+            value = request.data['capstone_adviser_grading_enabled']
+            if isinstance(value, str):
+                value = value.lower() in ['1', 'true', 'yes', 'on']
+            semester.capstone_adviser_grading_enabled = bool(value)
+            update_fields.append('capstone_adviser_grading_enabled')
+
         capstone_fields = normalize_capstone_flags(semester)
         update_fields.extend(capstone_fields)
 
         if update_fields:
             semester.save(update_fields=list(dict.fromkeys(update_fields)))
 
-        payload = SemesterSerializer(semester).data
-        payload.update(capstone_mode_payload(semester if semester.is_active else active_semester()))
-
         return Response({
-            'semester': payload,
+            'semester': semester_payload(
+                semester,
+                include_capstone_mode=True,
+            ),
             'active_semester': active_semester_payload(),
         })

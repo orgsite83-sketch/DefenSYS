@@ -1,8 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../login_screen.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
@@ -11,6 +9,14 @@ import 'panelist/assignments_tab.dart';
 import 'panelist/grade_sheet_tab.dart';
 import 'panelist/overall_results_tab.dart';
 import '../../services/auth_provider.dart';
+import '../../services/authenticated_client.dart';
+import '../../services/authz_errors.dart';
+import '../../services/session_expired.dart';
+import '../../theme/defensys_tokens.dart';
+import '../../l10n/l10n_ext.dart';
+import '../../widgets/confirm_dialog.dart';
+import '../../widgets/offline_banner.dart';
+import '../../widgets/error_banner.dart';
 import '../../config/api_config.dart';
 
 class PanelistDashboard extends ConsumerStatefulWidget {
@@ -24,11 +30,17 @@ class PanelistDashboard extends ConsumerStatefulWidget {
 class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
   int _selectedIndex = 0;
   int _selectedTeamIndex = 0;
-  static const _primaryColor = Color(0xFF7F1D1D);
   bool _loading = true;
+  bool _resultsLoading = false;
+  String? _assignmentsError;
+  String? _resultsError;
 
   List<TeamData> _teams = [];
   List<Map<String, dynamic>> _results = [];
+
+  bool get _isGuest =>
+      widget.userData?['role'] == 'guest_panelist' ||
+      ref.read(authProvider).user?['role'] == 'guest_panelist';
 
   @override
   void initState() {
@@ -36,42 +48,70 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    setState(() => _loading = true);
-    
-    try {
-      // Get panelist ID
-      final panelistId = widget.userData?['id']?.toString() ?? '';
-      if (panelistId.isEmpty) {
-        print('No panelist ID found');
-        setState(() => _loading = false);
-        return;
-      }
-      
-      // Load panelist assignments (teams and rubrics assigned to this panelist)
-      final assignmentsUrl = '${ApiConfig.defenseSchedulesUrl}/panelist-assignments/?panelist_id=$panelistId';
-      print('Fetching panelist assignments from: $assignmentsUrl');
-      
-      final response = await http
-          .get(
-            Uri.parse(assignmentsUrl),
-            headers: {
-              'Content-Type': 'application/json',
-            },
-          )
-          .timeout(const Duration(seconds: 8));
-      
-      print('Assignments API response: ${response.statusCode}');
+  Future<void> _loadResults() async {
+    if (!mounted) return;
+    setState(() => _resultsLoading = true);
 
-      if (response.statusCode == 200 && mounted) {
+    try {
+      final httpClient = ref.read(authenticatedHttpClientProvider);
+      final path =
+          _isGuest ? 'guest-panelist-results/' : 'panelist-results/';
+      final url = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path');
+      final response = await httpClient.get(url);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        print('Assignments data keys: ${data.keys}');
-        
+        final raw = data['results'] as List? ?? [];
+        _results = raw
+            .whereType<Map>()
+            .map((item) => Map<String, dynamic>.from(item))
+            .toList();
+        setState(() {
+          _resultsLoading = false;
+          _resultsError = null;
+        });
+      } else {
+        setState(() {
+          _resultsLoading = false;
+          _resultsError = friendlyHttpErrorMessage(
+            response.statusCode,
+            response.body,
+          );
+        });
+      }
+    } on SessionExpiredException {
+      if (mounted) setState(() => _resultsLoading = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _resultsLoading = false;
+          _resultsError = 'Error loading results: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _loadData() async {
+    setState(() {
+      _loading = true;
+      _assignmentsError = null;
+    });
+
+    try {
+      final httpClient = ref.read(authenticatedHttpClientProvider);
+      final path = _isGuest ? 'guest-assignments/' : 'panelist-assignments/';
+      final assignmentsUrl = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path');
+      final response = await httpClient.get(assignmentsUrl);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
         final teams = data['teams'] as List? ?? [];
-        
-        print('Found ${teams.length} assigned teams');
-        
-        // Convert teams to TeamData format
+
         _teams = teams.map((team) {
           final weights = (team['grade_weights'] as Map?)?.cast<String, dynamic>() ?? {};
           final isCapstone = team['is_capstone'] == true ||
@@ -97,27 +137,89 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 : null,
           );
         }).toList();
-        
-        setState(() => _loading = false);
+
+        setState(() {
+          _loading = false;
+          _assignmentsError = null;
+        });
+        await _loadResults();
       } else {
-        print('Assignments API failed: ${response.statusCode}');
-        print('Response: ${response.body}');
-        setState(() => _loading = false);
+        setState(() {
+          _loading = false;
+          _assignmentsError = friendlyHttpErrorMessage(
+            response.statusCode,
+            response.body,
+          );
+        });
       }
+    } on SessionExpiredException {
+      if (mounted) setState(() => _loading = false);
     } catch (e) {
-      print('Error loading assignments: $e');
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _assignmentsError = 'Error loading assignments: $e';
+        });
+      }
     }
+  }
+
+  Widget _buildAssignmentsError() {
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: ErrorBanner(
+          title: 'Failed to load assignments',
+          message: _assignmentsError!,
+          onRetry: _loadData,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBody() {
+    if (_assignmentsError != null) {
+      return _buildAssignmentsError();
+    }
+
+    return IndexedStack(
+      index: _selectedIndex,
+      children: [
+        AssignmentsTab(
+          teams: _teams,
+          onOpenGradeSheet: (i) => setState(() {
+            _selectedTeamIndex = i;
+            _selectedIndex = 1;
+          }),
+        ),
+        GradeSheetTab(
+          teams: _teams,
+          selectedTeamIndex: _selectedTeamIndex,
+          onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),
+          onGradesSubmitted: _loadResults,
+        ),
+        OverallResultsTab(
+          results: _results,
+          loading: _resultsLoading,
+          error: _resultsError,
+          onRetry: _loadResults,
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
+    return MediaQuery.withClampedTextScaling(
+      maxScaleFactor: 1.3,
+      child: Scaffold(
       appBar: AppBar(
-        backgroundColor: _primaryColor,
+        backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
-        title: const Text('Panelist Dashboard',
-            style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(
+          context.l10n.panelistDashboardTitle,
+          style: const TextStyle(fontWeight: FontWeight.bold),
+        ),
         actions: [
           IconButton(
             icon: const Icon(Icons.account_circle_outlined),
@@ -126,50 +228,46 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           ),
         ],
       ),
-      body: _loading
+      body: OfflineBanner(
+        child: _loading
           ? const Center(
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  CircularProgressIndicator(color: _primaryColor),
+                  CircularProgressIndicator(color: DefensysTokens.maroon),
                   SizedBox(height: 16),
                   Text('Loading assignments...',
                       style: TextStyle(color: Colors.grey, fontSize: 13)),
                 ],
               ),
             )
-          : IndexedStack(
-              index: _selectedIndex,
-              children: [
-                AssignmentsTab(
-                  teams: _teams,
-                  onOpenGradeSheet: (i) => setState(() {
-                    _selectedTeamIndex = i;
-                    _selectedIndex = 1;
-                  }),
-                ),
-                GradeSheetTab(
-                  teams: _teams,
-                  selectedTeamIndex: _selectedTeamIndex,
-                  panelistId: (widget.userData?['id'] ?? '').toString(),
-                  onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),
-                ),
-                OverallResultsTab(results: _results),
-              ],
-            ),
+          : _buildBody(),
+      ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        indicatorColor: _primaryColor.withOpacity(0.15),
-        destinations: const [
+        onDestinationSelected: (i) {
+          setState(() => _selectedIndex = i);
+          if (i == 2) {
+            _loadResults();
+          }
+        },
+        indicatorColor: DefensysTokens.maroon.withOpacity(0.15),
+        destinations: [
           NavigationDestination(
-              icon: Icon(Icons.assignment), label: 'Assignments'),
+            icon: const Icon(Icons.assignment),
+            label: context.l10n.navAssignments,
+          ),
           NavigationDestination(
-              icon: Icon(Icons.rate_review), label: 'Grade Sheet'),
+            icon: const Icon(Icons.rate_review),
+            label: context.l10n.navGradeSheet,
+          ),
           NavigationDestination(
-              icon: Icon(Icons.bar_chart), label: 'Results'),
+            icon: const Icon(Icons.bar_chart),
+            label: context.l10n.navResults,
+          ),
         ],
       ),
+    ),
     );
   }
 
@@ -195,7 +293,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
               ),
               ListTile(
                 leading: CircleAvatar(
-                  backgroundColor: _primaryColor,
+                  backgroundColor: DefensysTokens.maroon,
                   child: Text(
                       (widget.userData?['name'] ?? 'P')[0].toUpperCase(),
                       style: const TextStyle(
@@ -238,10 +336,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
                 title: const Text('Logout', style: TextStyle(color: Colors.red)),
-                onTap: () {
-                  ref.read(authProvider.notifier).logout();
-                  Navigator.pushReplacement(context,
-                    MaterialPageRoute(builder: (_) => const LoginScreen()));
+                onTap: () async {
+                  Navigator.pop(context);
+                  if (await confirmLogout(context)) {
+                    await ref.read(authProvider.notifier).logout();
+                  }
                 },
               ),
             ],

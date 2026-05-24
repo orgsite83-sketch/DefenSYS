@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/api_config.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/team_detail_provider.dart';
 import '../../../utils/pdf_viewer.dart';
@@ -1145,8 +1145,12 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
   }
 
   Future<void> _viewWeeklyReportFile(Map<String, dynamic> report) async {
+    final fileUrl = report['file_url'] as String?;
     final reportFile = report['report_file'] as String?;
-    if (reportFile == null || reportFile.isEmpty) return;
+    final fileRef = (fileUrl != null && fileUrl.isNotEmpty)
+        ? fileUrl
+        : reportFile;
+    if (fileRef == null || fileRef.isEmpty) return;
 
     showDialog(
       context: context,
@@ -1157,27 +1161,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     );
 
     try {
-      var cleanPath = reportFile;
-      if (cleanPath.startsWith('media/')) {
-        cleanPath = cleanPath.substring(6);
-      }
-      if (cleanPath.startsWith('/media/')) {
-        cleanPath = cleanPath.substring(7);
-      }
-      final url =
-          'http://${ApiConfig.baseIp}:${ApiConfig.basePort}/media/$cleanPath';
-      final response = await http.get(Uri.parse(url));
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileRef);
       if (mounted) Navigator.pop(context);
 
-      if (response.statusCode == 200 && mounted) {
+      if (mounted) {
         await viewPdfInDialog(
           context: context,
-          pdfBytes: response.bodyBytes,
-          fileName: reportFile.split('/').last,
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to load file (${response.statusCode})')),
+          pdfBytes: bytes,
+          fileName: (reportFile ?? fileRef).split('/').last,
         );
       }
     } catch (e) {
@@ -1191,39 +1184,36 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
   }
 
   Future<void> _openMediaUrl(String fileUrl) async {
-    var path = fileUrl;
-    if (path.startsWith('/media/')) {
-      path = path.substring(7);
-    } else if (path.startsWith('media/')) {
-      path = path.substring(6);
-    }
-    final url = path.startsWith('http')
-        ? path
-        : 'http://${ApiConfig.baseIp}:${ApiConfig.basePort}/media/$path';
-    final response = await http.get(Uri.parse(url));
     if (!mounted) return;
-    if (response.statusCode == 200 && url.toLowerCase().contains('.pdf')) {
-      await viewPdfInDialog(
-        context: context,
-        pdfBytes: response.bodyBytes,
-        fileName: url.split('/').last,
-      );
-    } else {
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      if (!mounted) return;
+      final name = fileUrl.split('/').last.toLowerCase();
+      if (name.endsWith('.pdf')) {
+        await viewPdfInDialog(
+          context: context,
+          pdfBytes: bytes,
+          fileName: fileUrl.split('/').last,
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('File preview is only available for PDFs.')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('File preview is only available for PDFs.')),
+        SnackBar(content: Text('Error opening file: $e')),
       );
     }
   }
 
   Future<void> _downloadTeamDocument(int docId) async {
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
-      if (token == null) return;
-
-      final response = await http.get(
+      final response = await ref.read(authenticatedHttpClientProvider).get(
         Uri.parse('${ApiConfig.teamDocumentsUrl}/$docId/download/'),
-        headers: {'Authorization': 'Bearer $token'},
       );
       if (!mounted) return;
       if (response.statusCode == 200) {

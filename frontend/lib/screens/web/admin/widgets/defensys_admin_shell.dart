@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../../../l10n/l10n_ext.dart';
+import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/offline_banner.dart';
+
+export '../../../../widgets/status_badge.dart';
+
 enum DefensysAdminSection {
   overview,
   academicPeriods,
@@ -16,88 +22,47 @@ enum DefensysAdminSection {
 }
 
 class DefensysUi {
-  static const sidebarWidth = 260.0;
-  static const minDesktopWidth = 1180.0;
-  static const topNavHeight = 70.0;
-  static const contentPadding = EdgeInsets.fromLTRB(40, 20, 40, 36);
+  static const sidebarWidth = DefensysTokens.sidebarWidth;
+  static const minDesktopWidth = DefensysTokens.minDesktopWidth;
+  static const topNavHeight = DefensysTokens.topNavHeight;
+  static const contentPadding = DefensysTokens.contentPadding;
 
-  static const fontFamily = 'Poppins';
-  static const primaryMaroon = Color(0xFF7A110A);
-  static const primaryDark = Color(0xFF5E0D08);
-  static const accentGold = Color(0xFFFFC107);
-  static const techBlue = Color(0xFF3B82F6);
-  static const steelGrey = Color(0xFF6B7280);
-  static const bgLight = Color(0xFFF3F4F6);
-  static const textDark = Color(0xFF1F2937);
-  static const white = Colors.white;
+  static const fontFamily = DefensysTokens.fontFamily;
+  static const primaryMaroon = DefensysTokens.maroon;
+  static const primaryDark = DefensysTokens.maroonDark;
+  static const accentGold = DefensysTokens.gold;
+  static const techBlue = DefensysTokens.techBlue;
+  static const steelGrey = DefensysTokens.steelGrey;
+  static const bgLight = DefensysTokens.background;
+  static const textDark = DefensysTokens.textDark;
+  static const white = DefensysTokens.surface;
 
-  static const successBg = Color(0xFFD1FAE5);
-  static const successText = Color(0xFF065F46);
-  static const successBorder = Color(0xFFA7F3D0);
-  static const warningBg = Color(0xFFFEF3C7);
-  static const warningText = Color(0xFF92400E);
-  static const warningBorder = Color(0xFFFDE68A);
-  static const infoBg = Color(0xFFDBEAFE);
-  static const infoText = Color(0xFF1E40AF);
-  static const infoBorder = Color(0xFFBFDBFE);
-  static const neutralBg = Color(0xFFF3F4F6);
-  static const neutralText = Color(0xFF374151);
-  static const neutralBorder = Color(0xFFE5E7EB);
+  static const successBg = DefensysTokens.successBg;
+  static const successText = DefensysTokens.successText;
+  static const successBorder = DefensysTokens.successBorder;
+  static const warningBg = DefensysTokens.warningBg;
+  static const warningText = DefensysTokens.warningText;
+  static const warningBorder = DefensysTokens.warningBorder;
+  static const infoBg = DefensysTokens.infoBg;
+  static const infoText = DefensysTokens.infoText;
+  static const infoBorder = DefensysTokens.infoBorder;
+  static const neutralBg = DefensysTokens.neutralBg;
+  static const neutralText = DefensysTokens.neutralText;
+  static const neutralBorder = DefensysTokens.neutralBorder;
 
-  static TextStyle get pageTitle => const TextStyle(
-    fontFamily: fontFamily,
-    color: primaryMaroon,
-    fontSize: 21,
-    height: 1.15,
-    fontWeight: FontWeight.w700,
-    letterSpacing: -0.25,
-  );
+  static TextStyle get pageTitle => DefensysTokens.pageTitle;
 
-  static TextStyle get sectionTitle => const TextStyle(
-    fontFamily: fontFamily,
-    color: textDark,
-    fontSize: 15,
-    fontWeight: FontWeight.w700,
-  );
+  static TextStyle get sectionTitle => DefensysTokens.sectionTitle;
 
-  static TextStyle get subtitle => const TextStyle(
-    fontFamily: fontFamily,
-    color: steelGrey,
-    fontSize: 13,
-    height: 1.45,
-  );
+  static TextStyle get subtitle => DefensysTokens.subtitle;
 
-  static TextStyle get tableHeader => const TextStyle(
-    fontFamily: fontFamily,
-    color: steelGrey,
-    fontSize: 11,
-    fontWeight: FontWeight.w700,
-    letterSpacing: 0.45,
-  );
+  static TextStyle get tableHeader => DefensysTokens.tableHeader;
 
-  static TextStyle get tableCell => const TextStyle(
-    fontFamily: fontFamily,
-    color: neutralText,
-    fontSize: 13,
-    fontWeight: FontWeight.w500,
-  );
+  static TextStyle get tableCell => DefensysTokens.tableCell;
 
-  static BoxDecoration cardDecoration() {
-    return BoxDecoration(
-      color: white,
-      borderRadius: BorderRadius.circular(12),
-      boxShadow: [
-        BoxShadow(
-          color: Colors.black.withValues(alpha: 0.07),
-          blurRadius: 6,
-          offset: const Offset(0, 1),
-        ),
-      ],
-    );
-  }
+  static BoxDecoration cardDecoration() => DefensysTokens.cardDecoration();
 
-  /// Minimal flat pill switch: inactive track `#D1D5DB`, white thumb, no outline or overlay.
-  static const switchInactiveTrack = Color(0xFFD1D5DB);
+  static const switchInactiveTrack = DefensysTokens.switchInactiveTrack;
 
   static Widget flatSwitch({
     required bool value,
@@ -152,49 +117,72 @@ class DefensysAdminShell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: DefensysUi.bgLight,
-      body: DefaultTextStyle.merge(
-        style: const TextStyle(fontFamily: DefensysUi.fontFamily),
-        child: LayoutBuilder(
-          builder: (context, constraints) {
-            final width = constraints.maxWidth < DefensysUi.minDesktopWidth
-                ? DefensysUi.minDesktopWidth
-                : constraints.maxWidth;
+    return DefaultTextStyle.merge(
+      style: const TextStyle(fontFamily: DefensysUi.fontFamily),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= DefensysUi.minDesktopWidth;
 
-            return SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: SizedBox(
-                width: width,
-                height: constraints.maxHeight,
-                child: Row(
-                  children: [
-                    _Sidebar(
-                      activeSection: activeSection,
-                      onNavigate: onNavigate,
-                      onLogout: onLogout,
-                    ),
-                    Expanded(
-                      child: Column(
-                        children: [
-                          _TopNav(activeSemesterLabel: activeSemesterLabel),
-                          Expanded(
-                            child: scrollContent
-                                ? SingleChildScrollView(
-                                    padding: DefensysUi.contentPadding,
-                                    child: child,
-                                  )
-                                : child,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+          void handleNavigate(DefensysAdminSection section) {
+            onNavigate(section);
+            if (!isWide) {
+              Navigator.of(context).pop();
+            }
+          }
+
+          void handleLogout() {
+            if (!isWide) {
+              Navigator.of(context).pop();
+            }
+            onLogout();
+          }
+
+          final sidebar = _Sidebar(
+            activeSection: activeSection,
+            onNavigate: isWide ? onNavigate : handleNavigate,
+            onLogout: handleLogout,
+          );
+
+          final contentColumn = Column(
+            children: [
+              _TopNav(
+                activeSemesterLabel: activeSemesterLabel,
+                showMenuButton: !isWide,
+              ),
+              Expanded(
+                child: OfflineBanner(
+                  child: scrollContent
+                      ? SingleChildScrollView(
+                          padding: DefensysUi.contentPadding,
+                          child: child,
+                        )
+                      : child,
                 ),
               ),
+            ],
+          );
+
+          if (isWide) {
+            return Scaffold(
+              backgroundColor: DefensysUi.bgLight,
+              body: Row(
+                children: [
+                  sidebar,
+                  Expanded(child: contentColumn),
+                ],
+              ),
             );
-          },
-        ),
+          }
+
+          return Scaffold(
+            backgroundColor: DefensysUi.bgLight,
+            drawer: Drawer(
+              width: DefensysUi.sidebarWidth,
+              child: sidebar,
+            ),
+            body: contentColumn,
+          );
+        },
       ),
     );
   }
@@ -267,86 +255,23 @@ class DefensysCard extends StatelessWidget {
   }
 }
 
-class DefensysStatusBadge extends StatelessWidget {
-  final String label;
-  final Color background;
-  final Color textColor;
-  final Color borderColor;
-  final bool showDot;
-
-  const DefensysStatusBadge({
-    super.key,
-    required this.label,
-    required this.background,
-    required this.textColor,
-    required this.borderColor,
-    this.showDot = false,
-  });
-
-  const DefensysStatusBadge.success({
-    super.key,
-    required this.label,
-    this.showDot = true,
-  }) : background = DefensysUi.successBg,
-       textColor = DefensysUi.successText,
-       borderColor = DefensysUi.successBorder;
-
-  const DefensysStatusBadge.inactive({
-    super.key,
-    required this.label,
-    this.showDot = false,
-  }) : background = DefensysUi.neutralBg,
-       textColor = DefensysUi.steelGrey,
-       borderColor = DefensysUi.neutralBorder;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: borderColor),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (showDot) ...[
-            Container(
-              width: 6,
-              height: 6,
-              decoration: const BoxDecoration(
-                color: Color(0xFF10B981),
-                shape: BoxShape.circle,
-              ),
-            ),
-            const SizedBox(width: 5),
-          ],
-          Text(
-            label,
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              color: textColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _TopNav extends StatelessWidget {
   final String activeSemesterLabel;
+  final bool showMenuButton;
 
-  const _TopNav({required this.activeSemesterLabel});
+  const _TopNav({
+    required this.activeSemesterLabel,
+    this.showMenuButton = false,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: DefensysUi.topNavHeight,
-      padding: const EdgeInsets.only(left: 32, right: 40),
+      padding: EdgeInsets.only(
+        left: showMenuButton ? 8 : 32,
+        right: 40,
+      ),
       decoration: BoxDecoration(
         color: DefensysUi.white,
         boxShadow: [
@@ -359,6 +284,14 @@ class _TopNav extends StatelessWidget {
       ),
       child: Row(
         children: [
+          if (showMenuButton) ...[
+            IconButton(
+              icon: const Icon(Icons.menu),
+              tooltip: 'Open menu',
+              onPressed: () => Scaffold.of(context).openDrawer(),
+            ),
+            const SizedBox(width: 8),
+          ],
           const Spacer(),
           const SizedBox(width: 16),
           _SemesterPill(label: activeSemesterLabel),
@@ -405,6 +338,7 @@ class _Sidebar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       width: DefensysUi.sidebarWidth,
       color: DefensysUi.primaryMaroon,
@@ -438,21 +372,21 @@ class _Sidebar extends StatelessWidget {
                   section: DefensysAdminSection.overview,
                   activeSection: activeSection,
                   icon: Icons.show_chart_rounded,
-                  label: 'Overview',
+                  label: l10n.navOverview,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.academicPeriods,
                   activeSection: activeSection,
                   icon: Icons.calendar_month_rounded,
-                  label: 'Academic Periods',
+                  label: l10n.navAcademicPeriods,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.userManagement,
                   activeSection: activeSection,
                   icon: Icons.groups_2_rounded,
-                  label: 'User Management',
+                  label: l10n.navUserManagement,
                   trailing: Icons.keyboard_arrow_down_rounded,
                   onTap: onNavigate,
                 ),
@@ -461,21 +395,21 @@ class _Sidebar extends StatelessWidget {
                     section: DefensysAdminSection.userManagement,
                     activeSection: activeSection,
                     icon: Icons.person_rounded,
-                    label: 'Users',
+                    label: l10n.navUserManagement,
                     onTap: onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.studentTeams,
                     activeSection: activeSection,
                     icon: Icons.groups_rounded,
-                    label: 'Student Teams',
+                  label: l10n.navStudentTeams,
                     onTap: onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.studentAcademicRecords,
                     activeSection: activeSection,
                     icon: Icons.badge_rounded,
-                    label: 'Student Academic\nRecords',
+                    label: l10n.navStudentRecords,
                     onTap: onNavigate,
                   ),
                 ],
@@ -483,35 +417,35 @@ class _Sidebar extends StatelessWidget {
                   section: DefensysAdminSection.gradeCenter,
                   activeSection: activeSection,
                   icon: Icons.grade_rounded,
-                  label: 'Grade Center',
+                  label: l10n.navGradeCenter,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.rubricEngine,
                   activeSection: activeSection,
                   icon: Icons.checklist_rounded,
-                  label: 'Rubric Engine',
+                  label: l10n.navRubricEngine,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.repositoryAudit,
                   activeSection: activeSection,
                   icon: Icons.camera_alt_rounded,
-                  label: 'Repository Audit',
+                  label: l10n.navRepositoryAudit,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.curriculumAnalytics,
                   activeSection: activeSection,
                   icon: Icons.manage_search_rounded,
-                  label: 'Curriculum Analytics',
+                  label: l10n.navCurriculumAnalytics,
                   onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.scheduling,
                   activeSection: activeSection,
                   icon: Icons.event_note_rounded,
-                  label: 'Scheduling',
+                  label: l10n.navScheduling,
                   trailing: Icons.keyboard_arrow_down_rounded,
                   onTap: onNavigate,
                 ),
@@ -520,21 +454,21 @@ class _Sidebar extends StatelessWidget {
                     section: DefensysAdminSection.scheduling,
                     activeSection: activeSection,
                     icon: Icons.auto_awesome_rounded,
-                    label: 'Defense Scheduler',
+                    label: l10n.navDefenseScheduler,
                     onTap: onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.defenseBoard,
                     activeSection: activeSection,
                     icon: Icons.view_column_rounded,
-                    label: 'Defense Board',
+                    label: l10n.navDefenseBoard,
                     onTap: onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.defenseStages,
                     activeSection: activeSection,
                     icon: Icons.layers_rounded,
-                    label: 'Defense Stages',
+                    label: l10n.navDefenseStages,
                     onTap: onNavigate,
                   ),
                 ],

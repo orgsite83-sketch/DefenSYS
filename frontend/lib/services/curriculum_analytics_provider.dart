@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final curriculumAnalyticsProvider =
     NotifierProvider<CurriculumAnalyticsNotifier, CurriculumAnalyticsState>(
@@ -74,7 +75,7 @@ class CurriculumAnalyticsNotifier extends Notifier<CurriculumAnalyticsState> {
       final uri = Uri.parse(baseUrl).replace(
         queryParameters: {if (nextYear.isNotEmpty) 'academic_year': nextYear},
       );
-      final response = await http.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         state = state.copyWith(
@@ -104,9 +105,9 @@ class CurriculumAnalyticsNotifier extends Notifier<CurriculumAnalyticsState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/proposal/'),
-        headers: await _headers(),
+        
         body: jsonEncode({}),
       );
       if (response.statusCode == 200) {
@@ -127,17 +128,8 @@ class CurriculumAnalyticsNotifier extends Notifier<CurriculumAnalyticsState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
 
   String _errorFromResponse(http.Response response) {
     try {

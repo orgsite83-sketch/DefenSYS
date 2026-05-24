@@ -3,12 +3,18 @@ from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import status
+from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from user_management.academic_records.models import StudentAcademicRecord
+from authentication_access_control.guest_tokens import (
+    create_guest_access_token,
+    get_guest_code_or_none,
+    guest_user_payload,
+)
 from .models import FacultyRoleAssignment, GuestPanelistCode
 from .permissions import IsSystemAdmin
 from student_teams.models import TeamAdviserAssignment
@@ -308,35 +314,57 @@ class GuestPanelistCodeDetailView(APIView):
 
 class GuestCodeValidateView(APIView):
     """Public endpoint to validate guest panelist codes"""
-    permission_classes = []  # No authentication required
+    permission_classes = [AllowAny]
     
     def get(self, request, code):
         """Validate a guest code and return guest info if valid"""
-        try:
-            guest_code = GuestPanelistCode.objects.select_related(
-                'defense_schedule',
-                'defense_schedule__team',
-                'defense_schedule__defense_stage',
-            ).get(code=code.upper(), is_active=True)
-            
-            # Check if code has expired
-            if guest_code.expires_at and guest_code.expires_at < timezone.now():
-                return Response(
-                    {'error': 'Code has expired'},
-                    status=status.HTTP_400_BAD_REQUEST
-                )
-            
-            # Return guest info
-            return Response({
-                'guestName': guest_code.guest_name,
-                'defenseId': guest_code.defense_schedule.id,
-                'teamName': guest_code.defense_schedule.team.name if guest_code.defense_schedule.team else 'Unknown',
-                'stage': guest_code.defense_schedule.defense_stage.label if guest_code.defense_schedule.defense_stage else 'Unknown',
-                'code': guest_code.code,
-            })
-            
-        except GuestPanelistCode.DoesNotExist:
+        guest_code = get_guest_code_or_none(code)
+        if guest_code is None:
             return Response(
                 {'error': 'Invalid or expired code'},
-                status=status.HTTP_404_NOT_FOUND
+                status=status.HTTP_404_NOT_FOUND,
             )
+
+        schedule = guest_code.defense_schedule
+        team = schedule.team
+        return Response({
+            'guestName': guest_code.guest_name,
+            'defenseId': schedule.id,
+            'defense_schedule_id': schedule.id,
+            'team_id': team.id if team else None,
+            'guest_code_id': guest_code.id,
+            'teamName': team.name if team else 'Unknown',
+            'stage': schedule.defense_stage.label if schedule.defense_stage else 'Unknown',
+            'code': guest_code.code,
+        })
+
+
+class GuestCodeExchangeView(APIView):
+    """Exchange a valid guest code for a short-lived guest panelist access JWT."""
+
+    permission_classes = [AllowAny]
+
+    def post(self, request):
+        code = (request.data.get('code') or '').strip().upper()
+        if not code:
+            return Response(
+                {'detail': 'code is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        guest_code = get_guest_code_or_none(code)
+        if guest_code is None:
+            return Response(
+                {'detail': 'Invalid or expired code.'},
+                status=status.HTTP_401_UNAUTHORIZED,
+            )
+
+        if guest_code.used_at is None:
+            guest_code.used_at = timezone.now()
+            guest_code.save(update_fields=['used_at', 'updated_at'])
+
+        access = create_guest_access_token(guest_code)
+        return Response({
+            'access': access,
+            'user': guest_user_payload(guest_code),
+        })

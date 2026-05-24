@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
@@ -8,9 +9,13 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/weekly_progress_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/l10n_ext.dart';
+import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_snackbar.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
   try {
@@ -58,6 +63,8 @@ class CapstoneDeliverablesScreen extends ConsumerStatefulWidget {
 class _CapstoneDeliverablesScreenState
     extends ConsumerState<CapstoneDeliverablesScreen> {
   final _searchController = TextEditingController();
+  Timer? _pendingRemoveTimer;
+  bool _pendingRemoveCancelled = false;
 
   @override
   void initState() {
@@ -69,6 +76,7 @@ class _CapstoneDeliverablesScreenState
 
   @override
   void dispose() {
+    _pendingRemoveTimer?.cancel();
     _searchController.dispose();
     super.dispose();
   }
@@ -821,13 +829,30 @@ class _CapstoneDeliverablesScreenState
             OutlinedButton.icon(
               onPressed: locked
                   ? null
-                  : () => _showUploadDialog(team, stageLabel, item),
+                  : () => _promptUploadOrReplace(team, stageLabel, item),
               icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
               label: Text(uploaded ? 'Replace' : 'Upload'),
             ),
         ],
       ),
     );
+  }
+
+  Future<void> _promptUploadOrReplace(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item,
+  ) async {
+    if (item['uploaded'] == true) {
+      final ok = await confirmDestructive(
+        context,
+        title: 'Replace file?',
+        message: 'The current upload will be replaced. This cannot be undone.',
+        confirmLabel: 'Replace',
+      );
+      if (!ok || !mounted) return;
+    }
+    await _showUploadDialog(team, stageLabel, item);
   }
 
   Future<void> _showUploadDialog(
@@ -966,24 +991,10 @@ class _CapstoneDeliverablesScreenState
 
     // Send file as multipart/form-data
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
-      
-      if (token == null) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Authentication token not found')),
-          );
-        }
-        return;
-      }
-
+      final client = ref.read(authenticatedHttpClientProvider);
       final uri = Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/upload/');
       final request = http.MultipartRequest('POST', uri);
-      
-      // Add headers
-      request.headers['Authorization'] = 'Bearer $token';
-      
+
       // Add form fields
       request.fields['team_id'] = team['id'].toString();
       request.fields['stage_label'] = stageLabel;
@@ -998,9 +1009,8 @@ class _CapstoneDeliverablesScreenState
         filename: selectedFileName!,
       ));
       
-      // Send request
-      final response = await request.send();
-      
+      final response = await client.sendAuthenticated(request);
+
       if (response.statusCode == 200) {
         // Refresh deliverables list
         await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
@@ -1012,16 +1022,15 @@ class _CapstoneDeliverablesScreenState
       } else {
         final responseBody = await response.stream.bytesToString();
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text(_formatUploadFailureMessage(response.statusCode, responseBody))),
+          showErrorSnackBar(
+            context,
+            _formatUploadFailureMessage(response.statusCode, responseBody),
           );
         }
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Upload error: $e')),
-        );
+        showErrorSnackBar(context, 'Upload error: $e');
       }
     }
   }
@@ -1031,16 +1040,49 @@ class _CapstoneDeliverablesScreenState
     String stageLabel,
     Map<String, dynamic> item,
   ) async {
-    final ok = await ref
-        .read(capstoneDeliverablesProvider.notifier)
-        .removeDeliverable({
-          'team_id': _asInt(team['id']),
-          'stage_label': stageLabel,
-          'deliverable_id': item['id'],
-        });
-    if (mounted && ok) {
-      Navigator.of(context, rootNavigator: true).pop();
-    }
+    final label = item['label']?.toString() ?? item['id']?.toString() ?? 'this file';
+    final teamName = team['name']?.toString();
+    final message = teamName != null && teamName.isNotEmpty
+        ? 'Remove $label for $teamName? This cannot be undone.'
+        : 'Remove $label? This cannot be undone.';
+
+    final ok = await confirmDestructive(
+      context,
+      title: 'Remove file?',
+      message: message,
+      confirmLabel: 'Remove',
+    );
+    if (!ok || !mounted) return;
+
+    _pendingRemoveTimer?.cancel();
+    _pendingRemoveCancelled = false;
+    final payload = {
+      'team_id': _asInt(team['id']),
+      'stage_label': stageLabel,
+      'deliverable_id': item['id'],
+    };
+
+    showUndoSnackBar(
+      context,
+      context.l10n.fileRemoved,
+      undoLabel: context.l10n.undo,
+      onUndo: () {
+        _pendingRemoveCancelled = true;
+        _pendingRemoveTimer?.cancel();
+      },
+    );
+
+    _pendingRemoveTimer = Timer(const Duration(seconds: 5), () async {
+      if (_pendingRemoveCancelled || !mounted) return;
+      final removed = await ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .removeDeliverable(payload);
+      if (mounted && removed) {
+        Navigator.of(context, rootNavigator: true).pop();
+      } else if (mounted) {
+        showErrorSnackBar(context, context.l10n.fileRemoveFailed);
+      }
+    });
   }
 
   Widget _sectionTitle(String text) {
@@ -1212,12 +1254,7 @@ class _CapstoneDeliverablesScreenState
     final teamId = team['id']?.toString() ?? '';
     
     if (teamId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid team ID.'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      showValidationSnackBar(context, 'Invalid team ID.');
       return;
     }
 
@@ -1247,11 +1284,9 @@ class _CapstoneDeliverablesScreenState
 
       if (teamReports.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No weekly progress reports found for ${team['name']}. Students must submit reports first.'),
-              backgroundColor: AppColors.warning,
-            ),
+          showValidationSnackBar(
+            context,
+            'No weekly progress reports found for ${team['name']}. Students must submit reports first.',
           );
         }
         return;
@@ -1485,11 +1520,9 @@ class _CapstoneDeliverablesScreenState
               // Refresh the dialog to show updated status
               setDialogState(() {});
               
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Weekly Progress Reports PDF generated and submitted for ${team['name']}!'),
-                  backgroundColor: AppColors.success,
-                ),
+              showSuccessSnackBar(
+                context,
+                'Weekly Progress Reports PDF generated and submitted for ${team['name']}!',
               );
             }
           } catch (e) {
@@ -1497,12 +1530,7 @@ class _CapstoneDeliverablesScreenState
             if (mounted) Navigator.pop(context);
             
             if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Error generating PDF: $e'),
-                  backgroundColor: AppColors.danger,
-                ),
-              );
+              showErrorSnackBar(context, 'Error generating PDF: $e');
             }
           }
         }
@@ -1513,12 +1541,7 @@ class _CapstoneDeliverablesScreenState
       
       // Show error message
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error fetching weekly reports: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        showErrorSnackBar(context, 'Error fetching weekly reports: $e');
       }
     }
   }
@@ -1527,12 +1550,7 @@ class _CapstoneDeliverablesScreenState
     final teamId = team['id']?.toString() ?? '';
     
     if (teamId.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Invalid team ID.'),
-          backgroundColor: AppColors.danger,
-        ),
-      );
+      showValidationSnackBar(context, 'Invalid team ID.');
       return;
     }
 
@@ -1562,11 +1580,9 @@ class _CapstoneDeliverablesScreenState
 
       if (teamReports.isEmpty) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('No weekly progress reports found for ${team['name']}.'),
-              backgroundColor: AppColors.warning,
-            ),
+          showValidationSnackBar(
+            context,
+            'No weekly progress reports found for ${team['name']}.',
           );
         }
         return;
@@ -1736,12 +1752,7 @@ class _CapstoneDeliverablesScreenState
       
       // Show error message
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error fetching weekly reports: $e'),
-            backgroundColor: AppColors.danger,
-          ),
-        );
+        showErrorSnackBar(context, 'Error fetching weekly reports: $e');
       }
     }
   }
@@ -1831,29 +1842,26 @@ class _CapstoneDeliverablesScreenState
     buffer.writeln('='*60);
 
     // Show success message with view action
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Compilation report generated for ${team['name']}\n'
-          '${reports.length} weekly reports compiled.',
-        ),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'View',
-          textColor: Colors.white,
-          onPressed: () {
-            // Show the report in a dialog
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Compilation Report'),
-                content: SizedBox(
-                  width: 600,
-                  height: 400,
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      buffer.toString(),
+    showSuccessSnackBar(
+      context,
+      'Compilation report generated for ${team['name']}\n'
+      '${reports.length} weekly reports compiled.',
+      duration: const Duration(seconds: 4),
+      action: SnackBarAction(
+        label: 'View',
+        textColor: Colors.white,
+        onPressed: () {
+          // Show the report in a dialog
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Compilation Report'),
+              content: SizedBox(
+                width: 600,
+                height: 400,
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    buffer.toString(),
                       style: const TextStyle(
                         fontFamily: 'monospace',
                         fontSize: 12,
@@ -1869,27 +1877,16 @@ class _CapstoneDeliverablesScreenState
                 ],
               ),
             );
-          },
-        ),
+        },
       ),
     );
   }
 
   Future<bool> _generateAndSubmitPDF(int teamId, String stageLabel) async {
     try {
-      final authState = ref.read(authProvider);
-      final token = authState.token;
-
-      if (token == null) {
-        throw Exception('Not authenticated');
-      }
-
-      final response = await http.post(
+      final client = ref.read(authenticatedHttpClientProvider);
+      final response = await client.post(
         Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/compile-weekly-reports/'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $token',
-        },
         body: jsonEncode({
           'team_id': teamId,
           'stage_label': stageLabel,

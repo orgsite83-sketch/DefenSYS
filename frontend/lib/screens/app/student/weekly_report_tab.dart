@@ -3,11 +3,13 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../../../config/api_config.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../services/dashboard_provider.dart';
-
-const _primaryColor = Color(0xFF7F1D1D);
+import '../../../services/session_expired.dart';
+import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_snackbar.dart';
 
 class WeeklyReportTab extends ConsumerStatefulWidget {
   const WeeklyReportTab({super.key});
@@ -57,65 +59,53 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error picking file: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorSnackBar(context, 'Error picking file: $e');
       }
     }
   }
 
   Future<void> _submitReport() async {
-    // Validation
     if (_weekNumberCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please enter week number'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      showValidationSnackBar(context, 'Please enter week number');
       return;
     }
 
     if (_selectedFileName == null || _selectedFileBytes == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Please select a PDF file'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      showValidationSnackBar(context, 'Please select a PDF file');
       return;
     }
+
+    final week = _weekNumberCtrl.text.trim();
+    final fileName = _selectedFileName!;
+
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Submit Weekly Report?',
+      message:
+          'Week $week — $fileName. This submission will be sent to your adviser.',
+      confirmLabel: 'Submit',
+    );
+    if (!confirmed || !mounted) return;
 
     setState(() => _isSubmitting = true);
 
     try {
-      final prefs = await SharedPreferences.getInstance();
-      final token = prefs.getString('jwt_token');
-      
-      // Get team data from dashboard
       final dashState = ref.read(dashboardProvider('student'));
       final teamData = dashState.data?['team'] as Map<String, dynamic>?;
       final teamId = teamData?['id'];
 
-      if (token == null || teamId == null) {
-        throw Exception('Missing authentication or team data');
+      if (teamId == null) {
+        throw Exception('Missing team data');
       }
 
-      // Create multipart request
+      final client = ref.read(authenticatedHttpClientProvider);
       var request = http.MultipartRequest(
         'POST',
         Uri.parse('${ApiConfig.weeklyProgressUrl}/'),
       );
 
-      // Add headers
-      request.headers['Authorization'] = 'Bearer $token';
-
-      // Add fields
       request.fields['team'] = teamId.toString();
-      request.fields['week_number'] = _weekNumberCtrl.text.trim();
+      request.fields['week_number'] = week;
       request.fields['report_date'] = _dateCtrl.text.trim();
       request.fields['file_size'] = _selectedFileSize ?? '';
       request.fields['accomplishments'] = '[]';
@@ -123,28 +113,22 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       request.fields['issues'] = '[]';
       request.fields['plans'] = '[]';
 
-      // Add file
       request.files.add(http.MultipartFile.fromBytes(
         'report_file',
         _selectedFileBytes!,
-        filename: _selectedFileName!,
+        filename: fileName,
       ));
 
-      // Send request
-      final streamedResponse = await request.send();
+      final streamedResponse = await client.sendAuthenticated(request);
       final response = await http.Response.fromStream(streamedResponse);
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('Weekly report submitted successfully!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 3),
-            ),
+          showSuccessSnackBar(
+            context,
+            'Weekly report submitted successfully!',
           );
 
-          // Clear form
           setState(() {
             _weekNumberCtrl.clear();
             _selectedFileName = null;
@@ -157,12 +141,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorSnackBar(context, 'Error: $e');
       }
     } finally {
       if (mounted) {
@@ -171,11 +150,43 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
     }
   }
 
+  Future<void> _refreshDashboard() async {
+    await ref.read(dashboardProvider('student').notifier).fetchDashboardData();
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Check if student is team leader
     final dashState = ref.watch(dashboardProvider('student'));
     final teamData = dashState.data?['team'] as Map<String, dynamic>?;
+    final isCapstone = teamData?['isCapstone'] == true;
+
+    if (!isCapstone) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.info_outline, size: 48, color: Colors.grey.shade400),
+              const SizedBox(height: 12),
+              const Text(
+                'Weekly progress reports are for capstone teams only.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 15, color: Colors.grey),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'PIT students can view grades under the My Grades tab.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 13, color: Colors.grey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Check if student is team leader
     final studentData = dashState.data?['student'] as Map<String, dynamic>?;
     final leaderName = teamData?['leaderName'] as String?;
     final studentName = studentData?['name'] as String?;
@@ -183,11 +194,15 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: RefreshIndicator(
+        color: DefensysTokens.maroon,
+        onRefresh: _refreshDashboard,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Leadership status banner
             if (!isLeader)
               Container(
@@ -221,7 +236,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
             Container(
               padding: const EdgeInsets.all(20),
               decoration: BoxDecoration(
-                color: _primaryColor,
+                color: DefensysTokens.maroon,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: const Row(
@@ -330,8 +345,8 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
                     label: const Text('Choose PDF File'),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 56),
-                      side: BorderSide(color: _primaryColor),
-                      foregroundColor: _primaryColor,
+                      side: BorderSide(color: DefensysTokens.maroon),
+                      foregroundColor: DefensysTokens.maroon,
                     ),
                   ),
                   const SizedBox(height: 16),
@@ -374,6 +389,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
                             ),
                           ),
                           IconButton(
+                            tooltip: 'Remove file',
                             onPressed: () {
                               setState(() {
                                 _selectedFileName = null;
@@ -439,7 +455,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
                                 : 'Submit Report'
                       ),
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: isLeader ? _primaryColor : Colors.grey,
+                        backgroundColor: isLeader ? DefensysTokens.maroon : Colors.grey,
                         foregroundColor: Colors.white,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(8),
@@ -452,6 +468,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

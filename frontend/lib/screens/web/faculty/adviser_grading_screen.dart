@@ -3,12 +3,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/adviser_grading_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../theme/defensys_tokens.dart';
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-const _maroon = Color(0xFF7F1D1D);
+const _maroon = DefensysTokens.maroon;
 const _bgLight = Color(0xFFF3F4F6);
 const _neutralBorder = Color(0xFFE5E7EB);
 const _steelGrey = Color(0xFF6B7280);

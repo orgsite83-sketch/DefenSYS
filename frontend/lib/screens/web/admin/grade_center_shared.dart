@@ -41,11 +41,56 @@ Map<String, List<Map<String, dynamic>>> groupGradesFromState(
   return {for (final key in sortedKeys) key: groups[key]!};
 }
 
+const String kUnscheduledStageLabel = 'Unscheduled';
+
+bool _isUnscheduledCapstoneGrade(Map<String, dynamic> grade) {
+  if (grade['scope']?.toString() != 'capstone') return false;
+  final label = grade['stage_label']?.toString() ?? '';
+  return label.isEmpty || label == kUnscheduledStageLabel;
+}
+
+int unscheduledCapstoneTeamCount(GradeCenterState state) {
+  return state.grades.where(_isUnscheduledCapstoneGrade).length;
+}
+
+Widget gradeCenterUnscheduledBanner({required int teamCount}) {
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    decoration: BoxDecoration(
+      color: const Color(0xFFFFF7ED),
+      borderRadius: BorderRadius.circular(8),
+      border: Border.all(color: const Color(0xFFFED7AA)),
+    ),
+    child: Row(
+      children: [
+        const Icon(Icons.event_busy_rounded, color: Color(0xFFD97706), size: 20),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            '$teamCount capstone team${teamCount == 1 ? '' : 's'} '
+            'are unscheduled (no defense slot yet). Open Unscheduled below to grade or review.',
+            style: const TextStyle(
+              color: Color(0xFF92400E),
+              fontSize: 12.5,
+              height: 1.35,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
 List<Map<String, dynamic>> gradesForGroup(
   GradeCenterState state,
   String scope,
   String stageLabel,
 ) {
+  if (scope == 'capstone' && stageLabel == kUnscheduledStageLabel) {
+    return state.grades.where(_isUnscheduledCapstoneGrade).toList();
+  }
   return state.grades.where((grade) {
     return grade['scope']?.toString() == scope &&
         (grade['stage_label']?.toString() ?? '') == stageLabel;
@@ -661,7 +706,7 @@ List<CapstoneStageRow> buildCapstoneStageRows({
       return (a['label']?.toString() ?? '').compareTo(b['label']?.toString() ?? '');
     });
 
-  return active.map((stage) {
+  final rows = active.map((stage) {
     final label = stage['label']?.toString() ?? '';
     final groupKey = gradeGroupKey('capstone', label);
     final settings = groupSettingsForKey(state, groupKey);
@@ -681,6 +726,40 @@ List<CapstoneStageRow> buildCapstoneStageRows({
       groupKey: groupKey,
     );
   }).toList();
+
+  final unscheduledCount = unscheduledCapstoneTeamCount(state);
+  if (unscheduledCount > 0) {
+    final groupKey = gradeGroupKey('capstone', kUnscheduledStageLabel);
+    final settings = groupSettingsForKey(state, groupKey);
+    final isComplete = settings['is_officially_complete'] == true;
+    rows.add(
+      CapstoneStageRow(
+        displayOrder: 9999,
+        label: kUnscheduledStageLabel,
+        description: 'Teams without a scheduled defense slot',
+        teamCount: unscheduledCount,
+        isOfficiallyComplete: isComplete,
+        peerGradingEnabled: settings['peer_grading_enabled'] == true,
+        workflowStatus: capstoneStageWorkflowStatus(
+          isOfficiallyComplete: isComplete,
+          teamCount: unscheduledCount,
+        ),
+        groupKey: groupKey,
+      ),
+    );
+  }
+
+  return rows;
+}
+
+/// Bounded vertical size for the Capstone stages table (avoids 0-height nested scroll).
+double capstoneStagesTableBodyHeight(int rowCount) {
+  const headerHeight = 44.0;
+  const rowHeight = 130.0;
+  const bottomPadding = 8.0;
+  const maxHeight = 520.0;
+  final content = headerHeight + rowCount * rowHeight + bottomPadding;
+  return content.clamp(headerHeight + rowHeight, maxHeight);
 }
 
 Widget capstoneStageWorkflowPill(CapstoneStageWorkflowStatus status) {
@@ -711,21 +790,25 @@ Widget capstoneStageWorkflowPill(CapstoneStageWorkflowStatus status) {
       color: bg,
       borderRadius: BorderRadius.circular(999),
     ),
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, color: color, size: 14),
-        const SizedBox(width: 4),
-        Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 10.5,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.3,
+    child: FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     ),
   );
 }

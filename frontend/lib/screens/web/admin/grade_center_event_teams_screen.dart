@@ -93,7 +93,7 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                         scope: scope,
                         isOfficiallyComplete: isComplete,
                         peerGradingEnabled: peerOpen,
-                        showCapstonePeerTermBadge: scope == 'capstone',
+                        showCapstonePeerTermBadge: false,
                         onOfficiallyCompleteChanged: (value) {
                           ref
                               .read(gradeCenterProvider.notifier)

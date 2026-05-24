@@ -21,6 +21,7 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
     String? search,
     String? level,
     String? status,
+    String? scope,
     String? successMessage,
   }) async {}
 }

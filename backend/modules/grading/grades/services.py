@@ -34,6 +34,170 @@ def default_weights(scope):
     return {'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20}
 
 
+PANELIST_REMARK_PREFIX = 'Panelist: '
+GUEST_PANELIST_REMARK_PREFIX = 'Guest panelist: '
+
+
+def _panelist_key_from_breakdown_remarks(remarks):
+    """Stable grouping key from the first line of panel breakdown remarks."""
+    first_line = (remarks or '').split('\n', 1)[0].strip()
+    if first_line.startswith(PANELIST_REMARK_PREFIX):
+        return first_line
+    if first_line.startswith(GUEST_PANELIST_REMARK_PREFIX):
+        return first_line
+    return first_line or '__unknown_panelist__'
+
+
+def panelist_percentage_from_breakdowns(breakdowns):
+    """panel_pct = sum(score) / sum(max_score) * 100 for one panelist's criteria rows."""
+    total_score = sum((row.score for row in breakdowns), Decimal('0'))
+    total_max = sum((row.max_score for row in breakdowns), Decimal('0'))
+    if total_max <= 0:
+        return None
+    return (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+
+
+def panelist_remark_key_for_user(user):
+    return f'{PANELIST_REMARK_PREFIX}{user.username}'
+
+
+def guest_panelist_remark_key(guest_name, guest_code):
+    return f'{GUEST_PANELIST_REMARK_PREFIX}{guest_name} ({guest_code})'
+
+
+def breakdowns_for_panelist(team_grade, panelist_key):
+    return [
+        row
+        for row in team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
+            'display_order', 'id'
+        )
+        if _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key
+    ]
+
+
+def panelist_result_payload(team_grade, panelist_key):
+    """Shape one OverallResultsTab row for a panelist's submission on a team grade."""
+    rows = breakdowns_for_panelist(team_grade, panelist_key)
+    if not rows:
+        return None
+
+    team = team_grade.team
+    total_score = sum((row.score for row in rows), Decimal('0'))
+    total_max = sum((row.max_score for row in rows), Decimal('0'))
+    percentage = panelist_percentage_from_breakdowns(rows) or Decimal('0')
+
+    status_map = {
+        TeamGrade.STATUS_PUBLISHED: 'Approved',
+    }
+    team_status = status_map.get(team_grade.status, 'Pending')
+    if team_grade.final_grade is not None:
+        team_status = 'Approved' if team_grade.final_grade >= Decimal('75.00') else 'Failed'
+
+    panel_w = team_grade.panel_weight
+    peer_w = team_grade.peer_weight
+
+    member_grades = []
+    panel_contrib = None
+    if team_grade.panel_score is not None:
+        panel_contrib = float(
+            (team_grade.panel_score * Decimal(panel_w) / Decimal('100')).quantize(Decimal('0.01'))
+        )
+
+    peer_by_student = {
+        pg.student_id: pg for pg in team_grade.peer_member_grades.select_related('student')
+    }
+    for membership in team.memberships.select_related('student').order_by('order', 'id'):
+        student = membership.student
+        peer_row = peer_by_student.get(student.id)
+        peer_score = float(peer_row.average_score) if peer_row else None
+        peer_max = float(peer_row.max_score) if peer_row else None
+        final_grade = None
+        if team_grade.final_grade is not None and peer_row:
+            panel_norm = team_grade.panel_score or Decimal('0')
+            peer_norm = peer_row.normalized_score
+            final_grade = float(
+                (
+                    panel_norm * Decimal(panel_w) / Decimal('100')
+                    + peer_norm * Decimal(peer_w) / Decimal('100')
+                ).quantize(Decimal('0.01'))
+            )
+        elif team_grade.final_grade is not None:
+            final_grade = float(team_grade.final_grade)
+
+        member_grades.append({
+            'name': display_name(student),
+            'isLeader': membership.is_leader,
+            'panelContrib': panel_contrib,
+            'peerScore': peer_score,
+            'peerMax': peer_max,
+            'finalGrade': final_grade,
+        })
+
+    return {
+        'teamName': team.name,
+        'projectTitle': team.project_title or '',
+        'percentage': float(percentage),
+        'total': float(total_score),
+        'max': float(total_max),
+        'teamStatus': team_status,
+        'level': team.year_level or '',
+        'criteria': [
+            {
+                'criteriaName': row.criterion_name,
+                'score': float(row.score),
+                'max': float(row.max_score),
+            }
+            for row in rows
+        ],
+        'memberGrades': member_grades,
+        'weights': {
+            'panel': panel_w,
+            'peer': peer_w,
+            **({'adviser': team_grade.adviser_weight} if team_grade.is_capstone and team_grade.adviser_weight else {}),
+        },
+        '_sort_date': team_grade.schedule.scheduled_date if team_grade.schedule_id else None,
+        '_sort_time': team_grade.schedule.start_time if team_grade.schedule_id else None,
+    }
+
+
+def recompute_panel_score(team_grade):
+    """
+    Set team_grade.panel_score to the arithmetic mean of each panelist's percentage.
+
+    panel_score = mean(panelist_i percentage), where each panelist_i percentage is
+    sum(criterion scores) / sum(criterion max scores) * 100 from their GradeBreakdown rows.
+    """
+    breakdowns = list(
+        team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
+            'display_order', 'id'
+        )
+    )
+    if not breakdowns:
+        team_grade.panel_score = None
+        team_grade.save()
+        return team_grade.panel_score
+
+    by_panelist = {}
+    for row in breakdowns:
+        key = _panelist_key_from_breakdown_remarks(row.remarks)
+        by_panelist.setdefault(key, []).append(row)
+
+    percentages = []
+    for rows in by_panelist.values():
+        pct = panelist_percentage_from_breakdowns(rows)
+        if pct is not None:
+            percentages.append(pct)
+
+    if not percentages:
+        team_grade.panel_score = None
+    else:
+        team_grade.panel_score = (
+            sum(percentages, Decimal('0')) / Decimal(len(percentages))
+        ).quantize(Decimal('0.01'))
+    team_grade.save()
+    return team_grade.panel_score
+
+
 def weights_for_schedule(schedule):
     if schedule and schedule.scope == TeamGrade.SCOPE_CAPSTONE and schedule.defense_stage_id:
         from defense.stages.grading_config import weights_for_capstone_stage
@@ -682,15 +846,29 @@ def group_settings_for_grade(grade):
 def build_group_settings_map(grades_queryset, semester):
     if semester is None:
         return {}
-    pairs = grades_queryset.values_list('scope', 'stage_label').distinct()
+    from defense.scheduler.models import PitEventGradingConfig
+    from defense.stages.models import DefenseStage
+
     result = {}
-    for scope, stage_label in pairs:
-        label = (stage_label or '').strip()
+
+    def _put(scope, label):
         key = group_settings_key(scope, label)
+        if key in result:
+            return
         if scope == TeamGrade.SCOPE_PIT:
             result[key] = _pit_group_settings(semester, label)
         else:
             result[key] = _capstone_group_settings(semester, label)
+
+    for scope, stage_label in grades_queryset.values_list('scope', 'stage_label').distinct():
+        _put(scope, (stage_label or '').strip())
+
+    for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label'):
+        _put(TeamGrade.SCOPE_CAPSTONE, stage.label)
+
+    for config in PitEventGradingConfig.objects.filter(semester=semester):
+        _put(TeamGrade.SCOPE_PIT, config.event_name)
+
     return result
 
 

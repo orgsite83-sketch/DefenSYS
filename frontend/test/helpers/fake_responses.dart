@@ -53,7 +53,8 @@ const teamDetailJson = '''
 
 const loginSuccessJson = '''
 {
-  "access": "test-jwt-token",
+  "access": "header.eyJleHAiOjk5OTk5OTk5OTl9.sig",
+  "refresh": "test-refresh-token",
   "user": {
     "id": 1,
     "username": "admin",

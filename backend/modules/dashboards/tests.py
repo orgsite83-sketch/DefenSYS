@@ -257,6 +257,44 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['members'], [])
         self.assertFalse(response.data['peerEvalEnabled'])
 
+    def test_student_cannot_get_admin_dashboard(self):
+        student = User.objects.create_user(
+            username='student-admin-block',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_cannot_get_faculty_dashboard(self):
+        student = User.objects.create_user(
+            username='student-faculty-block',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/faculty/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_multi_hat_faculty_can_access_faculty_and_panelist_dashboards(self):
+        faculty = User.objects.create_user(
+            username='multi-hat-faculty',
+            password='pass12345',
+            role='faculty',
+            is_panelist=True,
+            is_adviser=True,
+        )
+        self.client.force_authenticate(user=faculty)
+
+        faculty_response = self.client.get('/api/dashboards/faculty/')
+        panelist_response = self.client.get('/api/dashboards/panelist/')
+        admin_response = self.client.get('/api/dashboards/admin/')
+
+        self.assertEqual(faculty_response.status_code, 200)
+        self.assertEqual(panelist_response.status_code, 200)
+        self.assertEqual(admin_response.status_code, 403)
+
     def test_panelist_dashboard_returns_empty_phase_two_collections(self):
         panelist = User.objects.create_user(
             username='panelist-1',

@@ -5,9 +5,22 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from grading.grades.services import default_weights, weights_for_schedule
+from grading.grades.models import GradeBreakdown, TeamGrade
+from grading.grades.services import (
+    default_weights,
+    guest_panelist_remark_key,
+    panelist_remark_key_for_user,
+    panelist_result_payload,
+    recompute_panel_score,
+    weights_for_schedule,
+)
+from authentication_access_control.guest_authentication import (
+    GuestJWTAuthentication,
+    IsGuestPanelist,
+)
+from user_management.permissions import IsPanelist
 
-from .models import DefenseSchedule
+from .models import DefenseSchedule, SchedulePanelist
 from academic_period_management.models import Semester
 
 from .pit_config import get_pit_event_config, pit_event_config_payload
@@ -229,30 +242,40 @@ def _panel_rubric_payload(rubric, grade_weights):
     }
 
 
+def _panelist_has_schedule_assignment(user, team_id, schedule_id=None):
+    qs = SchedulePanelist.objects.filter(
+        panelist=user,
+        schedule__team_id=team_id,
+        schedule__status=DefenseSchedule.STATUS_SCHEDULED,
+    )
+    if schedule_id is not None:
+        qs = qs.filter(schedule_id=schedule_id)
+    return qs.exists()
+
+
 class PanelistAssignmentsView(APIView):
     """
     API endpoint for panelists to view their assigned defense schedules.
     Returns teams and rubrics assigned to the authenticated panelist.
     """
-    
+    permission_classes = [IsAuthenticated, IsPanelist]
+
     def get(self, request):
-        # Get panelist ID from query params (for mobile app without auth)
-        panelist_id = request.query_params.get('panelist_id', '').strip()
-        
-        if not panelist_id:
-            return Response(
-                {'error': 'panelist_id parameter is required'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        try:
-            panelist_id = int(panelist_id)
-        except ValueError:
-            return Response(
-                {'error': 'panelist_id must be a valid integer'},
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
+        panelist_id = request.user.id
+        requested_id = request.query_params.get('panelist_id', '').strip()
+        if requested_id:
+            try:
+                if int(requested_id) != panelist_id:
+                    return Response(
+                        {'detail': 'You do not have permission to view another panelist\'s assignments.'},
+                        status=status.HTTP_403_FORBIDDEN,
+                    )
+            except ValueError:
+                return Response(
+                    {'detail': 'panelist_id must be a valid integer.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
         schedules = (
             schedule_queryset()
             .filter(
@@ -310,54 +333,100 @@ class PanelistAssignmentsView(APIView):
 
 
 
+class PanelistResultsView(APIView):
+    """Completed panel grades for the authenticated panelist (Results tab)."""
+
+    permission_classes = [IsAuthenticated, IsPanelist]
+
+    def get(self, request):
+        panelist_key = panelist_remark_key_for_user(request.user)
+        grade_ids = (
+            GradeBreakdown.objects.filter(
+                evaluation_type=GradeBreakdown.EVAL_PANEL,
+                remarks__startswith=panelist_key,
+            )
+            .values_list('team_grade_id', flat=True)
+            .distinct()
+        )
+        team_grades = (
+            TeamGrade.objects.filter(id__in=grade_ids)
+            .select_related('team', 'team__leader', 'schedule')
+            .prefetch_related(
+                'breakdowns',
+                'peer_member_grades',
+                'peer_member_grades__student',
+                'team__memberships',
+                'team__memberships__student',
+            )
+            .order_by('-schedule__scheduled_date', '-schedule__start_time', 'team__name')
+        )
+
+        results = []
+        for grade in team_grades:
+            if not _panelist_has_schedule_assignment(
+                request.user,
+                grade.team_id,
+                grade.schedule_id,
+            ):
+                continue
+            item = panelist_result_payload(grade, panelist_key)
+            if item:
+                results.append(item)
+
+        results.sort(
+            key=lambda row: (
+                row.pop('_sort_date', None) or '',
+                str(row.pop('_sort_time', None) or ''),
+                row.get('teamName', ''),
+            ),
+            reverse=True,
+        )
+
+        return Response({'results': results})
+
+
 class PanelistGradeSubmissionView(APIView):
     """
     API endpoint for panelists to submit their grades for a team.
     Creates or updates grade breakdown entries for the panelist's evaluation.
     """
-    
+    permission_classes = [IsAuthenticated, IsPanelist]
+
     def post(self, request):
-        # Get required parameters
-        panelist_id = request.data.get('panelist_id')
         team_id = request.data.get('team_id')
         schedule_id = request.data.get('schedule_id')
-        criteria_scores = request.data.get('criteria_scores', [])  # List of {name, score, max_score}
+        criteria_scores = request.data.get('criteria_scores', [])
         remarks = request.data.get('remarks', '')
-        
-        # Validate required fields
-        if not all([panelist_id, team_id, criteria_scores]):
+        body_panelist_id = request.data.get('panelist_id')
+
+        if body_panelist_id is not None and str(body_panelist_id) != str(request.user.id):
             return Response(
-                {'error': 'panelist_id, team_id, and criteria_scores are required'},
-                status=status.HTTP_400_BAD_REQUEST
+                {'detail': 'You do not have permission to submit grades for another panelist.'},
+                status=status.HTTP_403_FORBIDDEN,
             )
-        
+
+        if not all([team_id, criteria_scores]):
+            return Response(
+                {'detail': 'team_id and criteria_scores are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         try:
-            from django.contrib.auth import get_user_model
             from student_teams.models import StudentTeam
             from grading.grades.models import TeamGrade, GradeBreakdown
             from academic_period_management.models import Semester
             from decimal import Decimal
-            
-            User = get_user_model()
-            
-            # Get panelist
-            try:
-                panelist = User.objects.get(id=panelist_id)
-            except User.DoesNotExist:
-                return Response(
-                    {'error': 'Panelist not found'},
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            # Get team
+
+            panelist = request.user
+
             try:
                 team = StudentTeam.objects.get(id=team_id)
             except StudentTeam.DoesNotExist:
                 return Response(
-                    {'error': 'Team not found'},
-                    status=status.HTTP_404_NOT_FOUND
+                    {'detail': 'Team not found.'},
+                    status=status.HTTP_404_NOT_FOUND,
                 )
-            
+
             schedule = None
             if schedule_id:
                 schedule = (
@@ -374,6 +443,16 @@ class PanelistGradeSubmissionView(APIView):
                         status=DefenseSchedule.STATUS_SCHEDULED,
                     )
                     .first()
+                )
+
+            if not _panelist_has_schedule_assignment(
+                panelist,
+                team.id,
+                schedule.id if schedule else None,
+            ):
+                return Response(
+                    {'detail': 'You are not assigned to grade this team.'},
+                    status=status.HTTP_403_FORBIDDEN,
                 )
 
             semester = team.semester or Semester.objects.filter(is_active=True).first()
@@ -423,19 +502,8 @@ class PanelistGradeSubmissionView(APIView):
                     display_order=idx,
                 )
             
-            # Calculate panel score (average of all criteria percentages)
-            total_score = sum(Decimal(str(c.get('score', 0))) for c in criteria_scores)
-            total_max = sum(Decimal(str(c.get('max_score', 10))) for c in criteria_scores)
-            
-            if total_max > 0:
-                panel_percentage = (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
-                
-                # Update team_grade panel_score (this will be averaged with other panelists later)
-                # For now, just store this panelist's score
-                # TODO: Implement proper averaging of multiple panelist scores
-                team_grade.panel_score = panel_percentage
-                team_grade.save()
-            
+            recompute_panel_score(team_grade)
+
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
@@ -447,4 +515,229 @@ class PanelistGradeSubmissionView(APIView):
             return Response(
                 {'error': f'Failed to submit grades: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+
+def _team_assignment_payload(schedule):
+    team = schedule.team
+    raw_weights = weights_for_schedule(schedule)
+    grade_weights = _grade_weights_payload(schedule, raw_weights)
+    panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
+    return {
+        'id': team.id,
+        'schedule_id': schedule.id,
+        'scope': schedule.scope,
+        'is_capstone': schedule.scope == DefenseSchedule.SCOPE_CAPSTONE,
+        'event_name': schedule.event_name or '',
+        'name': team.name,
+        'project_title': team.project_title or '',
+        'defense_stage': schedule.stage_label,
+        'scheduled_date': schedule.scheduled_date.isoformat(),
+        'start_time': schedule.start_time.strftime('%H:%M'),
+        'room': schedule.room,
+        'grade_weights': grade_weights,
+        'panel_rubric': panel_rubric,
+        'members': [
+            {
+                'name': f'{m.student.first_name} {m.student.last_name}'.strip() or m.student.username,
+                'username': m.student.username,
+            }
+            for m in team.memberships.all()
+        ],
+    }
+
+
+class GuestPanelistResultsView(APIView):
+    """Completed panel grades for a guest panelist (Results tab)."""
+
+    authentication_classes = [GuestJWTAuthentication]
+    permission_classes = [IsGuestPanelist]
+
+    def get(self, request):
+        principal = request.user
+        panelist_key = guest_panelist_remark_key(principal.guest_name, principal.guest_code)
+        grade_ids = (
+            GradeBreakdown.objects.filter(
+                evaluation_type=GradeBreakdown.EVAL_PANEL,
+                remarks__startswith=panelist_key,
+            )
+            .values_list('team_grade_id', flat=True)
+            .distinct()
+        )
+        team_grades = (
+            TeamGrade.objects.filter(
+                id__in=grade_ids,
+                schedule_id=principal.defense_schedule_id,
+            )
+            .select_related('team', 'team__leader', 'schedule')
+            .prefetch_related(
+                'breakdowns',
+                'peer_member_grades',
+                'peer_member_grades__student',
+                'team__memberships',
+                'team__memberships__student',
+            )
+        )
+
+        results = []
+        for grade in team_grades:
+            item = panelist_result_payload(grade, panelist_key)
+            if item:
+                results.append(item)
+
+        return Response({'results': results})
+
+
+class GuestPanelistAssignmentsView(APIView):
+    """Assignments for a guest panelist JWT (single defense schedule)."""
+
+    authentication_classes = [GuestJWTAuthentication]
+    permission_classes = [IsGuestPanelist]
+
+    def get(self, request):
+        principal = request.user
+        schedule = (
+            schedule_queryset()
+            .filter(
+                pk=principal.defense_schedule_id,
+                status=DefenseSchedule.STATUS_SCHEDULED,
+            )
+            .select_related('rubric__semester', 'semester', 'defense_stage', 'team')
+            .prefetch_related('team__memberships__student', 'rubric__criteria')
+            .first()
+        )
+        if schedule is None:
+            return Response(
+                {'detail': 'Defense schedule is not available for grading.'},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        team_payload = _team_assignment_payload(schedule)
+        rubric = team_payload.get('panel_rubric')
+        return Response({
+            'teams': [team_payload],
+            'rubrics': [rubric] if rubric else [],
+            'schedules_count': 1,
+        })
+
+
+class GuestPanelistGradeSubmissionView(APIView):
+    """Submit panel grades for the guest's assigned defense schedule."""
+
+    authentication_classes = [GuestJWTAuthentication]
+    permission_classes = [IsGuestPanelist]
+
+    def post(self, request):
+        principal = request.user
+        team_id = request.data.get('team_id')
+        schedule_id = request.data.get('schedule_id')
+        criteria_scores = request.data.get('criteria_scores', [])
+        remarks = request.data.get('remarks', '')
+
+        if not all([team_id, criteria_scores]):
+            return Response(
+                {'detail': 'team_id and criteria_scores are required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if str(team_id) != str(principal.team_id):
+            return Response(
+                {'detail': 'You are not assigned to grade this team.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        if schedule_id is not None and str(schedule_id) != str(principal.defense_schedule_id):
+            return Response(
+                {'detail': 'You are not assigned to grade this schedule.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        try:
+            from decimal import Decimal
+
+            from grading.grades.models import GradeBreakdown, TeamGrade
+            from student_teams.models import StudentTeam
+
+            try:
+                team = StudentTeam.objects.get(id=team_id)
+            except StudentTeam.DoesNotExist:
+                return Response(
+                    {'detail': 'Team not found.'},
+                    status=status.HTTP_404_NOT_FOUND,
+                )
+
+            schedule = (
+                schedule_queryset()
+                .filter(
+                    pk=principal.defense_schedule_id,
+                    team=team,
+                    status=DefenseSchedule.STATUS_SCHEDULED,
+                )
+                .first()
+            )
+            if schedule is None:
+                return Response(
+                    {'detail': 'You are not assigned to grade this team.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+
+            semester = team.semester or Semester.objects.filter(is_active=True).first()
+            if not semester:
+                return Response(
+                    {'error': 'No active semester found'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            stage_label = schedule.stage_label
+            scope = schedule.scope
+            weight_defaults = weights_for_schedule(schedule)
+
+            team_grade, _created = TeamGrade.objects.get_or_create(
+                team=team,
+                semester=semester,
+                scope=scope,
+                stage_label=stage_label,
+                defaults={
+                    'schedule': schedule,
+                    **weight_defaults,
+                },
+            )
+            if team_grade.schedule_id != schedule.id:
+                team_grade.schedule = schedule
+            for field, value in weight_defaults.items():
+                setattr(team_grade, field, value)
+            team_grade.save()
+
+            panelist_label = f'Guest panelist: {principal.guest_name} ({principal.guest_code})'
+            GradeBreakdown.objects.filter(
+                team_grade=team_grade,
+                evaluation_type='panel',
+                remarks__contains=panelist_label,
+            ).delete()
+
+            for idx, criterion in enumerate(criteria_scores):
+                GradeBreakdown.objects.create(
+                    team_grade=team_grade,
+                    rubric=schedule.rubric if schedule else None,
+                    evaluation_type='panel',
+                    criterion_name=criterion.get('name', 'Criterion'),
+                    score=Decimal(str(criterion.get('score', 0))),
+                    max_score=Decimal(str(criterion.get('max_score', 10))),
+                    remarks=f'{panelist_label}\n{remarks}',
+                    display_order=idx,
+                )
+
+            recompute_panel_score(team_grade)
+
+            return Response({
+                'success': True,
+                'message': 'Grades submitted successfully',
+                'team_grade_id': team_grade.id,
+                'panel_score': float(team_grade.panel_score) if team_grade.panel_score else None,
+            }, status=status.HTTP_201_CREATED)
+
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to submit grades: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )

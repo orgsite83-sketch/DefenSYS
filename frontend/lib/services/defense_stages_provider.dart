@@ -2,8 +2,9 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final defenseStagesProvider =
     NotifierProvider<DefenseStagesNotifier, DefenseStagesState>(
@@ -69,9 +70,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     );
 
     try {
-      final response = await http.get(
+      final response = await _client.get(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -102,9 +103,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     );
 
     try {
-      final response = await http.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -132,9 +133,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     );
 
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/$stageId/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -163,7 +164,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         queryParameters:
             semesterId != null ? {'semester_id': '$semesterId'} : null,
       );
-      final response = await http.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
       if (response.statusCode == 200) {
         return Map<String, dynamic>.from(jsonDecode(response.body));
       }
@@ -181,9 +182,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
   ) async {
     state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
     try {
-      final response = await http.patch(
+      final response = await _client.patch(
         Uri.parse('$baseUrl/$stageId/grading-config/?semester_id=$semesterId'),
-        headers: await _headers(),
+        
         body: jsonEncode(weights),
       );
       if (response.statusCode == 200) {
@@ -212,9 +213,9 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     );
 
     try {
-      final response = await http.delete(
+      final response = await _client.delete(
         Uri.parse('$baseUrl/$stageId/'),
-        headers: await _headers(),
+        
       );
 
       if (response.statusCode == 200) {
@@ -233,19 +234,8 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

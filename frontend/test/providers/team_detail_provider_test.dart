@@ -4,13 +4,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:user/services/api_http.dart';
 import 'package:user/services/team_detail_provider.dart';
 
+import '../helpers/auth_test_overrides.dart';
 import '../helpers/mock_http_setup.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   setUp(() {
-    SharedPreferences.setMockInitialValues({'jwt_token': 'test-token'});
+    SharedPreferences.setMockInitialValues({});
     installDefaultMockHttp();
   });
 
@@ -19,7 +20,7 @@ void main() {
   });
 
   test('load fetches team and related data', () async {
-    final container = ProviderContainer();
+    final container = ProviderContainer(overrides: authTestOverrides());
     addTearDown(container.dispose);
 
     await container.read(teamDetailProvider(1).notifier).load();

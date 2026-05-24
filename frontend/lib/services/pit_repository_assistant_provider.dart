@@ -2,10 +2,11 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 
 import '../config/api_config.dart';
 import 'api_http.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final pitRepositoryAssistantProvider =
     NotifierProvider<PitRepositoryAssistantNotifier, PitRepositoryAssistantState>(
@@ -63,9 +64,9 @@ class PitRepositoryAssistantNotifier extends Notifier<PitRepositoryAssistantStat
   Future<void> fetch() async {
     state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
     try {
-      final response = await apiHttpClient.get(
+      final response = await _client.get(
         Uri.parse(_url),
-        headers: await _headers(),
+        
       );
       if (response.statusCode == 200) {
         _applyPayload(jsonDecode(response.body));
@@ -83,9 +84,9 @@ class PitRepositoryAssistantNotifier extends Notifier<PitRepositoryAssistantStat
   Future<bool> assign(int facultyId) async {
     state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
     try {
-      final response = await apiHttpClient.post(
+      final response = await _client.post(
         Uri.parse(_url),
-        headers: await _headers(),
+        
         body: jsonEncode({'faculty_id': facultyId}),
       );
       if (response.statusCode == 200) {
@@ -124,17 +125,8 @@ class PitRepositoryAssistantNotifier extends Notifier<PitRepositoryAssistantStat
         .toList();
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+
 
   String _errorFromResponse(http.Response response) {
     try {
@@ -147,7 +139,9 @@ class PitRepositoryAssistantNotifier extends Notifier<PitRepositoryAssistantStat
           return first.toString();
         }
       }
-    } catch (_) {}
+    } catch (_) {
+      // Non-JSON error body — use status line below.
+    }
     return 'Request failed. Status: ${response.statusCode}';
   }
 }

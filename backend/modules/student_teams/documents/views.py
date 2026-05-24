@@ -37,19 +37,22 @@ def team_document_queryset_for_user(user, team_id=None):
     return qs.filter(team_id__in=accessible.values_list('id', flat=True))
 
 
-def user_can_access_team_document(user, document):
+def user_can_access_team(user, team):
     if not user or not user.is_authenticated:
         return False
     if user.is_superuser or getattr(user, 'role', None) == 'admin':
         return True
     if getattr(user, 'is_pit_lead', False) or getattr(user, 'is_uploader', False):
         return True
-    team = document.team
     if team.leader_id == user.id:
         return True
     if team.adviser_id == user.id:
         return True
     return team.memberships.filter(student_id=user.id).exists()
+
+
+def user_can_access_team_document(user, document):
+    return user_can_access_team(user, document.team)
 
 
 class TeamDocumentListView(APIView):
@@ -88,6 +91,11 @@ class TeamDocumentUploadView(APIView):
         uploaded_file = serializer.validated_data['file']
 
         team = get_object_or_404(StudentTeam, pk=team_id)
+        if not user_can_access_team(request.user, team):
+            return Response(
+                {'detail': 'You do not have permission to upload documents for this team.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
 
         file_data = uploaded_file.read()
         uploaded_file.seek(0)

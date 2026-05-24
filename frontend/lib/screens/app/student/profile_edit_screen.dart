@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:typed_data';
 
-const _primaryColor = Color(0xFF7F1D1D);
+import '../../../theme/defensys_tokens.dart';
 
 class StudentProfile {
   String name;
@@ -19,6 +19,8 @@ class StudentProfile {
   });
 }
 
+final _emailPattern = RegExp(r'^[^@]+@[^@]+\.[^@]+$');
+
 class ProfileEditScreen extends StatefulWidget {
   final StudentProfile profile;
   const ProfileEditScreen({super.key, required this.profile});
@@ -28,6 +30,7 @@ class ProfileEditScreen extends StatefulWidget {
 }
 
 class _ProfileEditScreenState extends State<ProfileEditScreen> {
+  final _formKey = GlobalKey<FormState>();
   late final TextEditingController _nameCtrl;
   late final TextEditingController _emailCtrl;
   late final TextEditingController _idCtrl;
@@ -55,12 +58,8 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
   }
 
   void _save() {
-    if (_nameCtrl.text.trim().isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Name cannot be empty.')),
-      );
-      return;
-    }
+    if (!_formKey.currentState!.validate()) return;
+
     widget.profile
       ..name = _nameCtrl.text.trim()
       ..email = _emailCtrl.text.trim()
@@ -74,7 +73,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       appBar: AppBar(
-        backgroundColor: _primaryColor,
+        backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
         title: const Text('Edit Profile',
             style: TextStyle(fontWeight: FontWeight.bold)),
@@ -89,124 +88,158 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(20),
-        children: [
-          // Avatar
-          Center(
-            child: Stack(
-              children: [
-                CircleAvatar(
-                  radius: 54,
-                  backgroundColor: _primaryColor.withOpacity(0.15),
-                  backgroundImage: _avatarBytes != null
-                      ? MemoryImage(_avatarBytes!)
-                      : null,
-                  child: _avatarBytes == null
-                      ? Text(
-                          _nameCtrl.text.isNotEmpty
-                              ? _nameCtrl.text[0].toUpperCase()
-                              : 'S',
-                          style: const TextStyle(
-                              fontSize: 36,
-                              fontWeight: FontWeight.bold,
-                              color: _primaryColor),
-                        )
-                      : null,
-                ),
-                Positioned(
-                  bottom: 0,
-                  right: 0,
-                  child: GestureDetector(
-                    onTap: _pickImage,
-                    child: Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: _primaryColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 2),
+      body: Form(
+        key: _formKey,
+        child: ListView(
+          padding: const EdgeInsets.all(20),
+          children: [
+            // Avatar
+            Center(
+              child: Stack(
+                children: [
+                  CircleAvatar(
+                    radius: 54,
+                    backgroundColor: DefensysTokens.maroon.withOpacity(0.15),
+                    backgroundImage: _avatarBytes != null
+                        ? MemoryImage(_avatarBytes!)
+                        : null,
+                    child: _avatarBytes == null
+                        ? Text(
+                            _nameCtrl.text.isNotEmpty
+                                ? _nameCtrl.text[0].toUpperCase()
+                                : 'S',
+                            style: const TextStyle(
+                                fontSize: 36,
+                                fontWeight: FontWeight.bold,
+                                color: DefensysTokens.maroon),
+                          )
+                        : null,
+                  ),
+                  Positioned(
+                    bottom: 0,
+                    right: 0,
+                    child: GestureDetector(
+                      onTap: _pickImage,
+                      child: Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroon,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: Colors.white, width: 2),
+                        ),
+                        child: const Icon(Icons.camera_alt_rounded,
+                            size: 16, color: Colors.white),
                       ),
-                      child: const Icon(Icons.camera_alt_rounded,
-                          size: 16, color: Colors.white),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Center(
-            child: TextButton.icon(
-              onPressed: _pickImage,
-              icon: const Icon(Icons.upload_rounded,
-                  size: 14, color: _primaryColor),
-              label: const Text('Upload Photo',
-                  style: TextStyle(fontSize: 13, color: _primaryColor)),
-            ),
-          ),
-          if (_avatarBytes != null)
+            const SizedBox(height: 8),
             Center(
               child: TextButton.icon(
-                onPressed: () => setState(() => _avatarBytes = null),
-                icon: const Icon(Icons.delete_outline,
-                    size: 14, color: Colors.red),
-                label: const Text('Remove Photo',
-                    style: TextStyle(fontSize: 13, color: Colors.red)),
+                onPressed: _pickImage,
+                icon: const Icon(Icons.upload_rounded,
+                    size: 14, color: DefensysTokens.maroon),
+                label: const Text('Upload Photo',
+                    style:
+                        TextStyle(fontSize: 13, color: DefensysTokens.maroon)),
               ),
             ),
-          const SizedBox(height: 20),
-          // Fields
-          _field('Full Name', _nameCtrl, Icons.person_outline),
-          const SizedBox(height: 14),
-          _field('Email Address', _emailCtrl, Icons.email_outlined,
-              keyboard: TextInputType.emailAddress),
-          const SizedBox(height: 14),
-          _field('Student ID', _idCtrl, Icons.badge_outlined),
-          const SizedBox(height: 14),
-          // Team — read-only
-          TextFormField(
-            initialValue: widget.profile.team,
-            readOnly: true,
-            decoration: InputDecoration(
-              labelText: 'Team',
-              prefixIcon: const Icon(Icons.group_outlined, size: 20),
-              filled: true,
-              fillColor: Colors.grey.shade100,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+            if (_avatarBytes != null)
+              Center(
+                child: TextButton.icon(
+                  onPressed: () => setState(() => _avatarBytes = null),
+                  icon: const Icon(Icons.delete_outline,
+                      size: 14, color: Colors.red),
+                  label: const Text('Remove Photo',
+                      style: TextStyle(fontSize: 13, color: Colors.red)),
+                ),
               ),
-              enabledBorder: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide(color: Colors.grey.shade300),
+            const SizedBox(height: 20),
+            _field(
+              'Full Name',
+              _nameCtrl,
+              Icons.person_outline,
+              validator: (v) =>
+                  v == null || v.trim().isEmpty ? 'Name cannot be empty' : null,
+            ),
+            const SizedBox(height: 14),
+            _field(
+              'Email Address',
+              _emailCtrl,
+              Icons.email_outlined,
+              keyboard: TextInputType.emailAddress,
+              validator: (v) {
+                if (v == null || v.trim().isEmpty) {
+                  return 'Email is required';
+                }
+                if (!_emailPattern.hasMatch(v.trim())) {
+                  return 'Enter a valid email address';
+                }
+                return null;
+              },
+            ),
+            const SizedBox(height: 14),
+            _field(
+              'Student ID',
+              _idCtrl,
+              Icons.badge_outlined,
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Student ID is required'
+                  : null,
+            ),
+            const SizedBox(height: 14),
+            TextFormField(
+              initialValue: widget.profile.team,
+              readOnly: true,
+              decoration: InputDecoration(
+                labelText: 'Team',
+                prefixIcon: const Icon(Icons.group_outlined, size: 20),
+                filled: true,
+                fillColor: Colors.grey.shade100,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: Colors.grey.shade300),
+                ),
               ),
             ),
-          ),
-          const SizedBox(height: 28),
-          ElevatedButton(
-            onPressed: _save,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _primaryColor,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12)),
-              elevation: 0,
+            const SizedBox(height: 28),
+            ElevatedButton(
+              onPressed: _save,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DefensysTokens.maroon,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12)),
+                elevation: 0,
+              ),
+              child: const Text('Save Changes',
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
             ),
-            child: const Text('Save Changes',
-                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700)),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
-  Widget _field(String label, TextEditingController ctrl, IconData icon,
-      {TextInputType keyboard = TextInputType.text}) {
-    return TextField(
+  Widget _field(
+    String label,
+    TextEditingController ctrl,
+    IconData icon, {
+    TextInputType keyboard = TextInputType.text,
+    String? Function(String?)? validator,
+  }) {
+    return TextFormField(
       controller: ctrl,
       keyboardType: keyboard,
+      validator: validator,
       decoration: InputDecoration(
         labelText: label,
         prefixIcon: Icon(icon, size: 20),
@@ -222,7 +255,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(12),
-          borderSide: const BorderSide(color: _primaryColor),
+          borderSide: const BorderSide(color: DefensysTokens.maroon),
         ),
       ),
     );

@@ -4,11 +4,33 @@
 
 ---
 
+## Backend setup (first time)
+
+```powershell
+cd backend
+# Optional Windows helper (creates venv + installs deps):
+powershell -ExecutionPolicy Bypass -File setup_venv.ps1
+.\venv\Scripts\Activate.ps1
+
+# Or manually:
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+copy .env.example .env   # then edit DB + ALLOWED_HOSTS
+python manage.py migrate
+```
+
+All Python dependencies (Django, JWT, PDF, ML) are in **`requirements.txt`** — no separate ML or PDF install scripts.
+
+---
+
 ## Start Everything
 
 **Terminal 1 — Django API:**
 ```powershell
 cd backend
+.\venv\Scripts\Activate.ps1
 python manage.py runserver 0.0.0.0:8000
 ```
 
@@ -18,8 +40,8 @@ cd frontend
 flutter run -d chrome
 # Android emulator (Django on host PC):
 # flutter run --dart-define=DEFENSYS_ANDROID_EMULATOR=true
-# Physical phone on Wi‑Fi (uses LAN IP in api_config.dart):
-# flutter run --dart-define=DEFENSYS_ANDROID_EMULATOR=false
+# Physical phone on Wi‑Fi (replace with your PC LAN IP):
+# flutter run --dart-define=DEFENSYS_API_HOST=192.168.x.x
 ```
 
 **Browser (Flutter web):** use the URL printed by `flutter run` (typically `http://localhost:<port>/`).
@@ -104,6 +126,15 @@ All under [`sample_file/`](../sample_file/README.md) at the repo root.
 | Remove extra students (DB) | `python manage.py remove_extra_demo_students` |
 
 In the app: **User Management** → Bulk Import → **Download Sample Template** (pick year). **Student Teams** → **CSV Template** (pick year for team CSV).
+
+## Phase 1 security regression (backend)
+
+```powershell
+cd backend
+python manage.py test authentication_access_control.test_security_regression authentication_access_control.tests academic_period_management.tests dashboards.tests user_management.tests student_teams.documents.tests defense.scheduler.tests --keepdb
+```
+
+---
 
 ## Quick Fixes
 

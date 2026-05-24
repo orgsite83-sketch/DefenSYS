@@ -2,9 +2,10 @@ import 'dart:convert';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
 import '../config/api_config.dart';
 import 'api_http.dart';
+import 'authenticated_client.dart';
+import 'session_expired.dart';
 
 final capstoneDeliverablesProvider =
     NotifierProvider<CapstoneDeliverablesNotifier, CapstoneDeliverablesState>(
@@ -112,7 +113,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
         },
       );
-      final response = await apiHttpClient.get(uri, headers: await _headers());
+      final response = await _client.get(uri);
 
       if (response.statusCode == 200) {
         _applyPayload(
@@ -171,9 +172,9 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     );
 
     try {
-      final response = await apiHttpClient.post(
+      final response = await _client.post(
         Uri.parse('$baseUrl/$action/'),
-        headers: await _headers(),
+        
         body: jsonEncode(payload),
       );
 
@@ -193,19 +194,8 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }
   }
 
-  Future<Map<String, String>> _headers() async {
-    final prefs = await SharedPreferences.getInstance();
-    final token = prefs.getString('jwt_token');
+  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-    if (token == null) {
-      throw Exception('No authentication token found.');
-    }
-
-    return {
-      'Content-Type': 'application/json',
-      'Authorization': 'Bearer $token',
-    };
-  }
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

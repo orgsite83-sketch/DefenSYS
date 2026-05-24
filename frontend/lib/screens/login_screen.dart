@@ -2,105 +2,159 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/l10n_ext.dart';
+import '../navigation/post_auth_navigation.dart';
 import '../services/auth_provider.dart';
-import '../services/bridge_service.dart';
+import '../services/session_storage.dart';
+import '../theme/defensys_tokens.dart';
 import '../theme/app_theme.dart';
+import '../widgets/feedback_snackbar.dart';
 import 'about_screen.dart';
-import 'app/panelist_dashboard.dart';
 import 'privacy_screen.dart';
-import 'terms_agreement_screen.dart';
 import 'terms_screen.dart';
-import 'web/admin/admin_dashboard.dart';
-import 'web/faculty/faculty_dashboard.dart';
 
 class LoginScreen extends ConsumerStatefulWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({super.key, this.sessionMessage});
+
+  final String? sessionMessage;
 
   @override
   ConsumerState<LoginScreen> createState() => _LoginScreenState();
 }
 
 class _LoginScreenState extends ConsumerState<LoginScreen> {
+  final _formKey = GlobalKey<FormState>();
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   bool _obscure = true;
   bool _rememberMe = false;
+  bool _handledAutoRoute = false;
+  bool _sessionBannerDismissed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRememberMe();
+  }
+
+  Future<void> _loadRememberMe() async {
+    final value = await SessionStorage.loadRememberMeChoice();
+    if (mounted) setState(() => _rememberMe = value);
+  }
+
+  Widget? _buildSessionBanner() {
+    final msg = widget.sessionMessage;
+    if (msg == null || msg.isEmpty || _sessionBannerDismissed) {
+      return null;
+    }
+
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.info_outline, color: Color(0xFFD97706), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              msg,
+              style: const TextStyle(fontSize: 13, color: Color(0xFF92400E)),
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            tooltip: 'Dismiss',
+            onPressed: () => setState(() => _sessionBannerDismissed = true),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
+    );
+  }
 
   Future<void> _login() async {
+    if (!_formKey.currentState!.validate()) return;
+
     final username = _emailCtrl.text.trim();
     final pass = _passCtrl.text.trim();
 
-    if (username.isEmpty || pass.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill in all fields.')),
-      );
-      return;
-    }
-
-    final success = await ref.read(authProvider.notifier).login(username, pass);
+    final success = await ref.read(authProvider.notifier).login(
+          username,
+          pass,
+          rememberMe: _rememberMe,
+        );
     if (!mounted) return;
 
     if (success) {
       final user = ref.read(authProvider).user!;
-      final role = _resolveRole(user);
-      
-      // Platform-based role restrictions
-      final baseRole = user['role'];
-      final isWeb = kIsWeb;
-      
-      // Mobile: only student and panelist allowed
-      if (!isWeb && baseRole != 'student' && baseRole != 'faculty') {
-        await ref.read(authProvider.notifier).logout();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Mobile app is only available for students and panelists.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-      
-      // Web: admin and faculty only (no students)
-      if (isWeb && baseRole == 'student') {
-        await ref.read(authProvider.notifier).logout();
-        if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Students must use the mobile app.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-        return;
-      }
-
-      // Skip Terms & Conditions for web, go directly to dashboard
-      if (isWeb) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) {
-              if (role == 'Admin') return AdminDashboard(userData: user);
-              if (role == 'Faculty') return FacultyDashboard(userData: user);
-              return AdminDashboard(userData: user); // fallback
-            },
-          ),
-        );
-      } else {
-        // Mobile: show Terms & Conditions
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => TermsAgreementScreen(role: role, userData: user),
-          ),
-        );
-      }
+      await _navigateAfterAuth(user);
     } else {
       final error = ref.read(authProvider).error ?? 'Login Failed';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(error), backgroundColor: Colors.red),
-      );
+      showErrorSnackBar(context, error);
     }
+  }
+
+  Future<void> _navigateAfterAuth(Map<String, dynamic> user) async {
+    final role = _resolveRole(user);
+    final baseRole = user['role'];
+    final isWeb = kIsWeb;
+
+    if (!isWeb && baseRole != 'student' && baseRole != 'faculty') {
+      await ref.read(authProvider.notifier).logout();
+      if (!mounted) return;
+      showErrorSnackBar(
+        context,
+        'The mobile app is for students and defense panelists only. '
+        'Admins should use the web app.',
+      );
+      return;
+    }
+
+    if (!isWeb && baseRole == 'faculty' && _facultyNeedsWebApp(user)) {
+      await ref.read(authProvider.notifier).logout();
+      if (!mounted) return;
+      showErrorSnackBar(
+        context,
+        'Faculty tools (advising, PIT lead, Grade Center) are available on the web app. '
+        'Use a browser on desktop.',
+      );
+      return;
+    }
+
+    if (isWeb && baseRole == 'student') {
+      await ref.read(authProvider.notifier).logout();
+      if (!mounted) return;
+      showErrorSnackBar(context, 'Students must use the mobile app.');
+      return;
+    }
+
+    if (isWeb) {
+      await navigateToHomeAfterAuth(
+        context,
+        role: role,
+        userData: user,
+      );
+      return;
+    }
+
+    await navigateToHomeAfterAuth(
+      context,
+      role: role,
+      userData: user,
+    );
+  }
+
+  /// Faculty without the panelist hat need the web app (adviser, PIT lead, uploader, etc.).
+  bool _facultyNeedsWebApp(Map<String, dynamic> user) {
+    return user['is_panelist'] != true;
   }
 
   String _resolveRole(Map<String, dynamic> user) {
@@ -110,12 +164,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
     if (baseRole == 'faculty') {
       if (kIsWeb) return 'Faculty';
-      if (user['is_pit_lead'] == true) return 'DevPanelist';
-      if (user['is_panelist'] == true || user['is_adviser'] == true) {
-        return 'Panelist';
-      }
+      if (user['is_panelist'] == true) return 'Panelist';
       return 'Faculty';
     }
+
+    if (baseRole == 'guest_panelist') return 'Panelist';
 
     return 'Student';
   }
@@ -123,6 +176,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final authState = ref.watch(authProvider);
+
+    ref.listen<AuthState>(authProvider, (previous, next) {
+      if (_handledAutoRoute) return;
+      if (kIsWeb) return;
+      if (!next.isRestoring &&
+          next.sessionRestored &&
+          next.user != null &&
+          next.token != null) {
+        _handledAutoRoute = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _navigateAfterAuth(next.user!);
+        });
+      }
+    });
+
+    if (authState.isRestoring) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -154,7 +227,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 height: 335,
                 child: ClipPath(
                   clipper: _WebHeaderClipper(),
-                  child: Container(color: const Color(0xFF8F130D)),
+                  child: Container(color: DefensysTokens.maroon),
                 ),
               ),
               Align(
@@ -189,7 +262,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               style: TextStyle(
                                 fontSize: 22,
                                 fontWeight: FontWeight.w800,
-                                color: Color(0xFF8F130D),
+                                color: DefensysTokens.maroon,
                                 letterSpacing: 0.2,
                               ),
                             ),
@@ -204,35 +277,53 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ),
                             const SizedBox(height: 32),
-                            _fieldLabel('Username or Email'),
-                            const SizedBox(height: 10),
-                            TextField(
-                              controller: _emailCtrl,
-                              decoration: _webInputDecoration(),
-                              onSubmitted: (_) => _login(),
-                            ),
-                            const SizedBox(height: 20),
-                            _fieldLabel('Password'),
-                            const SizedBox(height: 10),
-                            TextField(
-                              controller: _passCtrl,
-                              obscureText: _obscure,
-                              decoration: _webInputDecoration(
-                                suffixIcon: IconButton(
-                                  tooltip: _obscure
-                                      ? 'Show password'
-                                      : 'Hide password',
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                    size: 20,
+                            if (_buildSessionBanner() != null) _buildSessionBanner()!,
+                            Form(
+                              key: _formKey,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  _fieldLabel('Username or Email'),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: _emailCtrl,
+                                    decoration: _webInputDecoration(),
+                                    validator: (v) =>
+                                        v == null || v.trim().isEmpty
+                                            ? 'Enter your username or email'
+                                            : null,
+                                    onFieldSubmitted: (_) => _login(),
                                   ),
-                                  onPressed: () =>
-                                      setState(() => _obscure = !_obscure),
-                                ),
+                                  const SizedBox(height: 20),
+                                  _fieldLabel('Password'),
+                                  const SizedBox(height: 10),
+                                  TextFormField(
+                                    controller: _passCtrl,
+                                    obscureText: _obscure,
+                                    decoration: _webInputDecoration(
+                                      suffixIcon: IconButton(
+                                        tooltip: _obscure
+                                            ? 'Show password'
+                                            : 'Hide password',
+                                        icon: Icon(
+                                          _obscure
+                                              ? Icons.visibility_off_outlined
+                                              : Icons.visibility_outlined,
+                                          size: 20,
+                                        ),
+                                        onPressed: () => setState(
+                                          () => _obscure = !_obscure,
+                                        ),
+                                      ),
+                                    ),
+                                    validator: (v) =>
+                                        v == null || v.trim().isEmpty
+                                            ? 'Enter your password'
+                                            : null,
+                                    onFieldSubmitted: (_) => _login(),
+                                  ),
+                                ],
                               ),
-                              onSubmitted: (_) => _login(),
                             ),
                             const SizedBox(height: 14),
                             Row(
@@ -271,13 +362,26 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                                 ),
                               ],
                             ),
+                            if (kIsWeb) ...[
+                              const SizedBox(height: 6),
+                              const Align(
+                                alignment: Alignment.centerLeft,
+                                child: Text(
+                                  'Only enable Remember me on personal devices.',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF64748B),
+                                  ),
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 16),
                             SizedBox(
                               height: 51,
                               child: ElevatedButton(
                                 onPressed: authState.isLoading ? null : _login,
                                 style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF8F130D),
+                                  backgroundColor: DefensysTokens.maroon,
                                   foregroundColor: const Color(0xFFFFD24A),
                                   shape: RoundedRectangleBorder(
                                     borderRadius: BorderRadius.circular(8),
@@ -329,7 +433,9 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Scaffold(
       backgroundColor: AppColors.maroon,
       body: SafeArea(
-        child: SingleChildScrollView(
+        child: MediaQuery.withClampedTextScaling(
+          maxScaleFactor: 1.3,
+          child: SingleChildScrollView(
           child: Column(
             children: [
               Padding(
@@ -377,38 +483,58 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Sign in to continue',
-                      style: TextStyle(
+                    Text(
+                      context.l10n.loginSignIn,
+                      style: const TextStyle(
                         fontSize: 14,
                         color: AppColors.textSecondary,
                       ),
                     ),
                     const SizedBox(height: 28),
-                    TextField(
-                      controller: _emailCtrl,
-                      keyboardType: TextInputType.text,
-                      decoration: const InputDecoration(
-                        labelText: 'ID Number',
-                        prefixIcon: Icon(Icons.badge_outlined, size: 20),
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextField(
-                      controller: _passCtrl,
-                      obscureText: _obscure,
-                      decoration: InputDecoration(
-                        labelText: 'Password',
-                        prefixIcon: const Icon(Icons.lock_outline, size: 20),
-                        suffixIcon: IconButton(
-                          icon: Icon(
-                            _obscure
-                                ? Icons.visibility_off_outlined
-                                : Icons.visibility_outlined,
-                            size: 20,
+                    if (_buildSessionBanner() != null) _buildSessionBanner()!,
+                    Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextFormField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.text,
+                            decoration: InputDecoration(
+                              labelText: context.l10n.loginStudentIdLabel,
+                              prefixIcon: const Icon(Icons.badge_outlined, size: 20),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? context.l10n.loginRequiredField
+                                : null,
                           ),
-                          onPressed: () => setState(() => _obscure = !_obscure),
-                        ),
+                          const SizedBox(height: 14),
+                          TextFormField(
+                            controller: _passCtrl,
+                            obscureText: _obscure,
+                            decoration: InputDecoration(
+                              labelText: context.l10n.loginPasswordLabel,
+                              prefixIcon:
+                                  const Icon(Icons.lock_outline, size: 20),
+                              suffixIcon: IconButton(
+                                tooltip: _obscure
+                                    ? 'Show password'
+                                    : 'Hide password',
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  size: 20,
+                                ),
+                                onPressed: () =>
+                                    setState(() => _obscure = !_obscure),
+                              ),
+                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Enter your password'
+                                : null,
+                          ),
+                        ],
                       ),
                     ),
                     const SizedBox(height: 8),
@@ -458,32 +584,30 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    SizedBox(
-                      width: double.infinity,
-                      child: OutlinedButton.icon(
-                        onPressed: _showGuestDialog,
-                        icon: const Icon(Icons.vpn_key_rounded, size: 18),
-                        label: const Text(
-                          'Guest Panelist Access',
-                          style: TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w600,
+                    if (!kIsWeb)
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: _showGuestDialog,
+                          icon: const Icon(Icons.vpn_key_rounded, size: 18),
+                          label: const Text(
+                            'Guest Panelist Access',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: const Color(0xFF92400E),
-                          side: const BorderSide(
-                            color: Color(0xFFFDE68A),
-                            width: 1.5,
-                          ),
-                          backgroundColor: const Color(0xFFFFFBEB),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFF92400E),
+                            side: const BorderSide(
+                              color: Color(0xFFFDE68A),
+                              width: 1.5,
+                            ),
+                            backgroundColor: const Color(0xFFFFFBEB),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
                           ),
                         ),
                       ),
-                    ),
                     const SizedBox(height: 24),
                     Center(
                       child: Text(
@@ -567,6 +691,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             ],
           ),
         ),
+        ),
       ),
     );
   }
@@ -598,7 +723,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(7),
-        borderSide: const BorderSide(color: Color(0xFF8F130D), width: 1.4),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.4),
       ),
     );
   }
@@ -637,8 +762,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   void _showGuestDialog() {
+    if (kIsWeb) {
+      showErrorSnackBar(
+        context,
+        'Guest panelist access is available on the mobile app only.',
+      );
+      return;
+    }
+
     final codeCtrl = TextEditingController();
+    final guestFormKey = GlobalKey<FormState>();
     bool isValidating = false;
+    String? dialogError;
 
     showDialog(
       context: context,
@@ -678,25 +813,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                 style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
               ),
               const SizedBox(height: 16),
-              TextField(
-                controller: codeCtrl,
-                textCapitalization: TextCapitalization.characters,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 2,
-                  fontFamily: 'monospace',
-                ),
-                decoration: InputDecoration(
-                  hintText: 'DEF-XXXXXX',
-                  hintStyle: TextStyle(
-                    color: Colors.grey.shade300,
+              Form(
+                key: guestFormKey,
+                child: TextFormField(
+                  controller: codeCtrl,
+                  textCapitalization: TextCapitalization.characters,
+                  onChanged: (_) {
+                    if (dialogError != null) {
+                      setDialogState(() => dialogError = null);
+                    }
+                  },
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
                     letterSpacing: 2,
+                    fontFamily: 'monospace',
                   ),
-                  prefixIcon: const Icon(Icons.lock_open_rounded, size: 20),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  decoration: InputDecoration(
+                    hintText: 'DEF-XXXXXX',
+                    hintStyle: TextStyle(
+                      color: Colors.grey.shade300,
+                      letterSpacing: 2,
+                    ),
+                    prefixIcon: const Icon(Icons.lock_open_rounded, size: 20),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    errorText: dialogError,
                   ),
+                  validator: (v) {
+                    if (v == null || v.trim().isEmpty) {
+                      return 'Enter your access code';
+                    }
+                    return null;
+                  },
                 ),
               ),
             ],
@@ -710,41 +860,33 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               onPressed: isValidating
                   ? null
                   : () async {
+                      if (!(guestFormKey.currentState?.validate() ?? false)) {
+                        return;
+                      }
+
                       final code = codeCtrl.text.trim().toUpperCase();
-                      if (code.isEmpty) return;
 
                       setDialogState(() => isValidating = true);
-                      final guestData = await BridgeService.validateGuestCode(
-                        code,
-                      );
+                      final success = await ref
+                          .read(authProvider.notifier)
+                          .loginGuest(code);
 
                       if (!ctx.mounted || !mounted) return;
 
-                      if (guestData != null) {
+                      if (success) {
+                        final user = ref.read(authProvider).user!;
                         Navigator.pop(ctx);
-                        Navigator.pushReplacement(
+                        await navigateToHomeAfterAuth(
                           context,
-                          MaterialPageRoute(
-                            builder: (_) => PanelistDashboard(
-                              userData: {
-                                'name': guestData['guestName'],
-                                'id': code,
-                                'role': 'guest_panelist',
-                                'defenseId': guestData['defenseId'],
-                              },
-                            ),
-                          ),
+                          role: 'Panelist',
+                          userData: user,
                         );
                       } else {
-                        setDialogState(() => isValidating = false);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                              'Invalid or expired code. Please check and try again.',
-                            ),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
+                        setDialogState(() {
+                          isValidating = false;
+                          dialogError =
+                              'Invalid or expired code. Please check and try again.';
+                        });
                       }
                     },
               style: ElevatedButton.styleFrom(

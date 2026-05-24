@@ -86,6 +86,100 @@ class AcademicPeriodApiTests(APITestCase):
             '2nd Semester, A.Y. 2027-2028',
         )
 
+    def test_student_cannot_patch_active_semester(self):
+        student = User.objects.create_user(
+            username='student-user',
+            password='pass12345',
+            role='student',
+        )
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(school_year=school_year, label=Semester.FIRST)
+
+        self.client.force_authenticate(user=student)
+        response = self.client.patch(
+            f'/api/academic-periods/semesters/{semester.id}/',
+            {'is_active': True},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 403)
+
+    def test_student_cannot_create_school_year(self):
+        student = User.objects.create_user(
+            username='student-create',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.post(
+            '/api/academic-periods/',
+            {'school_year': '2028-2029'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_list_includes_capstone_mode_on_active_semester(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+
+        response = self.client.get('/api/academic-periods/')
+
+        self.assertEqual(response.status_code, 200)
+        active = response.data['active_semester']
+        self.assertEqual(active['capstone_mode'], 'capstone_1_intake')
+        self.assertTrue(active['can_create_capstone_teams'])
+        self.assertIn('capstone_mode_message', active)
+
+    def test_patch_semester_evaluation_flags(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+
+        response = self.client.patch(
+            f'/api/academic-periods/semesters/{semester.id}/',
+            {
+                'capstone_peer_evaluation_enabled': False,
+                'capstone_adviser_grading_enabled': False,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        semester.refresh_from_db()
+        self.assertFalse(semester.capstone_peer_evaluation_enabled)
+        self.assertFalse(semester.capstone_adviser_grading_enabled)
+        self.assertEqual(
+            response.data['semester']['capstone_peer_evaluation_enabled'],
+            False,
+        )
+
+    def test_student_cannot_patch_evaluation_flags(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+        student = User.objects.create_user(
+            username='student-eval',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.patch(
+            f'/api/academic-periods/semesters/{semester.id}/',
+            {'capstone_peer_evaluation_enabled': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_dashboard_reads_active_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
         Semester.objects.create(
