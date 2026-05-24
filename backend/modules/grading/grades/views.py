@@ -23,6 +23,7 @@ from .services import (
     require_grade_editable,
     repair_pending_passed_grades_in_queryset,
     sync_missing_grade_rows,
+    IncompleteGradingTeamsError,
     update_group_settings,
 )
 
@@ -310,6 +311,18 @@ class GradeCenterGroupSettingsView(APIView):
                 is_officially_complete=data.get('is_officially_complete'),
                 peer_grading_enabled=data.get('peer_grading_enabled'),
                 user=request.user,
+            )
+        except IncompleteGradingTeamsError as exc:
+            return Response(
+                {
+                    'detail': (
+                        'Cannot mark officially complete until every team has '
+                        'panel grading, peer evaluation (when required), and '
+                        'adviser grading (when required).'
+                    ),
+                    'incomplete_teams': exc.teams,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
             )
         except DjangoValidationError as exc:
             payload = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}

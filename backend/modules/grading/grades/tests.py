@@ -197,6 +197,15 @@ class GradeCenterApiTests(APITestCase):
         )
         self.client.force_authenticate(user=self.admin)
 
+    def _make_capstone_grade_ready_for_close(self, grade):
+        self._enable_capstone_peer_grading()
+        self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {'panel_score': '100.00', 'adviser_score': '100.00'},
+            format='json',
+        )
+        self._submit_all_capstone_peer_evaluations()
+
     def test_list_syncs_schedules_into_grade_rows(self):
         response = self.client.get('/api/grading/grades/', {'scope': 'capstone'})
 
@@ -569,13 +578,8 @@ class GradeCenterApiTests(APITestCase):
         self.assertNotEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
 
     def test_capstone_official_complete_auto_finalizes_passed_grades(self):
-        self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
-        self.client.patch(
-            f'/api/grading/grades/{grade.id}/',
-            {'panel_score': '100.00', 'adviser_score': '100.00', 'peer_score': '85.80'},
-            format='json',
-        )
+        self._make_capstone_grade_ready_for_close(grade)
         grade.refresh_from_db()
         self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
         self.assertGreaterEqual(grade.final_grade, Decimal('75.00'))
@@ -599,6 +603,7 @@ class GradeCenterApiTests(APITestCase):
 
     def test_capstone_official_complete_skips_below_threshold(self):
         grade = self._capstone_grade()
+        self._disable_capstone_peer_grading()
         self.client.patch(
             f'/api/grading/grades/{grade.id}/',
             {'panel_score': '70.00', 'adviser_score': '70.00', 'peer_score': '70.00'},
@@ -624,13 +629,8 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
 
     def test_capstone_list_repairs_pending_passed_when_stage_complete(self):
-        self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
-        self.client.patch(
-            f'/api/grading/grades/{grade.id}/',
-            {'panel_score': '100.00', 'adviser_score': '100.00', 'peer_score': '85.80'},
-            format='json',
-        )
+        self._make_capstone_grade_ready_for_close(grade)
         self.client.patch(
             '/api/grading/grades/group-settings/',
             {
@@ -650,14 +650,8 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
 
     def test_capstone_peer_sync_auto_finalizes_when_stage_complete(self):
-        self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
-        self.client.patch(
-            f'/api/grading/grades/{grade.id}/',
-            {'panel_score': '100.00', 'adviser_score': '100.00'},
-            format='json',
-        )
-        self._submit_all_capstone_peer_evaluations()
+        self._make_capstone_grade_ready_for_close(grade)
         grade.refresh_from_db()
         self.assertIsNotNone(grade.peer_score)
         self.client.patch(
@@ -743,7 +737,26 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(blocked.status_code, 400)
         self.assertIn('incomplete_teams', blocked.data)
 
-    def test_partial_peer_does_not_auto_finalize_after_stage_complete(self):
+    def test_pit_close_blocked_when_panel_missing(self):
+        self.pit_team.semester = self.semester
+        self.pit_team.save(update_fields=['semester'])
+        self.pit_schedule.semester = self.semester
+        self.pit_schedule.save(update_fields=['semester'])
+        self._ensure_pit_event_config(event_name='PIT Expo', semester=self.semester)
+        sync_missing_grade_rows(user=self.admin)
+        blocked = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': 'PIT Expo',
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('panel', blocked.data['incomplete_teams'][0]['missing_components'])
+
+    def test_capstone_close_blocked_when_term_peer_enabled_no_submissions(self):
         self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
         self.client.patch(
@@ -751,6 +764,42 @@ class GradeCenterApiTests(APITestCase):
             {'panel_score': '100.00', 'adviser_score': '100.00'},
             format='json',
         )
+        blocked = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_CAPSTONE,
+                'stage_label': self.stage.label,
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('peer', blocked.data['incomplete_teams'][0]['missing_components'])
+
+    def test_capstone_close_blocked_when_adviser_missing(self):
+        self._enable_capstone_peer_grading()
+        grade = self._capstone_grade()
+        self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {'panel_score': '100.00'},
+            format='json',
+        )
+        self._submit_all_capstone_peer_evaluations()
+        blocked = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_CAPSTONE,
+                'stage_label': self.stage.label,
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('adviser', blocked.data['incomplete_teams'][0]['missing_components'])
+
+    def test_partial_peer_does_not_auto_finalize_after_stage_complete(self):
+        grade = self._capstone_grade()
+        self._make_capstone_grade_ready_for_close(grade)
         self.client.patch(
             '/api/grading/grades/group-settings/',
             {
@@ -760,6 +809,10 @@ class GradeCenterApiTests(APITestCase):
             },
             format='json',
         )
+        grade.refresh_from_db()
+        grade.status = TeamGrade.STATUS_PENDING
+        grade.save(update_fields=['status', 'updated_at'])
+        PeerEvaluationSubmission.objects.filter(team_grade=grade).delete()
         self.client.force_authenticate(user=self.student)
         self.client.post(
             '/api/grading/grades/peer-evaluations/',
@@ -771,8 +824,8 @@ class GradeCenterApiTests(APITestCase):
         self.assertNotEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
 
     def test_patch_grade_blocked_when_event_officially_complete(self):
-        self._enable_capstone_peer_grading()
         grade = self._capstone_grade()
+        self._make_capstone_grade_ready_for_close(grade)
         self.client.patch(
             '/api/grading/grades/group-settings/',
             {

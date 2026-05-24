@@ -879,6 +879,14 @@ def build_group_settings_map(grades_queryset, semester):
 PASS_GRADE_THRESHOLD = Decimal('75.00')
 
 
+class IncompleteGradingTeamsError(Exception):
+    """Raised when officially complete is blocked by incomplete team grading."""
+
+    def __init__(self, teams):
+        self.teams = teams
+        super().__init__('One or more teams have incomplete grading.')
+
+
 def _apply_team_result_from_grade(grade):
     next_status = (
         StudentTeam.STATUS_APPROVED
@@ -924,66 +932,136 @@ def _empty_auto_finalize_result():
     }
 
 
-def _peer_gate_applies_for_group(semester, scope, stage_label, config):
-    """Whether peer completion must be satisfied before closing this group."""
-    label = (stage_label or '').strip()
-    grade_ids = TeamGrade.objects.filter(
-        semester=semester,
-        scope=scope,
-        stage_label__iexact=label,
-    ).values_list('id', flat=True)
-    if not grade_ids:
-        return False
-    has_submissions = PeerEvaluationSubmission.objects.filter(
-        team_grade_id__in=grade_ids,
-    ).exists()
+def peer_required_for_grade(grade, semester, scope, config):
+    from .peer_eval import peer_submission_count
+
     if scope == TeamGrade.SCOPE_PIT:
         if getattr(config, 'peer_grading_enabled', False):
             return True
-        return has_submissions
-    return has_submissions
+        return peer_submission_count(grade) > 0
+    if getattr(semester, 'capstone_peer_evaluation_enabled', True):
+        return True
+    return peer_submission_count(grade) > 0
 
 
-def incomplete_peer_teams_for_group(semester, scope, stage_label, *, config=None):
+def adviser_required_for_grade(grade, semester):
+    if grade.scope != TeamGrade.SCOPE_CAPSTONE:
+        return False
+    if grade.adviser_weight <= 0:
+        return False
+    return bool(getattr(semester, 'capstone_adviser_grading_enabled', True))
+
+
+def _grading_config_for_grade(grade, semester, scope, config=None):
+    if config is not None:
+        return config
+    if scope == TeamGrade.SCOPE_PIT:
+        from defense.scheduler.pit_config import get_pit_event_config
+
+        return get_pit_event_config(semester, grade.stage_label)
+
+    class _CapstonePlaceholder:
+        peer_grading_enabled = False
+
+    return _CapstonePlaceholder()
+
+
+def team_grading_readiness(grade, semester, scope, config=None):
     from .peer_eval import is_team_peer_eval_complete, peer_completion_summary
 
+    config = _grading_config_for_grade(grade, semester, scope, config)
+    panel_complete = grade.panel_score is not None
+    peer_required = peer_required_for_grade(grade, semester, scope, config=config)
+    peer_complete = is_team_peer_eval_complete(grade) if peer_required else True
+    adviser_required = adviser_required_for_grade(grade, semester)
+    adviser_complete = grade.adviser_score is not None if adviser_required else True
+
+    missing = []
+    if not panel_complete:
+        missing.append('panel')
+    if peer_required and not peer_complete:
+        missing.append('peer')
+    if adviser_required and not adviser_complete:
+        missing.append('adviser')
+
+    summary = peer_completion_summary(grade) if peer_required else {}
+    return {
+        'panel_complete': panel_complete,
+        'peer_complete': peer_complete,
+        'adviser_complete': adviser_complete,
+        'peer_required': peer_required,
+        'adviser_required': adviser_required,
+        'ready': not missing,
+        'missing_components': missing,
+        'submitted': summary.get('submitted', 0),
+        'required': summary.get('required', 0),
+        'evaluators_done': summary.get('evaluators_done', 0),
+        'evaluators_total': summary.get('evaluators_total', 0),
+    }
+
+
+def incomplete_grading_teams_for_group(semester, scope, stage_label, *, config=None):
     label = (stage_label or '').strip()
     grades = TeamGrade.objects.filter(
         semester=semester,
         scope=scope,
         stage_label__iexact=label,
-    ).select_related('team')
+    ).select_related('team', 'semester')
     incomplete = []
     for grade in grades:
-        if is_team_peer_eval_complete(grade):
+        readiness = team_grading_readiness(grade, semester, scope, config)
+        if readiness['ready']:
             continue
-        summary = peer_completion_summary(grade)
         incomplete.append(
             {
                 'team_id': grade.team_id,
                 'team_name': grade.team.name,
                 'grade_id': grade.id,
-                'submitted': summary['submitted'],
-                'required': summary['required'],
-                'evaluators_done': summary['evaluators_done'],
-                'evaluators_total': summary['evaluators_total'],
+                'missing_components': readiness['missing_components'],
+                'panel_complete': readiness['panel_complete'],
+                'peer_complete': readiness['peer_complete'],
+                'adviser_complete': readiness['adviser_complete'],
+                'submitted': readiness['submitted'],
+                'required': readiness['required'],
+                'evaluators_done': readiness['evaluators_done'],
+                'evaluators_total': readiness['evaluators_total'],
             }
         )
     return incomplete
 
 
-def peer_completion_counts_for_group(semester, scope, stage_label):
+# Backward-compatible alias
+incomplete_peer_teams_for_group = incomplete_grading_teams_for_group
+
+
+def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None):
+    label = (stage_label or '').strip()
+    grades = list(
+        TeamGrade.objects.filter(
+            semester=semester,
+            scope=scope,
+            stage_label__iexact=label,
+        ).select_related('team', 'semester')
+    )
+    total = len(grades)
+    ready = sum(
+        1
+        for grade in grades
+        if team_grading_readiness(grade, semester, scope, config)['ready']
+    )
     from .peer_eval import is_team_peer_eval_complete
 
-    label = (stage_label or '').strip()
-    grades = TeamGrade.objects.filter(
-        semester=semester,
-        scope=scope,
-        stage_label__iexact=label,
-    )
-    total = grades.count()
-    complete = sum(1 for grade in grades if is_team_peer_eval_complete(grade))
-    return {'peer_complete_team_count': complete, 'peer_total_team_count': total}
+    peer_complete = sum(1 for grade in grades if is_team_peer_eval_complete(grade))
+    return {
+        'grading_ready_team_count': ready,
+        'grading_total_team_count': total,
+        'peer_complete_team_count': peer_complete,
+        'peer_total_team_count': total,
+    }
+
+
+def peer_completion_counts_for_group(semester, scope, stage_label, *, config=None):
+    return grading_readiness_counts_for_group(semester, scope, stage_label, config=config)
 
 
 def _auto_finalize_passed_grades_in_queryset(grades, user=None):
@@ -1107,23 +1185,14 @@ def update_group_settings(
             config = get_or_create_stage_grading_config(stage, semester)
 
     if is_officially_complete is True:
-        if _peer_gate_applies_for_group(semester, scope, label, config):
-            incomplete = incomplete_peer_teams_for_group(
-                semester,
-                scope,
-                label,
-                config=config,
-            )
-            if incomplete:
-                raise ValidationError(
-                    {
-                        'detail': (
-                            'Cannot mark officially complete until every team '
-                            'finishes peer evaluation.'
-                        ),
-                        'incomplete_teams': incomplete,
-                    }
-                )
+        incomplete = incomplete_grading_teams_for_group(
+            semester,
+            scope,
+            label,
+            config=config,
+        )
+        if incomplete:
+            raise IncompleteGradingTeamsError(incomplete)
 
     if is_officially_complete is not None:
         config.is_officially_complete = is_officially_complete
@@ -1156,8 +1225,13 @@ def update_group_settings(
     else:
         settings_payload = _capstone_group_settings(semester, label)
 
-    peer_counts = peer_completion_counts_for_group(semester, scope, label)
-    settings_payload.update(peer_counts)
+    readiness_counts = grading_readiness_counts_for_group(
+        semester,
+        scope,
+        label,
+        config=config,
+    )
+    settings_payload.update(readiness_counts)
 
     if scope == TeamGrade.SCOPE_PIT and is_officially_complete is True:
         settings_payload['auto_publish'] = auto_publish_passed_grades_for_event(

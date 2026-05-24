@@ -111,7 +111,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         if (!mounted) {
           return;
         }
-        showIncompletePeerTeamsDialog(
+        showIncompleteGradingTeamsDialog(
           context,
           teams: next.incompleteTeams,
         );
@@ -564,10 +564,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     final isComplete = settings['is_officially_complete'] == true;
     final peerOpen = settings['peer_grading_enabled'] == true;
     final title = gradeGroupTitle(groupKey);
-    final peerCloseBlocked = groupPeerCloseBlocked(
-      grades: grades,
-      settings: settings,
-    );
+    final closeBlocked = groupOfficialCloseBlocked(grades: grades);
 
     final accent = gradeScopeAccentColor(scope);
 
@@ -609,7 +606,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                             ),
                           ),
                           gradeTeamCountBadge(grades.length),
-                          if (peerCloseBlocked && !isComplete) ...[
+                          if (closeBlocked && !isComplete) ...[
                             const SizedBox(width: 8),
                             Container(
                               padding: const EdgeInsets.symmetric(
@@ -621,7 +618,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                                 borderRadius: BorderRadius.circular(999),
                               ),
                               child: const Text(
-                                'Peer incomplete',
+                                'Grading incomplete',
                                 style: TextStyle(
                                   color: Color(0xFFD97706),
                                   fontSize: 10,
@@ -651,7 +648,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                       showCapstonePeerTermBadge: scope == 'capstone',
                       groupSettings: settings,
                       grades: grades,
-                      officialCompleteToggleEnabled: !peerCloseBlocked,
+                      officialCompleteToggleEnabled: !closeBlocked,
                       onOfficiallyCompleteChanged: (value) {
                         ref.read(gradeCenterProvider.notifier).updateGroupSettings(
                               scope: scope,

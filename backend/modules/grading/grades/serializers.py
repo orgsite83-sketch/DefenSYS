@@ -72,6 +72,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     peer_submissions_required = serializers.SerializerMethodField()
     peer_evaluators_done = serializers.SerializerMethodField()
     peer_evaluators_total = serializers.SerializerMethodField()
+    panel_complete = serializers.SerializerMethodField()
+    adviser_complete = serializers.SerializerMethodField()
+    adviser_required = serializers.SerializerMethodField()
+    grading_ready = serializers.SerializerMethodField()
+    missing_components = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamGrade
@@ -108,6 +113,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'peer_submissions_required',
             'peer_evaluators_done',
             'peer_evaluators_total',
+            'panel_complete',
+            'adviser_complete',
+            'adviser_required',
+            'grading_ready',
+            'missing_components',
             'published_by_name',
             'published_at',
             'created_at',
@@ -166,6 +176,26 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         from .peer_eval import peer_completion_summary
 
         return peer_completion_summary(obj)['evaluators_total']
+
+    def _grading_readiness(self, obj):
+        from .services import team_grading_readiness
+
+        return team_grading_readiness(obj, obj.semester, obj.scope)
+
+    def get_panel_complete(self, obj):
+        return self._grading_readiness(obj)['panel_complete']
+
+    def get_adviser_complete(self, obj):
+        return self._grading_readiness(obj)['adviser_complete']
+
+    def get_adviser_required(self, obj):
+        return self._grading_readiness(obj)['adviser_required']
+
+    def get_grading_ready(self, obj):
+        return self._grading_readiness(obj)['ready']
+
+    def get_missing_components(self, obj):
+        return self._grading_readiness(obj)['missing_components']
 
 
 class TeamGradeUpdateSerializer(serializers.Serializer):

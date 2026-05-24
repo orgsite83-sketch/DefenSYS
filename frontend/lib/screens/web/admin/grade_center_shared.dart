@@ -934,35 +934,87 @@ bool pitPeerStageToggleEnabled({
   return !state.isSaving && !isOfficiallyComplete;
 }
 
+bool groupOfficialCloseBlocked({
+  required List<Map<String, dynamic>> grades,
+}) {
+  return grades.any((grade) => grade['grading_ready'] != true);
+}
+
+@Deprecated('Use groupOfficialCloseBlocked')
 bool groupPeerCloseBlocked({
   required List<Map<String, dynamic>> grades,
   required Map<String, dynamic> settings,
 }) {
-  final peerOpen = settings['peer_grading_enabled'] == true;
-  if (peerOpen) {
-    return grades.any((grade) => grade['peer_eval_complete'] != true);
-  }
-  return grades.any((grade) {
-    final submitted = asInt(grade['peer_submissions_submitted']) ?? 0;
-    return submitted > 0 && grade['peer_eval_complete'] != true;
-  });
+  return groupOfficialCloseBlocked(grades: grades);
 }
 
-String groupPeerCompletionSummary(
+String groupGradingReadinessSummary(
   Map<String, dynamic> settings, {
   List<Map<String, dynamic>> grades = const [],
 }) {
   if (grades.isNotEmpty) {
-    final complete =
-        grades.where((grade) => grade['peer_eval_complete'] == true).length;
-    return '$complete of ${grades.length} teams peer-complete';
+    final ready =
+        grades.where((grade) => grade['grading_ready'] == true).length;
+    return '$ready of ${grades.length} teams grading-ready';
   }
-  final complete = asInt(settings['peer_complete_team_count']) ?? 0;
-  final total = asInt(settings['peer_total_team_count']) ?? 0;
+  final ready = asInt(settings['grading_ready_team_count']) ?? 0;
+  final total = asInt(settings['grading_total_team_count']) ?? 0;
   if (total == 0) {
     return 'No teams in this group';
   }
-  return '$complete of $total teams peer-complete';
+  return '$ready of $total teams grading-ready';
+}
+
+@Deprecated('Use groupGradingReadinessSummary')
+String groupPeerCompletionSummary(
+  Map<String, dynamic> settings, {
+  List<Map<String, dynamic>> grades = const [],
+}) {
+  return groupGradingReadinessSummary(settings, grades: grades);
+}
+
+Widget panelGradingStatusWidget(Map<String, dynamic> grade) {
+  final complete = grade['panel_complete'] == true;
+  return Text(
+    complete ? 'Complete' : 'Missing',
+    style: TextStyle(
+      color: complete ? const Color(0xFF059669) : const Color(0xFFD97706),
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    ),
+  );
+}
+
+Widget adviserGradingStatusWidget(Map<String, dynamic> grade) {
+  if (grade['adviser_required'] != true) {
+    return const Text(
+      'N/A',
+      style: TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
+    );
+  }
+  final complete = grade['adviser_complete'] == true;
+  return Text(
+    complete ? 'Complete' : 'Missing',
+    style: TextStyle(
+      color: complete ? const Color(0xFF059669) : const Color(0xFFD97706),
+      fontSize: 12,
+      fontWeight: FontWeight.w700,
+    ),
+  );
+}
+
+String _missingComponentLabel(String component, Map<String, dynamic> team) {
+  switch (component) {
+    case 'panel':
+      return 'Panel missing';
+    case 'adviser':
+      return 'Adviser missing';
+    case 'peer':
+      return 'Peer ${team['evaluators_done'] ?? 0}/${team['evaluators_total'] ?? 0} '
+          'evaluators · ${team['submitted'] ?? 0}/${team['required'] ?? 0} submissions';
+    default:
+      return component;
+  }
 }
 
 Widget peerEvalFormsStatusWidget(Map<String, dynamic> grade) {
@@ -1000,38 +1052,41 @@ Widget peerEvalFormsStatusWidget(Map<String, dynamic> grade) {
   );
 }
 
-Future<void> showIncompletePeerTeamsDialog(
+Future<void> showIncompleteGradingTeamsDialog(
   BuildContext context, {
   required List<Map<String, dynamic>> teams,
 }) {
   return showDialog<void>(
     context: context,
     builder: (ctx) => AlertDialog(
-      title: const Text('Peer evaluation incomplete'),
+      title: const Text('Grading not ready'),
       content: SizedBox(
-        width: 420,
+        width: 460,
         child: SingleChildScrollView(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'These teams must finish peer evaluation before you can mark '
-                'the event officially complete:',
+                'These teams must complete all required grading before you '
+                'can mark the event or stage officially complete:',
               ),
               const SizedBox(height: 12),
-              ...teams.map(
-                (team) => Padding(
+              ...teams.map((team) {
+                final missing = team['missing_components'];
+                final parts = missing is List
+                    ? missing
+                        .map((c) => _missingComponentLabel(c.toString(), team))
+                        .join(' · ')
+                    : 'Incomplete';
+                return Padding(
                   padding: const EdgeInsets.only(bottom: 8),
                   child: Text(
-                    '• ${team['team_name'] ?? 'Team'} — '
-                    '${team['evaluators_done'] ?? 0}/${team['evaluators_total'] ?? 0} '
-                    'evaluators, '
-                    '${team['submitted'] ?? 0}/${team['required'] ?? 0} submissions',
+                    '• ${team['team_name'] ?? 'Team'} — $parts',
                     style: const TextStyle(fontSize: 13),
                   ),
-                ),
-              ),
+                );
+              }),
             ],
           ),
         ),
@@ -1044,6 +1099,14 @@ Future<void> showIncompletePeerTeamsDialog(
       ],
     ),
   );
+}
+
+@Deprecated('Use showIncompleteGradingTeamsDialog')
+Future<void> showIncompletePeerTeamsDialog(
+  BuildContext context, {
+  required List<Map<String, dynamic>> teams,
+}) {
+  return showIncompleteGradingTeamsDialog(context, teams: teams);
 }
 
 Widget capstoneTermStatusBadgeRow(
@@ -1105,11 +1168,8 @@ Widget gradeGroupStageControlsSection({
 }) {
   final isPit = scope == 'pit';
   final settings = groupSettings ?? const <String, dynamic>{};
-  final peerSummary = groupPeerCompletionSummary(settings, grades: grades);
-  final closeBlocked = groupPeerCloseBlocked(
-    grades: grades,
-    settings: settings,
-  );
+  final peerSummary = groupGradingReadinessSummary(settings, grades: grades);
+  final closeBlocked = groupOfficialCloseBlocked(grades: grades);
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,

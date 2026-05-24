@@ -34,7 +34,7 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
         if (!context.mounted) {
           return;
         }
-        showIncompletePeerTeamsDialog(
+        showIncompleteGradingTeamsDialog(
           context,
           teams: next.incompleteTeams,
         );
@@ -46,10 +46,7 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
     final peerOpen = settings['peer_grading_enabled'] == true;
     final grades = gradesForGroup(state, scope, stageLabel);
     final showAdviser = scope != 'pit';
-    final peerCloseBlocked = groupPeerCloseBlocked(
-      grades: grades,
-      settings: settings,
-    );
+    final closeBlocked = groupOfficialCloseBlocked(grades: grades);
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -115,7 +112,7 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                         showCapstonePeerTermBadge: false,
                         groupSettings: settings,
                         grades: grades,
-                        officialCompleteToggleEnabled: !peerCloseBlocked,
+                        officialCompleteToggleEnabled: !closeBlocked,
                         onOfficiallyCompleteChanged: (value) {
                           ref
                               .read(gradeCenterProvider.notifier)
@@ -310,9 +307,9 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
           child: Row(
             children: [
               Expanded(flex: 3, child: teamDetailsWidget(grade)),
-              Expanded(child: scoreTextWidget(grade['panel_score'])),
+              Expanded(child: panelGradingStatusWidget(grade)),
               if (showAdviser)
-                Expanded(child: scoreTextWidget(grade['adviser_score'])),
+                Expanded(child: adviserGradingStatusWidget(grade)),
               Expanded(child: scoreTextWidget(grade['peer_score'])),
               Expanded(
                 flex: 2,
