@@ -45,47 +45,52 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     AcademicPeriodState state,
     Map<String, dynamic>? selectedYear,
   ) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const DefensysPageHeader(
-          icon: Icons.calendar_month_rounded,
-          title: 'Academic Period Management',
-          subtitle:
-              'Configure school years, capstone intake, and active semesters.',
-        ),
-        const SizedBox(height: 28),
-        _statusBanner(state),
-        if (state.activeSemester != null) ...[
-          const SizedBox(height: 16),
-          _capstoneProgramCard(state),
-        ],
-        if (state.error != null) ...[
-          const SizedBox(height: 12),
-          _notice(state.error!, warning: true),
-        ],
-        if (state.message != null) ...[
-          const SizedBox(height: 12),
-          _notice(state.message!),
-        ],
-        const SizedBox(height: 22),
-        if (state.isLoading)
-          const Center(
-            child: Padding(
-              padding: EdgeInsets.all(48),
-              child: CircularProgressIndicator(color: DefensysUi.primaryMaroon),
-            ),
-          )
-        else
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(flex: 1, child: _schoolYearsCard(state)),
-              const SizedBox(width: 20),
-              Expanded(flex: 1, child: _semestersCard(state, selectedYear)),
-            ],
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const DefensysPageHeader(
+            icon: Icons.calendar_month_rounded,
+            title: 'Academic Period Management',
+            subtitle:
+                'Configure school years, capstone intake, and active semesters.',
           ),
-      ],
+          const SizedBox(height: 28),
+          _statusBanner(state),
+          if (state.activeSemester != null) ...[
+            const SizedBox(height: 16),
+            _capstoneProgramCard(state),
+          ],
+          if (state.error != null) ...[
+            const SizedBox(height: 12),
+            _notice(state.error!, warning: true),
+          ],
+          if (state.message != null) ...[
+            const SizedBox(height: 12),
+            _notice(state.message!),
+          ],
+          const SizedBox(height: 22),
+          if (state.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(48),
+                child: CircularProgressIndicator(
+                  color: DefensysUi.primaryMaroon,
+                ),
+              ),
+            )
+          else
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 1, child: _schoolYearsCard(state)),
+                const SizedBox(width: 20),
+                Expanded(flex: 1, child: _semestersCard(state, selectedYear)),
+              ],
+            ),
+        ],
+      ),
     );
   }
 
@@ -202,18 +207,14 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
 
     if (state.schoolYears.length > _schoolYearsScrollThreshold) {
       return ConstrainedBox(
-        constraints: const BoxConstraints(maxHeight: _schoolYearsScrollMaxHeight),
-        child: ListView(
-          shrinkWrap: true,
-          children: rows,
+        constraints: const BoxConstraints(
+          maxHeight: _schoolYearsScrollMaxHeight,
         ),
+        child: ListView(shrinkWrap: true, children: rows),
       );
     }
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: rows,
-    );
+    return Column(mainAxisSize: MainAxisSize.min, children: rows);
   }
 
   Widget _semestersCard(
@@ -243,13 +244,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             ],
           ),
           if (selectedYear == null)
-            _emptyTableMessage(
-              'Select a school year to manage its semesters.',
-            )
+            _emptyTableMessage('Select a school year to manage its semesters.')
           else if (semesters.isEmpty)
-            _emptyTableMessage(
-              'No semesters yet. Add a semester to continue.',
-            )
+            _emptyTableMessage('No semesters yet. Add a semester to continue.')
           else
             Column(
               mainAxisSize: MainAxisSize.min,
@@ -305,15 +302,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 OutlinedButton.icon(
                   onPressed: onActionTap,
                   icon: const Icon(Icons.add_rounded, size: 18),
-                  label: Text(
-                    label.replaceFirst(RegExp(r'^\+\s*'), ''),
-                  ),
+                  label: Text(label.replaceFirst(RegExp(r'^\+\s*'), '')),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: _ink,
-                    side: const BorderSide(
-                      color: Color(0xFFD1D5DB),
-                      width: 1,
-                    ),
+                    side: const BorderSide(color: Color(0xFFD1D5DB), width: 1),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(8),
                     ),
@@ -465,11 +457,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      Icons.build_outlined,
-                      size: 16,
-                      color: _ink,
-                    ),
+                    Icon(Icons.build_outlined, size: 16, color: _ink),
                     const SizedBox(width: 6),
                     Text(
                       selected ? 'Managing' : 'Manage',
@@ -520,10 +508,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               ),
             ),
           ),
-          Expanded(
-            flex: 110,
-            child: _capstoneChip(capstoneLabel),
-          ),
+          Expanded(flex: 110, child: _capstoneChip(capstoneLabel)),
           Expanded(
             flex: 160,
             child: isActive
@@ -582,11 +567,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         children: [
           const Row(
             children: [
-              Icon(
-                Icons.rocket_launch_rounded,
-                color: _maroon,
-                size: 20,
-              ),
+              Icon(Icons.rocket_launch_rounded, color: _maroon, size: 20),
               SizedBox(width: 8),
               Text(
                 'Capstone program',
@@ -608,11 +589,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 const Expanded(
                   child: Text(
                     'Auto-derived when 2nd Semester is active.',
-                    style: TextStyle(
-                      color: _muted,
-                      fontSize: 12,
-                      height: 1.35,
-                    ),
+                    style: TextStyle(color: _muted, fontSize: 12, height: 1.35),
                   ),
                 ),
               ],
@@ -732,10 +709,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     );
   }
 
-  Widget _capstoneSettingRow({
-    required String label,
-    required Widget child,
-  }) {
+  Widget _capstoneSettingRow({required String label, required Widget child}) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -828,11 +802,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(
-          color: fg,
-          fontSize: 11,
-          fontWeight: FontWeight.w800,
-        ),
+        style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w800),
       ),
     );
   }

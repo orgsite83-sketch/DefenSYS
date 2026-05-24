@@ -64,7 +64,11 @@ Widget gradeCenterUnscheduledBanner({required int teamCount}) {
     ),
     child: Row(
       children: [
-        const Icon(Icons.event_busy_rounded, color: Color(0xFFD97706), size: 20),
+        const Icon(
+          Icons.event_busy_rounded,
+          color: Color(0xFFD97706),
+          size: 20,
+        ),
         const SizedBox(width: 10),
         Expanded(
           child: Text(
@@ -534,11 +538,7 @@ Widget gradeCenterOnOffChip({required bool enabled}) {
     ),
     child: Text(
       enabled ? 'ON' : 'OFF',
-      style: TextStyle(
-        color: fg,
-        fontSize: 10,
-        fontWeight: FontWeight.w800,
-      ),
+      style: TextStyle(color: fg, fontSize: 10, fontWeight: FontWeight.w800),
     ),
   );
 }
@@ -649,11 +649,7 @@ Widget gradeCenterFilterDropdownShell({required Widget child}) {
 }
 
 /// Capstone stage pipeline status for the Grade Center table.
-enum CapstoneStageWorkflowStatus {
-  gradesLocked,
-  inProgress,
-  notStarted,
-}
+enum CapstoneStageWorkflowStatus { gradesLocked, inProgress, notStarted }
 
 CapstoneStageWorkflowStatus capstoneStageWorkflowStatus({
   required bool isOfficiallyComplete,
@@ -696,15 +692,18 @@ List<CapstoneStageRow> buildCapstoneStageRows({
   required GradeCenterState state,
   required List<Map<String, dynamic>> defenseStages,
 }) {
-  final active = defenseStages.where((stage) => stage['is_active'] != false).toList()
-    ..sort((a, b) {
-      final aOrder = asInt(a['display_order']) ?? 0;
-      final bOrder = asInt(b['display_order']) ?? 0;
-      if (aOrder != bOrder) {
-        return aOrder.compareTo(bOrder);
-      }
-      return (a['label']?.toString() ?? '').compareTo(b['label']?.toString() ?? '');
-    });
+  final active =
+      defenseStages.where((stage) => stage['is_active'] != false).toList()
+        ..sort((a, b) {
+          final aOrder = asInt(a['display_order']) ?? 0;
+          final bOrder = asInt(b['display_order']) ?? 0;
+          if (aOrder != bOrder) {
+            return aOrder.compareTo(bOrder);
+          }
+          return (a['label']?.toString() ?? '').compareTo(
+            b['label']?.toString() ?? '',
+          );
+        });
 
   final rows = active.map((stage) {
     final label = stage['label']?.toString() ?? '';
@@ -752,16 +751,6 @@ List<CapstoneStageRow> buildCapstoneStageRows({
   return rows;
 }
 
-/// Bounded vertical size for the Capstone stages table (avoids 0-height nested scroll).
-double capstoneStagesTableBodyHeight(int rowCount) {
-  const headerHeight = 44.0;
-  const rowHeight = 130.0;
-  const bottomPadding = 8.0;
-  const maxHeight = 520.0;
-  final content = headerHeight + rowCount * rowHeight + bottomPadding;
-  return content.clamp(headerHeight + rowHeight, maxHeight);
-}
-
 Widget capstoneStageWorkflowPill(CapstoneStageWorkflowStatus status) {
   final Color color;
   final Color bg;
@@ -784,30 +773,33 @@ Widget capstoneStageWorkflowPill(CapstoneStageWorkflowStatus status) {
       icon = Icons.assignment_outlined;
       label = 'NOT STARTED';
   }
-  return Container(
-    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-    decoration: BoxDecoration(
-      color: bg,
-      borderRadius: BorderRadius.circular(999),
-    ),
-    child: FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 14),
-          const SizedBox(width: 4),
-          Text(
-            label,
-            style: TextStyle(
-              color: color,
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.3,
+  return Align(
+    alignment: Alignment.centerLeft,
+    child: Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, color: color, size: 14),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: color,
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.3,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -970,16 +962,9 @@ Widget capstoneTermStatusBadgeRow(
   );
 }
 
-Widget capstoneTermStatusChip({
-  required String label,
-  required bool enabled,
-}) {
-  final bg = enabled
-      ? const Color(0xFFD1FAE5)
-      : const Color(0xFFF3F4F6);
-  final fg = enabled
-      ? const Color(0xFF059669)
-      : const Color(0xFF9CA3AF);
+Widget capstoneTermStatusChip({required String label, required bool enabled}) {
+  final bg = enabled ? const Color(0xFFD1FAE5) : const Color(0xFFF3F4F6);
+  final fg = enabled ? const Color(0xFF059669) : const Color(0xFF9CA3AF);
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
     decoration: BoxDecoration(
@@ -988,11 +973,7 @@ Widget capstoneTermStatusChip({
     ),
     child: Text(
       '$label ${enabled ? 'ON' : 'OFF'}',
-      style: TextStyle(
-        color: fg,
-        fontSize: 11,
-        fontWeight: FontWeight.w700,
-      ),
+      style: TextStyle(color: fg, fontSize: 11, fontWeight: FontWeight.w700),
     ),
   );
 }
@@ -1144,7 +1125,9 @@ class GradeCenterActions {
     }
 
     final panel = TextEditingController(text: scoreInput(grade['panel_score']));
-    final adviser = TextEditingController(text: scoreInput(grade['adviser_score']));
+    final adviser = TextEditingController(
+      text: scoreInput(grade['adviser_score']),
+    );
     final peer = TextEditingController(text: scoreInput(grade['peer_score']));
     final isPit = grade['scope'] == 'pit';
 

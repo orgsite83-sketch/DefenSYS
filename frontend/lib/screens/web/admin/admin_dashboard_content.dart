@@ -33,77 +33,80 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
     final dashState = ref.watch(dashboardProvider('admin'));
     final stats = _statsFrom(dashState.data?['stats']);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const DefensysPageHeader(
-          icon: Icons.show_chart_rounded,
-          title: 'Welcome back, Admin!',
-          subtitle: 'Here is what is happening in the IT Department today.',
-        ),
-        const SizedBox(height: 20),
-        Row(
-          children: [
-            Expanded(
-              child: _metricCard(
-                value: _statValue(stats, 'total_students'),
-                label: 'Active Students',
-                icon: Icons.groups_rounded,
-                iconColor: const Color(0xFF7C3AED),
-                iconBackground: const Color(0xFFEDE3FF),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const DefensysPageHeader(
+            icon: Icons.show_chart_rounded,
+            title: 'Welcome back, Admin!',
+            subtitle: 'Here is what is happening in the IT Department today.',
+          ),
+          const SizedBox(height: 20),
+          Row(
+            children: [
+              Expanded(
+                child: _metricCard(
+                  value: _statValue(stats, 'total_students'),
+                  label: 'Active Students',
+                  icon: Icons.groups_rounded,
+                  iconColor: const Color(0xFF7C3AED),
+                  iconBackground: const Color(0xFFEDE3FF),
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _metricCard(
-                value: _statValue(stats, 'total_faculty'),
-                label: 'Faculty Members',
-                icon: Icons.co_present_rounded,
-                iconColor: const Color(0xFF2563EB),
-                iconBackground: const Color(0xFFDCEBFF),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _metricCard(
+                  value: _statValue(stats, 'total_faculty'),
+                  label: 'Faculty Members',
+                  icon: Icons.co_present_rounded,
+                  iconColor: const Color(0xFF2563EB),
+                  iconBackground: const Color(0xFFDCEBFF),
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _metricCard(
-                value: _statValue(stats, 'total_teams'),
-                label: 'Active Teams',
-                icon: Icons.groups_3_rounded,
-                iconColor: const Color(0xFF047857),
-                iconBackground: const Color(0xFFCFFAE7),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _metricCard(
+                  value: _statValue(stats, 'total_teams'),
+                  label: 'Active Teams',
+                  icon: Icons.groups_3_rounded,
+                  iconColor: const Color(0xFF047857),
+                  iconBackground: const Color(0xFFCFFAE7),
+                ),
               ),
-            ),
-            const SizedBox(width: 16),
-            Expanded(
-              child: _metricCard(
-                value: _statValue(stats, 'upcoming_defenses'),
-                label: 'Scheduled Defenses',
-                icon: Icons.event_available_rounded,
-                iconColor: const Color(0xFF92400E),
-                iconBackground: const Color(0xFFFFEDB8),
+              const SizedBox(width: 16),
+              Expanded(
+                child: _metricCard(
+                  value: _statValue(stats, 'upcoming_defenses'),
+                  label: 'Scheduled Defenses',
+                  icon: Icons.event_available_rounded,
+                  iconColor: const Color(0xFF92400E),
+                  iconBackground: const Color(0xFFFFEDB8),
+                ),
               ),
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _quickActionsCard()),
-            const SizedBox(width: 20),
-            Expanded(child: _upcomingDefensesCard(dashState)),
-          ],
-        ),
-        const SizedBox(height: 20),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(child: _teamOverviewCard(dashState)),
-            const SizedBox(width: 20),
-            Expanded(child: _systemAlertsCard(dashState)),
-          ],
-        ),
-      ],
+            ],
+          ),
+          const SizedBox(height: 24),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _quickActionsCard()),
+              const SizedBox(width: 20),
+              Expanded(child: _upcomingDefensesCard(dashState)),
+            ],
+          ),
+          const SizedBox(height: 20),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(child: _teamOverviewCard(dashState)),
+              const SizedBox(width: 20),
+              Expanded(child: _systemAlertsCard(dashState)),
+            ],
+          ),
+        ],
+      ),
     );
   }
 

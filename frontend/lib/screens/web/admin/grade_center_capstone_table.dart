@@ -33,7 +33,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   final Widget yearLevelFilter;
   final Widget statusFilter;
   final void Function(CapstoneStageRow row) onOpenStage;
-  final void Function(CapstoneStageRow row, bool value) onOfficiallyCompleteChanged;
+  final void Function(CapstoneStageRow row, bool value)
+  onOfficiallyCompleteChanged;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<bool> onSearchFocusChanged;
@@ -106,7 +107,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 ],
                 const SizedBox(width: 8),
                 _headerPill(
-                  rows.isEmpty ? '0 stages' : '1–${rows.length} of ${rows.length} stages',
+                  rows.isEmpty
+                      ? '0 stages'
+                      : '1–${rows.length} of ${rows.length} stages',
                 ),
               ],
             ),
@@ -228,7 +231,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(7),
-                    borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
+                    borderSide: const BorderSide(
+                      color: DefensysUi.primaryMaroon,
+                    ),
                   ),
                 ),
                 onChanged: onSearchChanged,
@@ -294,18 +299,17 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
       );
     }
 
-    final tableHeight = capstoneStagesTableBodyHeight(rows.length);
-    return SizedBox(
-      height: tableHeight,
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(
-          width: _tableMinWidth,
-          child: SingleChildScrollView(
-            child: _tableColumn(rows),
-          ),
-        ),
-      ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final tableWidth = constraints.maxWidth < _tableMinWidth
+            ? _tableMinWidth
+            : constraints.maxWidth;
+
+        return SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: SizedBox(width: tableWidth, child: _tableColumn(rows)),
+        );
+      },
     );
   }
 
@@ -402,10 +406,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
               onChanged: (value) => onOfficiallyCompleteChanged(row, value),
             ),
           ),
-          Expanded(
-            flex: 3,
-            child: capstoneTermSettingsChips(state),
-          ),
+          Expanded(flex: 3, child: capstoneTermSettingsChips(state)),
           SizedBox(
             width: 130,
             child: OutlinedButton.icon(
@@ -417,7 +418,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 side: BorderSide(
                   color: DefensysUi.primaryMaroon.withValues(alpha: 0.35),
                 ),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
                 textStyle: const TextStyle(
                   fontSize: 11.5,
                   fontWeight: FontWeight.w700,
@@ -506,7 +510,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                     child: gradeCenterFilterField(
                       label: 'Scope',
                       icon: Icons.layers_outlined,
-                      dropdown: gradeCenterFilterDropdownShell(child: scopeFilter),
+                      dropdown: gradeCenterFilterDropdownShell(
+                        child: scopeFilter,
+                      ),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -516,7 +522,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                   child: gradeCenterFilterField(
                     label: 'Year level',
                     icon: Icons.school_outlined,
-                    dropdown: gradeCenterFilterDropdownShell(child: yearLevelFilter),
+                    dropdown: gradeCenterFilterDropdownShell(
+                      child: yearLevelFilter,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -525,7 +533,9 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                   child: gradeCenterFilterField(
                     label: 'Status',
                     icon: Icons.flag_outlined,
-                    dropdown: gradeCenterFilterDropdownShell(child: statusFilter),
+                    dropdown: gradeCenterFilterDropdownShell(
+                      child: statusFilter,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -554,15 +564,21 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
                           ),
                           border: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
-                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFD1D5DB),
+                            ),
                           ),
                           enabledBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
-                            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                            borderSide: const BorderSide(
+                              color: Color(0xFFD1D5DB),
+                            ),
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(7),
-                            borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
+                            borderSide: const BorderSide(
+                              color: DefensysUi.primaryMaroon,
+                            ),
                           ),
                         ),
                         onChanged: onSearchChanged,
