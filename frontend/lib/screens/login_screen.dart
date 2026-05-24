@@ -367,7 +367,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               const Align(
                                 alignment: Alignment.centerLeft,
                                 child: Text(
-                                  'Only enable Remember me on personal devices.',
+                                  'Stay signed in on this device for up to 7 days. '
+                                  'Only enable on personal devices.',
                                   style: TextStyle(
                                     fontSize: 11,
                                     color: Color(0xFF64748B),

@@ -2,7 +2,7 @@
 
 End-to-end guide: create a Kamatera VPS → deploy this repository → serve over HTTPS → go live.
 
-**Related docs:** [DEPLOYMENT.md](DEPLOYMENT.md) (go-live checklist) · [DEMO_SETUP_GUIDE.md](DEMO_SETUP_GUIDE.md) (local dev only)
+**Related docs:** [DEPLOYMENT.md](DEPLOYMENT.md) (go-live checklist) · [DEMO_SETUP_GUIDE.md](DEMO_SETUP_GUIDE.md) (local dev only) · [UPDATE_GUIDE.md](UPDATE_GUIDE.md) (commands when you change backend / web / mobile)
 
 **Stack on one VM:** Ubuntu · PostgreSQL · Gunicorn (Django) · nginx (TLS + Flutter web static files)
 

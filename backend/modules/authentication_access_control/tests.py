@@ -1,3 +1,7 @@
+from datetime import datetime, timedelta, timezone
+
+import jwt
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
 from rest_framework.test import APITestCase
@@ -84,6 +88,32 @@ class JwtSessionApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 401)
+
+    def _decode_refresh_exp(self, refresh_token: str) -> datetime:
+        payload = jwt.decode(
+            refresh_token,
+            settings.SECRET_KEY,
+            algorithms=['HS256'],
+        )
+        return datetime.fromtimestamp(payload['exp'], tz=timezone.utc)
+
+    def test_remember_me_issues_longer_refresh_than_standard_login(self):
+        standard = self.client.post(
+            '/api/login/',
+            {'username': 'session-user', 'password': 'pass12345', 'remember_me': False},
+            format='json',
+        )
+        remembered = self.client.post(
+            '/api/login/',
+            {'username': 'session-user', 'password': 'pass12345', 'remember_me': True},
+            format='json',
+        )
+        self.assertEqual(standard.status_code, 200)
+        self.assertEqual(remembered.status_code, 200)
+
+        standard_exp = self._decode_refresh_exp(standard.data['refresh'])
+        remember_exp = self._decode_refresh_exp(remembered.data['refresh'])
+        self.assertGreater(remember_exp, standard_exp + timedelta(days=1))
 
     def test_reuse_old_refresh_after_rotation_returns_401(self):
         tokens = self._login()

@@ -6,7 +6,11 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.views import TokenBlacklistView
 
-from .serializers import CustomTokenObtainPairSerializer, UserSerializer
+from .serializers import (
+    CustomTokenObtainPairSerializer,
+    CustomTokenRefreshSerializer,
+    UserSerializer,
+)
 
 
 class CustomTokenObtainPairView(TokenObtainPairView):
@@ -19,6 +23,7 @@ class RefreshRateThrottle(AnonRateThrottle):
 
 
 class ThrottledTokenRefreshView(TokenRefreshView):
+    serializer_class = CustomTokenRefreshSerializer
     throttle_classes = [RefreshRateThrottle]
     permission_classes = [AllowAny]
 

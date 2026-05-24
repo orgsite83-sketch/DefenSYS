@@ -6,6 +6,7 @@ import 'l10n/app_localizations.dart';
 import 'navigation/app_router.dart';
 import 'services/auth_provider.dart';
 import 'services/realtime_sync_service.dart';
+import 'services/session_keepalive_service.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -20,8 +21,9 @@ class DefenSYSApp extends ConsumerWidget {
     ref.watch(authProvider);
     final router = ref.watch(appRouterProvider);
 
-    return RealtimeSyncHost(
-      child: MaterialApp.router(
+    return SessionKeepaliveHost(
+      child: RealtimeSyncHost(
+        child: MaterialApp.router(
         title: 'DefenSYS',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
@@ -33,6 +35,7 @@ class DefenSYSApp extends ConsumerWidget {
         ],
         supportedLocales: AppLocalizations.supportedLocales,
         routerConfig: router,
+        ),
       ),
     );
   }

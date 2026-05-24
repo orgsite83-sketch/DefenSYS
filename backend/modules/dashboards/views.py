@@ -633,6 +633,19 @@ class StudentDashboardView(APIView):
                 )
 
         peer_eval_on = bool(peer_grade_row and peer_grading_allowed_for_grade(peer_grade_row))
+        from grading.grades.peer_eval import (
+            is_evaluator_peer_complete,
+            is_team_peer_eval_complete,
+        )
+
+        peer_eval_complete = bool(
+            team and peer_grade_row and is_team_peer_eval_complete(peer_grade_row)
+        )
+        my_peer_eval_complete = bool(
+            team
+            and peer_grade_row
+            and is_evaluator_peer_complete(peer_grade_row, user)
+        )
         adviser_grading_on = getattr(active_sem, 'capstone_adviser_grading_enabled', True) if active_sem else True
         if grade:
             raw_weights = {
@@ -676,6 +689,8 @@ class StudentDashboardView(APIView):
             'members': team_payload['members'] if team_payload else [],
             'weights': weights,
             'peerEvalEnabled': peer_eval_on,
+            'peerEvalComplete': peer_eval_complete,
+            'myPeerEvalComplete': my_peer_eval_complete,
             'adviserGradingEnabled': adviser_grading_on,
             'peerCriteria': peer_criteria_payload(team),
             'myPeerSubmissions': peer_submissions_for_evaluator(team, user),

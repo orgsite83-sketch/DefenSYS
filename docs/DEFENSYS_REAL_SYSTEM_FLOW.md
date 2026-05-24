@@ -63,7 +63,7 @@ flowchart TB
 
 | Step | Detail |
 |------|--------|
-| Login | `POST /api/login/` → JWT `access` (45 min) + `refresh` (10 h) + embedded `user` object |
+| Login | `POST /api/login/` → JWT `access` (8 h) + `refresh` (12 h standard, 7 d with `remember_me`) + embedded `user` |
 | Profile | `GET /api/me/` after refresh or restore |
 | Logout | `POST /api/logout/` blacklists refresh token |
 | Refresh | `POST /api/token/refresh/` with rotation + blacklist (`BLACKLIST_AFTER_ROTATION`) |
@@ -78,8 +78,9 @@ flowchart TB
 | Mobile | `flutter_secure_storage` | Persistent login across app restarts |
 
 - Access token kept **in memory** only; attached via `AuthenticatedHttpClient`.
-- **Proactive refresh** ~90s before JWT `exp`; on **401**, refresh once then retry.
-- Unrecoverable auth failure → `SessionExpiredException` → redirect to login with SnackBar (no inline HTTP errors on dashboards).
+- **Proactive refresh** ~90s before JWT `exp`; **keepalive** every 12 min while tab visible; on tab focus (web) refresh if needed.
+- On **401**, refresh once then retry; failure clears session and redirects to login with a **specific message** (not “Connection error”).
+- Env: `JWT_ACCESS_TOKEN_HOURS`, `JWT_REFRESH_STANDARD_HOURS`, `JWT_REFRESH_REMEMBER_DAYS` in [`backend/.env.example`](../backend/.env.example).
 - Legacy `jwt_token` in SharedPreferences is cleared on bootstrap.
 
 **Media files:** use `GET /api/media/files/<path>` with Bearer token (not bare `/media/` URLs).

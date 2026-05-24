@@ -1,6 +1,7 @@
 # DefenSYS Demo Guide
 
-> **Local demo only** — not a production install guide. See [DEPLOYMENT.md](DEPLOYMENT.md) for go-live.
+> **Local demo only** — not a production install guide. See [DEPLOYMENT.md](DEPLOYMENT.md) for go-live.  
+> **After you change code:** [UPDATE_GUIDE.md](UPDATE_GUIDE.md) (commands for backend, web, and mobile).
 
 ---
 

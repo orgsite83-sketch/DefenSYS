@@ -29,8 +29,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   int _selectedIndex = 0;
   late final StudentProfile _profile;
 
-  final Map<String, bool> _peerPosted = {};
-
   @override
   void initState() {
     super.initState();
@@ -60,7 +58,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final tabChildren = <Widget>[
       TeamTab(
         studentData: dataToPass,
-        peerPosted: _peerPosted,
         onRefresh: () =>
             ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
       ),
@@ -120,9 +117,24 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         automaticallyImplyLeading: false,
         backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
-        title: Text(
-          context.l10n.studentDashboardTitle,
-          style: const TextStyle(fontWeight: FontWeight.bold),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              context.l10n.studentDashboardTitle,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            if (safeIndex != 0 && team != null)
+              Text(
+                team['name']?.toString() ?? '',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: Colors.white.withOpacity(0.85),
+                  fontWeight: FontWeight.w500,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
         ),
         actions: [
           IconButton(
@@ -178,39 +190,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                   ),
                 ),
               )
-            : Column(
-                children: [
-                  if (initialLoad)
-                    DefensysSkeleton.teamSummaryCard()
-                  else if (team != null)
-                    Stack(
-                      alignment: Alignment.topRight,
-                      children: [
-                        _buildTeamSummaryCard(team),
-                        if (dashState.isRefreshing)
-                          const Padding(
-                            padding: EdgeInsets.all(20),
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: Colors.white70,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  Expanded(
-                    child: initialLoad
-                        ? DefensysSkeleton.tabContent()
-                        : IndexedStack(
-                            index: safeIndex,
-                            children: tabChildren,
-                          ),
+            : initialLoad
+                ? DefensysSkeleton.tabContent()
+                : IndexedStack(
+                    index: safeIndex,
+                    children: tabChildren,
                   ),
-                ],
-              ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
@@ -220,193 +205,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       ),
     ),
     ),
-    );
-  }
-
-  Widget _buildTeamSummaryCard(Map<String, dynamic> team) {
-    final teamName = team['name'] ?? 'Unknown Team';
-    final projectTitle = team['projectTitle'] ?? '—';
-    final level = team['level'] ?? '—';
-    final status = team['status'] ?? 'Pending';
-    final memberCount = team['memberCount'] ?? 0;
-    final adviserName = team['adviserName'] ?? 'Unassigned';
-    final isCapstone = team['isCapstone'] == true;
-
-    final statusColor = status == 'Approved'
-        ? Colors.green
-        : status == 'Failed'
-            ? Colors.red
-            : Colors.orange;
-
-    return Container(
-      margin: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [DefensysTokens.maroon, DefensysTokens.maroon.withOpacity(0.8)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: DefensysTokens.maroon.withOpacity(0.3),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(16),
-          onTap: () => setState(() => _selectedIndex = 0),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Icon(
-                        isCapstone ? Icons.school : Icons.book,
-                        color: Colors.white,
-                        size: 24,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            teamName,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            level,
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.9),
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.9),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Text(
-                        status,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.15),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Column(
-                    children: [
-                      Row(
-                        children: [
-                          const Icon(Icons.assignment, color: Colors.white70, size: 16),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              projectTitle,
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 13,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Row(
-                            children: [
-                              const Icon(Icons.people, color: Colors.white70, size: 16),
-                              const SizedBox(width: 6),
-                              Text(
-                                '$memberCount ${memberCount == 1 ? 'Member' : 'Members'}',
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ),
-                          if (isCapstone)
-                            Row(
-                              children: [
-                                const Icon(Icons.person_pin, color: Colors.white70, size: 16),
-                                const SizedBox(width: 6),
-                                Text(
-                                  adviserName,
-                                  style: const TextStyle(
-                                    color: Colors.white,
-                                    fontSize: 12,
-                                  ),
-                                ),
-                              ],
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    Text(
-                      'Tap for details',
-                      style: TextStyle(
-                        color: Colors.white.withOpacity(0.7),
-                        fontSize: 11,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.arrow_forward_ios,
-                      color: Colors.white.withOpacity(0.7),
-                      size: 12,
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
     );
   }
 

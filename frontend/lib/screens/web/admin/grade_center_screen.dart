@@ -103,6 +103,22 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       _syncSearchController(next.search);
     });
 
+    ref.listen<GradeCenterState>(gradeCenterProvider, (previous, next) {
+      if (next.incompleteTeams.isEmpty) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        showIncompletePeerTeamsDialog(
+          context,
+          teams: next.incompleteTeams,
+        );
+        ref.read(gradeCenterProvider.notifier).clearIncompleteTeams();
+      });
+    });
+
     ref.listen(activeAdminSectionProvider, (previous, next) {
       if (previous == DefensysAdminSection.gradeCenter &&
           next != DefensysAdminSection.gradeCenter) {
@@ -548,6 +564,10 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     final isComplete = settings['is_officially_complete'] == true;
     final peerOpen = settings['peer_grading_enabled'] == true;
     final title = gradeGroupTitle(groupKey);
+    final peerCloseBlocked = groupPeerCloseBlocked(
+      grades: grades,
+      settings: settings,
+    );
 
     final accent = gradeScopeAccentColor(scope);
 
@@ -589,6 +609,27 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                             ),
                           ),
                           gradeTeamCountBadge(grades.length),
+                          if (peerCloseBlocked && !isComplete) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: const Text(
+                                'Peer incomplete',
+                                style: TextStyle(
+                                  color: Color(0xFFD97706),
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                          ],
                           const SizedBox(width: 8),
                           const Icon(
                             Icons.chevron_right_rounded,
@@ -608,6 +649,9 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
                       isOfficiallyComplete: isComplete,
                       peerGradingEnabled: peerOpen,
                       showCapstonePeerTermBadge: scope == 'capstone',
+                      groupSettings: settings,
+                      grades: grades,
+                      officialCompleteToggleEnabled: !peerCloseBlocked,
                       onOfficiallyCompleteChanged: (value) {
                         ref.read(gradeCenterProvider.notifier).updateGroupSettings(
                               scope: scope,

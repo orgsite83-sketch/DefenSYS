@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'authenticated_client.dart';
+import 'provider_errors.dart';
 import 'session_expired.dart';
 
 final gradeCenterProvider =
@@ -29,6 +30,7 @@ class GradeCenterState {
   final String scope;
   final String? error;
   final String? message;
+  final List<Map<String, dynamic>> incompleteTeams;
 
   const GradeCenterState({
     this.isLoading = false,
@@ -48,6 +50,7 @@ class GradeCenterState {
     this.scope = '',
     this.error,
     this.message,
+    this.incompleteTeams = const [],
   });
 
   GradeCenterState copyWith({
@@ -68,9 +71,11 @@ class GradeCenterState {
     String? scope,
     String? error,
     String? message,
+    List<Map<String, dynamic>>? incompleteTeams,
     bool clearActiveSemester = false,
     bool clearError = false,
     bool clearMessage = false,
+    bool clearIncompleteTeams = false,
   }) {
     return GradeCenterState(
       isLoading: isLoading ?? this.isLoading,
@@ -92,6 +97,9 @@ class GradeCenterState {
       scope: scope ?? this.scope,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
+      incompleteTeams: clearIncompleteTeams
+          ? const []
+          : incompleteTeams ?? this.incompleteTeams,
     );
   }
 }
@@ -310,6 +318,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       isSaving: true,
       clearError: true,
       clearMessage: true,
+      clearIncompleteTeams: true,
     );
     try {
       final body = <String, dynamic>{
@@ -358,6 +367,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
           groupSettings: merged,
           message: message,
           clearError: true,
+          clearIncompleteTeams: true,
         );
         if (isOfficiallyComplete == true &&
             (payload['auto_publish'] != null || payload['auto_finalize'] != null)) {
@@ -368,12 +378,36 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
+        incompleteTeams: _incompleteTeamsFromResponse(response),
       );
       return false;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  List<Map<String, dynamic>> _incompleteTeamsFromResponse(http.Response response) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is! Map) {
+        return const [];
+      }
+      final raw = data['incomplete_teams'];
+      if (raw is! List) {
+        return const [];
+      }
+      return raw
+          .whereType<Map>()
+          .map((row) => Map<String, dynamic>.from(row))
+          .toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  void clearIncompleteTeams() {
+    state = state.copyWith(clearIncompleteTeams: true);
   }
 
   /// Admin-only: toggles stored on the active semester (Capstone peer / adviser).

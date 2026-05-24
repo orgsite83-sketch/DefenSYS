@@ -67,6 +67,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     breakdowns = GradeBreakdownSerializer(many=True, read_only=True)
     peer_per_student = StudentPeerGradeSerializer(source='peer_member_grades', many=True, read_only=True)
     published_by_name = serializers.SerializerMethodField()
+    peer_eval_complete = serializers.SerializerMethodField()
+    peer_submissions_submitted = serializers.SerializerMethodField()
+    peer_submissions_required = serializers.SerializerMethodField()
+    peer_evaluators_done = serializers.SerializerMethodField()
+    peer_evaluators_total = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamGrade
@@ -98,6 +103,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'panelists',
             'breakdowns',
             'peer_per_student',
+            'peer_eval_complete',
+            'peer_submissions_submitted',
+            'peer_submissions_required',
+            'peer_evaluators_done',
+            'peer_evaluators_total',
             'published_by_name',
             'published_at',
             'created_at',
@@ -131,6 +141,31 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_published_by_name(self, obj):
         return display_name(obj.published_by)
+
+    def get_peer_eval_complete(self, obj):
+        from .peer_eval import is_team_peer_eval_complete
+
+        return is_team_peer_eval_complete(obj)
+
+    def get_peer_submissions_submitted(self, obj):
+        from .peer_eval import peer_submission_count
+
+        return peer_submission_count(obj)
+
+    def get_peer_submissions_required(self, obj):
+        from .peer_eval import required_peer_submission_count
+
+        return required_peer_submission_count(obj.team)
+
+    def get_peer_evaluators_done(self, obj):
+        from .peer_eval import peer_completion_summary
+
+        return peer_completion_summary(obj)['evaluators_done']
+
+    def get_peer_evaluators_total(self, obj):
+        from .peer_eval import peer_completion_summary
+
+        return peer_completion_summary(obj)['evaluators_total']
 
 
 class TeamGradeUpdateSerializer(serializers.Serializer):

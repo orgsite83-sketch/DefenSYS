@@ -69,18 +69,77 @@ def _peer_max_score(grade):
     return Decimal('5.00')
 
 
-@transaction.atomic
-def sync_peer_summaries(grade):
-    memberships = list(grade.team.memberships.select_related('student').all())
-    if not memberships:
-        grade.peer_score = None
-        grade.save()
-        return
+def required_peer_submission_count(team):
+    """Each member evaluates every other member: N * (N - 1) submissions."""
+    member_count = team.memberships.count()
+    if member_count <= 1:
+        return 0
+    return member_count * (member_count - 1)
 
-    max_scale = _peer_max_score(grade)
-    StudentPeerGrade.objects.filter(team_grade=grade).delete()
-    normalized_total = Decimal('0.00')
+
+def peer_submission_count(grade):
+    return PeerEvaluationSubmission.objects.filter(team_grade=grade).count()
+
+
+def is_team_peer_eval_complete(grade):
+    required = required_peer_submission_count(grade.team)
+    if required == 0:
+        return True
+    return peer_submission_count(grade) >= required
+
+
+def is_evaluator_peer_complete(grade, evaluator):
+    member_count = grade.team.memberships.count()
+    if member_count <= 1:
+        return True
+    required = member_count - 1
+    submitted = PeerEvaluationSubmission.objects.filter(
+        team_grade=grade,
+        evaluator=evaluator,
+    ).count()
+    return submitted >= required
+
+
+def peer_completion_summary(grade):
+    memberships = list(grade.team.memberships.select_related('student').all())
+    required = required_peer_submission_count(grade.team)
+    submitted = peer_submission_count(grade)
+    evaluators_total = len(memberships)
+    evaluators_done = 0
+    missing_evaluators = []
+
+    for membership in memberships:
+        student = membership.student
+        if is_evaluator_peer_complete(grade, student):
+            evaluators_done += 1
+        else:
+            need = max(evaluators_total - 1, 0)
+            have = PeerEvaluationSubmission.objects.filter(
+                team_grade=grade,
+                evaluator=student,
+            ).count()
+            missing_evaluators.append(
+                {
+                    'student_id': student.id,
+                    'student_name': display_name(student),
+                    'submitted': have,
+                    'required': need,
+                }
+            )
+
+    return {
+        'submitted': submitted,
+        'required': required,
+        'evaluators_done': evaluators_done,
+        'evaluators_total': evaluators_total,
+        'complete': is_team_peer_eval_complete(grade),
+        'missing_evaluators': missing_evaluators,
+    }
+
+
+def _build_peer_rows_for_complete_grade(grade, memberships, max_scale):
     peer_rows = []
+    normalized_total = Decimal('0.00')
 
     for membership in memberships:
         evaluatee = membership.student
@@ -88,9 +147,6 @@ def sync_peer_summaries(grade):
             team_grade=grade,
             evaluatee=evaluatee,
         )
-        if not submissions.exists():
-            continue
-
         averages = []
         for submission in submissions:
             if submission.max_score <= 0:
@@ -99,7 +155,7 @@ def sync_peer_summaries(grade):
             averages.append(ratio * max_scale)
 
         if not averages:
-            continue
+            return None
 
         average = (sum(averages) / Decimal(len(averages))).quantize(Decimal('0.01'))
         peer_rows.append(
@@ -112,12 +168,40 @@ def sync_peer_summaries(grade):
         )
         normalized_total += average / max_scale * Decimal('100')
 
-    if peer_rows:
-        StudentPeerGrade.objects.bulk_create(peer_rows)
-        grade.peer_score = (normalized_total / Decimal(len(peer_rows))).quantize(Decimal('0.01'))
-    else:
-        grade.peer_score = None
+    if not peer_rows:
+        return None
 
+    return peer_rows, normalized_total
+
+
+@transaction.atomic
+def sync_peer_summaries(grade):
+    memberships = list(grade.team.memberships.select_related('student').all())
+    StudentPeerGrade.objects.filter(team_grade=grade).delete()
+
+    if not memberships:
+        grade.peer_score = None
+        grade.save()
+        return
+
+    if not is_team_peer_eval_complete(grade):
+        grade.peer_score = None
+        grade.save()
+        from .services import maybe_auto_finalize_passed_grade
+
+        maybe_auto_finalize_passed_grade(grade)
+        return
+
+    max_scale = _peer_max_score(grade)
+    built = _build_peer_rows_for_complete_grade(grade, memberships, max_scale)
+    if built is None:
+        grade.peer_score = None
+        grade.save()
+        return
+
+    peer_rows, normalized_total = built
+    StudentPeerGrade.objects.bulk_create(peer_rows)
+    grade.peer_score = (normalized_total / Decimal(len(peer_rows))).quantize(Decimal('0.01'))
     grade.save()
     from .services import maybe_auto_finalize_passed_grade
 

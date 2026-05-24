@@ -11,6 +11,7 @@ import 'api_http.dart';
 import 'app_navigator.dart';
 import 'auth_storage_keys.dart';
 import 'session_providers.dart';
+import 'session_expired.dart';
 import 'session_storage.dart';
 
 final authProvider = NotifierProvider<AuthNotifier, AuthState>(AuthNotifier.new);
@@ -178,7 +179,11 @@ class AuthNotifier extends Notifier<AuthState> {
       final response = await apiHttpClient.post(
         Uri.parse('$baseUrl/login/'),
         headers: {'Content-Type': 'application/json'},
-        body: jsonEncode({'username': username, 'password': password}),
+        body: jsonEncode({
+          'username': username,
+          'password': password,
+          'remember_me': rememberMe,
+        }),
       );
 
       if (response.statusCode != 200) {
@@ -240,7 +245,9 @@ class AuthNotifier extends Notifier<AuthState> {
     _sessionStorage = storage;
 
     final refresh = await storage.readRefresh();
-    if (refresh == null || refresh.isEmpty) return false;
+    if (refresh == null || refresh.isEmpty) {
+      return false;
+    }
 
     try {
       final response = await apiHttpClient.post(
@@ -250,16 +257,36 @@ class AuthNotifier extends Notifier<AuthState> {
       );
 
       if (response.statusCode != 200) {
-        if (!silent) await handleSessionExpired();
+        if (!silent) {
+          await handleSessionExpired(
+            reason: response.statusCode == 401
+                ? SessionExpiredReason.refreshExpired
+                : SessionExpiredReason.refreshFailed,
+          );
+        }
         return false;
       }
 
       final data = _decodeJsonMap(response.body);
-      if (data == null) return false;
+      if (data == null) {
+        if (!silent) {
+          await handleSessionExpired(
+            reason: SessionExpiredReason.refreshFailed,
+          );
+        }
+        return false;
+      }
 
       final access = data['access'] as String?;
       final newRefresh = data['refresh'] as String? ?? refresh;
-      if (access == null) return false;
+      if (access == null) {
+        if (!silent) {
+          await handleSessionExpired(
+            reason: SessionExpiredReason.refreshFailed,
+          );
+        }
+        return false;
+      }
 
       await storage.writeRefresh(newRefresh);
       state = state.copyWith(token: access);
@@ -290,7 +317,11 @@ class AuthNotifier extends Notifier<AuthState> {
 
       return true;
     } catch (_) {
-      if (!silent) await handleSessionExpired();
+      if (!silent) {
+        await handleSessionExpired(
+          reason: SessionExpiredReason.refreshFailed,
+        );
+      }
       return false;
     }
   }
@@ -316,12 +347,17 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
-  Future<void> handleSessionExpired() async {
+  Future<void> handleSessionExpired({
+    SessionExpiredReason reason = SessionExpiredReason.refreshFailed,
+  }) async {
     if (_isLoggingOut) return;
-    const message = 'Your session ended. Please sign in again.';
+    final message = sessionExpiredMessageFor(reason);
     await _clearLocalAuth();
     invalidateSessionProviders(ref);
-    state = AuthState(sessionExpiredMessage: message);
+    state = AuthState(
+      isRestoring: false,
+      sessionExpiredMessage: message,
+    );
     _scheduleNavigateToLogin(sessionMessage: message);
   }
 

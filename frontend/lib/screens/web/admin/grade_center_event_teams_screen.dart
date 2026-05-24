@@ -26,11 +26,30 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(gradeCenterProvider);
+    ref.listen<GradeCenterState>(gradeCenterProvider, (previous, next) {
+      if (next.incompleteTeams.isEmpty) {
+        return;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!context.mounted) {
+          return;
+        }
+        showIncompletePeerTeamsDialog(
+          context,
+          teams: next.incompleteTeams,
+        );
+        ref.read(gradeCenterProvider.notifier).clearIncompleteTeams();
+      });
+    });
     final settings = groupSettingsForKey(state, groupKey);
     final isComplete = settings['is_officially_complete'] == true;
     final peerOpen = settings['peer_grading_enabled'] == true;
     final grades = gradesForGroup(state, scope, stageLabel);
     final showAdviser = scope != 'pit';
+    final peerCloseBlocked = groupPeerCloseBlocked(
+      grades: grades,
+      settings: settings,
+    );
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -94,6 +113,9 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                         isOfficiallyComplete: isComplete,
                         peerGradingEnabled: peerOpen,
                         showCapstonePeerTermBadge: false,
+                        groupSettings: settings,
+                        grades: grades,
+                        officialCompleteToggleEnabled: !peerCloseBlocked,
                         onOfficiallyCompleteChanged: (value) {
                           ref
                               .read(gradeCenterProvider.notifier)
@@ -231,6 +253,17 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
             ),
           ),
           const Expanded(
+            flex: 2,
+            child: Text(
+              'Peer forms',
+              style: TextStyle(
+                color: Color(0xFF5D6678),
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const Expanded(
             child: Text(
               'Final',
               style: TextStyle(
@@ -281,6 +314,10 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
               if (showAdviser)
                 Expanded(child: scoreTextWidget(grade['adviser_score'])),
               Expanded(child: scoreTextWidget(grade['peer_score'])),
+              Expanded(
+                flex: 2,
+                child: peerEvalFormsStatusWidget(grade),
+              ),
               Expanded(child: finalGradeTextWidget(grade)),
               Expanded(
                 flex: 2,

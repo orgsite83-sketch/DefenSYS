@@ -170,6 +170,33 @@ class GradeCenterApiTests(APITestCase):
         self.semester.capstone_peer_evaluation_enabled = False
         self.semester.save(update_fields=['capstone_peer_evaluation_enabled'])
 
+    def _peer_eval_payload(self, evaluatee_name, total='4.00'):
+        return {
+            'teamId': self.capstone_team.id,
+            'evaluateeName': evaluatee_name,
+            'breakdown': [
+                {'criteriaName': 'Technical Quality', 'score': 4, 'max': 5},
+            ],
+            'total': total,
+            'max': '5.00',
+        }
+
+    def _submit_all_capstone_peer_evaluations(self):
+        self._enable_capstone_peer_grading()
+        self.client.force_authenticate(user=self.student)
+        self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            self._peer_eval_payload('Maria Santos'),
+            format='json',
+        )
+        self.client.force_authenticate(user=self.second_student)
+        self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            self._peer_eval_payload('Juan Dela Cruz'),
+            format='json',
+        )
+        self.client.force_authenticate(user=self.admin)
+
     def test_list_syncs_schedules_into_grade_rows(self):
         response = self.client.get('/api/grading/grades/', {'scope': 'capstone'})
 
@@ -630,6 +657,100 @@ class GradeCenterApiTests(APITestCase):
             {'panel_score': '100.00', 'adviser_score': '100.00'},
             format='json',
         )
+        self._submit_all_capstone_peer_evaluations()
+        grade.refresh_from_db()
+        self.assertIsNotNone(grade.peer_score)
+        self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_CAPSTONE,
+                'stage_label': self.stage.label,
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        grade.refresh_from_db()
+        self.assertGreaterEqual(grade.final_grade, Decimal('75.00'))
+        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+
+    def test_partial_peer_submission_does_not_set_peer_score(self):
+        grade = self._capstone_grade()
+        self._enable_capstone_peer_grading()
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            self._peer_eval_payload('Maria Santos'),
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        grade.refresh_from_db()
+        self.assertIsNone(grade.peer_score)
+        self.assertFalse(StudentPeerGrade.objects.filter(team_grade=grade).exists())
+
+    def test_full_peer_submission_sets_peer_score(self):
+        grade = self._capstone_grade()
+        self._submit_all_capstone_peer_evaluations()
+        grade.refresh_from_db()
+        self.assertIsNotNone(grade.peer_score)
+        self.assertEqual(StudentPeerGrade.objects.filter(team_grade=grade).count(), 2)
+
+    def test_pit_close_blocked_when_peer_grading_open_and_incomplete(self):
+        self.pit_team.semester = self.semester
+        self.pit_team.save(update_fields=['semester'])
+        self.pit_schedule.semester = self.semester
+        self.pit_schedule.save(update_fields=['semester'])
+        second_pit = User.objects.create_user(
+            username='2025-0002',
+            password='pass12345',
+            role='student',
+            first_name='Ana',
+            last_name='Lopez',
+        )
+        TeamMembership.objects.create(team=self.pit_team, student=second_pit, order=1)
+        self._ensure_pit_event_config(event_name='PIT Expo', semester=self.semester)
+        sync_missing_grade_rows(user=self.admin)
+        self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': 'PIT Expo',
+                'peer_grading_enabled': True,
+            },
+            format='json',
+        )
+        self.client.force_authenticate(user=self.pit_student)
+        self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            {
+                'teamId': self.pit_team.id,
+                'evaluateeName': 'Ana Lopez',
+                'breakdown': [{'criteriaName': 'Teamwork', 'score': 4, 'max': 5}],
+                'total': '4.00',
+                'max': '5.00',
+            },
+            format='json',
+        )
+        self.client.force_authenticate(user=self.admin)
+        blocked = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': 'PIT Expo',
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(blocked.status_code, 400)
+        self.assertIn('incomplete_teams', blocked.data)
+
+    def test_partial_peer_does_not_auto_finalize_after_stage_complete(self):
+        self._enable_capstone_peer_grading()
+        grade = self._capstone_grade()
+        self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {'panel_score': '100.00', 'adviser_score': '100.00'},
+            format='json',
+        )
         self.client.patch(
             '/api/grading/grades/group-settings/',
             {
@@ -640,23 +761,14 @@ class GradeCenterApiTests(APITestCase):
             format='json',
         )
         self.client.force_authenticate(user=self.student)
-        response = self.client.post(
+        self.client.post(
             '/api/grading/grades/peer-evaluations/',
-            {
-                'teamId': self.capstone_team.id,
-                'evaluateeName': 'Maria Santos',
-                'breakdown': [
-                    {'criteriaName': 'Technical Quality', 'score': 4, 'max': 5},
-                ],
-                'total': '4.00',
-                'max': '5.00',
-            },
+            self._peer_eval_payload('Maria Santos'),
             format='json',
         )
-        self.assertEqual(response.status_code, 200)
         grade.refresh_from_db()
-        self.assertGreaterEqual(grade.final_grade, Decimal('75.00'))
-        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertIsNone(grade.peer_score)
+        self.assertNotEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
 
     def test_patch_grade_blocked_when_event_officially_complete(self):
         self._enable_capstone_peer_grading()
@@ -751,11 +863,10 @@ class GradeCenterApiTests(APITestCase):
             ).count(),
             1,
         )
-        self.assertTrue(
-            StudentPeerGrade.objects.filter(
-                team_grade=grade,
-                student=self.second_student,
-            ).exists()
+        grade.refresh_from_db()
+        self.assertIsNone(grade.peer_score)
+        self.assertFalse(
+            StudentPeerGrade.objects.filter(team_grade=grade).exists(),
         )
 
     def test_adviser_submit_merges_stale_grade_row(self):
@@ -865,20 +976,18 @@ class GradeCenterApiTests(APITestCase):
             1,
         )
         self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=stale).exists())
-        self.assertTrue(
-            StudentPeerGrade.objects.filter(
-                team_grade=canonical,
-                student=self.second_student,
-            ).exists()
+        self.assertFalse(
+            StudentPeerGrade.objects.filter(team_grade=canonical).exists(),
         )
+        self.assertIsNone(canonical.peer_score)
 
         self.client.force_authenticate(user=self.admin)
         list_response = self.client.get('/api/grading/grades/')
         grade_data = next(
             g for g in list_response.data['grades'] if g['id'] == canonical.id
         )
-        self.assertTrue(grade_data['peer_per_student'])
-        self.assertIsNotNone(grade_data['peer_score'])
+        self.assertFalse(grade_data['peer_eval_complete'])
+        self.assertIsNone(grade_data['peer_score'])
 
         self.client.force_authenticate(user=self.student)
         dashboard = self.client.get('/api/dashboards/student/')
@@ -916,10 +1025,7 @@ class GradeCenterApiTests(APITestCase):
             1,
         )
         self.assertFalse(TeamGrade.objects.filter(pk=stale.pk).exists())
-        self.assertTrue(
-            StudentPeerGrade.objects.filter(
-                team_grade=canonical,
-                student=self.second_student,
-            ).exists()
+        self.assertFalse(
+            StudentPeerGrade.objects.filter(team_grade=canonical).exists(),
         )
-        self.assertIsNotNone(canonical.peer_score)
+        self.assertIsNone(canonical.peer_score)

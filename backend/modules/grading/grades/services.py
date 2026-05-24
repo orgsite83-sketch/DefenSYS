@@ -8,7 +8,7 @@ from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam
-from .models import GradeBreakdown, StudentPeerGrade, TeamGrade
+from .models import GradeBreakdown, PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
 
 
 ACTIVE_SCHEDULE_STATUSES = [
@@ -814,6 +814,8 @@ def _pit_group_settings(semester, stage_label):
         'peer_grading_enabled': payload['peer_grading_enabled'],
         'panel_weight': payload['panel_weight'],
         'peer_weight': payload['peer_weight'],
+        'peer_complete_team_count': 0,
+        'peer_total_team_count': 0,
     }
 
 
@@ -834,6 +836,8 @@ def _capstone_group_settings(semester, stage_label):
         'panel_weight': payload['panel_weight'],
         'adviser_weight': payload['adviser_weight'],
         'peer_weight': payload['peer_weight'],
+        'peer_complete_team_count': 0,
+        'peer_total_team_count': 0,
     }
 
 
@@ -920,13 +924,80 @@ def _empty_auto_finalize_result():
     }
 
 
+def _peer_gate_applies_for_group(semester, scope, stage_label, config):
+    """Whether peer completion must be satisfied before closing this group."""
+    label = (stage_label or '').strip()
+    grade_ids = TeamGrade.objects.filter(
+        semester=semester,
+        scope=scope,
+        stage_label__iexact=label,
+    ).values_list('id', flat=True)
+    if not grade_ids:
+        return False
+    has_submissions = PeerEvaluationSubmission.objects.filter(
+        team_grade_id__in=grade_ids,
+    ).exists()
+    if scope == TeamGrade.SCOPE_PIT:
+        if getattr(config, 'peer_grading_enabled', False):
+            return True
+        return has_submissions
+    return has_submissions
+
+
+def incomplete_peer_teams_for_group(semester, scope, stage_label, *, config=None):
+    from .peer_eval import is_team_peer_eval_complete, peer_completion_summary
+
+    label = (stage_label or '').strip()
+    grades = TeamGrade.objects.filter(
+        semester=semester,
+        scope=scope,
+        stage_label__iexact=label,
+    ).select_related('team')
+    incomplete = []
+    for grade in grades:
+        if is_team_peer_eval_complete(grade):
+            continue
+        summary = peer_completion_summary(grade)
+        incomplete.append(
+            {
+                'team_id': grade.team_id,
+                'team_name': grade.team.name,
+                'grade_id': grade.id,
+                'submitted': summary['submitted'],
+                'required': summary['required'],
+                'evaluators_done': summary['evaluators_done'],
+                'evaluators_total': summary['evaluators_total'],
+            }
+        )
+    return incomplete
+
+
+def peer_completion_counts_for_group(semester, scope, stage_label):
+    from .peer_eval import is_team_peer_eval_complete
+
+    label = (stage_label or '').strip()
+    grades = TeamGrade.objects.filter(
+        semester=semester,
+        scope=scope,
+        stage_label__iexact=label,
+    )
+    total = grades.count()
+    complete = sum(1 for grade in grades if is_team_peer_eval_complete(grade))
+    return {'peer_complete_team_count': complete, 'peer_total_team_count': total}
+
+
 def _auto_finalize_passed_grades_in_queryset(grades, user=None):
+    from .peer_eval import is_team_peer_eval_complete, peer_submission_count
+
     ready_count = 0
     skipped_incomplete = 0
     skipped_below_threshold = 0
 
     for grade in grades:
         grade.recalculate()
+        if peer_submission_count(grade) > 0 and not is_team_peer_eval_complete(grade):
+            skipped_incomplete += 1
+            continue
         if not grade.is_complete:
             skipped_incomplete += 1
             continue
@@ -1035,6 +1106,25 @@ def update_group_settings(
 
             config = get_or_create_stage_grading_config(stage, semester)
 
+    if is_officially_complete is True:
+        if _peer_gate_applies_for_group(semester, scope, label, config):
+            incomplete = incomplete_peer_teams_for_group(
+                semester,
+                scope,
+                label,
+                config=config,
+            )
+            if incomplete:
+                raise ValidationError(
+                    {
+                        'detail': (
+                            'Cannot mark officially complete until every team '
+                            'finishes peer evaluation.'
+                        ),
+                        'incomplete_teams': incomplete,
+                    }
+                )
+
     if is_officially_complete is not None:
         config.is_officially_complete = is_officially_complete
         update_fields.append('is_officially_complete')
@@ -1065,6 +1155,9 @@ def update_group_settings(
         settings_payload = _pit_group_settings(semester, label)
     else:
         settings_payload = _capstone_group_settings(semester, label)
+
+    peer_counts = peer_completion_counts_for_group(semester, scope, label)
+    settings_payload.update(peer_counts)
 
     if scope == TeamGrade.SCOPE_PIT and is_officially_complete is True:
         settings_payload['auto_publish'] = auto_publish_passed_grades_for_event(

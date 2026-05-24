@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/api_config.dart';
 import 'authenticated_client.dart';
+import 'provider_errors.dart';
 import 'session_expired.dart';
 
 final dashboardProvider =

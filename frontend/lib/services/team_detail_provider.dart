@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'api_http.dart';
 import 'authenticated_client.dart';
+import 'provider_errors.dart';
 import 'session_expired.dart';
 
 final teamDetailProvider =

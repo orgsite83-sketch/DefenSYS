@@ -32,6 +32,10 @@ class MyGradesTab extends StatelessWidget {
     final panelW = (weights['panel'] as num?)?.toInt() ?? 80;
     final peerW = (weights['peer'] as num?)?.toInt() ?? 20;
     final isPublished = gradeStatus == 'published';
+    final peerEvalComplete = studentData?['peerEvalComplete'] == true;
+    final peerEvalEnabled = studentData?['peerEvalEnabled'] == true;
+    final peerPending =
+        peerEvalEnabled && !peerEvalComplete && panelGrade != null;
 
     final scheduleStr = schedule != null
         ? '${schedule['date']} · ${schedule['startTime']}'
@@ -92,9 +96,12 @@ class MyGradesTab extends StatelessWidget {
           const SizedBox(height: 12),
           _scoreCard(
             title: 'Peer Score',
-            subtitle: '$peerW% of final grade',
-            value: peerGrade,
+            subtitle: peerPending
+                ? 'Pending — all teammates must finish peer evaluation'
+                : '$peerW% of final grade',
+            value: peerPending ? null : peerGrade,
             accent: DefensysTokens.gold,
+            pendingLabel: peerPending ? 'Pending' : null,
           ),
           const SizedBox(height: 12),
           _finalCard(
@@ -105,8 +112,11 @@ class MyGradesTab extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Grades appear after panel evaluation and peer evaluation are complete. '
-            'Contact your PIT Lead if something looks wrong.',
+            peerPending
+                ? 'Your team is still completing peer evaluation. Final grades '
+                    'will appear after everyone has submitted.'
+                : 'Grades appear after panel evaluation and peer evaluation are '
+                    'complete. Contact your PIT Lead if something looks wrong.',
             style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
           ),
         ],
@@ -119,7 +129,55 @@ class MyGradesTab extends StatelessWidget {
     required String subtitle,
     required Map<String, dynamic>? value,
     required Color accent,
+    String? pendingLabel,
   }) {
+    if (pendingLabel != null) {
+      return Card(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        elevation: 2,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            children: [
+              Container(
+                width: 48,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(Icons.hourglass_empty, color: accent),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                    ),
+                    Text(
+                      subtitle,
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+              Text(
+                pendingLabel,
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 14,
+                  color: accent,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     final hasScore = value != null && value['total'] != null;
     final total = (value?['total'] as num?)?.toDouble();
     final max = (value?['max'] as num?)?.toDouble() ?? 100;

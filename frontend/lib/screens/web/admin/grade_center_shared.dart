@@ -934,6 +934,118 @@ bool pitPeerStageToggleEnabled({
   return !state.isSaving && !isOfficiallyComplete;
 }
 
+bool groupPeerCloseBlocked({
+  required List<Map<String, dynamic>> grades,
+  required Map<String, dynamic> settings,
+}) {
+  final peerOpen = settings['peer_grading_enabled'] == true;
+  if (peerOpen) {
+    return grades.any((grade) => grade['peer_eval_complete'] != true);
+  }
+  return grades.any((grade) {
+    final submitted = asInt(grade['peer_submissions_submitted']) ?? 0;
+    return submitted > 0 && grade['peer_eval_complete'] != true;
+  });
+}
+
+String groupPeerCompletionSummary(
+  Map<String, dynamic> settings, {
+  List<Map<String, dynamic>> grades = const [],
+}) {
+  if (grades.isNotEmpty) {
+    final complete =
+        grades.where((grade) => grade['peer_eval_complete'] == true).length;
+    return '$complete of ${grades.length} teams peer-complete';
+  }
+  final complete = asInt(settings['peer_complete_team_count']) ?? 0;
+  final total = asInt(settings['peer_total_team_count']) ?? 0;
+  if (total == 0) {
+    return 'No teams in this group';
+  }
+  return '$complete of $total teams peer-complete';
+}
+
+Widget peerEvalFormsStatusWidget(Map<String, dynamic> grade) {
+  final complete = grade['peer_eval_complete'] == true;
+  final submitted = asInt(grade['peer_submissions_submitted']) ?? 0;
+  final required = asInt(grade['peer_submissions_required']) ?? 0;
+  final evaluatorsDone = asInt(grade['peer_evaluators_done']) ?? 0;
+  final evaluatorsTotal = asInt(grade['peer_evaluators_total']) ?? 0;
+
+  if (required == 0) {
+    return const Text(
+      'N/A',
+      style: TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
+    );
+  }
+  if (complete) {
+    return const Text(
+      'Complete',
+      style: TextStyle(
+        color: Color(0xFF059669),
+        fontSize: 12,
+        fontWeight: FontWeight.w700,
+      ),
+    );
+  }
+  return Text(
+    '$evaluatorsDone/$evaluatorsTotal evaluators · $submitted/$required',
+    style: const TextStyle(
+      color: Color(0xFFD97706),
+      fontSize: 11.5,
+      fontWeight: FontWeight.w600,
+    ),
+    maxLines: 2,
+    overflow: TextOverflow.ellipsis,
+  );
+}
+
+Future<void> showIncompletePeerTeamsDialog(
+  BuildContext context, {
+  required List<Map<String, dynamic>> teams,
+}) {
+  return showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Peer evaluation incomplete'),
+      content: SizedBox(
+        width: 420,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'These teams must finish peer evaluation before you can mark '
+                'the event officially complete:',
+              ),
+              const SizedBox(height: 12),
+              ...teams.map(
+                (team) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    '• ${team['team_name'] ?? 'Team'} — '
+                    '${team['evaluators_done'] ?? 0}/${team['evaluators_total'] ?? 0} '
+                    'evaluators, '
+                    '${team['submitted'] ?? 0}/${team['required'] ?? 0} submissions',
+                    style: const TextStyle(fontSize: 13),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.of(ctx).pop(),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
+}
+
 Widget capstoneTermStatusBadgeRow(
   GradeCenterState state, {
   bool showPeerEvaluation = false,
@@ -987,12 +1099,33 @@ Widget gradeGroupStageControlsSection({
   required ValueChanged<bool> onOfficiallyCompleteChanged,
   required ValueChanged<bool> onPeerGradingChanged,
   bool showCapstonePeerTermBadge = false,
+  Map<String, dynamic>? groupSettings,
+  List<Map<String, dynamic>> grades = const [],
+  bool officialCompleteToggleEnabled = true,
 }) {
   final isPit = scope == 'pit';
+  final settings = groupSettings ?? const <String, dynamic>{};
+  final peerSummary = groupPeerCompletionSummary(settings, grades: grades);
+  final closeBlocked = groupPeerCloseBlocked(
+    grades: grades,
+    settings: settings,
+  );
 
   return Column(
     crossAxisAlignment: CrossAxisAlignment.start,
     children: [
+      if (grades.isNotEmpty ||
+          (settings['peer_total_team_count'] as num? ?? 0) > 0) ...[
+        Text(
+          peerSummary,
+          style: TextStyle(
+            color: closeBlocked ? const Color(0xFFD97706) : const Color(0xFF667085),
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        const SizedBox(height: 8),
+      ],
       Wrap(
         spacing: 12,
         runSpacing: 10,
@@ -1002,7 +1135,9 @@ Widget gradeGroupStageControlsSection({
           groupToggleRow(
             label: 'Officially complete',
             value: isOfficiallyComplete,
-            enabled: !state.isSaving,
+            enabled: !state.isSaving &&
+                officialCompleteToggleEnabled &&
+                (!closeBlocked || isOfficiallyComplete),
             onChanged: onOfficiallyCompleteChanged,
           ),
           if (isPit)

@@ -26,10 +26,20 @@ class AuthenticatedHttpClient {
 
   bool get _isGuestPanelist => _auth.isGuestPanelist;
 
-  Future<void> _onAuthFailure() async {
-    if (_auth.isLoggingOut) throw SessionExpiredException();
-    await _auth.handleSessionExpired();
-    throw SessionExpiredException();
+  Future<void> _onAuthFailure({
+    SessionExpiredReason reason = SessionExpiredReason.refreshFailed,
+  }) async {
+    if (_auth.isLoggingOut) {
+      throw SessionExpiredException(
+        sessionExpiredMessageFor(reason),
+        reason,
+      );
+    }
+    await _auth.handleSessionExpired(reason: reason);
+    throw SessionExpiredException(
+      sessionExpiredMessageFor(reason),
+      reason,
+    );
   }
 
   Future<void> _ensureReady() async {
@@ -50,11 +60,13 @@ class AuthenticatedHttpClient {
     var token = _ref.read(authProvider).token;
     if (allowRefresh && !_isGuestPanelist && shouldRefreshAccess(token)) {
       final ok = await _refreshSingleFlight();
-      if (!ok) throw SessionExpiredException();
+      if (!ok) {
+        await _onAuthFailure(reason: SessionExpiredReason.refreshExpired);
+      }
       token = _ref.read(authProvider).token;
     }
     if (token == null || token.isEmpty) {
-      await _onAuthFailure();
+      await _onAuthFailure(reason: SessionExpiredReason.browserSessionEnded);
     }
     return token;
   }
