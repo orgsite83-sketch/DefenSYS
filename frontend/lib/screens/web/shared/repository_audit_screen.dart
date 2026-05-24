@@ -1,6 +1,5 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:url_launcher/url_launcher.dart';
@@ -9,7 +8,9 @@ import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/repository_audit_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/clipboard_copy.dart';
 import '../../../utils/pdf_viewer.dart';
+import '../../../widgets/defensys_skeleton.dart';
 
 class RepositoryAuditScreen extends ConsumerStatefulWidget {
   const RepositoryAuditScreen({super.key});
@@ -57,6 +58,29 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final show = _tableHScrollController.position.maxScrollExtent > 4;
     if (show != _showTableScrollHint && mounted) {
       setState(() => _showTableScrollHint = show);
+    }
+  }
+
+  Future<void> _copySuggestedFileName(String? rawName) async {
+    final name = rawName?.trim() ?? '';
+    if (name.isEmpty) {
+      return;
+    }
+    final copied = await copyTextToClipboard(name);
+    if (!mounted) {
+      return;
+    }
+    final messenger = ScaffoldMessenger.of(context);
+    if (copied) {
+      messenger.showSnackBar(SnackBar(content: Text('Copied $name')));
+    } else {
+      messenger.showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Copy failed — select the filename below and copy manually',
+          ),
+        ),
+      );
     }
   }
 
@@ -362,7 +386,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                           ),
                         ),
                         const SizedBox(height: 4),
-                        Text(
+                        SelectableText(
                           row['suggested_file_name']?.toString() ?? '',
                           style: const TextStyle(
                             fontFamily: 'monospace',
@@ -389,6 +413,16 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                       ),
                     ),
                   ),
+                  if ((row['suggested_file_name']?.toString() ?? '').isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    IconButton(
+                      tooltip: 'Copy filename',
+                      icon: const Icon(Icons.copy_outlined, size: 18),
+                      onPressed: () => _copySuggestedFileName(
+                        row['suggested_file_name']?.toString(),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             );
@@ -458,7 +492,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                             fontSize: 12,
                           ),
                         ),
-                        Text(
+                        SelectableText(
                           row['suggested_file_name']?.toString() ?? '',
                           style: const TextStyle(
                             color: Color(0xFF6B7280),
@@ -478,18 +512,15 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                       fontSize: 12,
                     ),
                   ),
-                  if (pending && row['suggested_file_name'] != null) ...[
+                  if (pending &&
+                      (row['suggested_file_name']?.toString() ?? '').isNotEmpty) ...[
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Copy filename',
                       icon: const Icon(Icons.copy_outlined, size: 18),
-                      onPressed: () {
-                        final name = row['suggested_file_name']?.toString() ?? '';
-                        Clipboard.setData(ClipboardData(text: name));
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Copied $name')),
-                        );
-                      },
+                      onPressed: () => _copySuggestedFileName(
+                        row['suggested_file_name']?.toString(),
+                      ),
                     ),
                   ],
                 ],
@@ -826,13 +857,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             ),
           ],
           const SizedBox(height: 18),
-          if (state.isLoading)
-            const SizedBox(
-              height: 160,
-              child: Center(
-                child: CircularProgressIndicator(color: AppColors.maroon),
-              ),
-            )
+          if (state.isLoading && state.entries.isEmpty)
+            DefensysSkeleton.list(count: 6, rowHeight: 48)
           else if (state.entries.isEmpty)
             _emptyRepositoryTable()
           else

@@ -134,7 +134,7 @@ PostgreSQL must **not** be exposed publicly — keep it on `localhost` only.
 
 ```bash
 sudo apt update && sudo apt upgrade -y
-sudo apt install -y git nginx postgresql postgresql-contrib certbot python3-certbot-nginx
+sudo apt install -y git nginx postgresql postgresql-contrib certbot python3-certbot-nginx redis-server
 ```
 
 ### Python 3.12+
@@ -316,6 +316,61 @@ curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/api/login/
 
 ---
 
+## 8b. Redis + WebSocket (real-time grading flags)
+
+Students receive live updates when admins enable peer evaluation (no re-login). This uses **Django Channels** on a separate ASGI process.
+
+### Redis
+
+```bash
+sudo systemctl enable redis-server
+sudo systemctl start redis-server
+```
+
+Add to `/opt/defensys/backend/.env`:
+
+```env
+REDIS_URL=redis://127.0.0.1:6379/0
+```
+
+Local dev without Redis: `DEFENSYS_USE_INMEMORY_CHANNELS=1` in `.env` (single-process only).
+
+### Daphne (WebSocket ASGI)
+
+```bash
+sudo nano /etc/systemd/system/defensys-ws.service
+```
+
+```ini
+[Unit]
+Description=DefenSYS WebSocket (Daphne)
+After=network.target redis-server.service
+
+[Service]
+User=defensys
+Group=defensys
+WorkingDirectory=/opt/defensys/backend
+Environment="PATH=/opt/defensys/backend/venv/bin"
+EnvironmentFile=/opt/defensys/backend/.env
+ExecStart=/opt/defensys/backend/venv/bin/daphne \
+    -b 127.0.0.1 -p 8001 defensys_backend.asgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable defensys-ws
+sudo systemctl start defensys-ws
+```
+
+After `pip install -r requirements.txt`, ensure `channels`, `channels-redis`, and `daphne` are installed in the venv.
+
+---
+
 ## 9. Build and deploy Flutter web
 
 Build on **your PC** (not required on the VPS).
@@ -323,8 +378,6 @@ Build on **your PC** (not required on the VPS).
 ### Required: HTTPS / same-origin fix
 
 The stock `frontend/lib/config/api_config.dart` uses `http://` and port `:8000`. Behind nginx on **443**, the web app must call `https://yourdomain.edu/api/` **without** port 8000.
-
-Apply **[Appendix A](#appendix-a--flutter-https--same-origin-fix)** before building, then commit or build from that branch.
 
 ### Build
 
@@ -334,7 +387,9 @@ flutter pub get
 flutter build web --release
 ```
 
-With dart-define (after Appendix A is applied):
+Served from a **public IP or domain** (Kamatera), the build uses same-origin URLs (`http://YOUR_IP/api`, no `:8000`) automatically.
+
+For **HTTPS** after Certbot, rebuild (scheme follows the page) or pass:
 
 ```bash
 flutter build web --release \
@@ -342,8 +397,6 @@ flutter build web --release \
   --dart-define=DEFENSYS_API_SCHEME=https \
   --dart-define=DEFENSYS_API_PORT=
 ```
-
-If Appendix A is not applied yet, web will still target `http://HOST:8000` and **will not work** behind HTTPS nginx.
 
 ### Upload to the server
 
@@ -397,6 +450,20 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket: live grading flags (Daphne on 8001)
+    location /ws/ {
+        proxy_pass http://127.0.0.1:8001;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 86400;
+        proxy_buffering off;
     }
 
     # SPA: send unknown paths to index.html (Flutter web routing)
@@ -530,12 +597,30 @@ Back up `/opt/defensys/backend/media/` regularly, or set `USE_S3=true` in `.env`
 
 ### Deploy updates
 
+If `/opt/defensys` is **not** a git repo (`fatal: not a git repository`), update code with `rsync` — see [§16 Troubleshooting](#16-troubleshooting).
+
+```bash
+cd /tmp && rm -rf DefenSYS && git clone https://github.com/YOUR_ORG/DefenSYS.git
+cp -a /opt/defensys/backend/media /tmp/defensys-media-backup
+cp -a /opt/defensys/backend/.env /tmp/defensys-env-backup 2>/dev/null || true
+rsync -av --exclude media --exclude venv /tmp/DefenSYS/backend/ /opt/defensys/backend/
+rsync -av /tmp/defensys-media-backup/ /opt/defensys/backend/media/
+cp -a /tmp/defensys-env-backup /opt/defensys/backend/.env 2>/dev/null || true
+cd /opt/defensys/backend && source venv/bin/activate
+pip install -r requirements.txt
+python manage.py migrate --noinput
+sudo systemctl restart defensys
+# Rebuild Flutter web on PC, scp to /var/www/defensys/
+```
+
+If `/opt/defensys` **is** a git clone:
+
 ```bash
 cd /opt/defensys
 git pull
 cd backend && source venv/bin/activate
 pip install -r requirements.txt
-python manage.py migrate
+python manage.py migrate --noinput
 sudo systemctl restart defensys
 # Rebuild Flutter web on PC, scp to /var/www/defensys/
 ```
@@ -547,6 +632,10 @@ sudo systemctl restart defensys
 | Symptom | Likely cause | Fix |
 |---------|----------------|-----|
 | 502 Bad Gateway | Gunicorn not running | `sudo systemctl status defensys` · check logs: `journalctl -u defensys -n 50` |
+| **`journalctl -u gunicorn` shows no entries** | Wrong unit name | Use **`defensys`**, not `gunicorn`: `journalctl -u defensys -n 100` |
+| Upload / API **500** · `No module named 'defensys_backend.exception_handlers'` | Incomplete backend deploy | Ensure full tree under `/opt/defensys/backend/` including `defensys_backend/exception_handlers.py` (see rsync update above) |
+| **`Missing DJANGO_SECRET_KEY`** on `manage.py` / 500 | No `.env` | `cp .env.production.example .env`, set secrets, `chmod 600 .env`, restart `defensys` |
+| `/opt/defensys/backend/` only has `media/` | Code never copied | `rsync` from git clone; do not `git clone` into non-empty dir without backup |
 | 400 Bad Request (DisallowedHost) | Host not in `DJANGO_ALLOWED_HOSTS` | Add domain + IP to `.env`, restart Gunicorn |
 | Web loads but API fails (mixed content / wrong port) | `api_config.dart` still uses `http://:8000` | Apply Appendix A; rebuild and re-upload web |
 | CORS errors in browser | Cross-origin API URL | Use same-origin nginx (`/` + `/api/` on one domain) |
@@ -554,13 +643,23 @@ sudo systemctl restart defensys
 | Upload fails | Body size limit | Increase `client_max_body_size` in nginx `location /api/` |
 | DB connection refused | Postgres down or wrong `.env` | `sudo systemctl status postgresql` · verify `POSTGRES_*` |
 
+### Required files checklist (after deploy)
+
+```bash
+ls -la /opt/defensys/backend/manage.py
+ls -la /opt/defensys/backend/defensys_backend/exception_handlers.py
+ls -la /opt/defensys/backend/.env
+ls -la /opt/defensys/backend/venv/bin/gunicorn
+sudo systemctl status defensys
+```
+
 ---
 
 ## Appendix A — Flutter HTTPS / same-origin fix
 
-**Required before production web/mobile builds** for Kamatera (HTTPS on port 443).
+**Implemented in** [`frontend/lib/config/api_config.dart`](../frontend/lib/config/api_config.dart).
 
-Today `api_config.dart` builds URLs like `http://HOST:8000/api`. Production needs `https://HOST/api` (no port) when using nginx on 443.
+Production web on a **public host** (e.g. `http://79.108.225.153/`) automatically uses **`http://79.108.225.153/api`** (no `:8000`). Local dev on `localhost` still uses **`:8000`**.
 
 ### 1. Add dart-define keys in `frontend/lib/config/api_config.dart`
 
@@ -626,7 +725,7 @@ flutter build apk --release \
   --dart-define=DEFENSYS_API_PORT=
 ```
 
-Until this appendix is applied in the repo, Kamatera HTTPS deployment will not work correctly for Flutter clients.
+After changing `api_config.dart`, rebuild and re-upload `build/web` to the server.
 
 ---
 

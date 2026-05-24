@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/dashboard_provider.dart';
+import '../../../widgets/defensys_skeleton.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AdminDashboardContent extends ConsumerStatefulWidget {
@@ -31,6 +32,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('admin'));
+    final initialLoad = dashState.isLoading && dashState.data == null;
     final stats = _statsFrom(dashState.data?['stats']);
 
     return Padding(
@@ -44,49 +46,52 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
             subtitle: 'Here is what is happening in the IT Department today.',
           ),
           const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: _metricCard(
-                  value: _statValue(stats, 'total_students'),
-                  label: 'Active Students',
-                  icon: Icons.groups_rounded,
-                  iconColor: const Color(0xFF7C3AED),
-                  iconBackground: const Color(0xFFEDE3FF),
+          if (initialLoad)
+            DefensysSkeleton.metricRow()
+          else
+            Row(
+              children: [
+                Expanded(
+                  child: _metricCard(
+                    value: _statValue(stats, 'total_students'),
+                    label: 'Active Students',
+                    icon: Icons.groups_rounded,
+                    iconColor: const Color(0xFF7C3AED),
+                    iconBackground: const Color(0xFFEDE3FF),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _metricCard(
-                  value: _statValue(stats, 'total_faculty'),
-                  label: 'Faculty Members',
-                  icon: Icons.co_present_rounded,
-                  iconColor: const Color(0xFF2563EB),
-                  iconBackground: const Color(0xFFDCEBFF),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _metricCard(
+                    value: _statValue(stats, 'total_faculty'),
+                    label: 'Faculty Members',
+                    icon: Icons.co_present_rounded,
+                    iconColor: const Color(0xFF2563EB),
+                    iconBackground: const Color(0xFFDCEBFF),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _metricCard(
-                  value: _statValue(stats, 'total_teams'),
-                  label: 'Active Teams',
-                  icon: Icons.groups_3_rounded,
-                  iconColor: const Color(0xFF047857),
-                  iconBackground: const Color(0xFFCFFAE7),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _metricCard(
+                    value: _statValue(stats, 'total_teams'),
+                    label: 'Active Teams',
+                    icon: Icons.groups_3_rounded,
+                    iconColor: const Color(0xFF047857),
+                    iconBackground: const Color(0xFFCFFAE7),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: _metricCard(
-                  value: _statValue(stats, 'upcoming_defenses'),
-                  label: 'Scheduled Defenses',
-                  icon: Icons.event_available_rounded,
-                  iconColor: const Color(0xFF92400E),
-                  iconBackground: const Color(0xFFFFEDB8),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: _metricCard(
+                    value: _statValue(stats, 'upcoming_defenses'),
+                    label: 'Scheduled Defenses',
+                    icon: Icons.event_available_rounded,
+                    iconColor: const Color(0xFF92400E),
+                    iconBackground: const Color(0xFFFFEDB8),
+                  ),
                 ),
-              ),
-            ],
-          ),
+              ],
+            ),
           const SizedBox(height: 24),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

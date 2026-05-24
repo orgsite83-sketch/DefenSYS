@@ -14,6 +14,7 @@ import '../../services/auth_provider.dart';
 import '../../theme/defensys_tokens.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
+import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
@@ -107,11 +108,16 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     ];
 
     final safeIndex = _selectedIndex.clamp(0, tabChildren.length - 1);
+    final initialLoad = dashState.isLoading && dashState.data == null;
+    final showFatalError = dashState.error != null && dashState.data == null;
 
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
+      child: PopScope(
+      canPop: false,
       child: Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
         title: Text(
@@ -132,59 +138,79 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         ],
       ),
       body: OfflineBanner(
-        child: dashState.isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : dashState.error != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
+        child: showFatalError
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Error loading dashboard',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        dashState.error!,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(color: Colors.grey),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          ref
+                              .read(dashboardProvider('student').notifier)
+                              .fetchDashboardData();
+                        },
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Retry'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroon,
+                          foregroundColor: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              )
+            : Column(
+                children: [
+                  if (initialLoad)
+                    DefensysSkeleton.teamSummaryCard()
+                  else if (team != null)
+                    Stack(
+                      alignment: Alignment.topRight,
                       children: [
-                        const Icon(Icons.error_outline, size: 48, color: Colors.red),
-                        const SizedBox(height: 16),
-                        Text(
-                          'Error loading dashboard',
-                          style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
+                        _buildTeamSummaryCard(team),
+                        if (dashState.isRefreshing)
+                          const Padding(
+                            padding: EdgeInsets.all(20),
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white70,
+                              ),
+                            ),
                           ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          dashState.error!,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                        const SizedBox(height: 16),
-                        ElevatedButton.icon(
-                          onPressed: () {
-                            ref.read(dashboardProvider('student').notifier).fetchDashboardData();
-                          },
-                          icon: const Icon(Icons.refresh),
-                          label: const Text('Retry'),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: DefensysTokens.maroon,
-                            foregroundColor: Colors.white,
-                          ),
-                        ),
                       ],
                     ),
+                  Expanded(
+                    child: initialLoad
+                        ? DefensysSkeleton.tabContent()
+                        : IndexedStack(
+                            index: safeIndex,
+                            children: tabChildren,
+                          ),
                   ),
-                )
-              : Column(
-                  children: [
-                    // Team Summary Card - Always visible
-                    if (team != null) _buildTeamSummaryCard(team),
-                    // Main Content
-                    Expanded(
-                      child: IndexedStack(
-                        index: safeIndex,
-                        children: tabChildren,
-                      ),
-                    ),
-                  ],
-                ),
+                ],
+              ),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
@@ -192,6 +218,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         indicatorColor: DefensysTokens.maroon.withOpacity(0.15),
         destinations: destinations,
       ),
+    ),
     ),
     );
   }

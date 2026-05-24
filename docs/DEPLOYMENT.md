@@ -2,6 +2,8 @@
 
 Use this before go-live. Local demos may use `docs/DEMO_SETUP_GUIDE.md`; production should follow this list.
 
+**Full server guide (Kamatera VPS):** [KAMATERA_DEPLOYMENT.md](KAMATERA_DEPLOYMENT.md) — create VM → deploy repo → HTTPS → go live.
+
 ## Do not run in production
 
 - `python manage.py dev_create_40_students` (prototype `student1`–`student40` accounts)

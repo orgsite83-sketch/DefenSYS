@@ -114,6 +114,18 @@ class SemesterStatusView(APIView):
 
         if update_fields:
             semester.save(update_fields=list(dict.fromkeys(update_fields)))
+            if 'capstone_peer_evaluation_enabled' in update_fields or 'capstone_adviser_grading_enabled' in update_fields:
+                from realtime.broadcast import notify_capstone_evaluation_flags
+
+                notify_capstone_evaluation_flags(
+                    semester,
+                    peer_eval_enabled=semester.capstone_peer_evaluation_enabled
+                    if 'capstone_peer_evaluation_enabled' in update_fields
+                    else None,
+                    adviser_grading_enabled=semester.capstone_adviser_grading_enabled
+                    if 'capstone_adviser_grading_enabled' in update_fields
+                    else None,
+                )
 
         return Response({
             'semester': semester_payload(

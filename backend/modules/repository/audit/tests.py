@@ -1,5 +1,6 @@
 from decimal import Decimal
 from io import BytesIO
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -14,6 +15,7 @@ from repository.deliverables.models import DeliverableSubmission
 from repository.vault.models import VaultEntry
 from student_teams.models import StudentTeam, TeamMembership
 from .models import RepositoryAuditLog
+from .services import validate_capstone_file_name, validate_pit_file_name
 
 
 User = get_user_model()
@@ -820,3 +822,48 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(response.data['stats']['pending_repository_files'], 0)
         self.assertEqual(response.data['stats']['approved_repository_files'], 3)
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_validate_pit_file_name_accepts_mixed_case_semester(self):
+        metadata = validate_pit_file_name(
+            '3rdYear.PIT301.CloudFileSyncSystem.1stsemester.pdf',
+        )
+        self.assertEqual(metadata['semester_label'], '1st Semester')
+        self.assertEqual(metadata['year_level'], '3rd Year')
+
+    def test_upload_pit_django_validation_error_returns_400_not_500(self):
+        from django.core.exceptions import ValidationError as DjangoValidationError
+
+        self._open_upload_window_for_pit_team()
+        self.client.force_authenticate(user=self.pit_lead)
+        pdf_bytes = b'%PDF-1.4 test'
+        upload_file = SimpleUploadedFile(
+            '3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf',
+            pdf_bytes,
+            content_type='application/pdf',
+        )
+        message = (
+            'Repository uploads open after a PIT event is marked officially complete '
+            'in Grade Center.'
+        )
+        with patch(
+            'repository.audit.views.upload_pit_files',
+            side_effect=DjangoValidationError(message),
+        ):
+            response = self.client.post(
+                '/api/repository/audit/upload-pit/',
+                {'files': upload_file},
+                format='multipart',
+            )
+        self.assertEqual(response.status_code, 400)
+        payload = response.data
+        if isinstance(payload, dict):
+            detail = payload.get('detail')
+            if isinstance(detail, list):
+                body = ' '.join(str(item) for item in detail)
+            else:
+                body = str(detail)
+        elif isinstance(payload, list):
+            body = ' '.join(str(item) for item in payload)
+        else:
+            body = str(payload)
+        self.assertIn('upload', body.lower())

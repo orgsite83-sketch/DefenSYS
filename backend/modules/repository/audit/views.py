@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.http import HttpResponse
 from rest_framework.exceptions import ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -15,6 +16,14 @@ from .services import (
     upload_pit_files,
 )
 from .trail import audit_trail_for_request
+
+
+def _raise_drf_validation_error(exc: DjangoValidationError) -> None:
+    if getattr(exc, 'message_dict', None):
+        raise ValidationError(detail=exc.message_dict) from exc
+    if getattr(exc, 'messages', None):
+        raise ValidationError(detail=list(exc.messages)) from exc
+    raise ValidationError(detail=str(exc)) from exc
 
 
 class RepositoryAuditListView(APIView):
@@ -44,13 +53,16 @@ class RepositoryAuditUploadPitView(APIView):
                 {'files': 'Upload at least one PIT PDF file or provide file_names.'}
             )
 
-        entries, skipped = upload_pit_files(
-            request.user,
-            file_names=file_names if file_names else None,
-            uploaded_files=uploaded_files if uploaded_files else None,
-            year_level=request.data.get('year_level') or None,
-            academic_year=request.data.get('academic_year') or None,
-        )
+        try:
+            entries, skipped = upload_pit_files(
+                request.user,
+                file_names=file_names if file_names else None,
+                uploaded_files=uploaded_files if uploaded_files else None,
+                year_level=request.data.get('year_level') or None,
+                academic_year=request.data.get('academic_year') or None,
+            )
+        except DjangoValidationError as exc:
+            _raise_drf_validation_error(exc)
         payload = repository_audit_payload(request)
         payload['created_count'] = len(entries)
         payload['skipped'] = skipped
@@ -77,12 +89,15 @@ class RepositoryAuditUploadCapstoneView(APIView):
                 {'files': 'Upload at least one Capstone PDF file or provide file_names.'}
             )
 
-        entries, skipped = upload_capstone_files(
-            request.user,
-            file_names=file_names if file_names else None,
-            uploaded_files=uploaded_files if uploaded_files else None,
-            academic_year=request.data.get('academic_year') or None,
-        )
+        try:
+            entries, skipped = upload_capstone_files(
+                request.user,
+                file_names=file_names if file_names else None,
+                uploaded_files=uploaded_files if uploaded_files else None,
+                academic_year=request.data.get('academic_year') or None,
+            )
+        except DjangoValidationError as exc:
+            _raise_drf_validation_error(exc)
         payload = repository_audit_payload(request)
         payload['created_count'] = len(entries)
         payload['skipped'] = skipped

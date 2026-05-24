@@ -16,6 +16,7 @@ import '../../theme/defensys_tokens.dart';
 import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/offline_banner.dart';
+import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/error_banner.dart';
 import '../../config/api_config.dart';
 
@@ -212,8 +213,11 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
   Widget build(BuildContext context) {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
+      child: PopScope(
+      canPop: false,
       child: Scaffold(
       appBar: AppBar(
+        automaticallyImplyLeading: false,
         backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
         title: Text(
@@ -230,18 +234,22 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
       ),
       body: OfflineBanner(
         child: _loading
-          ? const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
+            ? Column(
                 children: [
-                  CircularProgressIndicator(color: DefensysTokens.maroon),
-                  SizedBox(height: 16),
-                  Text('Loading assignments...',
-                      style: TextStyle(color: Colors.grey, fontSize: 13)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                    child: Text(
+                      context.l10n.loadingAssignments,
+                      style: const TextStyle(
+                        color: DefensysTokens.textSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ),
+                  Expanded(child: DefensysSkeleton.list(count: 6, rowHeight: 64)),
                 ],
-              ),
-            )
-          : _buildBody(),
+              )
+            : _buildBody(),
       ),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _selectedIndex,
@@ -267,6 +275,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           ),
         ],
       ),
+    ),
     ),
     );
   }

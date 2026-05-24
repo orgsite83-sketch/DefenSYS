@@ -1051,6 +1051,14 @@ def update_group_settings(
 
     if update_fields:
         config.save(update_fields=list(dict.fromkeys(update_fields)) + ['updated_at'])
+        if 'peer_grading_enabled' in update_fields and scope == TeamGrade.SCOPE_PIT:
+            from realtime.broadcast import notify_pit_peer_grading
+
+            notify_pit_peer_grading(
+                semester,
+                label,
+                peer_eval_enabled=bool(config.peer_grading_enabled),
+            )
 
     settings_payload = None
     if scope == TeamGrade.SCOPE_PIT:

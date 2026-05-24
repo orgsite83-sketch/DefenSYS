@@ -11,18 +11,26 @@ final dashboardProvider =
 
 class DashboardState {
   final bool isLoading;
+  final bool isRefreshing;
   final Map<String, dynamic>? data;
   final String? error;
 
-  DashboardState({this.isLoading = false, this.data, this.error});
+  DashboardState({
+    this.isLoading = false,
+    this.isRefreshing = false,
+    this.data,
+    this.error,
+  });
 
   DashboardState copyWith({
     bool? isLoading,
+    bool? isRefreshing,
     Map<String, dynamic>? data,
     String? error,
   }) {
     return DashboardState(
       isLoading: isLoading ?? this.isLoading,
+      isRefreshing: isRefreshing ?? this.isRefreshing,
       data: data ?? this.data,
       error: error,
     );
@@ -43,8 +51,13 @@ class DashboardNotifier extends Notifier<DashboardState> {
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
-  Future<void> fetchDashboardData() async {
-    state = state.copyWith(isLoading: true, error: null);
+  Future<void> fetchDashboardData({bool silent = false}) async {
+    final hasData = state.data != null;
+    if (!silent || !hasData) {
+      state = state.copyWith(isLoading: true, isRefreshing: false, error: null);
+    } else {
+      state = state.copyWith(isRefreshing: true, error: null);
+    }
 
     try {
       final url = '$baseUrl/$role/';
@@ -54,11 +67,13 @@ class DashboardNotifier extends Notifier<DashboardState> {
         final data = jsonDecode(response.body);
         state = state.copyWith(
           isLoading: false,
+          isRefreshing: false,
           data: data is Map<String, dynamic> ? data : Map<String, dynamic>.from(data as Map),
         );
       } else {
         state = state.copyWith(
           isLoading: false,
+          isRefreshing: false,
           error:
               'Failed to load dashboard data. Status: ${response.statusCode}',
         );
@@ -66,7 +81,11 @@ class DashboardNotifier extends Notifier<DashboardState> {
     } on SessionExpiredException {
       rethrow;
     } catch (e) {
-      state = state.copyWith(isLoading: false, error: 'Connection error: $e');
+      state = state.copyWith(
+        isLoading: false,
+        isRefreshing: false,
+        error: 'Connection error: $e',
+      );
     }
   }
 }

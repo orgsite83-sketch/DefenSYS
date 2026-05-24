@@ -674,20 +674,43 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     try {
       final data = jsonDecode(response.body);
       if (data is Map) {
-        if (data['detail'] != null) {
-          return data['detail'].toString();
-        }
-        if (data.isNotEmpty) {
-          final firstValue = data.values.first;
-          if (firstValue is List && firstValue.isNotEmpty) {
-            return firstValue.first.toString();
-          }
-          return firstValue.toString();
+        final message = _messageFromErrorBody(data);
+        if (message.isNotEmpty) {
+          return message;
         }
       }
     } catch (_) {
       return 'Request failed. Status: ${response.statusCode}';
     }
     return 'Request failed. Status: ${response.statusCode}';
+  }
+
+  String _messageFromErrorBody(Map<dynamic, dynamic> data) {
+    final detail = data['detail'];
+    if (detail is String && detail.trim().isNotEmpty) {
+      return detail.trim();
+    }
+    if (detail is List) {
+      return detail
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .join(' ');
+    }
+    if (detail is Map) {
+      return detail.values
+          .expand((value) => value is List ? value : [value])
+          .map((item) => item.toString().trim())
+          .where((item) => item.isNotEmpty)
+          .join(' ');
+    }
+    for (final value in data.values) {
+      if (value is List && value.isNotEmpty) {
+        return value.first.toString();
+      }
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+    return '';
   }
 }

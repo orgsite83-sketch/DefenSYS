@@ -8,8 +8,10 @@ import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/user_management_provider.dart';
+import '../../../utils/clipboard_copy.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../utils/student_bulk_import_csv.dart';
+import '../../../widgets/defensys_skeleton.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -376,11 +378,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           const SizedBox(height: 16),
           Row(children: [const Spacer(), _roleFilter(state)]),
           const SizedBox(height: 20),
-          if (state.isLoading)
-            const SizedBox(
-              height: 180,
-              child: Center(child: CircularProgressIndicator(color: _maroon)),
-            )
+          if (state.isLoading && state.users.isEmpty)
+            DefensysSkeleton.list(count: 6, rowHeight: 52)
           else
             _usersTable(state, visibleUsers),
           const SizedBox(height: 19),
@@ -2316,8 +2315,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Future<void> _copyGuestCode(String code) async {
-    await Clipboard.setData(ClipboardData(text: code));
-    _snack('Guest code copied.');
+    final copied = await copyTextToClipboard(code);
+    if (!mounted) {
+      return;
+    }
+    _snack(copied ? 'Guest code copied.' : 'Copy failed — select the code and copy manually.');
   }
 
   Future<void> _confirmRevokeGuestCode(int codeId) async {

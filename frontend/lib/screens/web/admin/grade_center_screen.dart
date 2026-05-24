@@ -11,6 +11,7 @@ import '../../../services/grade_center_provider.dart';
 import 'admin_shell.dart';
 import 'grade_center_capstone_table.dart';
 import 'grade_center_event_teams_screen.dart';
+import '../../../widgets/defensys_skeleton.dart';
 import 'grade_center_shared.dart';
 import 'grade_center_team_detail_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -410,13 +411,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   Widget _buildGroupedListContent(GradeCenterState state) {
-    if (state.isLoading) {
-      return const SizedBox(
-        height: 170,
-        child: Center(
-          child: CircularProgressIndicator(color: DefensysUi.primaryMaroon),
-        ),
-      );
+    if (state.isLoading && state.grades.isEmpty) {
+      return DefensysSkeleton.list(count: 5, rowHeight: 56);
     }
 
     final groups = groupGradesFromState(state);

@@ -60,8 +60,12 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.teammates != widget.teammates ||
         oldWidget.peerCriteria != widget.peerCriteria ||
-        oldWidget.myPeerSubmissions != widget.myPeerSubmissions) {
+        oldWidget.myPeerSubmissions != widget.myPeerSubmissions ||
+        oldWidget.peerEvalAllowed != widget.peerEvalAllowed) {
       _buildScores();
+      if (oldWidget.peerEvalAllowed != widget.peerEvalAllowed) {
+        setState(() {});
+      }
     }
   }
 

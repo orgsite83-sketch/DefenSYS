@@ -59,6 +59,7 @@ ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -77,6 +78,8 @@ INSTALLED_APPS = [
     'grading',
     'repository',
     'curriculum_analytics',
+    'channels',
+    'realtime',
 ]
 
 # App API tests only; do not collect ad-hoc scripts in backend/tests/ (see tests/README.md).
@@ -111,6 +114,28 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'defensys_backend.wsgi.application'
+ASGI_APPLICATION = 'defensys_backend.asgi.application'
+
+_use_inmemory_channels = 'test' in sys.argv or _env_bool(
+    'DEFENSYS_USE_INMEMORY_CHANNELS',
+    default=False,
+)
+if _use_inmemory_channels:
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels.layers.InMemoryChannelLayer',
+        },
+    }
+else:
+    _redis_url = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379/0')
+    CHANNEL_LAYERS = {
+        'default': {
+            'BACKEND': 'channels_redis.core.RedisChannelLayer',
+            'CONFIG': {
+                'hosts': [_redis_url],
+            },
+        },
+    }
 
 
 # Database

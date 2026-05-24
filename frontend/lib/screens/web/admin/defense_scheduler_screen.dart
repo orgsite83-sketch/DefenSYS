@@ -5,6 +5,7 @@ import '../../../services/defense_scheduler_provider.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/defensys_skeleton.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
@@ -108,11 +109,15 @@ class _DefenseSchedulerScreenState
                 ),
               ],
               const SizedBox(height: 12),
-              if (currentStep == 1) _buildStepOne(state),
-              if (currentStep == 2) _buildStepTwo(state),
-              if (currentStep == 3) _buildStepThree(state),
-              const SizedBox(height: 22),
-              _buildExistingSchedules(state),
+              if (state.isLoading && state.schedules.isEmpty && state.teams.isEmpty) ...[
+                DefensysSkeleton.list(count: 4, rowHeight: 64),
+              ] else ...[
+                if (currentStep == 1) _buildStepOne(state),
+                if (currentStep == 2) _buildStepTwo(state),
+                if (currentStep == 3) _buildStepThree(state),
+                const SizedBox(height: 22),
+                _buildExistingSchedules(state),
+              ],
             ],
           ),
         ),

@@ -443,8 +443,8 @@ def validate_capstone_file_name(file_name):
         raise ValidationError(
             'Use format: 3rdYear.CAP301.ProjectTitle.1stSemester.pdf'
         )
-    prefix = match.group('prefix')
-    semester = match.group('semester')
+    prefix = _canonical_year_prefix(match.group('prefix'))
+    semester = _canonical_semester_key(match.group('semester'))
     return {
         'prefix': prefix,
         'year_level': PIT_YEAR_PREFIX_LABELS.get(prefix, CAPSTONE_YEAR_LEVEL),
@@ -510,14 +510,32 @@ def normalize(value):
     return re.sub(r'[^a-z0-9]', '', (value or '').lower())
 
 
+def _canonical_year_prefix(raw_prefix):
+    for key in PIT_YEAR_PREFIX_LABELS:
+        if key.lower() == (raw_prefix or '').lower():
+            return key
+    raise ValidationError(
+        'Use format: 3rdYear.PIT301.ProjectTitle.1stSemester.pdf'
+    )
+
+
+def _canonical_semester_key(raw_semester):
+    for key in PIT_SEMESTER_LABELS:
+        if key.lower() == (raw_semester or '').lower():
+            return key
+    raise ValidationError(
+        'Use format: 3rdYear.PIT301.ProjectTitle.1stSemester.pdf'
+    )
+
+
 def validate_pit_file_name(file_name):
     match = PIT_FILENAME_RE.fullmatch((file_name or '').strip())
     if not match:
         raise ValidationError(
             'Use format: 3rdYear.PIT301.ProjectTitle.1stSemester.pdf'
         )
-    prefix = match.group('prefix')
-    semester = match.group('semester')
+    prefix = _canonical_year_prefix(match.group('prefix'))
+    semester = _canonical_semester_key(match.group('semester'))
     return {
         'prefix': prefix,
         'year_level': PIT_YEAR_PREFIX_LABELS[prefix],
