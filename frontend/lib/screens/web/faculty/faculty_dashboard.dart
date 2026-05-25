@@ -189,7 +189,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         color: Colors.white,
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.08),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 10,
             offset: const Offset(0, 2),
           ),
@@ -274,9 +274,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(0.08),
+                  color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white.withOpacity(0.12)),
+                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<FacultyWorkspace>(
@@ -309,7 +309,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 ),
               ),
             ),
-          Container(height: 1, color: Colors.white.withOpacity(0.07)),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
           Expanded(
             child: ListView(
               padding: const EdgeInsets.only(top: 20),
@@ -341,7 +341,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
           
           // Footer
-          Container(height: 1, color: Colors.white.withOpacity(0.09)),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
           Material(
             color: Colors.transparent,
             child: InkWell(
@@ -353,7 +353,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   await ref.read(authProvider.notifier).logout();
                 }
               },
-              hoverColor: Colors.white.withOpacity(0.05),
+              hoverColor: Colors.white.withValues(alpha: 0.05),
               child: Container(
                 height: 58,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -524,7 +524,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: Colors.white.withOpacity(0.05),
+        hoverColor: Colors.white.withValues(alpha: 0.05),
         child: Container(
           height: 52,
           decoration: BoxDecoration(
@@ -568,7 +568,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: Colors.white.withOpacity(0.05),
+        hoverColor: Colors.white.withValues(alpha: 0.05),
         child: Container(
           height: 52,
           padding: const EdgeInsets.only(left: 27, right: 24),
@@ -610,7 +610,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: Colors.white.withOpacity(0.05),
+        hoverColor: Colors.white.withValues(alpha: 0.05),
         child: Container(
           height: 48,
           decoration: BoxDecoration(

@@ -123,12 +123,12 @@ class PrivacyScreen extends StatelessWidget {
                 ]),
                 const SizedBox(height: 8),
                 Text('Effective Date: January 1, 2026',
-                    style: TextStyle(fontSize: 12, color: Colors.white.withOpacity(0.7))),
+                    style: TextStyle(fontSize: 12, color: Colors.white.withValues(alpha: 0.7))),
                 const SizedBox(height: 8),
                 Text(
                   'DefenSYS is committed to protecting the privacy and security of all users within '
                   'the Department of Information Technology.',
-                  style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.85), height: 1.5),
+                  style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.85), height: 1.5),
                 ),
               ],
             ),
@@ -140,9 +140,9 @@ class PrivacyScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
-              color: AppColors.gold.withOpacity(0.08),
+              color: AppColors.gold.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.gold.withOpacity(0.3)),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,7 +169,7 @@ class PrivacyScreen extends StatelessWidget {
           const SizedBox(height: 24),
           Center(
             child: Text('© 2026 DefenSYS. All rights reserved.',
-                style: TextStyle(fontSize: 12, color: AppColors.textSecondary.withOpacity(0.6))),
+                style: TextStyle(fontSize: 12, color: AppColors.textSecondary.withValues(alpha: 0.6))),
           ),
           const SizedBox(height: 8),
         ],
@@ -185,7 +185,7 @@ class PrivacyScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
         ],
       ),
       child: Column(

@@ -2475,7 +2475,7 @@ class _DefenseSchedulerScreenState
               return ListTile(
                 contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 leading: CircleAvatar(
-                  backgroundColor: AppColors.maroon.withOpacity(0.1),
+                  backgroundColor: AppColors.maroon.withValues(alpha: 0.1),
                   child: const Icon(Icons.event, color: AppColors.maroon, size: 20),
                 ),
                 title: Text(

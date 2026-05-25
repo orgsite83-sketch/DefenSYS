@@ -144,12 +144,10 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   }
 
   Future<void> _logout() async {
-    if (await confirmLogout(context)) {
-      await ref.read(authProvider.notifier).logout();
-      if (context.mounted) {
-        context.go(AppRoutes.login);
-      }
-    }
+    final router = GoRouter.of(context);
+    if (!await confirmLogout(context)) return;
+    await ref.read(authProvider.notifier).logout();
+    router.go(AppRoutes.login);
   }
 
   String _topSemesterLabel(

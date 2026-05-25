@@ -176,7 +176,7 @@ class StudentTeamApiTests(APITestCase):
                 'project_title': 'Alpha Project Updated',
                 'level': StudentTeam.LEVEL_4_CAPSTONE,
                 'year_level': '4th Year',
-                'semester_id': self.second_semester.id,
+                'semester_id': self.first_semester.id,
                 'leader_id': self.student_2.id,
                 'member_ids': [self.student_2.id],
                 'adviser_id': self.adviser.id,
@@ -831,8 +831,8 @@ class StudentTeamApiTests(APITestCase):
             {
                 'adviser_filter': 'with_adviser',
                 'teams': [
-                    self._bulk_team_row('Team With Adviser', 'Ada Lovelace'),
                     self._bulk_team_row('Team No Adviser', ''),
+                    self._bulk_team_row('Team With Adviser', 'Ada Lovelace'),
                 ],
             },
             format='json',

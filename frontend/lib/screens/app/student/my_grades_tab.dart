@@ -143,7 +143,7 @@ class MyGradesTab extends StatelessWidget {
                 width: 48,
                 height: 48,
                 decoration: BoxDecoration(
-                  color: accent.withOpacity(0.12),
+                  color: accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Icon(Icons.hourglass_empty, color: accent),
@@ -194,7 +194,7 @@ class MyGradesTab extends StatelessWidget {
               width: 48,
               height: 48,
               decoration: BoxDecoration(
-                color: accent.withOpacity(0.12),
+                color: accent.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(10),
               ),
               child: Icon(Icons.grade, color: accent),
@@ -257,7 +257,7 @@ class MyGradesTab extends StatelessWidget {
     return Card(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       elevation: 3,
-      color: DefensysTokens.maroon.withOpacity(0.04),
+      color: DefensysTokens.maroon.withValues(alpha: 0.04),
       child: Padding(
         padding: const EdgeInsets.all(18),
         child: Column(
@@ -285,9 +285,9 @@ class MyGradesTab extends StatelessWidget {
                     padding:
                         const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                     decoration: BoxDecoration(
-                      color: statusColor.withOpacity(0.12),
+                      color: statusColor.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: statusColor.withOpacity(0.4)),
+                      border: Border.all(color: statusColor.withValues(alpha: 0.4)),
                     ),
                     child: Text(
                       passed ? 'Passed' : 'Failed',

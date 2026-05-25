@@ -403,7 +403,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
         leading: Container(
           width: 42, height: 42,
           decoration: BoxDecoration(
-            color: color.withOpacity(0.1),
+            color: color.withValues(alpha: 0.1),
             borderRadius: BorderRadius.circular(10),
           ),
           child: Icon(
@@ -427,7 +427,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: color.withOpacity(0.1),
+                    color: color.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Text(
@@ -452,9 +452,9 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                 children: e.topics.take(3).map((topic) => Container(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.gold.withOpacity(0.1),
+                    color: DefensysTokens.gold.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: DefensysTokens.gold.withOpacity(0.3), width: 0.5),
+                    border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.3), width: 0.5),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,

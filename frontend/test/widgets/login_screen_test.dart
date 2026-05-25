@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user/screens/login_screen.dart';
 
+import '../helpers/auth_test_overrides.dart';
 import '../helpers/pump_app.dart';
 
 void main() {
@@ -11,6 +12,7 @@ void main() {
     await pumpDefensysWidget(
       tester,
       const LoginScreen(),
+      overrides: authTestOverrides(),
     );
 
     expect(find.text('DefenSYS'), findsWidgets);

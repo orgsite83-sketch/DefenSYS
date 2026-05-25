@@ -132,7 +132,7 @@ class AssignmentsTab extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isPosted ? Colors.red.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
+        color: isPosted ? Colors.red.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isPosted ? Colors.red : Colors.blue),
       ),

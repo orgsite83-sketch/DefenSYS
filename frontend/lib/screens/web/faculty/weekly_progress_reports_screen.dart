@@ -5,7 +5,6 @@ import '../../../services/weekly_progress_provider.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
-import '../../../config/api_config.dart';
 import 'package:intl/intl.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../utils/pdf_viewer.dart';
@@ -128,7 +127,7 @@ class _WeeklyProgressReportsScreenState
                       Container(
                         padding: const EdgeInsets.all(20),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withOpacity(0.05),
+                          color: DefensysTokens.maroon.withValues(alpha: 0.05),
                           border: Border(
                             bottom: BorderSide(color: Colors.grey.shade200),
                           ),
@@ -206,7 +205,7 @@ class _WeeklyProgressReportsScreenState
                               return Container(
                                 margin: const EdgeInsets.only(bottom: 8),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? DefensysTokens.maroon.withOpacity(0.1) : Colors.transparent,
+                                  color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.1) : Colors.transparent,
                                   borderRadius: BorderRadius.circular(8),
                                   border: Border.all(
                                     color: isSelected ? DefensysTokens.maroon : Colors.grey.shade300,
@@ -228,7 +227,7 @@ class _WeeklyProgressReportsScreenState
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                   ),
-                                  trailing: filteredReports.where((r) => r['team'].toString() == teamId).length > 0
+                                  trailing: filteredReports.where((r) => r['team'].toString() == teamId).isNotEmpty
                                       ? Container(
                                           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                                           decoration: BoxDecoration(
@@ -263,7 +262,7 @@ class _WeeklyProgressReportsScreenState
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: DefensysTokens.maroon.withOpacity(0.05),
+                            color: DefensysTokens.maroon.withValues(alpha: 0.05),
                             border: Border(
                               top: BorderSide(color: Colors.grey.shade200),
                               bottom: BorderSide(color: Colors.grey.shade200),
@@ -425,7 +424,7 @@ class _WeeklyProgressReportsScreenState
               color: Colors.white,
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.1),
+                  color: Colors.black.withValues(alpha: 0.1),
                   blurRadius: 10,
                   offset: const Offset(0, 4),
                 ),
@@ -497,10 +496,10 @@ class _WeeklyProgressReportsScreenState
                         Container(
                           padding: const EdgeInsets.all(20),
                           decoration: BoxDecoration(
-                            color: DefensysTokens.maroon.withOpacity(0.05),
+                            color: DefensysTokens.maroon.withValues(alpha: 0.05),
                             borderRadius: BorderRadius.circular(12),
                             border: Border.all(
-                              color: DefensysTokens.maroon.withOpacity(0.3),
+                              color: DefensysTokens.maroon.withValues(alpha: 0.3),
                               width: 2,
                             ),
                           ),
@@ -512,7 +511,7 @@ class _WeeklyProgressReportsScreenState
                                   Container(
                                     padding: const EdgeInsets.all(12),
                                     decoration: BoxDecoration(
-                                      color: DefensysTokens.maroon.withOpacity(0.1),
+                                      color: DefensysTokens.maroon.withValues(alpha: 0.1),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
                                     child: Icon(

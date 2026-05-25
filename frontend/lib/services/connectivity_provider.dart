@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'provider_errors.dart';
 
 final connectivityProvider =
     NotifierProvider<ConnectivityNotifier, bool>(ConnectivityNotifier.new);

@@ -6,7 +6,6 @@ import 'package:http/http.dart' as http;
 import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/dashboard_provider.dart';
-import '../../../services/session_expired.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_snackbar.dart';

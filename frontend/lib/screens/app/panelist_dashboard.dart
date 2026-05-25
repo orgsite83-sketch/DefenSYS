@@ -259,7 +259,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             _loadResults();
           }
         },
-        indicatorColor: DefensysTokens.maroon.withOpacity(0.15),
+        indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
         destinations: [
           NavigationDestination(
             icon: const Icon(Icons.assignment),

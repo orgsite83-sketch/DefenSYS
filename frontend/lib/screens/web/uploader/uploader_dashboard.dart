@@ -95,23 +95,12 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
         setState(() {
           _teams = List<Map<String, dynamic>>.from(teams);
         });
-        
-        print('Loaded ${_teams.length} teams');
-        if (_teams.isNotEmpty) {
-          print('Teams:');
-          for (var team in _teams.take(5)) {
-            print('- ${team['id']}: ${team['name']} (${team['level']}) - SY: ${team['schoolYear']}, Sem: ${team['semester']}');
-          }
-        }
       } else {
-        print('Failed to load teams: ${response.statusCode}');
-        print('Response body: ${response.body}');
         setState(() {
           _errorMessage = 'Failed to load teams: ${response.statusCode}';
         });
       }
     } catch (e) {
-      print('Error loading teams: $e');
       setState(() {
         _errorMessage = 'Error loading teams: $e';
       });
@@ -567,7 +556,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                       borderRadius: BorderRadius.circular(3),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.15),
+                          color: Colors.black.withValues(alpha: 0.15),
                           blurRadius: 8,
                           offset: const Offset(0, 3),
                         ),
@@ -608,7 +597,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                           begin: Alignment.topCenter,
                           end: Alignment.bottomCenter,
                           colors: [
-                            const Color(0xFFFFF9C4).withOpacity(0.3), // Very light yellow highlight
+                            const Color(0xFFFFF9C4).withValues(alpha: 0.3), // Very light yellow highlight
                             Colors.transparent,
                           ],
                         ),
@@ -631,7 +620,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                           begin: Alignment.centerLeft,
                           end: Alignment.centerRight,
                           colors: [
-                            const Color(0xFFFF8F00).withOpacity(0.5), // Dark edge
+                            const Color(0xFFFF8F00).withValues(alpha: 0.5), // Dark edge
                             Colors.transparent,
                           ],
                         ),
@@ -653,7 +642,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                           borderRadius: BorderRadius.circular(12),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withOpacity(0.2),
+                              color: Colors.black.withValues(alpha: 0.2),
                               blurRadius: 4,
                               offset: const Offset(0, 2),
                             ),
@@ -973,7 +962,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                     child: Text(
                       'TEAMS',
                       style: TextStyle(
-                        color: Colors.white.withOpacity(0.5),
+                        color: Colors.white.withValues(alpha: 0.5),
                         fontSize: 11,
                         fontWeight: FontWeight.w700,
                         letterSpacing: 1.2,
@@ -1015,7 +1004,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
           ),
           
           // Logout
-          Container(height: 1, color: Colors.white.withOpacity(0.09)),
+          Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
           Material(
             color: Colors.transparent,
             child: InkWell(
@@ -1024,7 +1013,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
                   await ref.read(authProvider.notifier).logout();
                 }
               },
-              hoverColor: Colors.white.withOpacity(0.05),
+              hoverColor: Colors.white.withValues(alpha: 0.05),
               child: Container(
                 height: 58,
                 padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -1068,7 +1057,7 @@ class _UploaderDashboardState extends ConsumerState<UploaderDashboard> {
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        hoverColor: Colors.white.withOpacity(0.05),
+        hoverColor: Colors.white.withValues(alpha: 0.05),
         child: Container(
           height: 52,
           decoration: BoxDecoration(

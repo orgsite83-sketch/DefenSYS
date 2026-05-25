@@ -129,7 +129,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                 team['name']?.toString() ?? '',
                 style: TextStyle(
                   fontSize: 12,
-                  color: Colors.white.withOpacity(0.85),
+                  color: Colors.white.withValues(alpha: 0.85),
                   fontWeight: FontWeight.w500,
                 ),
                 overflow: TextOverflow.ellipsis,
@@ -200,7 +200,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: safeIndex,
         onDestinationSelected: (i) => setState(() => _selectedIndex = i),
-        indicatorColor: DefensysTokens.maroon.withOpacity(0.15),
+        indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
         destinations: destinations,
       ),
     ),
@@ -233,7 +233,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               ListTile(
                 leading: CircleAvatar(
                   radius: 24,
-                  backgroundColor: DefensysTokens.maroon.withOpacity(0.15),
+                  backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
                   backgroundImage: _profile.avatarBytes != null
                       ? MemoryImage(_profile.avatarBytes!)
                       : null,

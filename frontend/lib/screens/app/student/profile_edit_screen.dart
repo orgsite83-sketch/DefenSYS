@@ -99,7 +99,7 @@ class _ProfileEditScreenState extends State<ProfileEditScreen> {
                 children: [
                   CircleAvatar(
                     radius: 54,
-                    backgroundColor: DefensysTokens.maroon.withOpacity(0.15),
+                    backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
                     backgroundImage: _avatarBytes != null
                         ? MemoryImage(_avatarBytes!)
                         : null,

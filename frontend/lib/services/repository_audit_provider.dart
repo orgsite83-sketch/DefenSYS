@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'authenticated_client.dart';
-import 'provider_errors.dart';
-import 'session_expired.dart';
 
 final repositoryAuditProvider =
     NotifierProvider<RepositoryAuditNotifier, RepositoryAuditState>(
@@ -477,7 +475,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       if (sourceId != null) 'source_id': '$sourceId',
       if (fileName.trim().isNotEmpty) 'file_name': fileName.trim(),
     };
-    final uri = Uri.parse('${baseUrl}/trail/').replace(queryParameters: query);
+    final uri = Uri.parse('$baseUrl/trail/').replace(queryParameters: query);
     try {
       final response = await _client.get(uri);
       if (response.statusCode == 200) {

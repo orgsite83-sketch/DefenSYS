@@ -5,10 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../../config/api_config.dart';
-import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/weekly_progress_provider.dart';

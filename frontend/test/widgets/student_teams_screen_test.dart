@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod/src/framework.dart' show Override;
+import 'package:riverpod/misc.dart' show Override;
 import 'package:user/screens/web/admin/student_teams_screen.dart';
 import 'package:user/services/dashboard_provider.dart';
 import 'package:user/services/student_teams_provider.dart';
@@ -37,7 +36,7 @@ class _FakeAdminDashboardNotifier extends DashboardNotifier {
   }
 
   @override
-  Future<void> fetchDashboardData() async {}
+  Future<void> fetchDashboardData({bool silent = false}) async {}
 }
 
 class _FakeFacultyPitLeadDashboardNotifier extends DashboardNotifier {
@@ -57,7 +56,7 @@ class _FakeFacultyPitLeadDashboardNotifier extends DashboardNotifier {
   }
 
   @override
-  Future<void> fetchDashboardData() async {}
+  Future<void> fetchDashboardData({bool silent = false}) async {}
 }
 
 void main() {

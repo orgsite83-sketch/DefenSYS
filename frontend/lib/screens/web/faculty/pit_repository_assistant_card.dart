@@ -111,7 +111,7 @@ class _PitRepositoryAssistantCardState
             children: [
               Expanded(
                 child: DropdownButtonFormField<int>(
-                  value: _selectedFacultyId,
+                  initialValue: _selectedFacultyId,
                   decoration: InputDecoration(
                     hintText: state.isLoading
                         ? 'Loading faculty...'

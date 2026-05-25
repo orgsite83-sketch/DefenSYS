@@ -123,7 +123,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           _sectionHeader('Panel Grade Sheet'),
           const SizedBox(height: 12),
           DropdownButtonFormField<int>(
-            value: widget.selectedTeamIndex,
+            initialValue: widget.selectedTeamIndex,
             decoration: InputDecoration(
               labelText: 'Select Team',
               prefixIcon: const Icon(Icons.group, size: 20),
@@ -228,7 +228,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withOpacity(0.05),
+                      color: DefensysTokens.maroon.withValues(alpha: 0.05),
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Row(
@@ -519,7 +519,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isPosted ? Colors.red.withOpacity(0.1) : Colors.blue.withOpacity(0.1),
+        color: isPosted ? Colors.red.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isPosted ? Colors.red : Colors.blue),
       ),

@@ -1,7 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:riverpod/src/framework.dart' show Override;
+import 'package:riverpod/misc.dart' show Override;
 import 'package:user/services/auth_provider.dart';
 
 /// Access token with far-future `exp` so proactive refresh does not run in tests.

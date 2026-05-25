@@ -32,7 +32,7 @@ class AboutScreen extends StatelessWidget {
                     width: 72,
                     height: 72,
                     decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.15),
+                      color: Colors.white.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(20),
                     ),
                     child: const Icon(Icons.shield_rounded, size: 40, color: Colors.white),
@@ -46,7 +46,7 @@ class AboutScreen extends StatelessWidget {
                           letterSpacing: 1.5)),
                   const SizedBox(height: 4),
                   Text('Version 1.0.0',
-                      style: TextStyle(fontSize: 13, color: Colors.white.withOpacity(0.6))),
+                      style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.6))),
                 ],
               ),
             ),
@@ -92,9 +92,9 @@ class AboutScreen extends StatelessWidget {
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: AppColors.gold.withOpacity(0.08),
+                  color: AppColors.gold.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: AppColors.gold.withOpacity(0.3)),
+                  border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
                 ),
                 child: Row(
                   children: [
@@ -113,7 +113,7 @@ class AboutScreen extends StatelessWidget {
             const SizedBox(height: 24),
             Center(
               child: Text('© 2026 DefenSYS. All rights reserved.',
-                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary.withOpacity(0.6))),
+                  style: TextStyle(fontSize: 12, color: AppColors.textSecondary.withValues(alpha: 0.6))),
             ),
             const SizedBox(height: 8),
           ],
@@ -130,7 +130,7 @@ class AboutScreen extends StatelessWidget {
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
         boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 12, offset: const Offset(0, 4)),
+          BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 12, offset: const Offset(0, 4)),
         ],
       ),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: children),
@@ -152,7 +152,7 @@ class AboutScreen extends StatelessWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: AppColors.maroon.withOpacity(0.08),
+              color: AppColors.maroon.withValues(alpha: 0.08),
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, size: 18, color: AppColors.maroon),

@@ -154,9 +154,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           Container(
             padding: const EdgeInsets.all(12),
             decoration: BoxDecoration(
-              color: DefensysTokens.gold.withOpacity(0.07),
+              color: DefensysTokens.gold.withValues(alpha: 0.07),
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: DefensysTokens.gold.withOpacity(0.4)),
+              border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.4)),
             ),
             child: Row(
               children: [
@@ -209,7 +209,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                 Row(
                   children: [
                     CircleAvatar(
-                      backgroundColor: DefensysTokens.maroon.withOpacity(0.1),
+                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
                       child: Text(name[0].toUpperCase(),
                           style: const TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold)),
                     ),

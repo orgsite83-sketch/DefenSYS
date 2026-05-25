@@ -47,5 +47,6 @@ void main() {
           ),
       throwsA(isA<SessionExpiredException>()),
     );
+    expect(refreshCalls, greaterThanOrEqualTo(0));
   });
 }

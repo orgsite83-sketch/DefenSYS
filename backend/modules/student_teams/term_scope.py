@@ -153,10 +153,10 @@ def pit_roster_student_ids(active, *, pit_lead_year, historical=False):
 
 
 def term_scope_payload(user):
+    """PIT scope metadata only; active_semester object comes from SemesterSerializer in options_payload."""
     active = get_active_semester()
     payload = {
         'active_semester_id': active.id if active else None,
-        'active_semester': active.display_name if active else None,
     }
     if user_is_pit_lead_only(user):
         mode = pit_lead_operating_mode(user, active=active)

@@ -751,6 +751,19 @@ List<CapstoneStageRow> buildCapstoneStageRows({
   return rows;
 }
 
+const double kCapstoneStagesTableBodyMaxHeight = 520;
+const double kCapstoneStagesTableHeaderBlockHeight = 40;
+const double kCapstoneStagesTableRowHeight = 24;
+
+double capstoneStagesTableBodyHeight(int rowCount) {
+  if (rowCount <= 0) return 0;
+  final raw = kCapstoneStagesTableHeaderBlockHeight +
+      rowCount * kCapstoneStagesTableRowHeight;
+  return raw > kCapstoneStagesTableBodyMaxHeight
+      ? kCapstoneStagesTableBodyMaxHeight
+      : raw;
+}
+
 Widget capstoneStageWorkflowPill(CapstoneStageWorkflowStatus status) {
   final Color color;
   final Color bg;

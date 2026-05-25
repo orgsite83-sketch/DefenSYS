@@ -126,7 +126,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                     'Please read carefully before continuing.',
                     style: TextStyle(
                       fontSize: 13,
-                      color: Colors.white.withOpacity(0.75),
+                      color: Colors.white.withValues(alpha: 0.75),
                     ),
                   ),
                 ],
@@ -148,7 +148,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                       borderRadius: BorderRadius.circular(14),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withOpacity(0.04),
+                          color: Colors.black.withValues(alpha: 0.04),
                           blurRadius: 10,
                           offset: const Offset(0, 3),
                         ),
@@ -188,7 +188,7 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
                 color: Colors.white,
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.07),
+                    color: Colors.black.withValues(alpha: 0.07),
                     blurRadius: 12,
                     offset: const Offset(0, -4),
                   ),

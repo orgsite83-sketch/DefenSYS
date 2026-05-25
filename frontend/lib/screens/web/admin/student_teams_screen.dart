@@ -13,7 +13,6 @@ import '../../../utils/csv_file_io.dart';
 import '../../../utils/team_bulk_import_csv.dart';
 import '../../../utils/team_bulk_import_draft.dart';
 import '../../../widgets/confirm_dialog.dart';
-import 'team_detail_page.dart';
 import 'widgets/defensys_admin_shell.dart';
 import 'widgets/team_bulk_import_review_table.dart';
 
@@ -77,9 +76,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   static const _line = Color(0xFFE5E7EB);
 
   final _searchController = TextEditingController();
-
-  int? _openTeamId;
-  bool _openTeamCanManage = false;
 
   bool? _showBulkImport = false;
   String? _bulkCsv = '';
@@ -1143,17 +1139,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     setState(() => _showBulkImport = true);
     _captureBulkImportBaseline();
-  }
-
-  void _closeBulkImport({bool clearDraft = false}) {
-    if (clearDraft) {
-      _discardBulkDraft();
-    } else {
-      _scheduleDraftSave();
-    }
-    setState(() {
-      _showBulkImport = false;
-    });
   }
 
   void _applyParsedRows(List<Map<String, dynamic>> rows) {

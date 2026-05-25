@@ -182,6 +182,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
         **capstone_window,
     }
     if user:
+        # term_scope_payload must not redefine active_semester (SemesterSerializer dict above).
         payload.update(term_scope_payload(user))
     return payload
 

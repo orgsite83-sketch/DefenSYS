@@ -219,7 +219,7 @@ class TeamTab extends StatelessWidget {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: DefensysTokens.maroon.withOpacity(0.1),
+              color: DefensysTokens.maroon.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(10),
             ),
             child: Text(

@@ -136,7 +136,7 @@ class OverallResultsTab extends StatelessWidget {
                 Container(
                   width: 38, height: 38,
                   decoration: BoxDecoration(
-                    color: rankColor.withOpacity(0.12),
+                    color: rankColor.withValues(alpha: 0.12),
                     shape: BoxShape.circle,
                   ),
                   child: Center(
@@ -171,9 +171,9 @@ class OverallResultsTab extends StatelessWidget {
                       margin: const EdgeInsets.only(top: 3),
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(
-                        color: statusColor.withOpacity(0.1),
+                        color: statusColor.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(20),
-                        border: Border.all(color: statusColor.withOpacity(0.4)),
+                        border: Border.all(color: statusColor.withValues(alpha: 0.4)),
                       ),
                       child: Text(statusLabel,
                           style: TextStyle(fontSize: 10, color: statusColor,
@@ -191,7 +191,7 @@ class OverallResultsTab extends StatelessWidget {
             child: Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
-                color: DefensysTokens.maroon.withOpacity(0.04),
+                color: DefensysTokens.maroon.withValues(alpha: 0.04),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
@@ -400,7 +400,7 @@ class OverallResultsTab extends StatelessWidget {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: hasFinish ? finalColor.withOpacity(0.1) : Colors.transparent,
+                                  color: hasFinish ? finalColor.withValues(alpha: 0.1) : Colors.transparent,
                                   borderRadius: BorderRadius.circular(20),
                                 ),
                                 child: Text(
@@ -464,7 +464,7 @@ class OverallResultsTab extends StatelessWidget {
         Container(
           width: 3, height: 14,
           decoration: BoxDecoration(
-            color: DefensysTokens.maroon.withOpacity(0.3),
+            color: DefensysTokens.maroon.withValues(alpha: 0.3),
             borderRadius: BorderRadius.circular(2),
           ),
         ),

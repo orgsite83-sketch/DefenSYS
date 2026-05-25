@@ -1,7 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
-
 import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/student_teams_provider.dart';
