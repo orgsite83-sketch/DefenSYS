@@ -19,6 +19,9 @@ class SystemAuditState {
   final String reviewStatus;
   final String action;
   final String search;
+  final String startDate;
+  final String endDate;
+  final Map<String, dynamic>? selectedLog;
   final String? error;
 
   const SystemAuditState({
@@ -30,6 +33,9 @@ class SystemAuditState {
     this.reviewStatus = '',
     this.action = '',
     this.search = '',
+    this.startDate = '',
+    this.endDate = '',
+    this.selectedLog,
     this.error,
   });
 
@@ -42,6 +48,10 @@ class SystemAuditState {
     String? reviewStatus,
     String? action,
     String? search,
+    String? startDate,
+    String? endDate,
+    Map<String, dynamic>? selectedLog,
+    bool clearSelectedLog = false,
     String? error,
     bool clearError = false,
   }) {
@@ -54,6 +64,9 @@ class SystemAuditState {
       reviewStatus: reviewStatus ?? this.reviewStatus,
       action: action ?? this.action,
       search: search ?? this.search,
+      startDate: startDate ?? this.startDate,
+      endDate: endDate ?? this.endDate,
+      selectedLog: clearSelectedLog ? null : selectedLog ?? this.selectedLog,
       error: clearError ? null : error ?? this.error,
     );
   }
@@ -70,6 +83,8 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
       if (state.reviewStatus.isNotEmpty) 'review_status': state.reviewStatus,
       if (state.action.isNotEmpty) 'action': state.action,
       if (state.search.isNotEmpty) 'search': state.search,
+      if (state.startDate.isNotEmpty) 'start_date': state.startDate,
+      if (state.endDate.isNotEmpty) 'end_date': state.endDate,
     };
     final uri = Uri.parse('${ApiConfig.baseUrl}/audit-logs/').replace(
       queryParameters: params.isEmpty ? null : params,
@@ -109,5 +124,17 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
 
   void setSearch(String value) {
     state = state.copyWith(search: value);
+  }
+
+  void setStartDate(String value) {
+    state = state.copyWith(startDate: value);
+  }
+
+  void setEndDate(String value) {
+    state = state.copyWith(endDate: value);
+  }
+
+  void selectLog(Map<String, dynamic> log) {
+    state = state.copyWith(selectedLog: log);
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import '../theme/defensys_tokens.dart';
+import '../widgets/feedback_toast.dart';
 
 Future<void> downloadBytesFile({
   required List<int> bytes,
@@ -96,12 +97,10 @@ Future<void> viewPdfInDialog({
                         ..setAttribute('download', fileName)
                         ..click();
                       
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('PDF downloaded'),
-                          backgroundColor: DefensysTokens.success,
-                          duration: Duration(seconds: 2),
-                        ),
+                      showSuccessToast(
+                        context,
+                        'PDF downloaded',
+                        duration: const Duration(seconds: 2),
                       );
                     },
                   ),

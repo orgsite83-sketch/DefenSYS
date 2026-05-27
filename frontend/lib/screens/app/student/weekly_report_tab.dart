@@ -8,7 +8,7 @@ import '../../../services/authenticated_client.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_snackbar.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class WeeklyReportTab extends ConsumerStatefulWidget {
   const WeeklyReportTab({super.key});
@@ -58,19 +58,19 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       }
     } catch (e) {
       if (mounted) {
-        showErrorSnackBar(context, 'Error picking file: $e');
+        showErrorToast(context, 'Error picking file: $e');
       }
     }
   }
 
   Future<void> _submitReport() async {
     if (_weekNumberCtrl.text.trim().isEmpty) {
-      showValidationSnackBar(context, 'Please enter week number');
+      showValidationToast(context, 'Please enter week number');
       return;
     }
 
     if (_selectedFileName == null || _selectedFileBytes == null) {
-      showValidationSnackBar(context, 'Please select a PDF file');
+      showValidationToast(context, 'Please select a PDF file');
       return;
     }
 
@@ -123,7 +123,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
 
       if (response.statusCode == 201 || response.statusCode == 200) {
         if (mounted) {
-          showSuccessSnackBar(
+          showSuccessToast(
             context,
             'Weekly report submitted successfully!',
           );
@@ -140,7 +140,7 @@ class _WeeklyReportTabState extends ConsumerState<WeeklyReportTab> {
       }
     } catch (e) {
       if (mounted) {
-        showErrorSnackBar(context, 'Error: $e');
+        showErrorToast(context, 'Error: $e');
       }
     } finally {
       if (mounted) {

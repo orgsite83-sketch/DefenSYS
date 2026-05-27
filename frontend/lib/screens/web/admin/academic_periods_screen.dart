@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../services/academic_period_provider.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {
@@ -38,6 +39,20 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(academicPeriodProvider);
     final selectedYear = _selectedYear(state);
+
+    ref.listen(academicPeriodProvider, (previous, next) {
+      final error = next.error;
+      if (error != null && error.isNotEmpty && error != previous?.error) {
+        showErrorToast(context, error);
+      }
+
+      final message = next.message;
+      if (message != null &&
+          message.isNotEmpty &&
+          message != previous?.message) {
+        showSuccessToast(context, message);
+      }
+    });
 
     return _buildContent(state, selectedYear);
   }

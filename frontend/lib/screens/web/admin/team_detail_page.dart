@@ -5,6 +5,7 @@ import '../../../services/authenticated_client.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/team_detail_provider.dart';
 import '../../../utils/pdf_viewer.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class TeamDetailPage extends ConsumerStatefulWidget {
@@ -132,7 +133,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     ref.listen(teamDetailProvider(widget.teamId), (prev, next) {
       final msg = next.message;
       if (msg != null && msg.isNotEmpty && msg != prev?.message) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+        showSuccessToast(context, msg);
+      }
+      final error = next.error;
+      if (error != null && error.isNotEmpty && error != prev?.error) {
+        showErrorToast(context, error);
       }
     });
 
@@ -996,9 +1001,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
 
   Future<void> _saveOverview() async {
     if (_selectedMembers.isEmpty || _leaderId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Select at least one member and a leader.')),
-      );
+      showValidationToast(context, 'Select at least one member and a leader.');
       return;
     }
 
@@ -1174,9 +1177,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     } catch (e) {
       if (mounted && Navigator.canPop(context)) Navigator.pop(context);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error opening file: $e')),
-        );
+        showErrorToast(context, 'Error opening file: $e');
       }
     }
   }
@@ -1196,15 +1197,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
           fileName: fileUrl.split('/').last,
         );
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('File preview is only available for PDFs.')),
-        );
+        showValidationToast(context, 'File preview is only available for PDFs.');
       }
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error opening file: $e')),
-      );
+      showErrorToast(context, 'Error opening file: $e');
     }
   }
 
@@ -1215,19 +1212,13 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
       );
       if (!mounted) return;
       if (response.statusCode == 200) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Document downloaded.')),
-        );
+        showSuccessToast(context, 'Document downloaded.');
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download failed (${response.statusCode})')),
-        );
+        showErrorToast(context, 'Download failed (${response.statusCode})');
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Download error: $e')),
-        );
+        showErrorToast(context, 'Download error: $e');
       }
     }
   }

@@ -8,11 +8,23 @@ from rest_framework import status
 from rest_framework.test import APIRequestFactory
 from rest_framework.test import APITestCase
 
-from .audit import log_high_impact_action
+from .audit import audit_scope_metadata, log_high_impact_action
 from .models import SystemAuditLog
 
 
 User = get_user_model()
+
+
+class UserManagerTests(APITestCase):
+    def test_create_superuser_defaults_to_admin_role(self):
+        user = User.objects.create_superuser(
+            username='admin',
+            password='pass12345',
+        )
+
+        self.assertEqual(user.role, 'admin')
+        self.assertTrue(user.is_staff)
+        self.assertTrue(user.is_superuser)
 
 
 class LoginApiTests(APITestCase):
@@ -277,6 +289,24 @@ class SystemAuditLogApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['counts']['filtered'], 2)
 
+    def test_audit_trail_response_stays_separate_from_repository_upload_payload(self):
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.vault_upload',
+            target_type='VaultEntry',
+            target_id='1',
+            new_values={'entry_type': 'pit', 'year_level': '3rd Year'},
+        )
+
+        response = self.client.get('/api/audit-logs/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('audit_logs', response.data)
+        self.assertNotIn('upload_window', response.data)
+        self.assertNotIn('capstone_upload_window', response.data)
+        self.assertNotIn('entries', response.data)
+
     def test_pit_lead_reviews_only_assigned_year_pit_audit_records(self):
         SystemAuditLog.objects.create(
             actor=self.admin,
@@ -310,6 +340,63 @@ class SystemAuditLogApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data['counts']['filtered'], 1)
         self.assertEqual(actions, ['repository.assigned_pit_upload'])
+
+    def test_audit_scope_metadata_marks_pit_year_scope(self):
+        class Team:
+            pk = 7
+            name = 'PIT Team'
+            year_level = '3rd Year'
+
+        metadata = audit_scope_metadata(scope='pit', team=Team())
+
+        self.assertEqual(metadata['scope'], 'pit')
+        self.assertEqual(metadata['track'], 'pit')
+        self.assertEqual(metadata['entry_type'], 'pit')
+        self.assertEqual(metadata['year_level'], '3rd Year')
+        self.assertEqual(metadata['team_year_level'], '3rd Year')
+        self.assertEqual(metadata['pit_year_level'], '3rd Year')
+
+    def test_pit_lead_reviews_standardized_pit_scope_metadata(self):
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='schedule.status_change',
+            target_type='DefenseSchedule',
+            target_id='1',
+            new_values={
+                **audit_scope_metadata(scope='pit', year_level='3rd Year'),
+                'status': 'done',
+            },
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='schedule.other_year',
+            target_type='DefenseSchedule',
+            target_id='2',
+            new_values={
+                **audit_scope_metadata(scope='pit', year_level='2nd Year'),
+                'status': 'done',
+            },
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='schedule.capstone',
+            target_type='DefenseSchedule',
+            target_id='3',
+            new_values={
+                **audit_scope_metadata(scope='capstone', year_level='3rd Year'),
+                'status': 'done',
+            },
+        )
+        self.client.force_authenticate(user=self.pit_lead)
+
+        response = self.client.get('/api/audit-logs/')
+        actions = [log['action'] for log in response.data['audit_logs']]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(actions, ['schedule.status_change'])
 
     def test_repository_assistant_cannot_review_audit_trail(self):
         self.client.force_authenticate(user=self.repo_assistant)

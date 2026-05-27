@@ -109,11 +109,17 @@ class SystemAuditLogListView(APIView):
     def _counts(self, queryset):
         return {
             'filtered': queryset.count(),
+            'captured': queryset.filter(
+                review_status=SystemAuditLog.REVIEW_CAPTURED,
+            ).count(),
             'needs_review': queryset.filter(
                 review_status__in=[
                     SystemAuditLog.REVIEW_NEEDS_REVIEW,
                     SystemAuditLog.REVIEW_REQUIRES_REASON,
                 ],
+            ).count(),
+            'requires_reason': queryset.filter(
+                review_status=SystemAuditLog.REVIEW_REQUIRES_REASON,
             ).count(),
             'reviewed': queryset.filter(review_status=SystemAuditLog.REVIEW_REVIEWED).count(),
         }

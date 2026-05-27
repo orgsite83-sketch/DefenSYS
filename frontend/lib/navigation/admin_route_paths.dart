@@ -115,6 +115,7 @@ abstract final class FacultyRoutes {
   static const gradeCenter = '/faculty/grade-center';
   static const rubrics = '/faculty/rubrics';
   static const repositoryAudit = '/faculty/repository-audit';
+  static const auditCompliance = '/faculty/audit-compliance';
   static const deliverables = '/faculty/deliverables';
   static const weeklyReports = '/faculty/weekly-reports';
   static const adviserGrading = '/faculty/adviser-grading';
@@ -134,6 +135,9 @@ abstract final class FacultyRoutes {
     if (location.startsWith('/faculty/rubrics')) return 'rubric_engine';
     if (location.startsWith('/faculty/repository-audit')) {
       return 'repository_audit';
+    }
+    if (location.startsWith('/faculty/audit-compliance')) {
+      return 'audit_compliance';
     }
     if (location.startsWith('/faculty/deliverables')) return 'deliverables';
     if (location.startsWith('/faculty/weekly-reports')) {
@@ -156,6 +160,7 @@ abstract final class FacultyRoutes {
       'grade_center' => gradeCenter,
       'rubric_engine' => rubrics,
       'repository_audit' => repositoryAudit,
+      'audit_compliance' => auditCompliance,
       'deliverables' => deliverables,
       'weekly_reports' => weeklyReports,
       'adviser_grading' => adviserGrading,

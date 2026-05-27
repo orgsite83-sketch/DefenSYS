@@ -6,7 +6,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from academic_period_management.models import Semester
-from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import DefenseSchedule
 from grading.rubrics.models import Rubric
@@ -26,6 +26,26 @@ ACTIVE_SCHEDULE_STATUSES = [
     DefenseSchedule.STATUS_SCHEDULED,
     DefenseSchedule.STATUS_DONE,
 ]
+
+
+def grade_audit_values(grade, **extra):
+    values = {
+        **audit_scope_metadata(scope=grade.scope, team=grade.team),
+        'grade_id': grade.pk,
+        'stage_label': grade.stage_label,
+        'semester_id': grade.semester_id,
+    }
+    values.update(extra)
+    return values
+
+
+def group_audit_values(scope, stage_label, *, year_level='', **extra):
+    values = {
+        **audit_scope_metadata(scope=scope, year_level=year_level),
+        'stage_label': stage_label,
+    }
+    values.update(extra)
+    return values
 
 
 def display_name(user):
@@ -878,8 +898,11 @@ class GradeContextService:
     @staticmethod
     def finalize_for_archive(grade, user=None):
         old_values = {
-            'status': grade.status,
-            'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
+            **grade_audit_values(
+                grade,
+                status=grade.status,
+                final_grade=str(grade.final_grade) if grade.final_grade is not None else None,
+            ),
         }
         grade.recalculate()
         if not grade.is_complete:
@@ -899,10 +922,11 @@ class GradeContextService:
             target=grade,
             actor=user,
             old_values=old_values,
-            new_values={
-                'status': grade.status,
-                'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
-            },
+            new_values=grade_audit_values(
+                grade,
+                status=grade.status,
+                final_grade=str(grade.final_grade) if grade.final_grade is not None else None,
+            ),
         )
 
         if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
@@ -1655,6 +1679,15 @@ def repair_pending_passed_grades_in_queryset(queryset, user=None):
         maybe_auto_finalize_passed_grade(grade, user=user)
 
 
+def _single_year_level_for_grades(grades):
+    year_levels = list(
+        grades.order_by()
+        .values_list('team__year_level', flat=True)
+        .distinct()[:2]
+    )
+    return year_levels[0] if len(year_levels) == 1 else ''
+
+
 class StageCompletionService:
     @staticmethod
     def _lock_config(scope, config):
@@ -1685,10 +1718,6 @@ class StageCompletionService:
 
         with transaction.atomic():
             config = cls._lock_config(scope, config)
-            old_values = {
-                'is_officially_complete': config.is_officially_complete,
-                'peer_grading_enabled': config.peer_grading_enabled,
-            }
             grades = (
                 _grades_for_group(
                     semester,
@@ -1702,6 +1731,14 @@ class StageCompletionService:
             )
             if year_level and not grades.exists():
                 raise ValidationError({'stage_label': 'No PIT grades found for your assigned year.'})
+            audit_year_level = year_level or _single_year_level_for_grades(grades)
+            old_values = group_audit_values(
+                scope,
+                label,
+                year_level=audit_year_level,
+                is_officially_complete=config.is_officially_complete,
+                peer_grading_enabled=config.peer_grading_enabled,
+            )
 
             incomplete = incomplete_grading_teams_for_group(
                 semester,
@@ -1730,12 +1767,13 @@ class StageCompletionService:
                 target_id=config.pk,
                 actor=user,
                 old_values=old_values,
-                new_values={
-                    'is_officially_complete': config.is_officially_complete,
-                    'peer_grading_enabled': config.peer_grading_enabled,
-                    'scope': scope,
-                    'stage_label': label,
-                },
+                new_values=group_audit_values(
+                    scope,
+                    label,
+                    year_level=audit_year_level,
+                    is_officially_complete=config.is_officially_complete,
+                    peer_grading_enabled=config.peer_grading_enabled,
+                ),
             )
 
             if scope == TeamGrade.SCOPE_PIT:
@@ -1826,10 +1864,19 @@ def update_group_settings(
             update_fields.append('peer_grading_enabled')
 
     if update_fields:
-        old_values = {
-            'is_officially_complete': config.__class__.objects.get(pk=config.pk).is_officially_complete,
-            'peer_grading_enabled': config.__class__.objects.get(pk=config.pk).peer_grading_enabled,
-        }
+        year_level = getattr(user, 'pit_lead_year', '') if scope == TeamGrade.SCOPE_PIT else ''
+        if scope == TeamGrade.SCOPE_PIT and not year_level:
+            year_level = _single_year_level_for_grades(
+                _grades_for_group(semester, scope, label, config=config)
+            )
+        previous_config = config.__class__.objects.get(pk=config.pk)
+        old_values = group_audit_values(
+            scope,
+            label,
+            year_level=year_level,
+            is_officially_complete=previous_config.is_officially_complete,
+            peer_grading_enabled=previous_config.peer_grading_enabled,
+        )
         config.save(update_fields=list(dict.fromkeys(update_fields)) + ['updated_at'])
         log_high_impact_action(
             category=SystemAuditLog.CATEGORY_GRADE_CENTER,
@@ -1839,12 +1886,13 @@ def update_group_settings(
             target_id=config.pk,
             actor=user,
             old_values=old_values,
-            new_values={
-                'is_officially_complete': config.is_officially_complete,
-                'peer_grading_enabled': config.peer_grading_enabled,
-                'scope': scope,
-                'stage_label': label,
-            },
+            new_values=group_audit_values(
+                scope,
+                label,
+                year_level=year_level,
+                is_officially_complete=config.is_officially_complete,
+                peer_grading_enabled=config.peer_grading_enabled,
+            ),
         )
         if 'peer_grading_enabled' in update_fields and scope == TeamGrade.SCOPE_PIT:
             from realtime.broadcast import notify_pit_peer_grading

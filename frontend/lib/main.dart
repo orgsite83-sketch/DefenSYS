@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:toastification/toastification.dart';
 
 import 'l10n/app_localizations.dart';
 import 'navigation/app_router.dart';
@@ -23,21 +24,22 @@ class DefenSYSApp extends ConsumerWidget {
 
     return SessionKeepaliveHost(
       child: RealtimeSyncHost(
-        child: MaterialApp.router(
-        title: 'DefenSYS',
-        debugShowCheckedModeBanner: false,
-        theme: AppTheme.theme,
-        localizationsDelegates: const [
-          AppLocalizations.delegate,
-          GlobalMaterialLocalizations.delegate,
-          GlobalWidgetsLocalizations.delegate,
-          GlobalCupertinoLocalizations.delegate,
-        ],
-        supportedLocales: AppLocalizations.supportedLocales,
-        routerConfig: router,
+        child: ToastificationWrapper(
+          child: MaterialApp.router(
+            title: 'DefenSYS',
+            debugShowCheckedModeBanner: false,
+            theme: AppTheme.theme,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            supportedLocales: AppLocalizations.supportedLocales,
+            routerConfig: router,
+          ),
         ),
       ),
     );
   }
 }
-

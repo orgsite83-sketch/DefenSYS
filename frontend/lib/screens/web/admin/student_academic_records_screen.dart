@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/student_academic_records_provider.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 import 'widgets/student_records_rollover_modal.dart';
 
@@ -62,6 +63,20 @@ class _StudentAcademicRecordsScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
     _ensurePageInRange(state.records.length);
+
+    ref.listen(studentAcademicRecordsProvider, (previous, next) {
+      final error = next.error;
+      if (error != null && error.isNotEmpty && error != previous?.error) {
+        showErrorToast(context, error);
+      }
+
+      final message = next.message;
+      if (message != null &&
+          message.isNotEmpty &&
+          message != previous?.message) {
+        showSuccessToast(context, message);
+      }
+    });
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -1042,9 +1057,7 @@ class _StudentAcademicRecordsScreenState
 
     final state = ref.read(studentAcademicRecordsProvider);
     if (state.rolloverRows.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No records available for rollover.')),
-      );
+      showValidationToast(context, 'No records available for rollover.');
       return;
     }
 

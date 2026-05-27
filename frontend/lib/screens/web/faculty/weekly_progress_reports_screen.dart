@@ -8,6 +8,7 @@ import '../../../theme/defensys_tokens.dart';
 import 'package:intl/intl.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../utils/pdf_viewer.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class WeeklyProgressReportsScreen extends ConsumerStatefulWidget {
   const WeeklyProgressReportsScreen({super.key});
@@ -1172,12 +1173,7 @@ class _WeeklyProgressReportsScreenState
     final fileName = reportFile?.split('/').last ?? 'Report';
 
     if (fileRef == null || fileRef.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No file attached to this report'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
+      showValidationToast(context, 'No file attached to this report');
       return;
     }
 
@@ -1208,13 +1204,7 @@ class _WeeklyProgressReportsScreenState
         Navigator.pop(context);
       }
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening file: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 4),
-          ),
-        );
+        showErrorToast(context, 'Error opening file: $e');
       }
     }
   }
@@ -1224,12 +1214,7 @@ class _WeeklyProgressReportsScreenState
     Map<String, dynamic> team,
   ) async {
     if (reports.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No weekly progress reports to compile.'),
-          backgroundColor: AppColors.warning,
-        ),
-      );
+      showValidationToast(context, 'No weekly progress reports to compile.');
       return;
     }
 
@@ -1471,46 +1456,42 @@ class _WeeklyProgressReportsScreenState
     buffer.writeln('='*60);
 
     // Show success message with view action
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Compilation report generated for ${team['name']}\n'
-          '${reports.length} weekly reports compiled.',
-        ),
-        backgroundColor: AppColors.success,
-        duration: const Duration(seconds: 4),
-        action: SnackBarAction(
-          label: 'View',
-          textColor: Colors.white,
-          onPressed: () {
-            // Show the report in a dialog
-            showDialog(
-              context: context,
-              builder: (ctx) => AlertDialog(
-                title: const Text('Compilation Report'),
-                content: SizedBox(
-                  width: 600,
-                  height: 400,
-                  child: SingleChildScrollView(
-                    child: SelectableText(
-                      buffer.toString(),
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
+    showSuccessToast(
+      context,
+      'Compilation report generated for ${team['name']}\n'
+      '${reports.length} weekly reports compiled.',
+      duration: const Duration(seconds: 4),
+      action: FeedbackToastAction(
+        label: 'View',
+        textColor: Colors.white,
+        onPressed: () {
+          // Show the report in a dialog
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: const Text('Compilation Report'),
+              content: SizedBox(
+                width: 600,
+                height: 400,
+                child: SingleChildScrollView(
+                  child: SelectableText(
+                    buffer.toString(),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 12,
                     ),
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Close'),
-                  ),
-                ],
               ),
-            );
-          },
-        ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
+        },
       ),
     );
   }

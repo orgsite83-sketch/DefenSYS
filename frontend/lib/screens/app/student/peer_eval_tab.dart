@@ -4,7 +4,7 @@ import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_snackbar.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class PeerEvalTab extends ConsumerStatefulWidget {
   final bool isCapstone;
@@ -320,7 +320,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   Future<void> _confirmPost(String teammateId, String name, Map<String, double> scores) async {
     if (_hasUnratedCriteria(scores)) {
-      showValidationSnackBar(
+      showValidationToast(
         context,
         'Please rate every criterion before submitting.',
       );
@@ -364,7 +364,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     widget.onPeerSubmitted?.call();
 
     if (mounted) {
-      showSuccessSnackBar(context, 'Peer evaluation for $name submitted.');
+      showSuccessToast(context, 'Peer evaluation for $name submitted.');
     }
   }
 

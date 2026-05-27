@@ -12,7 +12,7 @@ import '../../../services/weekly_progress_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_snackbar.dart';
+import '../../../widgets/feedback_toast.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
   try {
@@ -1019,7 +1019,7 @@ class _CapstoneDeliverablesScreenState
       } else {
         final responseBody = await response.stream.bytesToString();
         if (mounted) {
-          showErrorSnackBar(
+          showErrorToast(
             context,
             _formatUploadFailureMessage(response.statusCode, responseBody),
           );
@@ -1027,7 +1027,7 @@ class _CapstoneDeliverablesScreenState
       }
     } catch (e) {
       if (mounted) {
-        showErrorSnackBar(context, 'Upload error: $e');
+        showErrorToast(context, 'Upload error: $e');
       }
     }
   }
@@ -1059,7 +1059,7 @@ class _CapstoneDeliverablesScreenState
       'deliverable_id': item['id'],
     };
 
-    showUndoSnackBar(
+    showUndoToast(
       context,
       context.l10n.fileRemoved,
       undoLabel: context.l10n.undo,
@@ -1077,7 +1077,7 @@ class _CapstoneDeliverablesScreenState
       if (mounted && removed) {
         Navigator.of(context, rootNavigator: true).pop();
       } else if (mounted) {
-        showErrorSnackBar(context, context.l10n.fileRemoveFailed);
+        showErrorToast(context, context.l10n.fileRemoveFailed);
       }
     });
   }
@@ -1251,7 +1251,7 @@ class _CapstoneDeliverablesScreenState
     final teamId = team['id']?.toString() ?? '';
     
     if (teamId.isEmpty) {
-      showValidationSnackBar(context, 'Invalid team ID.');
+      showValidationToast(context, 'Invalid team ID.');
       return;
     }
 
@@ -1281,7 +1281,7 @@ class _CapstoneDeliverablesScreenState
 
       if (teamReports.isEmpty) {
         if (mounted) {
-          showValidationSnackBar(
+          showValidationToast(
             context,
             'No weekly progress reports found for ${team['name']}. Students must submit reports first.',
           );
@@ -1517,7 +1517,7 @@ class _CapstoneDeliverablesScreenState
               // Refresh the dialog to show updated status
               setDialogState(() {});
               
-              showSuccessSnackBar(
+              showSuccessToast(
                 context,
                 'Weekly Progress Reports PDF generated and submitted for ${team['name']}!',
               );
@@ -1527,7 +1527,7 @@ class _CapstoneDeliverablesScreenState
             if (mounted) Navigator.pop(context);
             
             if (mounted) {
-              showErrorSnackBar(context, 'Error generating PDF: $e');
+              showErrorToast(context, 'Error generating PDF: $e');
             }
           }
         }
@@ -1538,7 +1538,7 @@ class _CapstoneDeliverablesScreenState
       
       // Show error message
       if (mounted) {
-        showErrorSnackBar(context, 'Error fetching weekly reports: $e');
+        showErrorToast(context, 'Error fetching weekly reports: $e');
       }
     }
   }
@@ -1547,7 +1547,7 @@ class _CapstoneDeliverablesScreenState
     final teamId = team['id']?.toString() ?? '';
     
     if (teamId.isEmpty) {
-      showValidationSnackBar(context, 'Invalid team ID.');
+      showValidationToast(context, 'Invalid team ID.');
       return;
     }
 
@@ -1577,7 +1577,7 @@ class _CapstoneDeliverablesScreenState
 
       if (teamReports.isEmpty) {
         if (mounted) {
-          showValidationSnackBar(
+          showValidationToast(
             context,
             'No weekly progress reports found for ${team['name']}.',
           );
@@ -1749,7 +1749,7 @@ class _CapstoneDeliverablesScreenState
       
       // Show error message
       if (mounted) {
-        showErrorSnackBar(context, 'Error fetching weekly reports: $e');
+        showErrorToast(context, 'Error fetching weekly reports: $e');
       }
     }
   }
@@ -1839,12 +1839,12 @@ class _CapstoneDeliverablesScreenState
     buffer.writeln('='*60);
 
     // Show success message with view action
-    showSuccessSnackBar(
+    showSuccessToast(
       context,
       'Compilation report generated for ${team['name']}\n'
       '${reports.length} weekly reports compiled.',
       duration: const Duration(seconds: 4),
-      action: SnackBarAction(
+      action: FeedbackToastAction(
         label: 'View',
         textColor: Colors.white,
         onPressed: () {

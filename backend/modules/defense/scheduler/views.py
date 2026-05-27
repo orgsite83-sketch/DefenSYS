@@ -15,7 +15,7 @@ from grading.grades.services import (
     submit_panelist_grade,
     weights_for_schedule,
 )
-from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.guest_authentication import (
     GuestJWTAuthentication,
     IsGuestPanelist,
@@ -67,6 +67,19 @@ def counts_payload(queryset=None, base_queryset=None):
         'cancelled': current.filter(status=DefenseSchedule.STATUS_CANCELLED).count(),
         'archived': current.filter(status=DefenseSchedule.STATUS_ARCHIVED).count(),
     }
+
+
+def schedule_audit_values(schedule, **extra):
+    values = {
+        **audit_scope_metadata(scope=schedule.scope, team=schedule.team),
+        'schedule_id': schedule.pk,
+        'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
+        'start_time': schedule.start_time.isoformat() if schedule.start_time else '',
+        'room': schedule.room,
+        'stage_label': schedule.stage_label,
+    }
+    values.update(extra)
+    return values
 
 
 def list_payload(queryset=None, base_queryset=None, user=None, include_options=True):
@@ -220,8 +233,8 @@ class DefenseScheduleDetailView(APIView):
                 category=SystemAuditLog.CATEGORY_SCHEDULING,
                 action='schedule.status_change',
                 target=schedule,
-                old_values={'status': old_status},
-                new_values={'status': schedule.status},
+                old_values=schedule_audit_values(schedule, status=old_status),
+                new_values=schedule_audit_values(schedule, status=schedule.status),
                 request=request,
             )
         base = visible_schedules_for(request.user)
@@ -233,16 +246,7 @@ class DefenseScheduleDetailView(APIView):
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
-        audit_values = {
-            'status': schedule.status,
-            'scope': schedule.scope,
-            'team_id': schedule.team_id,
-            'team_name': schedule.team.name if schedule.team_id else '',
-            'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
-            'start_time': schedule.start_time.isoformat() if schedule.start_time else '',
-            'room': schedule.room,
-            'stage_label': schedule.stage_label,
-        }
+        audit_values = schedule_audit_values(schedule, status=schedule.status)
         schedule_pk = schedule.pk
         schedule.delete()
         log_high_impact_action(

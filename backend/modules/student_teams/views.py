@@ -12,7 +12,7 @@ from academic_period_management.capstone_mode import (
 )
 from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
-from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_teams_for
 from user_management.academic_records.models import StudentAcademicRecord
@@ -45,6 +45,17 @@ from .serializers import (
 
 
 User = get_user_model()
+
+
+def team_audit_values(team, **extra):
+    scope = 'pit' if team.is_pit else 'capstone' if team.is_capstone else ''
+    values = {
+        **audit_scope_metadata(scope=scope, team=team),
+        'level': team.level,
+        'semester_id': team.semester_id,
+    }
+    values.update(extra)
+    return values
 
 
 def teams_queryset():
@@ -290,8 +301,8 @@ class StudentTeamDetailView(APIView):
                 category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
                 action='team.adviser_change',
                 target=team,
-                old_values={'adviser_id': old_adviser_id},
-                new_values={'adviser_id': team.adviser_id},
+                old_values=team_audit_values(team, adviser_id=old_adviser_id),
+                new_values=team_audit_values(team, adviser_id=team.adviser_id),
                 reason=request.data.get('adviser_change_reason', ''),
                 request=request,
             )
@@ -308,15 +319,13 @@ class StudentTeamDetailView(APIView):
 
         assert_team_writable(request.user, team)
         member_ids = list(team.memberships.values_list('student_id', flat=True))
-        audit_values = {
-            'name': team.name,
-            'level': team.level,
-            'year_level': team.year_level,
-            'semester_id': team.semester_id,
-            'adviser_id': team.adviser_id,
-            'member_ids': member_ids,
-            'status': team.status,
-        }
+        audit_values = team_audit_values(
+            team,
+            name=team.name,
+            adviser_id=team.adviser_id,
+            member_ids=member_ids,
+            status=team.status,
+        )
         team_pk = team.pk
         team.delete()
         log_high_impact_action(

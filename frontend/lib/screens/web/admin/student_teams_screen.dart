@@ -13,6 +13,7 @@ import '../../../utils/csv_file_io.dart';
 import '../../../utils/team_bulk_import_csv.dart';
 import '../../../utils/team_bulk_import_draft.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 import 'widgets/team_bulk_import_review_table.dart';
 
@@ -2366,9 +2367,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showInfoToast(context, message);
   }
 
 }

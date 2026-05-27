@@ -11,6 +11,7 @@ import '../../../utils/clipboard_copy.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../utils/student_bulk_import_csv.dart';
 import '../../../widgets/defensys_skeleton.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -155,8 +156,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       (previous, next) {
         if (next != null && next.isNotEmpty) {
           _scheduleSuccessNoticeAutoDismiss(next);
+          if (next != previous) {
+            showSuccessToast(context, next);
+          }
         } else {
           _successNoticeTimer?.cancel();
+        }
+      },
+    );
+    ref.listen<String?>(
+      userManagementProvider.select((s) => s.error),
+      (previous, next) {
+        if (next != null && next.isNotEmpty && next != previous) {
+          showErrorToast(context, next);
         }
       },
     );
@@ -4160,9 +4172,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       return;
     }
 
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showInfoToast(context, message);
   }
 
   int _count(UserManagementState state, String key) {

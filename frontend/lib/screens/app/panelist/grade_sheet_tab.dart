@@ -9,7 +9,7 @@ import '../../../services/authz_errors.dart';
 import '../../../services/session_expired.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_snackbar.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
@@ -343,7 +343,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                                   borderRadius: BorderRadius.circular(8)),
                             ),
                             onPressed: () {
-                              showSuccessSnackBar(context, 'Draft saved.');
+                              showSuccessToast(context, 'Draft saved.');
                             },
                           ),
                         ),
@@ -375,14 +375,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
   Future<void> _confirmPost(TeamData team) async {
     if (team.panelRubric == null) {
-      showValidationSnackBar(
+      showValidationToast(
         context,
         'Panel rubric is not configured for this schedule.',
       );
       return;
     }
     if (_criteria.isEmpty) {
-      showValidationSnackBar(context, 'Score all criteria before posting.');
+      showValidationToast(context, 'Score all criteria before posting.');
       return;
     }
 
@@ -399,24 +399,10 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<void> _submitGrades(TeamData team) async {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-              ),
-            ),
-            SizedBox(width: 16),
-            Text('Submitting grades...'),
-          ],
-        ),
-        duration: Duration(seconds: 30),
-      ),
+    showInfoToast(
+      context,
+      'Submitting grades...',
+      duration: const Duration(seconds: 30),
     );
 
     final criteriaScores = _criteria
@@ -446,29 +432,29 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       );
 
       if (!mounted) return;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      dismissFeedbackToasts();
 
       if (response.statusCode == 201) {
         setState(() => team.isPosted = true);
         widget.onGradesSubmitted?.call();
-        showSuccessSnackBar(
+        showSuccessToast(
           context,
           'Grades saved to database successfully!',
         );
       } else {
-        showErrorSnackBar(
+        showErrorToast(
           context,
           friendlyHttpErrorMessage(response.statusCode, response.body),
         );
       }
     } on SessionExpiredException {
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        dismissFeedbackToasts();
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        showErrorSnackBar(context, 'Error: $e');
+        dismissFeedbackToasts();
+        showErrorToast(context, 'Error: $e');
       }
     }
   }

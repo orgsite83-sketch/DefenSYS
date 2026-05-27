@@ -8,6 +8,7 @@ import '../../../theme/app_theme.dart';
 import '../../../utils/clipboard_copy.dart';
 import '../../../utils/pdf_viewer.dart';
 import '../../../widgets/defensys_skeleton.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class RepositoryAuditScreen extends ConsumerStatefulWidget {
   const RepositoryAuditScreen({super.key});
@@ -67,16 +68,12 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (!mounted) {
       return;
     }
-    final messenger = ScaffoldMessenger.of(context);
     if (copied) {
-      messenger.showSnackBar(SnackBar(content: Text('Copied $name')));
+      showInfoToast(context, 'Copied $name');
     } else {
-      messenger.showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Copy failed — select the filename below and copy manually',
-          ),
-        ),
+      showValidationToast(
+        context,
+        'Copy failed — select the filename below and copy manually',
       );
     }
   }
@@ -92,43 +89,15 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         children: [
           _buildHeader(state),
           const SizedBox(height: 16),
-          _buildUploadWindowBanner(state),
-          _buildEmptyQueueBanner(state),
-          if (_showUploadQueue(state)) ...[
-            const SizedBox(height: 16),
-            _buildUploadQueuePanel(state),
-          ],
-          if (_scopeKey(state) == 'admin') ...[
-            const SizedBox(height: 16),
-            _buildCapstoneUploadWindowBanner(state),
-            _buildCapstoneEmptyQueueBanner(state),
-            if (_showCapstoneUploadQueue(state)) ...[
-              const SizedBox(height: 16),
-              _buildCapstoneUploadQueuePanel(state),
-            ],
-          ],
-          const SizedBox(height: 26),
-          _buildStats(state),
-          if (_scopeKey(state) == 'admin') ...[
-            const SizedBox(height: 18),
-            _buildTypeTabs(state),
-            const SizedBox(height: 14),
-            _buildKindChips(state),
-            if (state.deliverableId.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              _buildDeliverableFilterChip(state),
-            ],
-          ],
           if (state.error != null) ...[
-            const SizedBox(height: 14),
             _notice(
               Icons.error_outline_rounded,
               state.error!,
               AppColors.danger,
             ),
+            const SizedBox(height: 14),
           ],
           if (state.message != null) ...[
-            const SizedBox(height: 14),
             _notice(
               state.lastUploadSkipped.isNotEmpty
                   ? Icons.warning_amber_rounded
@@ -138,7 +107,11 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                   ? const Color(0xFFD97706)
                   : AppColors.success,
             ),
+            const SizedBox(height: 14),
           ],
+          _buildVaultSummarySection(state),
+          const SizedBox(height: 22),
+          _buildUploadQueueSection(state),
           const SizedBox(height: 22),
           _repositoryTableCard(state),
         ],
@@ -198,7 +171,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (diagnostics is! Map) {
       return _notice(
         Icons.info_outline_rounded,
-          'No teams are ready to archive yet. Mark the PIT event officially complete in Grade Center so passed teams become ready to archive.',
+        'No teams are ready to archive yet. Mark the PIT event officially complete in Grade Center so passed teams become ready to archive.',
         const Color(0xFFD97706),
       );
     }
@@ -257,7 +230,11 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       message =
           'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to archive; Grade Center shows Published after vault save.';
     }
-    return _notice(Icons.info_outline_rounded, message, const Color(0xFF2563EB));
+    return _notice(
+      Icons.info_outline_rounded,
+      message,
+      const Color(0xFF2563EB),
+    );
   }
 
   Widget _buildCapstoneEmptyQueueBanner(RepositoryAuditState state) {
@@ -278,9 +255,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     }
 
     final diag = Map<String, dynamic>.from(diagnostics);
-    final parts = <String>[
-      'No Capstone teams are ready to archive.',
-    ];
+    final parts = <String>['No Capstone teams are ready to archive.'];
     final stages = diag['completed_stages'];
     if (stages is List && stages.isNotEmpty) {
       parts.add('Officially complete stages: ${stages.join(', ')}.');
@@ -316,7 +291,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   Widget _buildCapstoneUploadQueuePanel(RepositoryAuditState state) {
     final queue = (state.capstoneUploadWindow['queue'] as List?) ?? [];
-    final stages = (state.capstoneUploadWindow['completed_stages'] as List?)
+    final stages =
+        (state.capstoneUploadWindow['completed_stages'] as List?)
             ?.map((e) => e.toString())
             .join(', ') ??
         '';
@@ -343,10 +319,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(height: 6),
           const Text(
             'Awaiting PDF means the team passed and still needs a correctly named archive upload.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
           ...queue.map((raw) {
@@ -395,7 +368,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                     ),
                   ),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 5,
+                    ),
                     decoration: BoxDecoration(
                       color: const Color(0xFFFFF7ED),
                       borderRadius: BorderRadius.circular(999),
@@ -410,7 +386,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                       ),
                     ),
                   ),
-                  if ((row['suggested_file_name']?.toString() ?? '').isNotEmpty) ...[
+                  if ((row['suggested_file_name']?.toString() ?? '')
+                      .isNotEmpty) ...[
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Copy filename',
@@ -431,7 +408,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   Widget _buildUploadQueuePanel(RepositoryAuditState state) {
     final queue = (state.uploadWindow['queue'] as List?) ?? [];
-    final events = (state.uploadWindow['completed_events'] as List?)
+    final events =
+        (state.uploadWindow['completed_events'] as List?)
             ?.map((e) => e.toString())
             .join(', ') ??
         '';
@@ -458,10 +436,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(height: 6),
           const Text(
             'Awaiting PDF means the team passed and still needs a correctly named upload—not that Grade Center is incomplete.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
-            ),
+            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
           ...queue.map((raw) {
@@ -510,7 +485,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                     ),
                   ),
                   if (pending &&
-                      (row['suggested_file_name']?.toString() ?? '').isNotEmpty) ...[
+                      (row['suggested_file_name']?.toString() ?? '')
+                          .isNotEmpty) ...[
                     const SizedBox(width: 8),
                     IconButton(
                       tooltip: 'Copy filename',
@@ -585,13 +561,15 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               _secondaryButton(
                 icon: Icons.cloud_upload_outlined,
                 label: 'Upload Capstone',
-                onTap: state.isSaving ? null : () => _showCapstoneUploadDialog(state),
+                onTap: state.isSaving
+                    ? null
+                    : () => _showCapstoneUploadDialog(state),
               ),
               const SizedBox(width: 12),
             ],
             _primaryButton(
               icon: Icons.file_download_rounded,
-              label: 'Export Audit Log',
+              label: 'Export Vault Records',
               onTap: state.isSaving ? null : _exportCsv,
             ),
           ],
@@ -601,12 +579,15 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   }
 
   Widget _buildStats(RepositoryAuditState state) {
-    if (_scopeKey(state) == 'admin' && (state.type.isEmpty || state.type == 'capstone')) {
+    if (_scopeKey(state) == 'admin' &&
+        (state.type.isEmpty || state.type == 'capstone')) {
       return Row(
         children: [
           Expanded(
             child: _metricCard(
-              title: state.deliverableId.isNotEmpty ? 'Matching files' : 'Total files',
+              title: state.deliverableId.isNotEmpty
+                  ? 'Matching records'
+                  : 'Total records',
               value: _count(state, 'total'),
               valueColor: const Color(0xFF0F2743),
               icon: Icons.folder_copy_outlined,
@@ -636,7 +617,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
-              title: state.deliverableId.isNotEmpty ? 'Missing' : 'Archive PDFs',
+              title: state.deliverableId.isNotEmpty
+                  ? 'Missing'
+                  : 'Archive PDFs',
               value: state.deliverableId.isNotEmpty
                   ? _count(state, 'missing_required')
                   : _count(state, 'archive_pdf'),
@@ -652,7 +635,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         Expanded(
           child: _metricCard(
-            title: 'Total Managed Files',
+            title: 'Total Managed Records',
             value: _count(state, 'total'),
             valueColor: const Color(0xFF0F2743),
             icon: Icons.folder_copy_outlined,
@@ -677,6 +660,90 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             valueColor: const Color(0xFF059669),
             icon: Icons.description_outlined,
             iconTint: const Color(0xFFA7F3D0),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildVaultSummarySection(RepositoryAuditState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Repository Vault Summary',
+          'Current archive readiness, vault status, and record counts for your scope.',
+        ),
+        const SizedBox(height: 12),
+        _buildStats(state),
+        if (_scopeKey(state) == 'admin') ...[
+          const SizedBox(height: 18),
+          _buildTypeTabs(state),
+          const SizedBox(height: 14),
+          _buildKindChips(state),
+          if (state.deliverableId.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            _buildDeliverableFilterChip(state),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _buildUploadQueueSection(RepositoryAuditState state) {
+    final children = <Widget>[
+      _buildUploadWindowBanner(state),
+      _buildEmptyQueueBanner(state),
+    ];
+    if (_showUploadQueue(state)) {
+      children
+        ..add(const SizedBox(height: 16))
+        ..add(_buildUploadQueuePanel(state));
+    }
+    if (_scopeKey(state) == 'admin') {
+      children
+        ..add(const SizedBox(height: 16))
+        ..add(_buildCapstoneUploadWindowBanner(state))
+        ..add(_buildCapstoneEmptyQueueBanner(state));
+      if (_showCapstoneUploadQueue(state)) {
+        children
+          ..add(const SizedBox(height: 16))
+          ..add(_buildCapstoneUploadQueuePanel(state));
+      }
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader(
+          'Upload Queue',
+          'Teams and files that are ready for PIT or Capstone archive upload.',
+        ),
+        const SizedBox(height: 12),
+        ...children,
+      ],
+    );
+  }
+
+  Widget _sectionHeader(String title, String subtitle) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          title,
+          style: const TextStyle(
+            color: AppColors.maroon,
+            fontSize: 16,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          subtitle,
+          style: const TextStyle(
+            color: AppColors.textSecondary,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
           ),
         ),
       ],
@@ -881,7 +948,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             child: Text(
               state.deliverableId.isNotEmpty
                   ? 'Showing ${state.entries.length} teams for ${state.deliverableSummary['label'] ?? state.deliverableId}'
-                  : 'Showing ${state.entries.length} files',
+                  : 'Showing ${state.entries.length} records',
               style: const TextStyle(
                 color: Color(0xFF5D6678),
                 fontSize: 12,
@@ -1099,10 +1166,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final actionWidth =
-            actionColumn == null ? 0.0 : _kRepoActionColumnWidth;
-        final dataAreaWidth =
-            (constraints.maxWidth - actionWidth).clamp(0.0, double.infinity);
+        final actionWidth = actionColumn == null
+            ? 0.0
+            : _kRepoActionColumnWidth;
+        final dataAreaWidth = (constraints.maxWidth - actionWidth).clamp(
+          0.0,
+          double.infinity,
+        );
         final needsHorizontalScroll = dataAreaWidth < minDataWidth;
 
         Widget pane = dataPane;
@@ -1321,9 +1391,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                       const SizedBox(height: 3),
                       Text(
                         isMissing
-                            ? (entry['vault_note']?.toString().isNotEmpty == true
-                                ? entry['vault_note'].toString()
-                                : 'No file uploaded yet')
+                            ? (entry['vault_note']?.toString().isNotEmpty ==
+                                      true
+                                  ? entry['vault_note'].toString()
+                                  : 'No file uploaded yet')
                             : 'By $uploadedBy',
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
@@ -1498,7 +1569,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   Widget _rowActions(Map<String, dynamic> entry) {
     final fileUrl = entry['file_url']?.toString() ?? '';
     final fileName = entry['file_name']?.toString() ?? '';
-    
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -1516,13 +1587,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           icon: Icons.download_rounded,
           color: const Color(0xFF059669),
           onTap: () => _downloadFile(fileUrl, fileName),
-        ),
-        const SizedBox(width: 3),
-        _actionIcon(
-          tooltip: 'Audit trail',
-          icon: Icons.history_rounded,
-          color: AppColors.textSecondary,
-          onTap: () => _showDetails(entry),
         ),
         if (entry['can_override'] == true) ...[
           const SizedBox(width: 3),
@@ -1631,7 +1695,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   }
 
   Future<void> _showUploadDialog(RepositoryAuditState state) async {
-    final yearLevel = state.scope['pit_year_level']?.toString().isNotEmpty == true
+    final yearLevel =
+        state.scope['pit_year_level']?.toString().isNotEmpty == true
         ? state.scope['pit_year_level'].toString()
         : '3rd Year';
     final academicYear = state.academicYear.isNotEmpty
@@ -1724,10 +1789,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       return;
     }
 
-    final autoRename =
-        pendingNames.length == 1 && picked.files.length == 1
-            ? pendingNames.first
-            : null;
+    final autoRename = pendingNames.length == 1 && picked.files.length == 1
+        ? pendingNames.first
+        : null;
 
     final multipartFiles = <http.MultipartFile>[];
     for (final platformFile in picked.files) {
@@ -1744,14 +1808,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     if (multipartFiles.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Select at least one PDF file.')),
-        );
+        showValidationToast(context, 'Select at least one PDF file.');
       }
       return;
     }
 
-    final result = await ref.read(repositoryAuditProvider.notifier).uploadPit(
+    final result = await ref
+        .read(repositoryAuditProvider.notifier)
+        .uploadPit(
           multipartFiles: multipartFiles,
           yearLevel: yearLevel,
           academicYear: academicYear,
@@ -1882,10 +1946,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       return;
     }
 
-    final autoRename =
-        pendingNames.length == 1 && picked.files.length == 1
-            ? pendingNames.first
-            : null;
+    final autoRename = pendingNames.length == 1 && picked.files.length == 1
+        ? pendingNames.first
+        : null;
 
     final multipartFiles = <http.MultipartFile>[];
     for (final platformFile in picked.files) {
@@ -1902,14 +1965,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     if (multipartFiles.isEmpty) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Select at least one PDF file.')),
-        );
+        showValidationToast(context, 'Select at least one PDF file.');
       }
       return;
     }
 
-    final result = await ref.read(repositoryAuditProvider.notifier).uploadCapstoneMultipart(
+    final result = await ref
+        .read(repositoryAuditProvider.notifier)
+        .uploadCapstoneMultipart(
           multipartFiles: multipartFiles,
           academicYear: academicYear,
         );
@@ -1933,11 +1996,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   }
 
   Future<void> _showUploadSkippedDialog(UploadPitResult result) async {
-    final lines = result.skipped.map((item) {
-      final name = item['file_name']?.toString() ?? 'File';
-      final reason = item['reason']?.toString() ?? 'Unknown reason';
-      return '$name\n$reason';
-    }).join('\n\n');
+    final lines = result.skipped
+        .map((item) {
+          final name = item['file_name']?.toString() ?? 'File';
+          final reason = item['reason']?.toString() ?? 'Unknown reason';
+          return '$name\n$reason';
+        })
+        .join('\n\n');
 
     await showDialog<void>(
       context: context,
@@ -1945,9 +2010,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         title: Text(
           result.savedAny ? 'Some files were not saved' : 'Upload failed',
         ),
-        content: SingleChildScrollView(
-          child: Text(lines),
-        ),
+        content: SingleChildScrollView(child: Text(lines)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext),
@@ -1968,10 +2031,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           builder: (context, setDialogState) => _dialogDropdown(
             label: 'Status',
             value: status,
-            items: const [
-              'Approved',
-              'Needs Revision',
-            ],
+            items: const ['Approved', 'Needs Revision'],
             onChanged: (value) =>
                 setDialogState(() => status = value ?? status),
           ),
@@ -1996,62 +2056,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         .overrideStatus(entry['id'].toString(), status);
   }
 
-  Future<void> _showDetails(Map<String, dynamic> entry) async {
-    final entryType = entry['type']?.toString() ?? '';
-    final sourceId = int.tryParse('${entry['source_id']}');
-    final cached = _mapList(entry['audit_trail']);
-    final logs = cached.isNotEmpty
-        ? cached
-        : await ref.read(repositoryAuditProvider.notifier).fetchAuditTrail(
-              entryType: entryType,
-              sourceId: sourceId,
-              fileName: entry['file_name']?.toString() ?? '',
-            );
-    if (!mounted) {
-      return;
-    }
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Text('Audit Trail - ${entry['file_name'] ?? ''}'),
-        content: SizedBox(
-          width: 560,
-          child: logs.isEmpty
-              ? const Text('No audit trail entries yet.')
-              : Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: logs
-                      .map(
-                        (log) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: const Icon(Icons.history),
-                          title: Text(log['message']?.toString() ?? ''),
-                          subtitle: Text(
-                            '${log['action'] ?? ''} - ${log['previous_status'] ?? ''} -> ${log['new_status'] ?? ''}\n${log['actor'] ?? 'System'} - ${_date(log['created_at'])}',
-                          ),
-                        ),
-                      )
-                      .toList(),
-                ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<void> _viewPdf(String fileUrl, String fileName) async {
     if (fileUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('File URL not available'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showErrorToast(context, 'File URL not available');
       return;
     }
 
@@ -2077,24 +2084,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     } catch (e) {
       if (mounted && Navigator.canPop(context)) Navigator.pop(context);
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error opening file: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showErrorToast(context, 'Error opening file: $e');
       }
     }
   }
 
   Future<void> _downloadFile(String fileUrl, String fileName) async {
     if (fileUrl.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('File URL not available'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showErrorToast(context, 'File URL not available');
       return;
     }
 
@@ -2104,21 +2101,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           .fetchAuthenticatedFile(fileUrl);
       await downloadBytesFile(bytes: bytes, fileName: fileName);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Downloaded $fileName'),
-          backgroundColor: Colors.green,
-          duration: const Duration(seconds: 2),
-        ),
+      showSuccessToast(
+        context,
+        'Downloaded $fileName',
+        duration: const Duration(seconds: 2),
       );
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Download failed: $e'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showErrorToast(context, 'Download failed: $e');
     }
   }
 
@@ -2276,7 +2266,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           onSelected: state.isSaving
               ? null
               : (_) {
-                  ref.read(repositoryAuditProvider.notifier).fetchEntries(
+                  ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(
                         type: typeValue,
                         clearTeam: true,
                         clearDeliverable: true,
@@ -2339,15 +2331,19 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     return Row(
       children: [
         Chip(
-          avatar: const Icon(Icons.filter_alt, size: 16, color: AppColors.maroon),
+          avatar: const Icon(
+            Icons.filter_alt,
+            size: 16,
+            color: AppColors.maroon,
+          ),
           label: Text('Filtered: $label'),
           deleteIcon: const Icon(Icons.close, size: 16),
           onDeleted: state.isSaving
               ? null
               : () {
-                  ref.read(repositoryAuditProvider.notifier).fetchEntries(
-                        clearDeliverable: true,
-                      );
+                  ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(clearDeliverable: true);
                 },
         ),
         const SizedBox(width: 12),
@@ -2371,10 +2367,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (state.deliverableId.isNotEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _browseModeTip(state),
-          _repositoryDeliverableTable(state),
-        ],
+        children: [_browseModeTip(state), _repositoryDeliverableTable(state)],
       );
     }
     if (state.teamId.isNotEmpty) {
@@ -2395,10 +2388,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _browseModeTip(state),
-              _buildAllTeamsBrowsePanel(state),
-            ],
+            children: [_browseModeTip(state), _buildAllTeamsBrowsePanel(state)],
           ),
         ),
       ],
@@ -2407,8 +2397,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   Widget _buildTeamSidebar(RepositoryAuditState state) {
     final teams = _mapList(state.options['team_counts']);
-    final capstoneTeams =
-        teams.where((team) => _teamTrack(team) == 'capstone').toList();
+    final capstoneTeams = teams
+        .where((team) => _teamTrack(team) == 'capstone')
+        .toList();
     final pitTeams = teams.where((team) => _teamTrack(team) == 'pit').toList();
     final showCapstone = state.type.isEmpty || state.type == 'capstone';
     final showPit = state.type.isEmpty;
@@ -2433,7 +2424,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             final id = team['id']?.toString() ?? '';
             final name = team['name']?.toString() ?? 'Team';
             final level = team['level']?.toString() ?? '';
-            final project = _teamProjectFromEntries(state, id) ??
+            final project =
+                _teamProjectFromEntries(state, id) ??
                 team['name']?.toString() ??
                 '';
             final track = _teamTrack(team);
@@ -2448,13 +2440,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               if (project.isNotEmpty && project != name) project,
               counts,
             ].join(' · ');
-            return _sidebarTeamTile(
-              state,
-              id,
-              name,
-              subtitle,
-              track: track,
-            );
+            return _sidebarTeamTile(state, id, name, subtitle, track: track);
           }),
         ],
       );
@@ -2515,14 +2501,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             ? null
             : () {
                 if (teamId == null) {
-                  ref.read(repositoryAuditProvider.notifier).fetchEntries(
-                        clearTeam: true,
-                      );
+                  ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(clearTeam: true);
                 } else {
-                  ref.read(repositoryAuditProvider.notifier).fetchEntries(
-                        teamId: teamId,
-                        clearDeliverable: true,
-                      );
+                  ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(teamId: teamId, clearDeliverable: true);
                 }
               },
         child: Container(
@@ -2544,7 +2529,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                   Icon(
                     Icons.folder_outlined,
                     size: 16,
-                    color: selected ? AppColors.maroon : const Color(0xFF6B7280),
+                    color: selected
+                        ? AppColors.maroon
+                        : const Color(0xFF6B7280),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -2586,8 +2573,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: (isPit ? const Color(0xFF2563EB) : AppColors.maroon)
-            .withValues(alpha: 0.12),
+        color: (isPit ? const Color(0xFF2563EB) : AppColors.maroon).withValues(
+          alpha: 0.12,
+        ),
         borderRadius: BorderRadius.circular(999),
       ),
       child: Text(
@@ -2698,10 +2686,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         if (capstoneEntries.isNotEmpty) ...[
           _trackSectionTitle('CAPSTONE', AppColors.maroon),
-          _buildCapstoneGroupedPanel(
-            state,
-            entries: capstoneEntries,
-          ),
+          _buildCapstoneGroupedPanel(state, entries: capstoneEntries),
           const SizedBox(height: 20),
         ],
         if (pitEntries.isNotEmpty) ...[
@@ -2750,10 +2735,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             children: [
               _repositoryHeaderData(compactColumns: compactColumns),
               ...entries.map(
-                (entry) => _repositoryRowData(
-                  entry,
-                  compactColumns: compactColumns,
-                ),
+                (entry) =>
+                    _repositoryRowData(entry, compactColumns: compactColumns),
               ),
             ],
           ),
@@ -2780,17 +2763,16 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             : [],
       );
     }
-    return _buildCapstoneGroupsContent(
-      groups,
-      compactColumns: compactColumns,
-    );
+    return _buildCapstoneGroupsContent(groups, compactColumns: compactColumns);
   }
 
   Widget _buildCapstoneGroupsContent(
     List<Map<String, dynamic>> groups, {
     bool compactColumns = false,
   }) {
-    final dataChildren = <Widget>[_repositoryHeaderData(compactColumns: compactColumns)];
+    final dataChildren = <Widget>[
+      _repositoryHeaderData(compactColumns: compactColumns),
+    ];
     final actionChildren = <Widget>[];
     const subsectionHeight = 40.0;
 
@@ -2806,18 +2788,32 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       dataChildren.add(_stageTitle(stage));
       actionChildren.add(_repositoryActionSpacer(height: 32));
 
-      void addSubsection(String title, Color color, List<Map<String, dynamic>> rows) {
+      void addSubsection(
+        String title,
+        Color color,
+        List<Map<String, dynamic>> rows,
+      ) {
         if (rows.isEmpty) return;
         dataChildren.add(_subsectionHeader(title, color));
         actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
         for (final row in rows) {
-          dataChildren.add(_repositoryRowData(row, compactColumns: compactColumns));
+          dataChildren.add(
+            _repositoryRowData(row, compactColumns: compactColumns),
+          );
           actionChildren.add(_repositoryRowAction(row));
         }
       }
 
-      addSubsection('Pre-defense deliverables', const Color(0xFFEFF6FF), preRows);
-      addSubsection('Digital vault deliverables', const Color(0xFFF5F3FF), vaultRows);
+      addSubsection(
+        'Pre-defense deliverables',
+        const Color(0xFFEFF6FF),
+        preRows,
+      );
+      addSubsection(
+        'Digital vault deliverables',
+        const Color(0xFFF5F3FF),
+        vaultRows,
+      );
       addSubsection('Final archive PDF', const Color(0xFFFFF7ED), archiveRows);
       dataChildren.add(const SizedBox(height: 12));
       actionChildren.add(_repositoryActionSpacer(height: 12));
@@ -2834,7 +2830,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     bool compactColumns = false,
   }) {
     final groups = _clientGroupByPitCourse(entries);
-    final dataChildren = <Widget>[_repositoryHeaderData(compactColumns: compactColumns)];
+    final dataChildren = <Widget>[
+      _repositoryHeaderData(compactColumns: compactColumns),
+    ];
     final actionChildren = <Widget>[];
     const subsectionHeight = 40.0;
 
@@ -2863,10 +2861,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
       dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
       actionChildren.add(_repositoryActionSpacer(height: 32));
-      dataChildren.add(_subsectionHeader('PIT archive', const Color(0xFFFFF7ED)));
+      dataChildren.add(
+        _subsectionHeader('PIT archive', const Color(0xFFFFF7ED)),
+      );
       actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
       for (final row in rows) {
-        dataChildren.add(_repositoryRowData(row, compactColumns: compactColumns));
+        dataChildren.add(
+          _repositoryRowData(row, compactColumns: compactColumns),
+        );
         actionChildren.add(_repositoryRowAction(row));
       }
       dataChildren.add(const SizedBox(height: 12));
@@ -2921,8 +2923,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       if (stage.isNotEmpty) stages.add(stage);
     }
     return stages.map((stage) {
-      final stageEntries =
-          scoped.where((entry) => entry['stage'] == stage).toList();
+      final stageEntries = scoped
+          .where((entry) => entry['stage'] == stage)
+          .toList();
       return {
         'stage': stage,
         'pre_defense': stageEntries
@@ -2944,9 +2947,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final pitEntries = entries.where(_isPitEntry).toList();
     final courses = <String>{};
     for (final entry in pitEntries) {
-      final course = entry['stage']?.toString() ??
-          entry['course_code']?.toString() ??
-          '';
+      final course =
+          entry['stage']?.toString() ?? entry['course_code']?.toString() ?? '';
       if (course.isNotEmpty) courses.add(course);
     }
     return courses.map((course) {
@@ -2955,10 +2957,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         final code = entry['course_code']?.toString() ?? '';
         return stage == course || code == course;
       }).toList();
-      return {
-        'stage': course,
-        'pit_archive': courseEntries,
-      };
+      return {'stage': course, 'pit_archive': courseEntries};
     }).toList();
   }
 
@@ -3063,7 +3062,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       ),
       child: Row(
         children: [
-          _tableCell(_bodyText(entry['team_name']?.toString() ?? ''), flex: 1.2),
+          _tableCell(
+            _bodyText(entry['team_name']?.toString() ?? ''),
+            flex: 1.2,
+          ),
           _tableCell(
             _bodyText(entry['project_title']?.toString() ?? ''),
             flex: 1.4,
@@ -3073,7 +3075,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             _bodyText(hasFile ? (entry['file_name']?.toString() ?? '') : '—'),
             flex: 1.6,
           ),
-          _tableCell(_statusBadge(entry['status']?.toString() ?? ''), flex: 0.8),
+          _tableCell(
+            _statusBadge(entry['status']?.toString() ?? ''),
+            flex: 0.8,
+          ),
           _tableCell(_bodyText(_prettyDate(entry['uploaded_at'])), flex: 0.7),
         ],
       ),
@@ -3117,7 +3122,11 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       ),
       child: Text(
         label,
-        style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.w800),
+        style: TextStyle(
+          color: color,
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }

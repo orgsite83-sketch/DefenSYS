@@ -5,6 +5,7 @@ import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 const _kDefaultScales = [
@@ -482,25 +483,20 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 ? const SizedBox.shrink()
                 : Align(
                     alignment: Alignment.topRight,
-                    child: TextButton(
-                      onPressed: onRemove,
-                      style: TextButton.styleFrom(
-                        foregroundColor: AppColors.danger,
-                        padding: EdgeInsets.zero,
-                        minimumSize: Size.zero,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        visualDensity: VisualDensity.compact,
-                      ),
-                      child: Text(
-                        'Remove this criterion',
-                        textAlign: TextAlign.end,
-                        style: TextStyle(
-                          fontFamily: DefensysUi.fontFamily,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          height: 1.25,
+                    child: Tooltip(
+                      message: 'Remove this criterion',
+                      child: IconButton(
+                        onPressed: onRemove,
+                        icon: Icon(
+                          Icons.delete_outline_rounded,
                           color: AppColors.danger.withValues(alpha: 0.92),
                         ),
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        visualDensity: VisualDensity.compact,
                       ),
                     ),
                   ),
@@ -515,7 +511,42 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     return _criteria.first.scale;
   }
 
+  String? _validationMessage() {
+    if (_name.text.trim().isEmpty) {
+      return 'Enter a rubric name.';
+    }
+    if (_semesterId == null) {
+      return 'Select a semester.';
+    }
+    if (_scope == 'capstone' && _defenseStageId == null) {
+      return 'Select a defense stage.';
+    }
+    if (_criteria.isEmpty) {
+      return 'Add at least one criterion.';
+    }
+    for (final draft in _criteria) {
+      if (draft.name.text.trim().isEmpty) {
+        return 'Enter a name for each criterion.';
+      }
+      final maxScore = num.tryParse(draft.maxScore.text.trim());
+      if (maxScore == null || maxScore <= 0) {
+        return 'Enter a valid max score for each criterion.';
+      }
+      final weight = num.tryParse(draft.weight.text.trim());
+      if (weight == null || weight <= 0) {
+        return 'Enter a valid weight for each criterion.';
+      }
+    }
+    return null;
+  }
+
   Future<void> _save(String status) async {
+    final validationMessage = _validationMessage();
+    if (validationMessage != null) {
+      showValidationToast(context, validationMessage);
+      return;
+    }
+
     final notifier = ref.read(rubricEngineProvider.notifier);
     final payload = {
       'name': _name.text.trim(),
@@ -536,7 +567,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     if (!mounted) return;
     if (ok) {
       await notifier.fetchRubrics();
+      if (!mounted) return;
+      showSuccessToast(
+        context,
+        status == 'published'
+            ? 'Rubric published and locked.'
+            : 'Rubric draft saved.',
+      );
       widget.onBack();
+    } else {
+      final error =
+          ref.read(rubricEngineProvider).error ?? 'Rubric could not be saved.';
+      showErrorToast(context, error);
     }
   }
 

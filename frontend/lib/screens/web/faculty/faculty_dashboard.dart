@@ -10,6 +10,7 @@ import '../../../widgets/offline_banner.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../shared/capstone_deliverables_screen.dart';
 import '../shared/repository_audit_screen.dart';
+import '../admin/audit_compliance_screen.dart';
 import '../admin/defense_scheduler_screen.dart';
 import '../admin/defense_board_screen.dart';
 import '../admin/grade_center_screen.dart';
@@ -466,6 +467,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'repository_audit',
           ),
+          _buildSidebarItem(
+            icon: Icons.verified_user_outlined,
+            label: 'Audit Trail',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('audit_compliance'),
+            ),
+            isActive: _activeSection == 'audit_compliance',
+          ),
         ];
       case FacultyWorkspace.adviser:
         return [
@@ -691,6 +701,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return Container(
           color: Colors.white,
           child: const RepositoryAuditScreen(),
+        );
+      case 'audit_compliance':
+        if (roles['pit_lead'] != true) {
+          return SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: _buildWorkspaceDashboard(
+              workspace: workspace,
+              dashState: dashState,
+              facultyName: facultyName,
+            ),
+          );
+        }
+        return Container(
+          color: Colors.white,
+          child: const AuditComplianceScreen(),
         );
       case 'uploader':
         return Container(

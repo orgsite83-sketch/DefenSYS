@@ -8,7 +8,7 @@ import '../services/auth_provider.dart';
 import '../services/session_storage.dart';
 import '../theme/defensys_tokens.dart';
 import '../theme/app_theme.dart';
-import '../widgets/feedback_snackbar.dart';
+import '../widgets/feedback_toast.dart';
 import 'about_screen.dart';
 import 'privacy_screen.dart';
 import 'terms_screen.dart';
@@ -98,7 +98,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       await _navigateAfterAuth(user);
     } else {
       final error = ref.read(authProvider).error ?? 'Login Failed';
-      showErrorSnackBar(context, error);
+      showErrorToast(context, error);
     }
   }
 
@@ -110,7 +110,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!isWeb && baseRole != 'student' && baseRole != 'faculty') {
       await ref.read(authProvider.notifier).logout();
       if (!mounted) return;
-      showErrorSnackBar(
+      showErrorToast(
         context,
         'The mobile app is for students and defense panelists only. '
         'Admins should use the web app.',
@@ -121,7 +121,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (!isWeb && baseRole == 'faculty' && _facultyNeedsWebApp(user)) {
       await ref.read(authProvider.notifier).logout();
       if (!mounted) return;
-      showErrorSnackBar(
+      showErrorToast(
         context,
         'Faculty tools (advising, PIT lead, Grade Center) are available on the web app. '
         'Use a browser on desktop.',
@@ -132,7 +132,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (isWeb && baseRole == 'student') {
       await ref.read(authProvider.notifier).logout();
       if (!mounted) return;
-      showErrorSnackBar(context, 'Students must use the mobile app.');
+      showErrorToast(context, 'Students must use the mobile app.');
       return;
     }
 
@@ -764,7 +764,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   void _showGuestDialog() {
     if (kIsWeb) {
-      showErrorSnackBar(
+      showErrorToast(
         context,
         'Guest panelist access is available on the mobile app only.',
       );

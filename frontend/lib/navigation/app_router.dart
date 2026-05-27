@@ -367,6 +367,10 @@ List<RouteBase> _facultyRoutes() {
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(
+          path: 'audit-compliance',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
+        GoRoute(
           path: 'deliverables',
           builder: (_, __) => const SizedBox.shrink(),
         ),

@@ -6,6 +6,7 @@ import '../../../services/defense_stages_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/defensys_skeleton.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
@@ -74,6 +75,20 @@ class _DefenseSchedulerScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
     final currentStep = _planSlots.isEmpty ? 1 : (_showFinalPreview ? 3 : 2);
+
+    ref.listen(defenseSchedulerProvider, (previous, next) {
+      final error = next.error;
+      if (error != null && error.isNotEmpty && error != previous?.error) {
+        showErrorToast(context, error);
+      }
+
+      final message = next.message;
+      if (message != null &&
+          message.isNotEmpty &&
+          message != previous?.message) {
+        showSuccessToast(context, message);
+      }
+    });
 
     final cp = DefensysUi.contentPadding;
 
@@ -2633,9 +2648,7 @@ class _DefenseSchedulerScreenState
   }
 
   void _showSnack(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showValidationToast(context, message);
   }
 
   Widget _buildExistingSchedules(DefenseSchedulerState state) {
