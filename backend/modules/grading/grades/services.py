@@ -280,13 +280,39 @@ def _validated_panel_criterion_rows(schedule, criteria_scores):
 
     payload_by_id = {}
     duplicate_ids = set()
+    missing_id_items = []
     for item in criteria_scores:
         if not isinstance(item, dict):
             raise ValidationError({'criteria_scores': 'Each criterion score must be an object.'})
-        criterion_id = _submitted_criterion_id(item)
-        if criterion_id in payload_by_id:
-            duplicate_ids.add(criterion_id)
-        payload_by_id[criterion_id] = item
+        
+        # Legacy fallback extraction
+        value = item.get('criterion_id')
+        if value in (None, ''):
+            value = item.get('id')
+            
+        try:
+            criterion_id = int(value) if value is not None else None
+        except (TypeError, ValueError):
+            criterion_id = None
+            
+        if criterion_id is None:
+            missing_id_items.append(item)
+        else:
+            if criterion_id in payload_by_id:
+                duplicate_ids.add(criterion_id)
+            payload_by_id[criterion_id] = item
+
+    # Legacy APK fallback for old versions that send null IDs
+    if missing_id_items:
+        # If EVERY item is missing an ID, and the count EXACTLY matches the rubric length,
+        # we can safely assume they are submitted in the same order as the rubric.
+        if not payload_by_id and len(missing_id_items) == len(criteria):
+            for criterion, item in zip(criteria, missing_id_items):
+                payload_by_id[criterion.id] = item
+            missing_id_items = [] # clear them since we mapped them
+
+        if missing_id_items:
+            raise ValidationError({'criteria_scores': 'Each criterion score must include a valid criterion_id.'})
 
     if duplicate_ids:
         raise ValidationError({'criteria_scores': 'Duplicate rubric criteria are not allowed.'})

@@ -76,22 +76,22 @@ python manage.py migrate --noinput
 python manage.py collectstatic --noinput
 
 # 6. Restart backend services
-sudo systemctl restart gunicorn
+sudo systemctl restart defensys
 # If using Daphne for WebSocket:
-sudo systemctl restart daphne
+sudo systemctl restart defensys-ws
 ```
 
 ### Verify
 
 ```bash
 # Check service status
-sudo systemctl status gunicorn
+sudo systemctl status defensys
 
 # Check API health
 curl -I https://dev.defensys.site/api/
 
 # Check logs for errors
-sudo journalctl -u gunicorn --since "5 minutes ago" --no-pager
+sudo journalctl -u defensys --since "5 minutes ago" --no-pager
 ```
 
 ---
@@ -200,7 +200,8 @@ pip install -r requirements.txt
 python manage.py check --deploy
 python manage.py migrate --noinput
 python manage.py collectstatic --noinput
-sudo systemctl restart gunicorn
+sudo systemctl restart defensys
+sudo systemctl restart defensys-ws
 ```
 
 ### On local machine (PowerShell)
@@ -247,7 +248,7 @@ curl.exe -I https://dev.defensys.site/api/
 | ------- | ----- | --- |
 | `404` on assets after deploy | Directory permissions `700` | `sudo chmod -R 755 /var/www/defensys/` |
 | Old web version showing | Service worker cache | Hard refresh `Ctrl+Shift+R` or clear site data |
-| `502 Bad Gateway` | Gunicorn not running | `sudo systemctl restart gunicorn` |
+| `502 Bad Gateway` | Gunicorn not running | `sudo systemctl restart defensys` |
 | Migration errors | Conflicting migrations | Check `python manage.py showmigrations` |
 | PowerShell `curl` prompts for URI | PS aliases curl | Use `curl.exe` instead of `curl` |
 
