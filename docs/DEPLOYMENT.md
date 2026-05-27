@@ -4,6 +4,8 @@ Use this before go-live. Local demos may use `docs/DEMO_SETUP_GUIDE.md`; product
 
 **Full server guide (Kamatera VPS):** [KAMATERA_DEPLOYMENT.md](KAMATERA_DEPLOYMENT.md) — create VM → deploy repo → HTTPS → go live.
 
+**Rebuild after terminating a paid VPS:** [KAMATERA_REBUILD_RUNBOOK.md](KAMATERA_REBUILD_RUNBOOK.md) - backup checklist, terminate safely, restore DefenSYS on a fresh server.
+
 ## Do not run in production
 
 - `python manage.py dev_create_40_students` (prototype `student1`–`student40` accounts)

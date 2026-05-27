@@ -12,6 +12,9 @@ from academic_period_management.capstone_mode import (
 )
 from academic_period_management.models import Semester
 from academic_period_management.serializers import SemesterSerializer
+from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.models import SystemAuditLog
+from authentication_access_control.scopes import visible_teams_for
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.serializers import StudentOptionSerializer
 from user_management.permissions import IsSystemAdmin, CanManageTeams
@@ -52,24 +55,7 @@ def teams_queryset():
 
 
 def teams_queryset_for_user(user):
-    base = teams_queryset()
-    if not user or not user.is_authenticated:
-        return base.none()
-    if user.is_superuser or getattr(user, 'role', None) == 'admin':
-        return base
-    if getattr(user, 'is_pit_lead', False):
-        queryset = base.filter(level__icontains='PIT')
-        pit_year = getattr(user, 'pit_lead_year', None)
-        if pit_year:
-            queryset = queryset.filter(year_level=pit_year)
-        return queryset
-    if getattr(user, 'is_uploader', False):
-        return base
-    if getattr(user, 'role', None) == 'faculty':
-        return base.filter(adviser=user)
-    if getattr(user, 'role', None) == 'student':
-        return base.filter(Q(leader=user) | Q(memberships__student=user)).distinct()
-    return base.none()
+    return visible_teams_for(user)
 
 
 def user_can_see_full_team_directory(user):
@@ -291,6 +277,7 @@ class StudentTeamDetailView(APIView):
 
     def patch(self, request, team_id):
         team = self.get_object(team_id)
+        old_adviser_id = team.adviser_id
         serializer = StudentTeamWriteSerializer(
             team,
             data=request.data,
@@ -298,6 +285,16 @@ class StudentTeamDetailView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         team = serializer.save()
+        if old_adviser_id != team.adviser_id:
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
+                action='team.adviser_change',
+                target=team,
+                old_values={'adviser_id': old_adviser_id},
+                new_values={'adviser_id': team.adviser_id},
+                reason=request.data.get('adviser_change_reason', ''),
+                request=request,
+            )
         team = teams_queryset().get(pk=team.pk)
 
         return Response({
@@ -311,7 +308,27 @@ class StudentTeamDetailView(APIView):
 
         assert_team_writable(request.user, team)
         member_ids = list(team.memberships.values_list('student_id', flat=True))
+        audit_values = {
+            'name': team.name,
+            'level': team.level,
+            'year_level': team.year_level,
+            'semester_id': team.semester_id,
+            'adviser_id': team.adviser_id,
+            'member_ids': member_ids,
+            'status': team.status,
+        }
+        team_pk = team.pk
         team.delete()
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_STUDENT_TEAMS,
+            action='team.delete',
+            target=team,
+            target_type='StudentTeam',
+            target_id=team_pk,
+            old_values=audit_values,
+            new_values={'deleted': True},
+            request=request,
+        )
         User.objects.filter(pk__in=member_ids, team_id=str(team_id)).update(team_id=None)
         return Response({'counts': counts_payload()}, status=status.HTTP_200_OK)
 
@@ -320,7 +337,7 @@ class TeamAdviserHistoryView(APIView):
     permission_classes = [CanManageTeams]
 
     def get(self, request, team_id):
-        team = get_object_or_404(teams_queryset(), pk=team_id)
+        team = get_object_or_404(visible_teams_for(request.user), pk=team_id)
         assignments = (
             TeamAdviserAssignment.objects.filter(team=team)
             .select_related('adviser', 'assigned_by', 'team', 'team__semester')

@@ -53,6 +53,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return Criterion(
         (c['name'] ?? 'Criterion').toString(),
         ((c['max_score'] as num?) ?? 10).toDouble(),
+        id: int.tryParse(c['id']?.toString() ?? ''),
       );
     }).toList();
 
@@ -420,9 +421,8 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
     final criteriaScores = _criteria
         .map((c) => {
-              'name': c.name,
+              'criterion_id': c.id,
               'score': c.score,
-              'max_score': c.maxScore,
             })
         .toList();
 

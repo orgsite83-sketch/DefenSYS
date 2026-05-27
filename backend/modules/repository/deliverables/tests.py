@@ -12,9 +12,9 @@ from defense.scheduler.models import DefenseSchedule
 
 from defense.stages.models import DefenseStage, StageDeliverable
 
-from repository.deliverables.services import upsert_submission
+from repository.deliverables.services import endorse_team, remove_submission, upsert_submission
 
-from student_teams.models import StudentTeam, TeamMembership
+from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 
 
 
@@ -525,6 +525,8 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.team.refresh_from_db()
 
         self.assertEqual(self.team.ready_for_stage, 'Concept Proposal')
+        progress = TeamStageProgress.objects.get(team=self.team, defense_stage__label='Concept Proposal')
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
 
 
 
@@ -725,11 +727,31 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
 
         self.assertEqual(response.status_code, 200)
-
         self.assertEqual(response.data['stats']['submitted_deliverables'], 7)
-
         self.assertEqual(response.data['stats']['ready_capstone_teams'], 1)
-
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_removing_required_deliverable_locks_stage_progress(self):
+        required_pre = [
+            item for item in SUGGESTED_DELIVERABLE_TEMPLATES['Concept Proposal']
+            if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
+        ]
+        for definition in required_pre:
+            DeliverableSubmission.objects.create(
+                team=self.team,
+                stage_label='Concept Proposal',
+                deliverable_id=definition['id'],
+                label=definition['label'],
+                deliverable_type=definition['type'],
+                required=definition['required'],
+                file_name=f"{definition['id']}.pdf",
+                uploaded_by=self.admin,
+            )
+        endorse_team(self.team, 'Concept Proposal')
+
+        remove_submission(self.team, 'Concept Proposal', required_pre[0]['id'])
+
+        progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_LOCKED)
 
 

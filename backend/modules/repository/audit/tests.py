@@ -153,12 +153,29 @@ class RepositoryAuditApiTests(APITestCase):
         self.client.force_authenticate(user=self.pit_lead)
 
         response = self.client.get('/api/repository/audit/')
+        file_names = [entry['file_name'] for entry in response.data['entries']]
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['counts']['total'], 1)
         self.assertEqual(response.data['entries'][0]['type'], 'pit')
         self.assertEqual(response.data['entries'][0]['year_level'], '3rd Year')
+        self.assertIn(self.pit_entry.file_name, file_names)
+        self.assertNotIn('2ndYear.PIT201.CampusSocialNetwork.1stSemester.pdf', file_names)
+        self.assertNotIn('Team_Cipher_D1.pdf', file_names)
         self.assertEqual(response.data['scope']['scope'], 'pit_lead')
+
+    def test_pit_lead_all_records_and_capstone_filter_stay_in_assigned_pit_scope(self):
+        self.client.force_authenticate(user=self.pit_lead)
+
+        all_records = self.client.get('/api/repository/audit/', {'type': ''})
+        capstone_filter = self.client.get('/api/repository/audit/', {'type': 'capstone'})
+
+        self.assertEqual(all_records.status_code, 200)
+        self.assertEqual(capstone_filter.status_code, 200)
+        self.assertEqual(all_records.data['counts']['total'], 1)
+        self.assertEqual(capstone_filter.data['counts']['total'], 1)
+        self.assertEqual(capstone_filter.data['entries'][0]['type'], 'pit')
+        self.assertEqual(capstone_filter.data['entries'][0]['year_level'], '3rd Year')
 
     def _open_upload_window_for_pit_team(self, event_name='3rd Year Expo'):
         panel = Rubric.objects.create(
@@ -191,7 +208,7 @@ class RepositoryAuditApiTests(APITestCase):
             max_score=5,
             display_order=0,
         )
-        PitEventGradingConfig.objects.create(
+        config = PitEventGradingConfig.objects.create(
             semester=self.semester,
             event_name=event_name,
             panel_rubric=panel,
@@ -203,7 +220,8 @@ class RepositoryAuditApiTests(APITestCase):
             semester=self.semester,
             scope=TeamGrade.SCOPE_PIT,
             stage_label=event_name,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+            pit_event_config=config,
+            status=TeamGrade.STATUS_PENDING,
             final_grade=Decimal('88.00'),
             panel_score=Decimal('90.00'),
             peer_score=Decimal('80.00'),
@@ -266,7 +284,7 @@ class RepositoryAuditApiTests(APITestCase):
             semester=self.semester,
             scope=TeamGrade.SCOPE_PIT,
             stage_label=event_name,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+            status=TeamGrade.STATUS_PENDING,
             final_grade=Decimal('88.00'),
             panel_score=Decimal('90.00'),
             peer_score=Decimal('80.00'),
@@ -282,11 +300,23 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertTrue(response.data['upload_window']['open'])
         self.assertEqual(len(response.data['upload_window']['queue']), 1)
 
-    def test_pit_upload_marks_grade_published_after_vault(self):
+    def test_pit_upload_window_uses_event_grade_not_team_status(self):
+        self._open_upload_window_for_pit_team(event_name='3rd Year Expo')
+        self.pit_team.status = StudentTeam.STATUS_PENDING
+        self.pit_team.save(update_fields=['status', 'updated_at'])
+
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/audit/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data['upload_window']['open'])
+        self.assertEqual(response.data['upload_window']['queue'][0]['team_id'], self.pit_team.id)
+
+    def test_pit_upload_does_not_publish_grade_after_vault(self):
         self._open_upload_window_for_pit_team(event_name='3rd Year Expo')
         self.client.force_authenticate(user=self.pit_lead)
         grade = TeamGrade.objects.get(team=self.pit_team)
-        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
 
         pdf_bytes = b'%PDF-1.4 test'
         upload_file = SimpleUploadedFile(
@@ -301,8 +331,10 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['created_count'], 1)
+        entry = VaultEntry.objects.get(entry_type=VaultEntry.TYPE_PIT, team=self.pit_team)
+        self.assertEqual(entry.pit_event_config_id, grade.pit_event_config_id)
         grade.refresh_from_db()
-        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
 
     def test_upload_window_closed_for_other_year_only_event(self):
         panel = Rubric.objects.create(
@@ -472,6 +504,10 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(audit.status_code, 200)
         self.assertTrue(audit.data['scope']['can_upload_pit'])
         self.assertEqual(audit.data['scope']['pit_year_level'], '3rd Year')
+        self.assertEqual(audit.data['scope']['scope'], 'repo_assistant')
+        self.assertEqual(audit.data['counts']['total'], 1)
+        self.assertEqual(audit.data['entries'][0]['type'], 'pit')
+        self.assertEqual(audit.data['entries'][0]['year_level'], '3rd Year')
 
         upload = self.client.post(
             '/api/repository/audit/upload-pit/',
@@ -537,7 +573,8 @@ class RepositoryAuditApiTests(APITestCase):
             semester=self.semester,
             scope=TeamGrade.SCOPE_CAPSTONE,
             stage_label=stage_label,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+            defense_stage=stage,
+            status=TeamGrade.STATUS_PENDING,
             final_grade=Decimal('97.16'),
             panel_score=Decimal('100.00'),
             adviser_score=Decimal('100.00'),
@@ -554,7 +591,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertFalse(response.data['capstone_upload_window']['open'])
         self.assertFalse(response.data['scope']['can_upload_capstone'])
 
-    def test_capstone_upload_window_open_with_ready_grade(self):
+    def test_capstone_upload_window_open_with_passed_grade(self):
         self._open_capstone_upload_window()
         self.client.force_authenticate(user=self.admin)
         response = self.client.get('/api/repository/audit/')
@@ -567,7 +604,7 @@ class RepositoryAuditApiTests(APITestCase):
             response.data['capstone_upload_window']['queue'][0]['suggested_file_name'],
         )
 
-    def test_capstone_upload_creates_vault_entry_and_publishes_grade(self):
+    def test_capstone_upload_creates_vault_entry_without_publishing_grade(self):
         self._open_capstone_upload_window()
         self.client.force_authenticate(user=self.admin)
         file_name = '3rdYear.CAP301.SecureVaultSearch.1stSemester.pdf'
@@ -583,8 +620,9 @@ class RepositoryAuditApiTests(APITestCase):
             file_name=file_name,
         )
         self.assertEqual(entry.team_id, self.capstone_team.id)
+        self.assertIsNotNone(entry.defense_stage_id)
         grade = TeamGrade.objects.get(team=self.capstone_team, scope=TeamGrade.SCOPE_CAPSTONE)
-        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
 
     def test_submission_kind_pre_excludes_vault_and_archive(self):
         self.client.force_authenticate(user=self.admin)

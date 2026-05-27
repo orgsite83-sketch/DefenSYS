@@ -56,15 +56,16 @@ class _DefenseSchedulerScreenState
     WidgetsBinding.instance.addPostFrameCallback((_) {
       // Check if user is PIT Lead and set scope accordingly
       final dashState = ref.read(dashboardProvider('faculty'));
-      final roles = (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
-      
+      final roles =
+          (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+
       if (roles['pit_lead'] == true && roles['adviser'] != true) {
         // PIT Lead only (not also an adviser) - default to PIT scope
         setState(() {
           _scope = 'pit';
         });
       }
-      
+
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
     });
   }
@@ -109,7 +110,9 @@ class _DefenseSchedulerScreenState
                 ),
               ],
               const SizedBox(height: 12),
-              if (state.isLoading && state.schedules.isEmpty && state.teams.isEmpty) ...[
+              if (state.isLoading &&
+                  state.schedules.isEmpty &&
+                  state.teams.isEmpty) ...[
                 DefensysSkeleton.list(count: 4, rowHeight: 64),
               ] else ...[
                 if (currentStep == 1) _buildStepOne(state),
@@ -175,7 +178,9 @@ class _DefenseSchedulerScreenState
             SizedBox(
               height: 42,
               child: OutlinedButton.icon(
-                onPressed: state.isSaving ? null : () => _showManualDialog(state),
+                onPressed: state.isSaving
+                    ? null
+                    : () => _showManualDialog(state),
                 icon: const Icon(Icons.open_in_new_rounded, size: 18),
                 label: const Text('Manual Schedule Form'),
                 style: OutlinedButton.styleFrom(
@@ -480,7 +485,11 @@ class _DefenseSchedulerScreenState
                 _labeledField(
                   'Panel rubric *',
                   DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(state, _rubricId, 'panel'),
+                    initialValue: _validCapstoneRubricId(
+                      state,
+                      _rubricId,
+                      'panel',
+                    ),
                     decoration: _schedulerInputDecoration(),
                     items: [
                       const DropdownMenuItem<int?>(
@@ -501,7 +510,11 @@ class _DefenseSchedulerScreenState
                 _labeledField(
                   'Adviser rubric *',
                   DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(state, _adviserRubricId, 'adviser'),
+                    initialValue: _validCapstoneRubricId(
+                      state,
+                      _adviserRubricId,
+                      'adviser',
+                    ),
                     decoration: _schedulerInputDecoration(),
                     items: [
                       const DropdownMenuItem<int?>(
@@ -515,14 +528,19 @@ class _DefenseSchedulerScreenState
                         ),
                       ),
                     ],
-                    onChanged: (value) => setState(() => _adviserRubricId = value),
+                    onChanged: (value) =>
+                        setState(() => _adviserRubricId = value),
                   ),
                 ),
                 const SizedBox(height: 14),
                 _labeledField(
                   'Peer rubric *',
                   DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(state, _capstonePeerRubricId, 'peer'),
+                    initialValue: _validCapstoneRubricId(
+                      state,
+                      _capstonePeerRubricId,
+                      'peer',
+                    ),
                     decoration: _schedulerInputDecoration(),
                     items: [
                       const DropdownMenuItem<int?>(
@@ -536,11 +554,11 @@ class _DefenseSchedulerScreenState
                         ),
                       ),
                     ],
-                    onChanged: (value) => setState(() => _capstonePeerRubricId = value),
+                    onChanged: (value) =>
+                        setState(() => _capstonePeerRubricId = value),
                   ),
                 ),
-              ]
-              else ...[
+              ] else ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -1694,11 +1712,17 @@ class _DefenseSchedulerScreenState
         _showSnack('Select a panel rubric.');
         return null;
       }
-      if (_validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') == null) {
+      if (_validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') ==
+          null) {
         _showSnack('Select an adviser rubric.');
         return null;
       }
-      if (_validCapstoneRubricId(schedulerState, _capstonePeerRubricId, 'peer') == null) {
+      if (_validCapstoneRubricId(
+            schedulerState,
+            _capstonePeerRubricId,
+            'peer',
+          ) ==
+          null) {
         _showSnack('Select a peer rubric.');
         return null;
       }
@@ -1746,7 +1770,9 @@ class _DefenseSchedulerScreenState
       'panelist_ids': _selectedPanelistIds.toList(),
     };
     if (_scope == 'pit') {
-      payload['peer_rubric_id'] = _validPeerRubricId(ref.read(defenseSchedulerProvider));
+      payload['peer_rubric_id'] = _validPeerRubricId(
+        ref.read(defenseSchedulerProvider),
+      );
       payload['panel_weight'] =
           int.tryParse(_panelWeightController.text.trim()) ?? 80;
       payload['peer_weight'] =
@@ -1791,8 +1817,12 @@ class _DefenseSchedulerScreenState
     int? stageId = _stageId;
     int? teamId;
     int? rubricId = _rubricId;
+    int? adviserRubricId = _adviserRubricId;
+    int? capstonePeerRubricId = _capstonePeerRubricId;
     int? peerRubricId = _peerRubricId;
-    final panelWeight = TextEditingController(text: _panelWeightController.text);
+    final panelWeight = TextEditingController(
+      text: _panelWeightController.text,
+    );
     final peerWeight = TextEditingController(text: _peerWeightController.text);
 
     final event = TextEditingController(text: _eventController.text);
@@ -1808,12 +1838,44 @@ class _DefenseSchedulerScreenState
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final teams = _teamsForScope(state, scope);
-            final rubrics = _rubricsForScopeAndStage(state, scope, stageId);
+            final contextRubrics = _rubricsForScopeAndStage(
+              state,
+              scope,
+              stageId,
+            );
+            final panelRubrics = contextRubrics
+                .where(
+                  (rubric) => rubric['evaluation_type']?.toString() == 'panel',
+                )
+                .toList();
+            final adviserRubrics = contextRubrics
+                .where(
+                  (rubric) =>
+                      rubric['evaluation_type']?.toString() == 'adviser',
+                )
+                .toList();
+            final capstonePeerRubrics = contextRubrics
+                .where(
+                  (rubric) => rubric['evaluation_type']?.toString() == 'peer',
+                )
+                .toList();
 
             final peerRubrics = _peerRubricsForContext(state);
             final validRubric =
-                rubrics.any((item) => _asInt(item['id']) == rubricId)
+                panelRubrics.any((item) => _asInt(item['id']) == rubricId)
                 ? rubricId
+                : null;
+            final validAdviserRubric =
+                adviserRubrics.any(
+                  (item) => _asInt(item['id']) == adviserRubricId,
+                )
+                ? adviserRubricId
+                : null;
+            final validCapstonePeerRubric =
+                capstonePeerRubrics.any(
+                  (item) => _asInt(item['id']) == capstonePeerRubricId,
+                )
+                ? capstonePeerRubricId
                 : null;
             final validPeerRubric =
                 peerRubrics.any((item) => _asInt(item['id']) == peerRubricId)
@@ -1856,6 +1918,9 @@ class _DefenseSchedulerScreenState
                                   stageId = null;
                                   teamId = null;
                                   rubricId = null;
+                                  adviserRubricId = null;
+                                  capstonePeerRubricId = null;
+                                  peerRubricId = null;
                                 });
                               },
                             ),
@@ -1905,6 +1970,8 @@ class _DefenseSchedulerScreenState
                             setDialogState(() {
                               stageId = value;
                               rubricId = null;
+                              adviserRubricId = null;
+                              capstonePeerRubricId = null;
                             });
                           },
                         )
@@ -1924,9 +1991,9 @@ class _DefenseSchedulerScreenState
                         items: [
                           const DropdownMenuItem<int?>(
                             value: null,
-                            child: Text('No rubric'),
+                            child: Text('Select panel rubric'),
                           ),
-                          ...rubrics.map(
+                          ...panelRubrics.map(
                             (rubric) => DropdownMenuItem<int?>(
                               value: _asInt(rubric['id']),
                               child: Text(rubric['name']?.toString() ?? ''),
@@ -1939,6 +2006,56 @@ class _DefenseSchedulerScreenState
                           });
                         },
                       ),
+                      if (scope == 'capstone') ...[
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int?>(
+                          initialValue: validAdviserRubric,
+                          decoration: const InputDecoration(
+                            labelText: 'Adviser Rubric',
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Select adviser rubric'),
+                            ),
+                            ...adviserRubrics.map(
+                              (rubric) => DropdownMenuItem<int?>(
+                                value: _asInt(rubric['id']),
+                                child: Text(rubric['name']?.toString() ?? ''),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              adviserRubricId = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int?>(
+                          initialValue: validCapstonePeerRubric,
+                          decoration: const InputDecoration(
+                            labelText: 'Peer Rubric',
+                          ),
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('Select peer rubric'),
+                            ),
+                            ...capstonePeerRubrics.map(
+                              (rubric) => DropdownMenuItem<int?>(
+                                value: _asInt(rubric['id']),
+                                child: Text(rubric['name']?.toString() ?? ''),
+                              ),
+                            ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              capstonePeerRubricId = value;
+                            });
+                          },
+                        ),
+                      ],
                       if (scope == 'pit') ...[
                         const SizedBox(height: 12),
                         DropdownButtonFormField<int?>(
@@ -2090,6 +2207,14 @@ class _DefenseSchedulerScreenState
       },
     );
 
+    final eventText = event.text.trim();
+    final panelWeightText = panelWeight.text.trim();
+    final peerWeightText = peerWeight.text.trim();
+    final dateText = date.text.trim();
+    final timeText = time.text.trim();
+    final durationText = duration.text.trim();
+    final roomText = room.text.trim();
+
     event.dispose();
     panelWeight.dispose();
     peerWeight.dispose();
@@ -2107,53 +2232,126 @@ class _DefenseSchedulerScreenState
       return;
     }
 
+    if (scope == 'capstone') {
+      if (stageId == null) {
+        _showSnack('Select a defense stage.');
+        return;
+      }
+      if (rubricId == null) {
+        _showSnack('Select a panel rubric.');
+        return;
+      }
+      if (adviserRubricId == null) {
+        _showSnack('Select an adviser rubric.');
+        return;
+      }
+      if (capstonePeerRubricId == null) {
+        _showSnack('Select a peer rubric.');
+        return;
+      }
+
+      final semesterId = _asInt(
+        ref.read(defenseSchedulerProvider).activeSemester?['id'],
+      );
+      if (semesterId == null) {
+        _showSnack('No active semester for rubric assignment.');
+        return;
+      }
+      final synced = await ref
+          .read(defenseStagesProvider.notifier)
+          .updateGradingConfig(stageId!, semesterId, {
+            'panel_rubric_id': rubricId,
+            'adviser_rubric_id': adviserRubricId,
+            'peer_rubric_id': capstonePeerRubricId,
+          });
+      if (!mounted || !synced) {
+        return;
+      }
+      setState(() {
+        _scope = scope;
+        _stageId = stageId;
+        _rubricId = rubricId;
+        _adviserRubricId = adviserRubricId;
+        _capstonePeerRubricId = capstonePeerRubricId;
+      });
+    } else {
+      if (eventText.isEmpty) {
+        _showSnack('Enter a PIT event name.');
+        return;
+      }
+      if (rubricId == null) {
+        _showSnack('Select a panel rubric.');
+        return;
+      }
+      if (peerRubricId == null) {
+        _showSnack('Select a peer rubric.');
+        return;
+      }
+      final manualPanelWeight = int.tryParse(panelWeightText) ?? 0;
+      final manualPeerWeight = int.tryParse(peerWeightText) ?? 0;
+      if (manualPanelWeight + manualPeerWeight != 100) {
+        _showSnack('Panel and peer weights must total 100%.');
+        return;
+      }
+      setState(() {
+        _scope = scope;
+        _eventController.text = eventText;
+        _rubricId = rubricId;
+        _peerRubricId = peerRubricId;
+        _panelWeightController.text = manualPanelWeight.toString();
+        _peerWeightController.text = manualPeerWeight.toString();
+      });
+    }
+
     final schedulePayload = {
       'scope': scope,
       'team_id': teamId,
       'defense_stage_id': scope == 'capstone' ? stageId : null,
-      'event_name': scope == 'pit' ? event.text.trim() : '',
+      'event_name': scope == 'pit' ? eventText : '',
       'rubric_id': rubricId,
-      'scheduled_date': date.text.trim(),
-      'start_time': time.text.trim(),
-      'slot_duration': int.tryParse(duration.text.trim()) ?? 60,
-      'room': room.text.trim(),
+      'scheduled_date': dateText,
+      'start_time': timeText,
+      'slot_duration': int.tryParse(durationText) ?? 60,
+      'room': roomText,
       'panelist_ids': panelIds.toList(),
     };
     if (scope == 'pit') {
       schedulePayload['peer_rubric_id'] = peerRubricId;
-      schedulePayload['panel_weight'] =
-          int.tryParse(panelWeight.text.trim()) ?? 80;
-      schedulePayload['peer_weight'] =
-          int.tryParse(peerWeight.text.trim()) ?? 20;
+      schedulePayload['panel_weight'] = int.tryParse(panelWeightText) ?? 80;
+      schedulePayload['peer_weight'] = int.tryParse(peerWeightText) ?? 20;
     }
-    await ref.read(defenseSchedulerProvider.notifier).createSchedule(schedulePayload);
+    await ref
+        .read(defenseSchedulerProvider.notifier)
+        .createSchedule(schedulePayload);
   }
 
   Future<bool> _syncCapstoneStageRubrics() async {
     if (_scope != 'capstone' || _stageId == null) {
       return true;
     }
-    final semesterId = _asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']);
+    final semesterId = _asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
     if (semesterId == null) {
       _showSnack('No active semester for rubric assignment.');
       return false;
     }
-    return ref.read(defenseStagesProvider.notifier).updateGradingConfig(
-          _stageId!,
-          semesterId,
-          {
-            'panel_rubric_id': _rubricId,
-            'adviser_rubric_id': _adviserRubricId,
-            'peer_rubric_id': _capstonePeerRubricId,
-          },
-        );
+    return ref
+        .read(defenseStagesProvider.notifier)
+        .updateGradingConfig(_stageId!, semesterId, {
+          'panel_rubric_id': _rubricId,
+          'adviser_rubric_id': _adviserRubricId,
+          'peer_rubric_id': _capstonePeerRubricId,
+        });
   }
 
   Future<void> _prefillCapstoneStageRubrics() async {
     if (_scope != 'capstone' || _stageId == null) {
       return;
     }
-    final semesterId = _asInt(ref.read(defenseSchedulerProvider).activeSemester?['id']);
+    final semesterId = _asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
     if (semesterId == null) {
       return;
     }
@@ -2169,8 +2367,10 @@ class _DefenseSchedulerScreenState
     }
     setState(() {
       _rubricId = _asInt(grading['panel_rubric_id']) ?? _rubricId;
-      _adviserRubricId = _asInt(grading['adviser_rubric_id']) ?? _adviserRubricId;
-      _capstonePeerRubricId = _asInt(grading['peer_rubric_id']) ?? _capstonePeerRubricId;
+      _adviserRubricId =
+          _asInt(grading['adviser_rubric_id']) ?? _adviserRubricId;
+      _capstonePeerRubricId =
+          _asInt(grading['peer_rubric_id']) ?? _capstonePeerRubricId;
     });
   }
 
@@ -2179,7 +2379,9 @@ class _DefenseSchedulerScreenState
     String evaluationType,
   ) {
     return _rubricsForScopeAndStage(state, 'capstone', _stageId)
-        .where((rubric) => rubric['evaluation_type']?.toString() == evaluationType)
+        .where(
+          (rubric) => rubric['evaluation_type']?.toString() == evaluationType,
+        )
         .toList();
   }
 
@@ -2189,7 +2391,9 @@ class _DefenseSchedulerScreenState
     String evaluationType,
   ) {
     final rubrics = _capstoneRubricsForEval(state, evaluationType);
-    return rubrics.any((rubric) => _asInt(rubric['id']) == rubricId) ? rubricId : null;
+    return rubrics.any((rubric) => _asInt(rubric['id']) == rubricId)
+        ? rubricId
+        : null;
   }
 
   List<Map<String, dynamic>> _rubricsForContext(DefenseSchedulerState state) {
@@ -2231,8 +2435,12 @@ class _DefenseSchedulerScreenState
         : null;
   }
 
-  List<Map<String, dynamic>> _peerRubricsForContext(DefenseSchedulerState state) {
-    return state.peerRubrics.where((rubric) => rubric['scope'] == 'pit').toList();
+  List<Map<String, dynamic>> _peerRubricsForContext(
+    DefenseSchedulerState state,
+  ) {
+    return state.peerRubrics
+        .where((rubric) => rubric['scope'] == 'pit')
+        .toList();
   }
 
   int? _validPeerRubricId(DefenseSchedulerState state) {
@@ -2326,16 +2534,15 @@ class _DefenseSchedulerScreenState
     VoidCallback? onSelected,
     InputDecoration? decoration,
   }) {
-    Future<void> pick() => _pickScheduleDate(
-      controller: controller,
-      onSelected: onSelected,
-    );
+    Future<void> pick() =>
+        _pickScheduleDate(controller: controller, onSelected: onSelected);
 
     return TextField(
       controller: controller,
       readOnly: true,
       onTap: pick,
-      decoration: decoration ??
+      decoration:
+          decoration ??
           _schedulerInputDecoration(
             suffixIcon: IconButton(
               icon: const Icon(Icons.calendar_today_outlined, size: 18),
@@ -2351,16 +2558,15 @@ class _DefenseSchedulerScreenState
     VoidCallback? onSelected,
     InputDecoration? decoration,
   }) {
-    Future<void> pick() => _pickScheduleTime(
-      controller: controller,
-      onSelected: onSelected,
-    );
+    Future<void> pick() =>
+        _pickScheduleTime(controller: controller, onSelected: onSelected);
 
     return TextField(
       controller: controller,
       readOnly: true,
       onTap: pick,
-      decoration: decoration ??
+      decoration:
+          decoration ??
           _schedulerInputDecoration(
             suffixIcon: IconButton(
               icon: const Icon(Icons.access_time_outlined, size: 18),
@@ -2436,7 +2642,7 @@ class _DefenseSchedulerScreenState
     final activeSchedules = state.schedules
         .where((s) => s['status'] == 'scheduled')
         .toList();
-    
+
     if (activeSchedules.isEmpty) {
       return const SizedBox.shrink();
     }
@@ -2473,10 +2679,17 @@ class _DefenseSchedulerScreenState
             itemBuilder: (context, index) {
               final schedule = activeSchedules[index];
               return ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 leading: CircleAvatar(
                   backgroundColor: AppColors.maroon.withValues(alpha: 0.1),
-                  child: const Icon(Icons.event, color: AppColors.maroon, size: 20),
+                  child: const Icon(
+                    Icons.event,
+                    color: AppColors.maroon,
+                    size: 20,
+                  ),
                 ),
                 title: Text(
                   schedule['team_name'] ?? 'Unknown Team',
@@ -2490,12 +2703,18 @@ class _DefenseSchedulerScreenState
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.cancel_outlined, color: Colors.orange),
+                      icon: const Icon(
+                        Icons.cancel_outlined,
+                        color: Colors.orange,
+                      ),
                       tooltip: 'Cancel Schedule',
                       onPressed: () => _cancelSchedule(schedule['id']),
                     ),
                     IconButton(
-                      icon: const Icon(Icons.check_circle_outline, color: Colors.green),
+                      icon: const Icon(
+                        Icons.check_circle_outline,
+                        color: Colors.green,
+                      ),
                       tooltip: 'Mark as Done',
                       onPressed: () => _markScheduleAsDone(schedule['id']),
                     ),
@@ -2514,7 +2733,9 @@ class _DefenseSchedulerScreenState
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Cancel Schedule?'),
-        content: const Text('This will cancel the defense schedule. Panelists will no longer see it.'),
+        content: const Text(
+          'This will cancel the defense schedule. Panelists will no longer see it.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
@@ -2530,7 +2751,9 @@ class _DefenseSchedulerScreenState
     );
 
     if (confirmed == true) {
-      await ref.read(defenseSchedulerProvider.notifier).updateStatus(scheduleId, 'cancelled');
+      await ref
+          .read(defenseSchedulerProvider.notifier)
+          .updateStatus(scheduleId, 'cancelled');
     }
   }
 
@@ -2555,7 +2778,9 @@ class _DefenseSchedulerScreenState
     );
 
     if (confirmed == true) {
-      await ref.read(defenseSchedulerProvider.notifier).updateStatus(scheduleId, 'done');
+      await ref
+          .read(defenseSchedulerProvider.notifier)
+          .updateStatus(scheduleId, 'done');
     }
   }
 
@@ -2564,7 +2789,7 @@ class _DefenseSchedulerScreenState
     if (_planSlots.isNotEmpty) {
       return _planSlots.length;
     }
-    
+
     // Otherwise, count teams endorsed for the selected stage
     if (_scope == 'capstone' && _stageId != null) {
       final selectedStage = state.defenseStages.firstWhere(
@@ -2572,7 +2797,7 @@ class _DefenseSchedulerScreenState
         orElse: () => <String, dynamic>{},
       );
       final stageLabel = selectedStage['label']?.toString() ?? '';
-      
+
       if (stageLabel.isNotEmpty) {
         return state.teams.where((team) {
           final readyForStage = team['ready_for_stage']?.toString() ?? '';

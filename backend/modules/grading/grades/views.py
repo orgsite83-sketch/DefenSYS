@@ -9,6 +9,9 @@ from rest_framework.views import APIView
 from academic_period_management.serializers import SemesterSerializer
 from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
+from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.models import SystemAuditLog
+from authentication_access_control.scopes import grade_records_for
 from user_management.permissions import IsSystemAdmin
 from .models import TeamGrade
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
@@ -17,11 +20,9 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from .services import (
     active_semester,
     build_group_settings_map,
-    grade_queryset_for_user,
     group_settings_key,
     publish_grade_record,
     require_grade_editable,
-    repair_pending_passed_grades_in_queryset,
     sync_missing_grade_rows,
     IncompleteGradingTeamsError,
     update_group_settings,
@@ -119,22 +120,8 @@ def options_payload(queryset):
     }
 
 
-def refresh_peer_summaries_in_queryset(queryset):
-    """Rebuild peer aggregates for grades that already have submissions."""
-    from .peer_eval import sync_peer_summaries
-    from .services import resolve_canonical_capstone_grade
-
-    grades_with_submissions = queryset.filter(
-        peer_evaluation_submissions__isnull=False,
-    ).distinct()
-    for grade in grades_with_submissions:
-        if grade.scope == TeamGrade.SCOPE_CAPSTONE:
-            grade = resolve_canonical_capstone_grade(grade)
-        sync_peer_summaries(grade)
-
-
 def grade_center_payload(request, queryset=None, sync_info=None):
-    base = grade_queryset_for_user(request.user)
+    base = grade_records_for(request.user)
     current = queryset if queryset is not None else base
     semester = active_semester()
     payload = {
@@ -158,15 +145,21 @@ def grade_center_payload(request, queryset=None, sync_info=None):
     return payload
 
 
+def grade_audit_values(grade):
+    return {
+        'panel_score': str(grade.panel_score) if grade.panel_score is not None else None,
+        'adviser_score': str(grade.adviser_score) if grade.adviser_score is not None else None,
+        'peer_score': str(grade.peer_score) if grade.peer_score is not None else None,
+        'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
+        'status': grade.status,
+    }
+
+
 class GradeCenterListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        sync_missing_grade_rows(user=request.user)
-        queryset = filter_grade_queryset(request, grade_queryset_for_user(request.user))
-        refresh_peer_summaries_in_queryset(queryset)
-        repair_pending_passed_grades_in_queryset(queryset, user=request.user)
-        queryset = filter_grade_queryset(request, grade_queryset_for_user(request.user))
+        queryset = filter_grade_queryset(request, grade_records_for(request.user))
         return Response(grade_center_payload(request, queryset))
 
 
@@ -175,7 +168,7 @@ class GradeCenterSyncView(APIView):
 
     def post(self, request):
         sync_info = sync_missing_grade_rows(user=request.user)
-        queryset = filter_grade_queryset(request, grade_queryset_for_user(request.user))
+        queryset = filter_grade_queryset(request, grade_records_for(request.user))
         return Response(grade_center_payload(request, queryset, sync_info=sync_info))
 
 
@@ -183,23 +176,15 @@ class GradeCenterDetailView(APIView):
     permission_classes = [CanManageGradeCenter]
 
     def get_object(self, request, grade_id):
-        return get_object_or_404(grade_queryset_for_user(request.user), pk=grade_id)
+        return get_object_or_404(grade_records_for(request.user), pk=grade_id)
 
     def get(self, request, grade_id):
-        sync_missing_grade_rows(user=request.user)
         grade = self.get_object(request, grade_id)
-        if grade.peer_evaluation_submissions.exists():
-            from .peer_eval import sync_peer_summaries
-            from .services import resolve_canonical_capstone_grade
-
-            if grade.scope == TeamGrade.SCOPE_CAPSTONE:
-                grade = resolve_canonical_capstone_grade(grade)
-            sync_peer_summaries(grade)
-            grade = grade_queryset_for_user(request.user).get(pk=grade.pk)
         return Response({'grade': TeamGradeSerializer(grade).data})
 
     def patch(self, request, grade_id):
         grade = self.get_object(request, grade_id)
+        old_values = grade_audit_values(grade)
         try:
             require_grade_editable(grade)
         except DjangoValidationError as exc:
@@ -210,7 +195,17 @@ class GradeCenterDetailView(APIView):
         serializer = TeamGradeUpdateSerializer(data=request.data, context={'grade': grade})
         serializer.is_valid(raise_exception=True)
         grade = serializer.save()
-        grade = grade_queryset_for_user(request.user).get(pk=grade.pk)
+        new_values = grade_audit_values(grade)
+        if old_values != new_values:
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+                action='grade.manual_edit',
+                target=grade,
+                old_values=old_values,
+                new_values=new_values,
+                request=request,
+            )
+        grade = grade_records_for(request.user).get(pk=grade.pk)
         return Response({
             'grade': TeamGradeSerializer(grade).data,
             **grade_center_payload(request),
@@ -221,7 +216,8 @@ class GradeCenterPublishView(APIView):
     permission_classes = [CanManageGradeCenter]
 
     def post(self, request, grade_id):
-        grade = get_object_or_404(grade_queryset_for_user(request.user), pk=grade_id)
+        grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
+        old_values = grade_audit_values(grade)
         try:
             require_grade_editable(grade)
         except DjangoValidationError as exc:
@@ -230,7 +226,15 @@ class GradeCenterPublishView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         grade = publish_grade_record(grade, user=request.user)
-        grade = grade_queryset_for_user(request.user).get(pk=grade.pk)
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='grade.publish',
+            target=grade,
+            old_values=old_values,
+            new_values=grade_audit_values(grade),
+            request=request,
+        )
+        grade = grade_records_for(request.user).get(pk=grade.pk)
         return Response({
             'grade': TeamGradeSerializer(grade).data,
             **grade_center_payload(request),
@@ -280,13 +284,17 @@ class CapstoneEvaluationSettingsView(APIView):
 
 class GradeCenterGroupSettingsSerializer(drf_serializers.Serializer):
     scope = drf_serializers.ChoiceField(choices=[TeamGrade.SCOPE_CAPSTONE, TeamGrade.SCOPE_PIT])
-    stage_label = drf_serializers.CharField(max_length=120)
+    stage_label = drf_serializers.CharField(max_length=120, required=False, allow_blank=True)
+    defense_stage_id = drf_serializers.IntegerField(required=False, allow_null=True)
+    pit_event_config_id = drf_serializers.IntegerField(required=False, allow_null=True)
     is_officially_complete = drf_serializers.BooleanField(required=False)
     peer_grading_enabled = drf_serializers.BooleanField(required=False)
 
     def validate(self, attrs):
         if 'is_officially_complete' not in attrs and 'peer_grading_enabled' not in attrs:
             raise drf_serializers.ValidationError('At least one setting field is required.')
+        if not (attrs.get('stage_label') or attrs.get('defense_stage_id') or attrs.get('pit_event_config_id')):
+            raise drf_serializers.ValidationError('stage_label, defense_stage_id, or pit_event_config_id is required.')
         return attrs
 
 
@@ -303,11 +311,26 @@ class GradeCenterGroupSettingsView(APIView):
         serializer = GradeCenterGroupSettingsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
+        stage_label = data.get('stage_label', '')
+        if data['scope'] == TeamGrade.SCOPE_CAPSTONE and data.get('defense_stage_id'):
+            from defense.stages.models import DefenseStage
+
+            stage = get_object_or_404(DefenseStage, pk=data['defense_stage_id'])
+            stage_label = stage.label
+        elif data['scope'] == TeamGrade.SCOPE_PIT and data.get('pit_event_config_id'):
+            from defense.scheduler.models import PitEventGradingConfig
+
+            config = get_object_or_404(
+                PitEventGradingConfig,
+                pk=data['pit_event_config_id'],
+                semester=semester,
+            )
+            stage_label = config.event_name
         try:
             settings = update_group_settings(
                 semester=semester,
                 scope=data['scope'],
-                stage_label=data['stage_label'],
+                stage_label=stage_label,
                 is_officially_complete=data.get('is_officially_complete'),
                 peer_grading_enabled=data.get('peer_grading_enabled'),
                 user=request.user,
@@ -328,7 +351,7 @@ class GradeCenterGroupSettingsView(APIView):
             payload = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)
 
-        key = group_settings_key(data['scope'], data['stage_label'])
+        key = group_settings_key(data['scope'], stage_label)
         response_payload = {'group_settings': {key: settings}}
         auto_publish = settings.get('auto_publish')
         if auto_publish:

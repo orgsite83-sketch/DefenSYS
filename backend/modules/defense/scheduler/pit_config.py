@@ -76,6 +76,7 @@ def pit_event_config_payload(config):
     if config is None:
         return None
     return {
+        'id': config.id,
         'event_name': config.event_name,
         'panel_rubric_id': config.panel_rubric_id,
         'peer_rubric_id': config.peer_rubric_id,

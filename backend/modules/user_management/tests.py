@@ -5,6 +5,7 @@ from rest_framework.test import APITestCase
 from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
+from grading.rubrics.models import Rubric, RubricCriterion
 from user_management.academic_records.models import StudentAcademicRecord
 from student_teams.models import StudentTeam, TeamAdviserAssignment
 from .models import FacultyRoleAssignment, GuestPanelistCode
@@ -42,6 +43,20 @@ class UserManagementApiTests(APITestCase):
             is_active=True,
         )
         stage = DefenseStage.objects.create(label='Guest Code Proposal', display_order=99)
+        rubric = Rubric.objects.create(
+            name='Guest Panel Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            evaluation_type=Rubric.EVAL_PANEL,
+            semester=semester,
+            defense_stage=stage,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        criterion = RubricCriterion.objects.create(
+            rubric=rubric,
+            name='Technical',
+            max_score=10,
+            display_order=1,
+        )
         team = StudentTeam.objects.create(
             name='Team GuestSync',
             project_title='Guest Access Flow',
@@ -52,7 +67,7 @@ class UserManagementApiTests(APITestCase):
             adviser=adviser,
             ready_for_stage=stage.label,
         )
-        return DefenseSchedule.objects.create(
+        schedule = DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_CAPSTONE,
             semester=semester,
             team=team,
@@ -61,8 +76,11 @@ class UserManagementApiTests(APITestCase):
             start_time=time(9, 0),
             slot_duration=60,
             room='Room 401',
+            rubric=rubric,
             created_by=self.admin,
         )
+        schedule.test_criterion_id = criterion.id
+        return schedule
 
     def test_admin_can_list_users_with_counts(self):
         User.objects.create_user(username='student-1', password='pass12345', role='student')
@@ -545,7 +563,7 @@ class UserManagementApiTests(APITestCase):
                 'team_id': schedule.team_id,
                 'schedule_id': schedule.id,
                 'criteria_scores': [
-                    {'name': 'Technical', 'score': 8, 'max_score': 10},
+                    {'criterion_id': schedule.test_criterion_id, 'score': 8},
                 ],
             },
             format='json',
@@ -559,7 +577,7 @@ class UserManagementApiTests(APITestCase):
                 'team_id': schedule.team_id + 9999,
                 'schedule_id': schedule.id,
                 'criteria_scores': [
-                    {'name': 'Technical', 'score': 8, 'max_score': 10},
+                    {'criterion_id': schedule.test_criterion_id, 'score': 8},
                 ],
             },
             format='json',

@@ -2,22 +2,38 @@ import uuid
 from datetime import datetime, timedelta
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
 from django.db import transaction
 from rest_framework import serializers
 
 from academic_period_management.models import Semester
+from defense.stages.grading_config import get_or_create_stage_grading_config
 from academic_period_management.serializers import SemesterSerializer
 from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
 from grading.rubrics.models import Rubric
 from grading.rubrics.serializers import RubricSerializer
 from student_teams.models import StudentTeam
+from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_scheduled
 from .models import DefenseSchedule, SchedulePanelist
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
 
 
 User = get_user_model()
 ACTIVE_STATUSES = [DefenseSchedule.STATUS_SCHEDULED]
+
+
+def time_to_minutes(value):
+    return value.hour * 60 + value.minute
+
+
+def schedule_interval(start_time, slot_duration):
+    start_minutes = time_to_minutes(start_time)
+    return start_minutes, start_minutes + slot_duration
+
+
+def intervals_overlap(start_minutes, end_minutes, other_start_minutes, other_end_minutes):
+    return start_minutes < other_end_minutes and other_start_minutes < end_minutes
 
 
 def display_name(user):
@@ -109,6 +125,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     team_level = serializers.CharField(source='team.level', read_only=True)
     defense_stage_id = serializers.IntegerField(source='defense_stage.id', read_only=True, allow_null=True)
     defense_stage_label = serializers.CharField(source='defense_stage.label', read_only=True, allow_null=True)
+    pit_event_config_id = serializers.SerializerMethodField()
     stage_label = serializers.CharField(read_only=True)
     rubric_id = serializers.IntegerField(source='rubric.id', read_only=True, allow_null=True)
     rubric_name = serializers.CharField(source='rubric.name', read_only=True, allow_null=True)
@@ -130,6 +147,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'team_level',
             'defense_stage_id',
             'defense_stage_label',
+            'pit_event_config_id',
             'event_name',
             'stage_label',
             'rubric_id',
@@ -148,6 +166,12 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_panelist_ids(self, obj):
         return [assignment.panelist_id for assignment in obj.panel_assignments.all()]
+
+    def get_pit_event_config_id(self, obj):
+        if obj.scope != DefenseSchedule.SCOPE_PIT:
+            return None
+        config = get_pit_event_config(obj.semester, obj.event_name)
+        return config.id if config else None
 
     def get_created_by_name(self, obj):
         return display_name(obj.created_by)
@@ -185,6 +209,38 @@ class ScheduleBaseSerializer(serializers.Serializer):
         attrs['rubric'] = self._resolve_rubric(attrs)
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
             attrs = self._validate_pit_event_setup(attrs)
+        else:
+            attrs = self._validate_capstone_stage_setup(attrs)
+        return attrs
+
+    def _validate_capstone_stage_setup(self, attrs):
+        if not attrs.get('rubric'):
+            raise serializers.ValidationError({'rubric_id': 'Capstone schedules require a panel rubric.'})
+
+        config = get_or_create_stage_grading_config(attrs['defense_stage'], attrs['semester'])
+        if config is None:
+            raise serializers.ValidationError({'defense_stage_id': 'Stage grading configuration is required.'})
+
+        missing = []
+        if not config.panel_rubric_id:
+            missing.append('panel')
+        if not config.adviser_rubric_id:
+            missing.append('adviser')
+        if not config.peer_rubric_id:
+            missing.append('peer')
+        if missing:
+            raise serializers.ValidationError({
+                'rubric_id': (
+                    'Assign published panel, adviser, and peer rubrics for this '
+                    f'stage before scheduling. Missing: {", ".join(missing)}.'
+                ),
+            })
+
+        if attrs['rubric'].id != config.panel_rubric_id:
+            raise serializers.ValidationError({
+                'rubric_id': 'Panel rubric must match the stage grading configuration.',
+            })
+
         return attrs
 
     def _validate_pit_event_setup(self, attrs):
@@ -315,6 +371,59 @@ class ScheduleBaseSerializer(serializers.Serializer):
             return queryset.filter(event_name__iexact=attrs['event_name'])
         return queryset.filter(defense_stage=attrs['defense_stage'])
 
+    def _slot_interval(self, attrs, index=0):
+        start_minutes, _end_minutes = schedule_interval(attrs['start_time'], attrs['slot_duration'])
+        slot_start = start_minutes + (attrs['slot_duration'] * index)
+        return slot_start, slot_start + attrs['slot_duration']
+
+    def _schedule_overlaps(self, schedule, start_minutes, end_minutes):
+        other_start, other_end = schedule_interval(schedule.start_time, schedule.slot_duration)
+        return intervals_overlap(start_minutes, end_minutes, other_start, other_end)
+
+    def _validate_room_overlap(self, attrs, slot_intervals, error_field='start_time'):
+        schedules = DefenseSchedule.objects.filter(
+            scheduled_date=attrs['scheduled_date'],
+            room__iexact=attrs['room'],
+            status__in=ACTIVE_STATUSES,
+        )
+        for start_minutes, end_minutes in slot_intervals:
+            if any(self._schedule_overlaps(schedule, start_minutes, end_minutes) for schedule in schedules):
+                raise serializers.ValidationError({
+                    error_field: 'This room already has an active schedule during that time.',
+                })
+
+    def _validate_panelist_overlap(self, attrs, slot_intervals, error_field='panelist_ids'):
+        panelist_ids = {panelist.id for panelist in attrs['panelists']}
+        schedules = (
+            DefenseSchedule.objects.filter(
+                scheduled_date=attrs['scheduled_date'],
+                panel_assignments__panelist_id__in=panelist_ids,
+                status__in=ACTIVE_STATUSES,
+            )
+            .prefetch_related('panel_assignments')
+            .distinct()
+        )
+        for start_minutes, end_minutes in slot_intervals:
+            for schedule in schedules:
+                if not self._schedule_overlaps(schedule, start_minutes, end_minutes):
+                    continue
+                scheduled_panelist_ids = {
+                    assignment.panelist_id
+                    for assignment in schedule.panel_assignments.all()
+                }
+                if panelist_ids & scheduled_panelist_ids:
+                    raise serializers.ValidationError({
+                        error_field: 'A selected panelist already has an active schedule during that time.',
+                    })
+
+    def _validate_internal_slot_overlaps(self, slot_intervals):
+        for index, (start_minutes, end_minutes) in enumerate(slot_intervals):
+            for other_start, other_end in slot_intervals[index + 1:]:
+                if intervals_overlap(start_minutes, end_minutes, other_start, other_end):
+                    raise serializers.ValidationError({
+                        'slots': 'Schedule plan contains overlapping slots.',
+                    })
+
 
 class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     team_id = serializers.IntegerField()
@@ -328,7 +437,9 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         attrs = super().validate(attrs)
         attrs['team'] = self._resolve_team(attrs)
         self._validate_duplicate(attrs)
-        self._validate_room_start(attrs)
+        slot_intervals = [self._slot_interval(attrs)]
+        self._validate_room_overlap(attrs, slot_intervals)
+        self._validate_panelist_overlap(attrs, slot_intervals)
         return attrs
 
     @transaction.atomic
@@ -358,7 +469,14 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     def _sync_grade_row(self, schedule):
         from grading.grades.services import _sync_grade_for_schedule
 
-        _sync_grade_for_schedule(schedule)
+        grade, _created, _changed = _sync_grade_for_schedule(schedule)
+        if schedule.scope == DefenseSchedule.SCOPE_CAPSTONE:
+            mark_stage_scheduled(
+                schedule.team,
+                schedule.defense_stage,
+                grade=grade,
+                user=getattr(self.context.get('request'), 'user', None),
+            )
 
     def _resolve_team(self, attrs):
         try:
@@ -371,6 +489,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
         if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE and not team.is_capstone:
             raise serializers.ValidationError({'team_id': 'Capstone schedules require a Capstone team.'})
+        if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE and not is_stage_ready(team, attrs['defense_stage']):
+            raise serializers.ValidationError({'team_id': 'Team is not endorsed for this stage.'})
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT and not team.is_pit:
             raise serializers.ValidationError({'team_id': 'PIT schedules require a PIT team.'})
         return team
@@ -379,15 +499,6 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         queryset = self._context_filter(attrs).filter(team=attrs['team'])
         if queryset.exists():
             raise serializers.ValidationError({'team_id': 'This team already has an active schedule for this stage or event.'})
-
-    def _validate_room_start(self, attrs):
-        if DefenseSchedule.objects.filter(
-            scheduled_date=attrs['scheduled_date'],
-            start_time=attrs['start_time'],
-            room__iexact=attrs['room'],
-            status__in=ACTIVE_STATUSES,
-        ).exists():
-            raise serializers.ValidationError({'start_time': 'This room already has an active schedule at that start time.'})
 
     def _sync_panelists(self, schedule, panelists):
         SchedulePanelist.objects.bulk_create([
@@ -427,10 +538,8 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
         scheduled_team_ids = set(self._context_filter(attrs).values_list('team_id', flat=True))
 
         if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
-            queryset = queryset.filter(
-                level__icontains='Capstone',
-                ready_for_stage=attrs['defense_stage'].label,
-            )
+            ready_ids = get_ready_teams(attrs['semester'], attrs['defense_stage']).values_list('id', flat=True)
+            queryset = queryset.filter(level__icontains='Capstone', id__in=ready_ids)
         else:
             queryset = queryset.filter(level__icontains='PIT')
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
@@ -462,7 +571,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
                 if not team.is_capstone:
                     raise serializers.ValidationError({'slots': 'Capstone plans can only include Capstone teams.'})
-                if team.ready_for_stage != attrs['defense_stage'].label:
+                if not is_stage_ready(team, attrs['defense_stage']):
                     raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for this stage.'})
             elif not team.is_pit:
                 raise serializers.ValidationError({'slots': 'PIT plans can only include PIT teams.'})
@@ -471,6 +580,13 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 raise serializers.ValidationError({'slots': f'{team.name} already has an active schedule for this stage or event.'})
 
         attrs['teams'] = [team_map[team_id] for team_id in team_ids]
+        slot_intervals = [
+            self._slot_interval(attrs, index)
+            for index, _team in enumerate(attrs['teams'])
+        ]
+        self._validate_internal_slot_overlaps(slot_intervals)
+        self._validate_room_overlap(attrs, slot_intervals, error_field='slots')
+        self._validate_panelist_overlap(attrs, slot_intervals, error_field='slots')
         return attrs
 
     @transaction.atomic
@@ -503,7 +619,14 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
         from grading.grades.services import _sync_grade_for_schedule
 
         for schedule in schedules:
-            _sync_grade_for_schedule(schedule)
+            grade, _created, _changed = _sync_grade_for_schedule(schedule)
+            if schedule.scope == DefenseSchedule.SCOPE_CAPSTONE:
+                mark_stage_scheduled(
+                    schedule.team,
+                    schedule.defense_stage,
+                    grade=grade,
+                    user=getattr(self.context.get('request'), 'user', None),
+                )
         return schedules
 
 
@@ -523,12 +646,18 @@ def minutes_to_time(minutes):
     return value.time().replace(second=0, microsecond=0)
 
 
-def schedule_options_payload():
+def schedule_options_payload(user=None):
+    from authentication_access_control.scopes import is_pit_lead_only, visible_teams_for
+
     semester = active_semester()
     stages = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
     rubrics = (
         Rubric.objects.select_related('semester', 'semester__school_year', 'defense_stage', 'created_by')
-        .filter(status=Rubric.STATUS_PUBLISHED, evaluation_type=Rubric.EVAL_PANEL)
+        .filter(status=Rubric.STATUS_PUBLISHED)
+        .filter(
+            Q(scope=Rubric.SCOPE_CAPSTONE)
+            | Q(scope=Rubric.SCOPE_PIT, evaluation_type=Rubric.EVAL_PANEL)
+        )
         .order_by('scope', 'defense_stage__display_order', 'name')
     )
     peer_rubrics = (
@@ -536,8 +665,12 @@ def schedule_options_payload():
         .filter(status=Rubric.STATUS_PUBLISHED, scope=Rubric.SCOPE_PIT, evaluation_type=Rubric.EVAL_PEER)
         .order_by('name')
     )
+    if is_pit_lead_only(user):
+        stages = stages.none()
+        rubrics = rubrics.filter(scope=Rubric.SCOPE_PIT)
+        peer_rubrics = peer_rubrics.filter(scope=Rubric.SCOPE_PIT)
     panelists = User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True, is_active=True).order_by('last_name', 'first_name', 'username')
-    teams = StudentTeam.objects.select_related('semester', 'leader', 'adviser')
+    teams = visible_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
     if semester:
         teams = teams.filter(semester=semester)
     else:

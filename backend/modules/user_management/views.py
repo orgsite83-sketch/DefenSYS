@@ -10,11 +10,13 @@ from rest_framework.views import APIView
 from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from user_management.academic_records.models import StudentAcademicRecord
+from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.guest_tokens import (
     create_guest_access_token,
     get_guest_code_or_none,
     guest_user_payload,
 )
+from authentication_access_control.models import SystemAuditLog
 from .models import FacultyRoleAssignment, GuestPanelistCode
 from .permissions import IsSystemAdmin
 from student_teams.models import TeamAdviserAssignment
@@ -282,6 +284,19 @@ class GuestPanelistCodeListCreateView(APIView):
         serializer = GuestPanelistCodeCreateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         code = serializer.save(created_by=request.user)
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GUEST_ACCESS,
+            action='guest_code.create',
+            target=code,
+            old_values={},
+            new_values={
+                'code_id': code.pk,
+                'guest_name': code.guest_name,
+                'defense_schedule_id': code.defense_schedule_id,
+                'is_active': code.is_active,
+            },
+            request=request,
+        )
         code = guest_codes_queryset().get(pk=code.pk)
 
         payload = guest_codes_payload()
@@ -297,6 +312,7 @@ class GuestPanelistCodeDetailView(APIView):
 
     def patch(self, request, code_id):
         code = self.get_object(code_id)
+        old_values = {'is_active': code.is_active}
 
         if 'is_active' in request.data:
             raw_status = request.data.get('is_active')
@@ -305,6 +321,14 @@ class GuestPanelistCodeDetailView(APIView):
             else:
                 code.is_active = str(raw_status).strip().lower() in ['1', 'true', 'yes', 'active']
             code.save(update_fields=['is_active', 'updated_at'])
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_GUEST_ACCESS,
+                action='guest_code.status_change',
+                target=code,
+                old_values=old_values,
+                new_values={'is_active': code.is_active},
+                request=request,
+            )
 
         code = guest_codes_queryset().get(pk=code.pk)
         payload = guest_codes_payload()
@@ -362,6 +386,23 @@ class GuestCodeExchangeView(APIView):
         if guest_code.used_at is None:
             guest_code.used_at = timezone.now()
             guest_code.save(update_fields=['used_at', 'updated_at'])
+            action = 'guest_code.first_use'
+        else:
+            action = 'guest_code.exchange'
+
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GUEST_ACCESS,
+            action=action,
+            target=guest_code,
+            target_type='GuestPanelistCode',
+            target_id=guest_code.pk,
+            old_values={'used_at': None if action == 'guest_code.first_use' else guest_code.used_at.isoformat()},
+            new_values={
+                'used_at': guest_code.used_at.isoformat() if guest_code.used_at else None,
+                'defense_schedule_id': guest_code.defense_schedule_id,
+            },
+            request=request,
+        )
 
         access = create_guest_access_token(guest_code)
         return Response({

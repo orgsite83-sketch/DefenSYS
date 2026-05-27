@@ -6,7 +6,7 @@ Intelligently organizes and archives documents based on ML classification
 import os
 import shutil
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Dict
 from pathlib import Path
 
 

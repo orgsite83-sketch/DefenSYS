@@ -2,8 +2,10 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
+from defense.stages.models import DefenseStage
 from user_management.academic_records.models import StudentAcademicRecord
-from .models import StudentTeam, TeamAdviserAssignment, TeamMembership
+from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, TeamStageProgress
+from .services import mark_stage_ready
 from .weekly_progress.models import WeeklyProgressReport
 
 
@@ -81,6 +83,36 @@ class StudentTeamApiTests(APITestCase):
                 semester=self.second_semester,
                 defaults={'year_level': '3rd Year'},
             )
+
+    def test_team_stage_progress_keeps_independent_stage_statuses(self):
+        team = StudentTeam.objects.create(
+            name='Team Stage Ledger',
+            project_title='Stage Ledger',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        concept = DefenseStage.objects.get(label='Concept Proposal')
+        project = DefenseStage.objects.get(label='Project Proposal')
+        TeamStageProgress.objects.create(
+            team=team,
+            semester=self.second_semester,
+            defense_stage=concept,
+            status=TeamStageProgress.STATUS_PASSED,
+        )
+
+        mark_stage_ready(team, project, user=self.adviser)
+
+        self.assertEqual(
+            TeamStageProgress.objects.get(team=team, defense_stage=concept).status,
+            TeamStageProgress.STATUS_PASSED,
+        )
+        self.assertEqual(
+            TeamStageProgress.objects.get(team=team, defense_stage=project).status,
+            TeamStageProgress.STATUS_READY,
+        )
 
     def test_create_team_blocked_during_capstone_off_season(self):
         response = self.client.post(
@@ -235,6 +267,41 @@ class StudentTeamApiTests(APITestCase):
         history = self.client.get(f'/api/teams/{team.id}/adviser-history/')
         self.assertEqual(history.status_code, 200)
         self.assertEqual(len(history.data['assignments']), 2)
+
+    def test_adviser_history_uses_team_visibility_scope(self):
+        team = StudentTeam.objects.create(
+            name='Team History Scope',
+            project_title='History Scope Project',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.first_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        TeamMembership.objects.create(team=team, student=self.student_1, is_leader=True)
+        TeamAdviserAssignment.objects.create(team=team, adviser=self.adviser, assigned_by=self.admin)
+        pit_lead = User.objects.create_user(
+            username='pit-lead-history',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+        uploader = User.objects.create_user(
+            username='uploader-history',
+            password='pass12345',
+            role='faculty',
+            is_uploader=True,
+        )
+
+        self.client.force_authenticate(user=pit_lead)
+        blocked = self.client.get(f'/api/teams/{team.id}/adviser-history/')
+        self.client.force_authenticate(user=uploader)
+        allowed = self.client.get(f'/api/teams/{team.id}/adviser-history/')
+
+        self.assertEqual(blocked.status_code, 404)
+        self.assertEqual(allowed.status_code, 200)
+        self.assertEqual(len(allowed.data['assignments']), 1)
 
     def test_list_teams_returns_counts_and_options(self):
         StudentTeam.objects.create(

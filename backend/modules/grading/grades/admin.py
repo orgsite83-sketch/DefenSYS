@@ -19,12 +19,14 @@ class TeamGradeAdmin(admin.ModelAdmin):
         'team',
         'scope',
         'stage_label',
+        'defense_stage',
+        'pit_event_config',
         'panel_score',
         'adviser_score',
         'peer_score',
         'final_grade',
         'status',
     )
-    list_filter = ('scope', 'status', 'semester')
+    list_filter = ('scope', 'status', 'semester', 'defense_stage', 'pit_event_config')
     search_fields = ('team__name', 'team__project_title', 'stage_label')
     inlines = [GradeBreakdownInline, StudentPeerGradeInline]

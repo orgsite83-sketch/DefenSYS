@@ -52,7 +52,7 @@ class BridgeService {
     required AuthenticatedHttpClient httpClient,
     required String teamId,
     required String evaluatorId,
-    required String evaluateeName,
+    required String evaluateeId,
     required List<Map<String, dynamic>> breakdown,
     required double total,
     required double max,
@@ -62,7 +62,7 @@ class BridgeService {
         Uri.parse('${ApiConfig.gradeCenterUrl}/peer-evaluations/'),
         body: json.encode({
           'teamId': int.tryParse(teamId) ?? teamId,
-          'evaluateeName': evaluateeName,
+          'evaluateeId': int.tryParse(evaluateeId) ?? evaluateeId,
           'breakdown': breakdown,
           'total': total,
           'max': max,

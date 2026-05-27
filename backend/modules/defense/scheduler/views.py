@@ -1,3 +1,4 @@
+from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -7,17 +8,20 @@ from rest_framework.views import APIView
 
 from grading.grades.models import GradeBreakdown, TeamGrade
 from grading.grades.services import (
-    default_weights,
+    GradeContextService,
     guest_panelist_remark_key,
     panelist_remark_key_for_user,
     panelist_result_payload,
-    recompute_panel_score,
+    submit_panelist_grade,
     weights_for_schedule,
 )
+from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.guest_authentication import (
     GuestJWTAuthentication,
     IsGuestPanelist,
 )
+from authentication_access_control.models import SystemAuditLog
+from authentication_access_control.scopes import visible_schedules_for
 from user_management.permissions import IsPanelist
 
 from .models import DefenseSchedule, SchedulePanelist
@@ -52,8 +56,8 @@ class CanManageSchedules(BasePermission):
         )
 
 
-def counts_payload(queryset=None):
-    base = schedule_queryset()
+def counts_payload(queryset=None, base_queryset=None):
+    base = base_queryset if base_queryset is not None else schedule_queryset()
     current = queryset if queryset is not None else base
     return {
         'all': base.count(),
@@ -65,17 +69,20 @@ def counts_payload(queryset=None):
     }
 
 
-def list_payload(queryset=None):
-    current = queryset if queryset is not None else schedule_queryset()
-    return {
+def list_payload(queryset=None, base_queryset=None, user=None, include_options=True):
+    base = base_queryset if base_queryset is not None else schedule_queryset()
+    current = queryset if queryset is not None else base
+    payload = {
         'schedules': DefenseScheduleSerializer(current, many=True).data,
-        'counts': counts_payload(current),
-        **schedule_options_payload(),
+        'counts': counts_payload(current, base_queryset=base),
     }
+    if include_options:
+        payload.update(schedule_options_payload(user=user))
+    return payload
 
 
-def filter_schedules(request):
-    queryset = schedule_queryset()
+def filter_schedules(request, queryset=None):
+    queryset = queryset if queryset is not None else schedule_queryset()
     search = request.query_params.get('search', '').strip()
     scope = request.query_params.get('scope', '').strip()
     status_filter = request.query_params.get('status', '').strip()
@@ -108,17 +115,27 @@ class DefenseScheduleListCreateView(APIView):
         return [CanManageSchedules()]
 
     def get(self, request):
-        return Response(list_payload(filter_schedules(request)))
+        base = visible_schedules_for(request.user)
+        can_manage = CanManageSchedules().has_permission(request, self)
+        return Response(
+            list_payload(
+                filter_schedules(request, base),
+                base_queryset=base,
+                user=request.user,
+                include_options=can_manage,
+            )
+        )
 
     def post(self, request):
         serializer = DefenseScheduleWriteSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
-        schedule = schedule_queryset().get(pk=schedule.pk)
+        base = visible_schedules_for(request.user)
+        schedule = base.get(pk=schedule.pk)
         return Response(
             {
                 'schedule': DefenseScheduleSerializer(schedule).data,
-                **list_payload(),
+                **list_payload(base_queryset=base, user=request.user),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -160,7 +177,7 @@ class DefenseScheduleGeneratePlanView(APIView):
         return Response({
             'slots': slots,
             'slot_count': len(slots),
-            **schedule_options_payload(),
+            **schedule_options_payload(user=request.user),
         })
 
 
@@ -171,12 +188,13 @@ class DefenseScheduleConfirmPlanView(APIView):
         serializer = ConfirmSchedulePlanSerializer(data=request.data, context={'request': request})
         serializer.is_valid(raise_exception=True)
         schedules = serializer.save()
-        schedules = schedule_queryset().filter(pk__in=[schedule.pk for schedule in schedules])
+        base = visible_schedules_for(request.user)
+        schedules = base.filter(pk__in=[schedule.pk for schedule in schedules])
         return Response(
             {
                 'schedules_created': DefenseScheduleSerializer(schedules, many=True).data,
                 'created_count': schedules.count(),
-                **list_payload(),
+                **list_payload(base_queryset=base, user=request.user),
             },
             status=status.HTTP_201_CREATED,
         )
@@ -186,26 +204,59 @@ class DefenseScheduleDetailView(APIView):
     permission_classes = [CanManageSchedules]
 
     def get_object(self, schedule_id):
-        return get_object_or_404(schedule_queryset(), pk=schedule_id)
+        return get_object_or_404(visible_schedules_for(self.request.user), pk=schedule_id)
 
     def patch(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
+        old_status = schedule.status
         serializer = DefenseScheduleStatusSerializer(
             data=request.data,
             context={'schedule': schedule},
         )
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
-        schedule = schedule_queryset().get(pk=schedule.pk)
+        if old_status != schedule.status:
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_SCHEDULING,
+                action='schedule.status_change',
+                target=schedule,
+                old_values={'status': old_status},
+                new_values={'status': schedule.status},
+                request=request,
+            )
+        base = visible_schedules_for(request.user)
+        schedule = base.get(pk=schedule.pk)
         return Response({
             'schedule': DefenseScheduleSerializer(schedule).data,
-            **list_payload(),
+            **list_payload(base_queryset=base, user=request.user),
         })
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
+        audit_values = {
+            'status': schedule.status,
+            'scope': schedule.scope,
+            'team_id': schedule.team_id,
+            'team_name': schedule.team.name if schedule.team_id else '',
+            'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
+            'start_time': schedule.start_time.isoformat() if schedule.start_time else '',
+            'room': schedule.room,
+            'stage_label': schedule.stage_label,
+        }
+        schedule_pk = schedule.pk
         schedule.delete()
-        return Response(list_payload(), status=status.HTTP_200_OK)
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_SCHEDULING,
+            action='schedule.delete',
+            target=schedule,
+            target_type='DefenseSchedule',
+            target_id=schedule_pk,
+            old_values=audit_values,
+            new_values={'deleted': True},
+            request=request,
+        )
+        base = visible_schedules_for(request.user)
+        return Response(list_payload(base_queryset=base, user=request.user), status=status.HTTP_200_OK)
 
 
 def _grade_weights_payload(schedule, raw_weights):
@@ -231,6 +282,7 @@ def _panel_rubric_payload(rubric, grade_weights):
         'display_semester': rubric.semester.display_name,
         'criteria': [
             {
+                'id': criterion.id,
                 'name': criterion.name,
                 'max_score': criterion.max_score,
                 'scale': criterion.scale,
@@ -413,9 +465,7 @@ class PanelistGradeSubmissionView(APIView):
 
         try:
             from student_teams.models import StudentTeam
-            from grading.grades.models import TeamGrade, GradeBreakdown
             from academic_period_management.models import Semester
-            from decimal import Decimal
 
             panelist = request.user
 
@@ -462,47 +512,20 @@ class PanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST
                 )
 
-            stage_label = schedule.stage_label if schedule else 'Unscheduled'
-            scope = schedule.scope if schedule else ('capstone' if team.is_capstone else 'pit')
-            weight_defaults = weights_for_schedule(schedule) if schedule else default_weights(scope)
-
-            team_grade, created = TeamGrade.objects.get_or_create(
-                team=team,
-                semester=semester,
-                scope=scope,
-                stage_label=stage_label,
-                defaults={
-                    'schedule': schedule,
-                    **weight_defaults,
-                },
-            )
-            if team_grade.schedule_id != (schedule.id if schedule else None):
-                team_grade.schedule = schedule
-            for field, value in weight_defaults.items():
-                setattr(team_grade, field, value)
-            team_grade.save()
-            
-            # Delete existing breakdowns for this panelist (to allow re-submission)
-            GradeBreakdown.objects.filter(
-                team_grade=team_grade,
-                evaluation_type='panel',
-                remarks__contains=f'Panelist: {panelist.username}'
-            ).delete()
-            
-            # Create new grade breakdowns
-            for idx, criterion in enumerate(criteria_scores):
-                GradeBreakdown.objects.create(
-                    team_grade=team_grade,
-                    rubric=schedule.rubric if schedule else None,
-                    evaluation_type='panel',
-                    criterion_name=criterion.get('name', 'Criterion'),
-                    score=Decimal(str(criterion.get('score', 0))),
-                    max_score=Decimal(str(criterion.get('max_score', 10))),
-                    remarks=f'Panelist: {panelist.username}\n{remarks}',
-                    display_order=idx,
+            if schedule:
+                team_grade = GradeContextService.get_for_panel_submission(schedule, panelist=panelist)
+            else:
+                team_grade, _created = GradeContextService.get_or_create_unscheduled_team(
+                    team=team,
                 )
-            
-            recompute_panel_score(team_grade)
+
+            submit_panelist_grade(
+                schedule,
+                team_grade,
+                criteria_scores,
+                panelist=panelist,
+                remarks=remarks,
+            )
 
             return Response({
                 'success': True,
@@ -510,7 +533,12 @@ class PanelistGradeSubmissionView(APIView):
                 'team_grade_id': team_grade.id,
                 'panel_score': float(team_grade.panel_score) if team_grade.panel_score else None,
             }, status=status.HTTP_201_CREATED)
-            
+
+        except ValidationError as e:
+            return Response(
+                e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             return Response(
                 {'error': f'Failed to submit grades: {str(e)}'},
@@ -653,9 +681,6 @@ class GuestPanelistGradeSubmissionView(APIView):
             )
 
         try:
-            from decimal import Decimal
-
-            from grading.grades.models import GradeBreakdown, TeamGrade
             from student_teams.models import StudentTeam
 
             try:
@@ -688,46 +713,15 @@ class GuestPanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            stage_label = schedule.stage_label
-            scope = schedule.scope
-            weight_defaults = weights_for_schedule(schedule)
+            team_grade = GradeContextService.get_for_guest_panel_submission(schedule, guest=principal)
 
-            team_grade, _created = TeamGrade.objects.get_or_create(
-                team=team,
-                semester=semester,
-                scope=scope,
-                stage_label=stage_label,
-                defaults={
-                    'schedule': schedule,
-                    **weight_defaults,
-                },
+            submit_panelist_grade(
+                schedule,
+                team_grade,
+                criteria_scores,
+                guest=principal,
+                remarks=remarks,
             )
-            if team_grade.schedule_id != schedule.id:
-                team_grade.schedule = schedule
-            for field, value in weight_defaults.items():
-                setattr(team_grade, field, value)
-            team_grade.save()
-
-            panelist_label = f'Guest panelist: {principal.guest_name} ({principal.guest_code})'
-            GradeBreakdown.objects.filter(
-                team_grade=team_grade,
-                evaluation_type='panel',
-                remarks__contains=panelist_label,
-            ).delete()
-
-            for idx, criterion in enumerate(criteria_scores):
-                GradeBreakdown.objects.create(
-                    team_grade=team_grade,
-                    rubric=schedule.rubric if schedule else None,
-                    evaluation_type='panel',
-                    criterion_name=criterion.get('name', 'Criterion'),
-                    score=Decimal(str(criterion.get('score', 0))),
-                    max_score=Decimal(str(criterion.get('max_score', 10))),
-                    remarks=f'{panelist_label}\n{remarks}',
-                    display_order=idx,
-                )
-
-            recompute_panel_score(team_grade)
 
             return Response({
                 'success': True,
@@ -736,6 +730,11 @@ class GuestPanelistGradeSubmissionView(APIView):
                 'panel_score': float(team_grade.panel_score) if team_grade.panel_score else None,
             }, status=status.HTTP_201_CREATED)
 
+        except ValidationError as e:
+            return Response(
+                e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         except Exception as e:
             return Response(
                 {'error': f'Failed to submit grades: {str(e)}'},

@@ -1,5 +1,6 @@
 from django.shortcuts import get_object_or_404
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -14,6 +15,7 @@ from .serializers import (
     SemesterCreateSerializer,
     SemesterSerializer,
 )
+from .services import build_semester_transition_preview, switch_active_semester
 
 
 def active_semester():
@@ -92,8 +94,19 @@ class SemesterStatusView(APIView):
                 is_active = is_active.lower() in ['1', 'true', 'yes', 'on']
             else:
                 is_active = bool(is_active)
-            semester.is_active = is_active
-            update_fields.append('is_active')
+            if not is_active:
+                raise ValidationError({
+                    'is_active': 'Choose another semester to activate instead of deactivating the active semester directly.',
+                })
+            switch_active_semester(semester, request.user)
+            semester.refresh_from_db()
+            return Response({
+                'semester': semester_payload(
+                    semester,
+                    include_capstone_mode=True,
+                ),
+                'active_semester': active_semester_payload(),
+            })
 
         if 'capstone_peer_evaluation_enabled' in request.data:
             value = request.data['capstone_peer_evaluation_enabled']
@@ -133,4 +146,38 @@ class SemesterStatusView(APIView):
                 include_capstone_mode=True,
             ),
             'active_semester': active_semester_payload(),
+        })
+
+
+class SemesterTransitionPreviewView(APIView):
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    def get(self, request, semester_id):
+        semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        return Response(build_semester_transition_preview(semester))
+
+
+class SemesterActivateView(APIView):
+    permission_classes = [IsAuthenticated, IsSystemAdmin]
+
+    def post(self, request, semester_id):
+        semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        force = request.data.get('force', False)
+        if isinstance(force, str):
+            force = force.lower() in ['1', 'true', 'yes', 'on']
+        preview, log = switch_active_semester(
+            semester,
+            request.user,
+            force=bool(force),
+            reason=request.data.get('reason', ''),
+        )
+        semester.refresh_from_db()
+        return Response({
+            'semester': semester_payload(
+                semester,
+                include_capstone_mode=True,
+            ),
+            'active_semester': active_semester_payload(),
+            'transition_preview': preview,
+            'transition_log_id': log.id if log else None,
         })

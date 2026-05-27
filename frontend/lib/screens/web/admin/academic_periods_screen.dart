@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../services/academic_period_provider.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -526,9 +527,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               activeTrackColor: _maroon,
               onChanged: state.isSaving || semesterId == null
                   ? null
-                  : (value) => ref
-                        .read(academicPeriodProvider.notifier)
-                        .setSemesterActive(semesterId, value),
+                  : (value) => _handleSemesterSwitch(semester, value),
             ),
           ),
         ],
@@ -958,6 +957,239 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         .addSemester(yearId, selectedTerm!);
   }
 
+  Future<void> _handleSemesterSwitch(
+    Map<String, dynamic> semester,
+    bool value,
+  ) async {
+    final semesterId = _asInt(semester['id']);
+    if (semesterId == null) {
+      return;
+    }
+
+    final notifier = ref.read(academicPeriodProvider.notifier);
+    if (!value) {
+      await notifier.setSemesterActive(semesterId, false);
+      return;
+    }
+
+    final preview = await notifier.fetchTransitionPreview(semesterId);
+    if (!mounted || preview == null) {
+      return;
+    }
+
+    final result = await _showSemesterTransitionDialog(preview);
+    if (!mounted || result == null) {
+      return;
+    }
+
+    final route = result['route']?.toString();
+    if (route != null && route.isNotEmpty) {
+      context.go(route);
+      return;
+    }
+
+    if (result['activate'] == true) {
+      await notifier.activateSemester(
+        semesterId,
+        force: result['force'] == true,
+        reason: result['reason']?.toString() ?? '',
+      );
+    }
+  }
+
+  Future<Map<String, dynamic>?> _showSemesterTransitionDialog(
+    Map<String, dynamic> preview,
+  ) async {
+    final current = preview['current_semester'] is Map
+        ? Map<String, dynamic>.from(preview['current_semester'])
+        : null;
+    final target = preview['target_semester'] is Map
+        ? Map<String, dynamic>.from(preview['target_semester'])
+        : null;
+    final issues = _mapList(preview['issues']);
+    final canSwitch = preview['can_switch'] == true;
+    final reasonController = TextEditingController();
+    var force = false;
+
+    final result = await showDialog<Map<String, dynamic>>(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final canForce = force && reasonController.text.trim().isNotEmpty;
+            return AlertDialog(
+              title: const Text('Switch active semester?'),
+              content: SizedBox(
+                width: 620,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'You are switching from ${_semesterName(current)} to ${_semesterName(target)}.',
+                        style: const TextStyle(height: 1.35),
+                      ),
+                      const SizedBox(height: 16),
+                      if (issues.isEmpty)
+                        _transitionEmptyState()
+                      else ...[
+                        const Text(
+                          'This current semester still has:',
+                          style: TextStyle(
+                            color: _ink,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        ...issues.map(
+                          (issue) => _transitionIssueRow(
+                            issue,
+                            onRoute: (route) => Navigator.pop(
+                              dialogContext,
+                              {'route': route},
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (!canSwitch) ...[
+                        const SizedBox(height: 12),
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF7ED),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFFF59E0B)
+                                  .withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: const Text(
+                            'Normal switching is blocked until the unfinished workflows are resolved. Use forced override only when the transition was approved outside the system.',
+                            style: TextStyle(
+                              color: Color(0xFF92400E),
+                              fontSize: 12,
+                              height: 1.35,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        CheckboxListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: force,
+                          controlAffinity: ListTileControlAffinity.leading,
+                          title: const Text('Force switch with audit reason'),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              force = value == true;
+                            });
+                          },
+                        ),
+                        if (force)
+                          TextField(
+                            controller: reasonController,
+                            maxLines: 2,
+                            decoration: const InputDecoration(
+                              labelText: 'Override reason',
+                              hintText: 'Example: Manual rollover approved.',
+                            ),
+                            onChanged: (_) => setDialogState(() {}),
+                          ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: canSwitch || canForce
+                      ? () => Navigator.pop(dialogContext, {
+                            'activate': true,
+                            'force': !canSwitch && force,
+                            'reason': reasonController.text.trim(),
+                          })
+                      : null,
+                  child: Text(canSwitch ? 'Confirm switch' : 'Force switch'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    reasonController.dispose();
+    return result;
+  }
+
+  Widget _transitionEmptyState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFA7F3D0)),
+      ),
+      child: const Text(
+        'No unfinished workflows were found. This switch can continue normally.',
+        style: TextStyle(
+          color: Color(0xFF047857),
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+
+  Widget _transitionIssueRow(
+    Map<String, dynamic> issue, {
+    required ValueChanged<String> onRoute,
+  }) {
+    final route = issue['route']?.toString() ?? '';
+    final blocking = issue['blocking'] == true;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: blocking ? const Color(0xFFFFFBEB) : const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: blocking ? const Color(0xFFFDE68A) : _line,
+        ),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            blocking ? Icons.warning_amber_rounded : Icons.info_outline_rounded,
+            color: blocking ? const Color(0xFFD97706) : _muted,
+            size: 19,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              issue['message']?.toString() ?? 'Unfinished workflow',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                height: 1.3,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          TextButton(
+            onPressed: route.isEmpty ? null : () => onRoute(route),
+            child: Text(issue['action_label']?.toString() ?? 'Review'),
+          ),
+        ],
+      ),
+    );
+  }
+
   Map<String, dynamic>? _selectedYear(AcademicPeriodState state) {
     for (final year in state.schoolYears) {
       if (_asInt(year['id']) == state.selectedSchoolYearId) {
@@ -972,6 +1204,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   }
 
   List<Map<String, dynamic>> _semesterList(dynamic value) {
+    return _mapList(value);
+  }
+
+  List<Map<String, dynamic>> _mapList(dynamic value) {
     if (value is! List) {
       return [];
     }
@@ -990,6 +1226,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       return value.toInt();
     }
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  String _semesterName(Map<String, dynamic>? semester) {
+    return semester?['display_name']?.toString() ?? 'No active semester';
   }
 }
 

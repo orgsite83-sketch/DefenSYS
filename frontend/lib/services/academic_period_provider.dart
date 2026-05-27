@@ -167,6 +167,19 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
   }
 
   Future<bool> setSemesterActive(int semesterId, bool isActive) async {
+    if (isActive) {
+      return activateSemester(semesterId);
+    }
+
+    state = state.copyWith(
+      error:
+          'Choose another semester to activate instead of deactivating the active semester directly.',
+      clearMessage: true,
+    );
+    return false;
+  }
+
+  Future<Map<String, dynamic>?> fetchTransitionPreview(int semesterId) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -174,18 +187,48 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     );
 
     try {
-      final response = await _client.patch(
-        Uri.parse('$baseUrl/semesters/$semesterId/'),
-        
-        body: jsonEncode({'is_active': isActive}),
+      final response = await _client.get(
+        Uri.parse('$baseUrl/semesters/$semesterId/transition-preview/'),
       );
 
       if (response.statusCode == 200) {
-        await fetchPeriods(
-          successMessage: isActive
-              ? 'Active semester updated.'
-              : 'Semester deactivated.',
-        );
+        state = state.copyWith(isSaving: false);
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return null;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return null;
+    }
+  }
+
+  Future<bool> activateSemester(
+    int semesterId, {
+    bool force = false,
+    String reason = '',
+  }) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/semesters/$semesterId/activate/'),
+        body: jsonEncode({
+          if (force) 'force': true,
+          if (reason.trim().isNotEmpty) 'reason': reason.trim(),
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchPeriods(successMessage: 'Active semester updated.');
         await _refreshDependentProviders();
         return true;
       }

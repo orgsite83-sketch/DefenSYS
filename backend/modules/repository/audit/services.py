@@ -11,6 +11,8 @@ from django.db import transaction
 from django.db.models import Q
 
 from academic_period_management.models import Semester, SchoolYear
+from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import PitEventGradingConfig
 from defense.stages.models import StageGradingConfig
 from grading.grades.models import TeamGrade
@@ -115,6 +117,18 @@ def completed_pit_events(semester=None, year_level=None):
     return queryset
 
 
+def all_completed_pit_event_ids(semester=None):
+    semester = semester or get_active_semester()
+    if not semester:
+        return []
+    return list(
+        PitEventGradingConfig.objects.filter(
+            semester=semester,
+            is_officially_complete=True,
+        ).values_list('id', flat=True)
+    )
+
+
 def all_completed_pit_event_names(semester=None):
     semester = semester or get_active_semester()
     if not semester:
@@ -131,6 +145,18 @@ def pit_archive_queue_statuses():
     return [TeamGrade.STATUS_READY_FOR_ARCHIVE, TeamGrade.STATUS_PUBLISHED]
 
 
+def _complete_passing_grades(scope):
+    grades = TeamGrade.objects.filter(
+        scope=scope,
+        panel_score__isnull=False,
+        peer_score__isnull=False,
+        final_grade__gte=Decimal('75.00'),
+    )
+    if scope == TeamGrade.SCOPE_CAPSTONE:
+        grades = grades.filter(Q(adviser_weight=0) | Q(adviser_score__isnull=False))
+    return grades
+
+
 def pit_upload_window_open(year_level, semester=None):
     if not year_level:
         return False
@@ -139,14 +165,14 @@ def pit_upload_window_open(year_level, semester=None):
         return True
     semester = semester or get_active_semester()
     event_names = all_completed_pit_event_names(semester=semester)
-    if not event_names:
+    event_ids = all_completed_pit_event_ids(semester=semester)
+    if not event_names and not event_ids:
         return False
-    return TeamGrade.objects.filter(
-        scope=TeamGrade.SCOPE_PIT,
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-        stage_label__in=event_names,
+    return _complete_passing_grades(TeamGrade.SCOPE_PIT).filter(
         team__year_level=year_level,
-        final_grade__gte=Decimal('75.00'),
+    ).filter(
+        Q(pit_event_config_id__in=event_ids)
+        | Q(pit_event_config__isnull=True, stage_label__in=event_names)
     ).exists()
 
 
@@ -181,39 +207,53 @@ def pit_vault_upload_queue(year_level, semester=None):
 
     semester = semester or get_active_semester()
     event_names = all_completed_pit_event_names(semester=semester)
-    if not event_names:
+    event_ids = all_completed_pit_event_ids(semester=semester)
+    if not event_names and not event_ids:
         return []
 
-    uploaded_team_ids = set(
+    uploaded_event_keys = set(
         VaultEntry.objects.filter(
             entry_type=VaultEntry.TYPE_PIT,
             year_level=year_level,
             team_id__isnull=False,
+            pit_event_config_id__isnull=False,
+        ).values_list('team_id', 'pit_event_config_id')
+    )
+    legacy_uploaded_team_ids = set(
+        VaultEntry.objects.filter(
+            entry_type=VaultEntry.TYPE_PIT,
+            year_level=year_level,
+            team_id__isnull=False,
+            pit_event_config_id__isnull=True,
         ).values_list('team_id', flat=True)
     )
 
     grades = (
-        TeamGrade.objects.filter(
-            scope=TeamGrade.SCOPE_PIT,
-            status__in=pit_archive_queue_statuses(),
-            stage_label__in=event_names,
+        _complete_passing_grades(TeamGrade.SCOPE_PIT)
+        .filter(
             team__year_level=year_level,
-            team__status=StudentTeam.STATUS_APPROVED,
-            final_grade__gte=Decimal('75.00'),
         )
-        .select_related('team', 'team__semester')
-        .order_by('stage_label', 'team__name')
+        .filter(
+            Q(pit_event_config_id__in=event_ids)
+            | Q(pit_event_config__isnull=True, stage_label__in=event_names)
+        )
+        .select_related('team', 'team__semester', 'pit_event_config')
+        .order_by('pit_event_config__event_name', 'stage_label', 'team__name')
     )
 
     queue = []
     seen_team_event = set()
     for grade in grades:
         team = grade.team
-        if team.id in uploaded_team_ids:
+        event_name = grade.pit_event_config.event_name if grade.pit_event_config_id else grade.stage_label
+        key = (team.id, grade.pit_event_config_id or event_name)
+        uploaded = (
+            (team.id, grade.pit_event_config_id) in uploaded_event_keys
+            if grade.pit_event_config_id
+            else team.id in legacy_uploaded_team_ids
+        )
+        if uploaded:
             continue
-        if grade.status != TeamGrade.STATUS_READY_FOR_ARCHIVE:
-            continue
-        key = (team.id, grade.stage_label)
         if key in seen_team_event:
             continue
         seen_team_event.add(key)
@@ -225,9 +265,10 @@ def pit_vault_upload_queue(year_level, semester=None):
             'team_id': team.id,
             'team_name': team.name,
             'project_title': team.project_title or team.name,
-            'event_name': grade.stage_label,
+            'pit_event_config_id': grade.pit_event_config_id,
+            'event_name': event_name,
             'suggested_file_name': suggested_pit_file_name(team, year_level, semester_label),
-            'vault_status': 'uploaded' if team.id in uploaded_team_ids else 'pending',
+            'vault_status': 'uploaded' if uploaded else 'pending',
         })
     return queue
 
@@ -247,8 +288,10 @@ def pit_upload_diagnostics(year_level, semester=None):
         {
             label
             for label in pit_grades.filter(
-                stage_label__in=all_completed,
                 status__in=pit_archive_queue_statuses(),
+            ).filter(
+                Q(pit_event_config_id__in=all_completed_pit_event_ids(semester=semester))
+                | Q(pit_event_config__isnull=True, stage_label__in=all_completed)
             ).values_list('stage_label', flat=True)
             if label
         }
@@ -308,6 +351,18 @@ def all_completed_capstone_stage_labels(semester=None):
     )
 
 
+def all_completed_capstone_stage_ids(semester=None):
+    semester = semester or get_active_semester()
+    if not semester:
+        return []
+    return list(
+        StageGradingConfig.objects.filter(
+            semester=semester,
+            is_officially_complete=True,
+        ).values_list('defense_stage_id', flat=True)
+    )
+
+
 def capstone_archive_queue_statuses():
     return pit_archive_queue_statuses()
 
@@ -325,10 +380,20 @@ def suggested_capstone_file_name(team, stage_label, semester_label='1st Semester
 def capstone_vault_upload_queue(semester=None):
     semester = semester or get_active_semester()
     stage_labels = all_completed_capstone_stage_labels(semester=semester)
-    if not stage_labels:
+    stage_ids = all_completed_capstone_stage_ids(semester=semester)
+    if not stage_labels and not stage_ids:
         return []
 
-    uploaded_keys = set(
+    uploaded_keys = {
+        (team_id, defense_stage_id or stage_label)
+        for team_id, defense_stage_id, stage_label in (
+            VaultEntry.objects.filter(
+                entry_type=VaultEntry.TYPE_CAPSTONE,
+                team_id__isnull=False,
+            ).values_list('team_id', 'defense_stage_id', 'stage_label')
+        )
+    }
+    uploaded_legacy_keys = set(
         VaultEntry.objects.filter(
             entry_type=VaultEntry.TYPE_CAPSTONE,
             team_id__isnull=False,
@@ -336,15 +401,16 @@ def capstone_vault_upload_queue(semester=None):
     )
 
     grades = (
-        TeamGrade.objects.filter(
-            scope=TeamGrade.SCOPE_CAPSTONE,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-            stage_label__in=stage_labels,
+        _complete_passing_grades(TeamGrade.SCOPE_CAPSTONE)
+        .filter(
             team__status=StudentTeam.STATUS_APPROVED,
-            final_grade__gte=Decimal('75.00'),
         )
-        .select_related('team', 'team__semester')
-        .order_by('stage_label', 'team__name')
+        .filter(
+            Q(defense_stage_id__in=stage_ids)
+            | Q(defense_stage__isnull=True, stage_label__in=stage_labels)
+        )
+        .select_related('team', 'team__semester', 'defense_stage')
+        .order_by('defense_stage__display_order', 'stage_label', 'team__name')
     )
     if semester:
         grades = grades.filter(semester=semester)
@@ -353,8 +419,10 @@ def capstone_vault_upload_queue(semester=None):
     seen = set()
     for grade in grades:
         team = grade.team
-        key = (team.id, grade.stage_label)
-        if key in uploaded_keys or key in seen:
+        stage_label = grade.defense_stage.label if grade.defense_stage_id else grade.stage_label
+        key = (team.id, grade.defense_stage_id or stage_label)
+        legacy_key = (team.id, stage_label)
+        if key in uploaded_keys or legacy_key in uploaded_legacy_keys or key in seen:
             continue
         seen.add(key)
         semester_label = team.semester.label if team.semester_id else Semester.FIRST
@@ -362,10 +430,11 @@ def capstone_vault_upload_queue(semester=None):
             'team_id': team.id,
             'team_name': team.name,
             'project_title': team.project_title or team.name,
-            'stage_label': grade.stage_label,
+            'defense_stage_id': grade.defense_stage_id,
+            'stage_label': stage_label,
             'suggested_file_name': suggested_capstone_file_name(
                 team,
-                grade.stage_label,
+                stage_label,
                 semester_label,
             ),
             'vault_status': 'pending',
@@ -411,13 +480,15 @@ def capstone_upload_window_open(semester=None):
     queue = capstone_vault_upload_queue(semester=semester)
     if queue:
         return True
-    if not all_completed_capstone_stage_labels(semester=semester):
+    stage_labels = all_completed_capstone_stage_labels(semester=semester)
+    stage_ids = all_completed_capstone_stage_ids(semester=semester)
+    if not stage_labels and not stage_ids:
         return False
-    return TeamGrade.objects.filter(
-        scope=TeamGrade.SCOPE_CAPSTONE,
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+    return _complete_passing_grades(TeamGrade.SCOPE_CAPSTONE).filter(
         semester=semester,
-        final_grade__gte=Decimal('75.00'),
+    ).filter(
+        Q(defense_stage_id__in=stage_ids)
+        | Q(defense_stage__isnull=True, stage_label__in=stage_labels)
     ).exists()
 
 
@@ -666,15 +737,18 @@ def repository_audit_payload(request):
         include_ml=True,
         include_audit_trail=include_audit_trail,
     )
-    deliverable_id = (request.query_params.get('deliverable_id') or '').strip()
-    stage_filter = (request.query_params.get('stage') or '').strip()
-    view_mode = (request.query_params.get('view') or '').strip()
-    team_id = (request.query_params.get('team_id') or '').strip()
+    query_params = request.query_params.copy()
+    if scope.get('scope') != 'admin' and query_params.get('type') == VaultEntry.TYPE_CAPSTONE:
+        query_params['type'] = VaultEntry.TYPE_PIT
+    deliverable_id = (query_params.get('deliverable_id') or '').strip()
+    stage_filter = (query_params.get('stage') or '').strip()
+    view_mode = (query_params.get('view') or '').strip()
+    team_id = (query_params.get('team_id') or '').strip()
 
     if deliverable_id and scope.get('scope') == 'admin':
         entries = augment_deliverable_missing_rows(entries, deliverable_id, stage_filter)
 
-    filtered, suggestions = filter_and_rank_entries(entries, request.query_params)
+    filtered, suggestions = filter_and_rank_entries(entries, query_params)
     for entry in filtered:
         if entry['type'] == VaultEntry.TYPE_PIT:
             entry['can_override'] = scope['can_override']
@@ -684,7 +758,7 @@ def repository_audit_payload(request):
             include_audit_trail=include_audit_trail,
         )
 
-    track = track_from_entry_type(request.query_params.get('type', ''))
+    track = track_from_entry_type(query_params.get('type', ''))
     grouped_by_stage = []
     deliverable_summary = {}
     team_view_error = ''
@@ -746,16 +820,16 @@ def repository_audit_payload(request):
         'deliverable_summary': deliverable_summary,
         'team_view_error': team_view_error,
         'filters': {
-            'search': request.query_params.get('search', ''),
-            'type': request.query_params.get('type', ''),
-            'year_level': request.query_params.get('year_level', ''),
-            'academic_year': request.query_params.get('academic_year', ''),
-            'status': request.query_params.get('status', ''),
-            'semester': request.query_params.get('semester', ''),
+            'search': query_params.get('search', ''),
+            'type': query_params.get('type', ''),
+            'year_level': query_params.get('year_level', ''),
+            'academic_year': query_params.get('academic_year', ''),
+            'status': query_params.get('status', ''),
+            'semester': query_params.get('semester', ''),
             'team_id': team_id,
             'stage': stage_filter,
             'deliverable_id': deliverable_id,
-            'submission_kind': request.query_params.get('submission_kind', ''),
+            'submission_kind': query_params.get('submission_kind', ''),
             'view': view_mode,
         },
     }
@@ -774,29 +848,23 @@ def resolve_pit_entry(user, entry_id):
     return entry, scope
 
 
-def mark_pit_grade_published_after_vault(team, *, semester=None, user=None):
-    from django.utils import timezone
-
-    if not team:
-        return None
-    if semester is None:
-        semester = team.semester if getattr(team, 'semester_id', None) else get_active_semester()
-    grades = TeamGrade.objects.filter(
+def _pit_archive_grade_for_team(team, *, semester=None, pit_event_config_id=None):
+    semester = semester or get_active_semester()
+    event_names = all_completed_pit_event_names(semester=semester)
+    event_ids = all_completed_pit_event_ids(semester=semester)
+    grades = _complete_passing_grades(TeamGrade.SCOPE_PIT).filter(
         team=team,
-        scope=TeamGrade.SCOPE_PIT,
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
     )
     if semester:
         grades = grades.filter(semester=semester)
-    grade = grades.order_by('-updated_at').first()
-    if grade is None:
-        return None
-    grade.status = TeamGrade.STATUS_PUBLISHED
-    if user is not None:
-        grade.published_by = user
-    grade.published_at = timezone.now()
-    grade.save(update_fields=['status', 'published_by', 'published_at', 'updated_at'])
-    return grade
+    if pit_event_config_id:
+        grades = grades.filter(pit_event_config_id=pit_event_config_id)
+    else:
+        grades = grades.filter(
+            Q(pit_event_config_id__in=event_ids)
+            | Q(pit_event_config__isnull=True, stage_label__in=event_names)
+        )
+    return grades.order_by('pit_event_config__event_name', 'stage_label', '-updated_at').first()
 
 
 def eligible_pit_team_ids(year_level, semester=None):
@@ -898,6 +966,7 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
     team = match_pit_team(file_name, selected_year, semester=active_semester)
     if team is None or team.id not in eligible_ids:
         return None, _pit_team_match_skip_reason(file_name, selected_year, active_semester)
+    archive_grade = _pit_archive_grade_for_team(team, semester=active_semester)
 
     entry, made = VaultEntry.objects.update_or_create(
         entry_type=VaultEntry.TYPE_PIT,
@@ -910,6 +979,7 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
             'course_code': metadata['course_code'],
             'semester_label': metadata['semester_label'],
             'stage_label': metadata['course_code'],
+            'pit_event_config_id': archive_grade.pit_event_config_id if archive_grade else None,
             'status': VaultEntry.STATUS_APPROVED,
             'uploaded_by': user,
             'metadata': {
@@ -938,12 +1008,25 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
         new_status=entry.status,
         message=message,
     )
-    if team:
-        mark_pit_grade_published_after_vault(
-            team,
-            semester=active_semester,
-            user=user,
-        )
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_REPOSITORY,
+        action='repository.vault_upload',
+        target=entry,
+        target_type='VaultEntry',
+        target_id=entry.pk,
+        actor=user,
+        old_values={'status': '' if made else entry.status},
+        new_values={
+            'entry_type': entry.entry_type,
+            'file_name': entry.file_name,
+            'status': entry.status,
+            'team_id': entry.team_id,
+            'track': entry.entry_type,
+            'year_level': entry.year_level,
+            'replaced_existing': not made,
+        },
+        reason=message,
+    )
     return entry, None
 
 
@@ -1004,36 +1087,9 @@ def upload_pit_files(user, file_names=None, uploaded_files=None, year_level=None
     return created, skipped
 
 
-def mark_capstone_grade_published_after_vault(team, *, stage_label=None, semester=None, user=None):
-    from django.utils import timezone
-
-    if not team:
-        return None
-    if semester is None:
-        semester = team.semester if getattr(team, 'semester_id', None) else get_active_semester()
-    grades = TeamGrade.objects.filter(
-        team=team,
-        scope=TeamGrade.SCOPE_CAPSTONE,
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-    )
-    if semester:
-        grades = grades.filter(semester=semester)
-    if stage_label:
-        grades = grades.filter(stage_label=stage_label)
-    grade = grades.order_by('-updated_at').first()
-    if grade is None:
-        return None
-    grade.status = TeamGrade.STATUS_PUBLISHED
-    if user is not None:
-        grade.published_by = user
-    grade.published_at = timezone.now()
-    grade.save(update_fields=['status', 'published_by', 'published_at', 'updated_at'])
-    return grade
-
-
 def eligible_capstone_queue_keys(semester=None):
     return {
-        (item['team_id'], item['stage_label'])
+        (item['team_id'], item.get('defense_stage_id') or item['stage_label'])
         for item in capstone_vault_upload_queue(semester=semester)
     }
 
@@ -1048,10 +1104,10 @@ def match_capstone_team(file_name, semester=None):
         project_key = normalize(team.project_title or team.name)
         team_key = normalize(team.name).replace('team', '')
         if project_key and project_key[:10] in file_key:
-            return team, item['stage_label']
+            return team, item['stage_label'], item.get('defense_stage_id')
         if team_key and team_key in file_key:
-            return team, item['stage_label']
-    return None, None
+            return team, item['stage_label'], item.get('defense_stage_id')
+    return None, None, None
 
 
 def _capstone_team_match_skip_reason(file_name, active_semester):
@@ -1114,8 +1170,9 @@ def _save_capstone_vault_entry(
     except ValidationError as exc:
         return None, {'file_name': file_name, 'reason': '; '.join(exc.messages)}
 
-    team, stage_label = match_capstone_team(file_name, semester=active_semester)
-    if team is None or (team.id, stage_label) not in eligible_keys:
+    team, stage_label, defense_stage_id = match_capstone_team(file_name, semester=active_semester)
+    eligible_key = (team.id, defense_stage_id or stage_label) if team else None
+    if team is None or eligible_key not in eligible_keys:
         return None, _capstone_team_match_skip_reason(file_name, active_semester)
 
     entry, made = VaultEntry.objects.update_or_create(
@@ -1129,6 +1186,7 @@ def _save_capstone_vault_entry(
             'course_code': metadata['course_code'],
             'semester_label': metadata['semester_label'],
             'stage_label': stage_label,
+            'defense_stage_id': defense_stage_id,
             'status': VaultEntry.STATUS_APPROVED,
             'uploaded_by': user,
             'metadata': {
@@ -1157,13 +1215,25 @@ def _save_capstone_vault_entry(
         new_status=entry.status,
         message=message,
     )
-    if team:
-        mark_capstone_grade_published_after_vault(
-            team,
-            stage_label=stage_label,
-            semester=active_semester,
-            user=user,
-        )
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_REPOSITORY,
+        action='repository.vault_upload',
+        target=entry,
+        target_type='VaultEntry',
+        target_id=entry.pk,
+        actor=user,
+        old_values={'status': '' if made else entry.status},
+        new_values={
+            'entry_type': entry.entry_type,
+            'file_name': entry.file_name,
+            'status': entry.status,
+            'team_id': entry.team_id,
+            'track': entry.entry_type,
+            'year_level': entry.year_level,
+            'replaced_existing': not made,
+        },
+        reason=message,
+    )
     return entry, None
 
 
@@ -1236,6 +1306,27 @@ def override_pit_status(user, entry_id, status):
         previous_status=previous,
         new_status=status,
         message='Admin override updated PIT repository status.',
+    )
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_REPOSITORY,
+        action='repository.status_override',
+        target=entry,
+        target_type='VaultEntry',
+        target_id=entry.pk,
+        actor=user,
+        old_values={
+            'entry_type': entry.entry_type,
+            'status': previous,
+            'track': entry.entry_type,
+            'year_level': entry.year_level,
+        },
+        new_values={
+            'entry_type': entry.entry_type,
+            'status': status,
+            'track': entry.entry_type,
+            'year_level': entry.year_level,
+        },
+        reason='Admin override updated PIT repository status.',
     )
     return entry
 

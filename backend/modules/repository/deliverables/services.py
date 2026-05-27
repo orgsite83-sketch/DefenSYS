@@ -5,6 +5,7 @@ from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
 from student_teams.models import StudentTeam
+from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready
 from .models import DeliverableSubmission
 
 
@@ -45,6 +46,10 @@ def display_name(user):
 
 def active_semester():
     return Semester.objects.select_related('school_year').filter(is_active=True).first()
+
+
+def defense_stage_for_label(stage_label):
+    return DefenseStage.objects.filter(label=stage_label).first()
 
 
 def definition_for(stage_label, deliverable_id):
@@ -179,7 +184,7 @@ def stage_payload(team, stage_label):
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
-        'endorsed': team.ready_for_stage == stage_label,
+        'endorsed': is_stage_ready(team, defense_stage_for_label(stage_label)),
         'vault_unlocked': unlocked,
         'required_complete': configured and all(item['uploaded'] for item in required_items),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
@@ -299,8 +304,12 @@ def remove_submission(team, stage_label, deliverable_id):
     if hasattr(team, '_prefetched_objects_cache'):
         team._prefetched_objects_cache.pop('deliverable_submissions', None)
     if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
-        team.ready_for_stage = None
-        team.save(update_fields=['ready_for_stage', 'updated_at'])
+        stage = defense_stage_for_label(stage_label)
+        if stage is not None:
+            mark_stage_locked(team, stage)
+        else:
+            team.ready_for_stage = None
+            team.save(update_fields=['ready_for_stage', 'updated_at'])
     return deleted
 
 
@@ -312,8 +321,9 @@ def endorse_team(team, stage_label):
         )
     if not required_complete(team, stage_label):
         raise ValueError('All required pre-defense deliverables must be uploaded before endorsement.')
-    team.ready_for_stage = stage_label
-    team.current_defense_stage = stage_label
-    team.save(update_fields=['ready_for_stage', 'current_defense_stage', 'updated_at'])
+    stage = defense_stage_for_label(stage_label)
+    if stage is None:
+        raise ValueError('Defense stage does not exist.')
+    mark_stage_ready(team, stage)
     return team
 

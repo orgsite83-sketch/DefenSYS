@@ -10,6 +10,7 @@ import '../../../widgets/confirm_dialog.dart';
 import '../../../services/dashboard_provider.dart';
 import 'academic_periods_screen.dart';
 import 'admin_dashboard_content.dart';
+import 'audit_compliance_screen.dart';
 import 'curriculum_analytics_screen.dart';
 import 'defense_board_screen.dart';
 import 'defense_scheduler_screen.dart';
@@ -134,6 +135,8 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const RepositoryAuditScreen();
       case DefensysAdminSection.curriculumAnalytics:
         return const CurriculumAnalyticsScreen();
+      case DefensysAdminSection.auditCompliance:
+        return const AuditComplianceScreen();
       case DefensysAdminSection.scheduling:
         return const DefenseSchedulerScreen();
       case DefensysAdminSection.defenseBoard:

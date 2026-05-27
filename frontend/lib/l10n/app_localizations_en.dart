@@ -122,7 +122,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navRubricEngine => 'Rubric Engine';
 
   @override
-  String get navRepositoryAudit => 'Repository Audit';
+  String get navRepositoryAudit => 'Repository Vault';
 
   @override
   String get navCurriculumAnalytics => 'Curriculum Analytics';

@@ -538,7 +538,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                'Digital Vault Manager',
+                'Repository Vault',
                 style: TextStyle(
                   color: AppColors.maroon,
                   fontSize: 21,
@@ -765,6 +765,18 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       ),
       child: Column(
         children: [
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text(
+              'Repository Vault Records',
+              style: TextStyle(
+                color: AppColors.maroon,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Row(
             children: [
               Expanded(child: _searchField(state)),
@@ -2118,7 +2130,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Repository Audit CSV'),
+        title: const Text('Repository Vault CSV'),
         content: SizedBox(
           width: 720,
           child: SingleChildScrollView(child: SelectableText(csv)),
@@ -2284,7 +2296,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         tab('Capstone', 'capstone', state.type == 'capstone'),
         tab('PIT', 'pit', state.type == 'pit'),
-        tab('All files', '', state.type.isEmpty),
+        tab('All records', '', state.type.isEmpty),
       ],
     );
   }

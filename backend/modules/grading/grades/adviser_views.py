@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from django.core.exceptions import ValidationError as DjangoValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
@@ -11,12 +12,12 @@ from grading.rubrics.models import Rubric
 from .models import GradeBreakdown, TeamGrade
 from .serializers import TeamGradeSerializer
 from .services import (
+    GradeContextService,
     active_semester,
     adviser_capstone_grades_for_user,
     assigned_adviser_rubric_payload,
-    find_matching_rubric,
     grade_queryset,
-    resolve_canonical_capstone_grade,
+    require_matching_rubric,
 )
 
 
@@ -33,10 +34,16 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
 
     def save(self):
         grade = self.context['grade']
-        grade.adviser_score = self.validated_data['adviser_score']
 
-        assigned = find_matching_rubric(grade, Rubric.EVAL_ADVISER)
-        rubric_id = self.validated_data.get('rubric_id') or (assigned.pk if assigned else None)
+        try:
+            assigned = require_matching_rubric(grade, Rubric.EVAL_ADVISER)
+        except DjangoValidationError as exc:
+            raise drf_serializers.ValidationError(
+                exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
+            ) from exc
+
+        grade.adviser_score = self.validated_data['adviser_score']
+        rubric_id = self.validated_data.get('rubric_id') or assigned.pk
         if rubric_id and assigned and rubric_id != assigned.pk:
             raise drf_serializers.ValidationError(
                 {'rubric_id': 'Use the adviser rubric assigned for this defense stage.'}
@@ -73,8 +80,10 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
                         )
                     )
                 GradeBreakdown.objects.bulk_create(breakdowns)
-            except Rubric.DoesNotExist:
-                pass
+            except Rubric.DoesNotExist as exc:
+                raise drf_serializers.ValidationError(
+                    {'rubric_id': 'Adviser rubric does not exist.'}
+                ) from exc
 
         grade.save()
         return grade
@@ -133,7 +142,7 @@ class AdviserSubmitGradeView(APIView):
             grade_queryset().filter(team__adviser=request.user),
             pk=grade_id,
         )
-        grade = resolve_canonical_capstone_grade(grade)
+        grade = GradeContextService.get_for_adviser_context(request.user, grade)
         serializer = _AdviserGradeSubmitSerializer(
             data=request.data, context={'grade': grade}
         )

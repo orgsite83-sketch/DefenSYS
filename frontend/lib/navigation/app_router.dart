@@ -290,6 +290,10 @@ List<RouteBase> _adminRoutes() {
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(
+          path: 'audit-compliance',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
+        GoRoute(
           path: 'defense-scheduler',
           builder: (_, __) => const SizedBox.shrink(),
         ),

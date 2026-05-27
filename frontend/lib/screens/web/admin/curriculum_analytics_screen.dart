@@ -534,7 +534,7 @@ class _CurriculumAnalyticsScreenState
             _suggestionBox(
               title: 'No Repository Data Yet',
               body:
-                  'Upload PIT or Capstone files through Repository Audit to generate curriculum insights.',
+                  'Upload PIT or Capstone files through Repository Vault to generate curriculum insights.',
               type: 'info',
             )
           else

@@ -5,68 +5,42 @@ from django.db import transaction
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam, TeamMembership
 
-from .models import PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
+from .models import PeerEvaluationSubmission, StudentPeerGrade
 from .services import (
-    _scope_for_team,
-    _sync_unscheduled_team,
-    canonical_capstone_grade_for_team,
+    GradeContextService,
     display_name,
     find_matching_rubric,
     peer_grading_allowed_for_grade,
-    resolve_canonical_capstone_grade,
+    require_matching_rubric,
 )
 
 
-def _resolve_evaluatee(team, evaluatee_name):
-    target = (evaluatee_name or '').strip().lower()
-    if not target:
-        raise ValidationError({'evaluateeName': 'Evaluatee name is required.'})
+def _resolve_evaluatee(team, evaluatee_id):
+    try:
+        target_id = int(evaluatee_id)
+    except (TypeError, ValueError) as exc:
+        raise ValidationError({'evaluateeId': 'Evaluatee is required.'}) from exc
 
     for membership in team.memberships.select_related('student').all():
-        student = membership.student
-        candidates = {
-            display_name(student).lower(),
-            student.username.lower(),
-            f'{student.first_name} {student.last_name}'.strip().lower(),
-        }
-        if target in candidates:
-            return student
+        if membership.student_id == target_id:
+            return membership.student
 
-    raise ValidationError({'evaluateeName': f'No teammate matched "{evaluatee_name}".'})
+    raise ValidationError({'evaluateeId': 'Evaluatee must be a member of this team.'})
 
 
 def _grade_for_team(team):
-    scope = _scope_for_team(team)
-    if scope == TeamGrade.SCOPE_CAPSTONE:
-        grade = canonical_capstone_grade_for_team(team, team.semester)
-        if grade is None:
-            grade, _ = _sync_unscheduled_team(team)
-            grade = resolve_canonical_capstone_grade(grade)
-        else:
-            grade = resolve_canonical_capstone_grade(grade)
-        return grade
-
-    grade = (
-        TeamGrade.objects.filter(team=team, scope=scope)
-        .order_by('-updated_at', '-id')
-        .first()
-    )
-    if grade:
-        return grade
-    grade, _ = _sync_unscheduled_team(team)
-    return grade
+    return GradeContextService.get_for_current_student_peer_context(team)
 
 
 def _peer_max_score(grade):
-    rubric = find_matching_rubric(grade, Rubric.EVAL_PEER)
-    if rubric:
-        total = sum(
-            Decimal(str(criterion.max_score))
-            for criterion in rubric.criteria.all()
-        )
-        if total > 0:
-            return total
-    return Decimal('5.00')
+    rubric = require_matching_rubric(grade, Rubric.EVAL_PEER)
+    total = sum(
+        Decimal(str(criterion.max_score))
+        for criterion in rubric.criteria.all()
+    )
+    if total <= 0:
+        raise ValidationError({'rubric': 'The configured peer rubric must have a positive max score.'})
+    return total
 
 
 def required_peer_submission_count(team):
@@ -209,7 +183,7 @@ def sync_peer_summaries(grade):
 
 
 @transaction.atomic
-def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_name, breakdown, total, max_score):
+def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdown, total, max_score):
     if getattr(evaluator, 'role', None) != 'student':
         raise ValidationError({'detail': 'Only students can submit peer evaluations.'})
 
@@ -221,13 +195,14 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_name, breakd
     if not TeamMembership.objects.filter(team=team, student=evaluator).exists():
         raise ValidationError({'teamId': 'You are not a member of this team.'})
 
-    evaluatee = _resolve_evaluatee(team, evaluatee_name)
+    evaluatee = _resolve_evaluatee(team, evaluatee_id)
     if evaluatee.id == evaluator.id:
-        raise ValidationError({'evaluateeName': 'You cannot evaluate yourself.'})
+        raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
     grade = _grade_for_team(team)
     if not peer_grading_allowed_for_grade(grade):
         raise ValidationError({'detail': 'Peer grading is not open for this event or stage.'})
+    require_matching_rubric(grade, Rubric.EVAL_PEER)
 
     total_decimal = Decimal(str(total)).quantize(Decimal('0.01'))
     max_decimal = Decimal(str(max_score)).quantize(Decimal('0.01'))
@@ -275,11 +250,6 @@ def peer_criteria_payload(team):
             for criterion in rubric.criteria.order_by('display_order', 'id')
         ]
 
-    if team.is_capstone:
-        return [
-            {'name': 'Teamwork', 'maxScore': 5.0, 'description': ''},
-            {'name': 'Contribution', 'maxScore': 5.0, 'description': ''},
-        ]
     return []
 
 

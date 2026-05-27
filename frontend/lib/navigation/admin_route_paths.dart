@@ -13,6 +13,7 @@ abstract final class AdminRoutes {
   static const rubrics = '/admin/rubrics';
   static const repositoryAudit = '/admin/repository-audit';
   static const curriculumAnalytics = '/admin/curriculum-analytics';
+  static const auditCompliance = '/admin/audit-compliance';
   static const defenseScheduler = '/admin/defense-scheduler';
   static const defenseBoard = '/admin/defense-board';
   static const defenseStages = '/admin/defense-stages';
@@ -70,6 +71,9 @@ abstract final class AdminRoutes {
     if (location.startsWith('/admin/curriculum-analytics')) {
       return DefensysAdminSection.curriculumAnalytics;
     }
+    if (location.startsWith('/admin/audit-compliance')) {
+      return DefensysAdminSection.auditCompliance;
+    }
     if (location.startsWith('/admin/defense-scheduler')) {
       return DefensysAdminSection.scheduling;
     }
@@ -93,6 +97,7 @@ abstract final class AdminRoutes {
       DefensysAdminSection.rubricEngine => rubrics,
       DefensysAdminSection.repositoryAudit => repositoryAudit,
       DefensysAdminSection.curriculumAnalytics => curriculumAnalytics,
+      DefensysAdminSection.auditCompliance => auditCompliance,
       DefensysAdminSection.scheduling => defenseScheduler,
       DefensysAdminSection.defenseBoard => defenseBoard,
       DefensysAdminSection.defenseStages => defenseStages,

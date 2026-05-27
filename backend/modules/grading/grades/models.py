@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+from django.db.models import Q
 from django.utils import timezone
 
 
@@ -48,6 +49,20 @@ class TeamGrade(models.Model):
     )
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
     stage_label = models.CharField(max_length=120, default='Unscheduled')
+    defense_stage = models.ForeignKey(
+        'defense.DefenseStage',
+        related_name='grade_records',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    pit_event_config = models.ForeignKey(
+        'defense.PitEventGradingConfig',
+        related_name='grade_records',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     panel_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     adviser_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     peer_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
@@ -73,13 +88,21 @@ class TeamGrade(models.Model):
         ordering = ['team__level', 'team__name', 'stage_label']
         constraints = [
             models.UniqueConstraint(
-                fields=['team', 'semester', 'scope', 'stage_label'],
-                name='unique_grade_record_per_team_context',
+                fields=['team', 'semester', 'scope', 'defense_stage'],
+                condition=Q(scope='capstone', defense_stage__isnull=False),
+                name='unique_capstone_grade_per_team_stage',
+            ),
+            models.UniqueConstraint(
+                fields=['team', 'semester', 'scope', 'pit_event_config'],
+                condition=Q(scope='pit', pit_event_config__isnull=False),
+                name='unique_pit_grade_per_team_event',
             ),
         ]
         indexes = [
             models.Index(fields=['scope', 'status'], name='grade_cente_scope_8e8f63_idx'),
             models.Index(fields=['stage_label'], name='grade_cente_stage_l_1fb308_idx'),
+            models.Index(fields=['defense_stage'], name='grade_cente_def_sta_idx'),
+            models.Index(fields=['pit_event_config'], name='grade_cente_pit_evt_idx'),
         ]
 
     @property
@@ -157,6 +180,13 @@ class TeamGrade(models.Model):
     def save(self, *args, **kwargs):
         if self.scope == self.SCOPE_PIT:
             self.adviser_weight = 0
+            self.defense_stage = None
+            if self.pit_event_config_id:
+                self.stage_label = self.pit_event_config.event_name
+        else:
+            self.pit_event_config = None
+            if self.defense_stage_id:
+                self.stage_label = self.defense_stage.label
         self.recalculate(keep_published=True)
         self.full_clean()
         super().save(*args, **kwargs)
@@ -218,6 +248,122 @@ class GradeBreakdown(models.Model):
 
     def __str__(self):
         return f'{self.team_grade} - {self.criterion_name}'
+
+
+class PanelistGradeSubmission(models.Model):
+    team_grade = models.ForeignKey(
+        TeamGrade,
+        related_name='panelist_submissions',
+        on_delete=models.CASCADE,
+    )
+    schedule = models.ForeignKey(
+        'defense.DefenseSchedule',
+        related_name='panelist_grade_submissions',
+        on_delete=models.CASCADE,
+    )
+    panelist = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='panelist_grade_submissions',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    guest_code_id = models.CharField(max_length=64, null=True, blank=True)
+    guest_code = models.CharField(max_length=64, blank=True)
+    guest_name = models.CharField(max_length=160, blank=True)
+    remarks = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'grading'
+        db_table = 'grade_center_panelistgradesubmission'
+        ordering = ['-updated_at', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['team_grade', 'schedule', 'panelist'],
+                condition=Q(panelist__isnull=False),
+                name='unique_panel_submission_per_panelist',
+            ),
+            models.UniqueConstraint(
+                fields=['team_grade', 'schedule', 'guest_code_id'],
+                condition=Q(guest_code_id__isnull=False),
+                name='unique_panel_submission_per_guest',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['team_grade', 'schedule'], name='grade_cente_panel__ctx_idx'),
+            models.Index(fields=['guest_code_id'], name='grade_cente_guest_c_idx'),
+        ]
+
+    @property
+    def identity_label(self):
+        if self.panelist_id:
+            return f'Panelist: {self.panelist.username}'
+        return f'Guest panelist: {self.guest_name} ({self.guest_code})'
+
+    def clean(self):
+        if bool(self.panelist_id) == bool(self.guest_code_id):
+            raise ValidationError({'panelist': 'Use either a panelist or a guest identity.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.identity_label} - {self.team_grade}'
+
+
+class PanelistCriterionScore(models.Model):
+    submission = models.ForeignKey(
+        PanelistGradeSubmission,
+        related_name='criterion_scores',
+        on_delete=models.CASCADE,
+    )
+    criterion = models.ForeignKey(
+        'grading.RubricCriterion',
+        related_name='panelist_scores',
+        on_delete=models.PROTECT,
+    )
+    criterion_name_snapshot = models.CharField(max_length=160)
+    score = models.DecimalField(max_digits=7, decimal_places=2)
+    max_score_snapshot = models.DecimalField(max_digits=7, decimal_places=2)
+    display_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'grading'
+        db_table = 'grade_center_panelistcriterionscore'
+        ordering = ['display_order', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['submission', 'criterion'],
+                name='unique_panel_score_per_criterion',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['criterion'], name='grade_cente_crit_id_idx'),
+        ]
+
+    @property
+    def normalized_score(self):
+        if self.max_score_snapshot <= 0:
+            return Decimal('0.00')
+        return (self.score / self.max_score_snapshot * Decimal('100')).quantize(Decimal('0.01'))
+
+    def clean(self):
+        if self.max_score_snapshot <= 0:
+            raise ValidationError({'max_score_snapshot': 'Max score must be greater than 0.'})
+        if self.score < 0 or self.score > self.max_score_snapshot:
+            raise ValidationError({'score': 'Score must be between 0 and max score.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.submission} - {self.criterion_name_snapshot}'
 
 
 class StudentPeerGrade(models.Model):

@@ -16,6 +16,7 @@ enum DefensysAdminSection {
   rubricEngine,
   repositoryAudit,
   curriculumAnalytics,
+  auditCompliance,
   scheduling,
   defenseBoard,
   defenseStages,
@@ -439,6 +440,13 @@ class _Sidebar extends StatelessWidget {
                   activeSection: activeSection,
                   icon: Icons.manage_search_rounded,
                   label: l10n.navCurriculumAnalytics,
+                  onTap: onNavigate,
+                ),
+                _NavItem(
+                  section: DefensysAdminSection.auditCompliance,
+                  activeSection: activeSection,
+                  icon: Icons.verified_user_outlined,
+                  label: 'Audit Trail',
                   onTap: onNavigate,
                 ),
                 _NavItem(

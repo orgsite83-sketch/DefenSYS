@@ -1,7 +1,12 @@
+from decimal import Decimal
+
 from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
+from defense.scheduler.models import DefenseSchedule
+from defense.stages.models import DefenseStage
+from grading.grades.models import TeamGrade
 from student_teams.models import StudentTeam, TeamMembership
 from user_management.academic_records.models import StudentAcademicRecord
 
@@ -256,6 +261,59 @@ class DashboardApiTests(APITestCase):
         self.assertIsNone(response.data['team'])
         self.assertEqual(response.data['members'], [])
         self.assertFalse(response.data['peerEvalEnabled'])
+
+    def test_student_dashboard_does_not_show_previous_stage_grade_for_current_schedule(self):
+        student = User.objects.create_user(
+            username='student-current-stage',
+            password='pass12345',
+            role='student',
+        )
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+        concept_stage = DefenseStage.objects.get(label='Concept Proposal')
+        project_stage = DefenseStage.objects.get(label='Project Proposal')
+        team = StudentTeam.objects.create(
+            name='Capstone Stage Team',
+            project_title='Stage Scoped Grades',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student,
+            ready_for_stage=project_stage.label,
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        TeamGrade.objects.create(
+            team=team,
+            semester=semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label=concept_stage.label,
+            panel_score=Decimal('91.00'),
+            adviser_score=Decimal('90.00'),
+            peer_score=Decimal('92.00'),
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=semester,
+            team=team,
+            defense_stage=project_stage,
+            scheduled_date='2026-05-27',
+            start_time='08:00',
+            slot_duration=60,
+            room='Room 301',
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        )
+
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/student/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['schedule']['stage'], project_stage.label)
+        self.assertIsNone(response.data['grades'])
 
     def test_student_cannot_get_admin_dashboard(self):
         student = User.objects.create_user(

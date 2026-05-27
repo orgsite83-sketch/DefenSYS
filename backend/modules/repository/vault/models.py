@@ -93,6 +93,20 @@ class VaultEntry(models.Model):
     semester_label = models.CharField(max_length=30, blank=True)
     academic_year = models.CharField(max_length=9, blank=True)
     stage_label = models.CharField(max_length=80, blank=True)
+    defense_stage = models.ForeignKey(
+        'defense.DefenseStage',
+        related_name='vault_entries',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
+    pit_event_config = models.ForeignKey(
+        'defense.PitEventGradingConfig',
+        related_name='vault_entries',
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+    )
     status = models.CharField(max_length=40, choices=STATUS_CHOICES, default=STATUS_APPROVED)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -124,6 +138,11 @@ class VaultEntry(models.Model):
     def save(self, *args, **kwargs):
         if self.entry_type == self.TYPE_PIT:
             self._hydrate_pit_metadata()
+            self.defense_stage = None
+        else:
+            self.pit_event_config = None
+            if self.defense_stage_id and not self.stage_label:
+                self.stage_label = self.defense_stage.label
         if self.team and not self.team_name:
             self.team_name = self.team.name
         if self.uploaded_by and not self.uploaded_by_name:

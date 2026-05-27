@@ -33,10 +33,11 @@ class TeamData {
 }
 
 class Criterion {
+  final int? id;
   final String name;
   final double maxScore;
   double score;
-  Criterion(this.name, this.maxScore) : score = maxScore * 0.8;
+  Criterion(this.name, this.maxScore, {this.id}) : score = maxScore * 0.8;
 }
 
 class Award {

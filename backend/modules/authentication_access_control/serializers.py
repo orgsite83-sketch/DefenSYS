@@ -4,7 +4,7 @@ from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 
-from .models import User
+from .models import SystemAuditLog, User
 from .tokens import DefensysRefreshToken, REMEMBER_ME_CLAIM
 
 
@@ -44,6 +44,39 @@ class UserSerializer(serializers.ModelSerializer):
             'repoAssistantYear': getattr(obj, 'repo_assistant_year', '') or '',
             'uploader': obj.is_uploader,
         }
+
+
+class SystemAuditLogSerializer(serializers.ModelSerializer):
+    actor_name = serializers.SerializerMethodField()
+    category_label = serializers.CharField(source='get_category_display', read_only=True)
+    review_status_label = serializers.CharField(source='get_review_status_display', read_only=True)
+
+    class Meta:
+        model = SystemAuditLog
+        fields = [
+            'id',
+            'actor',
+            'actor_name',
+            'action',
+            'category',
+            'category_label',
+            'target_type',
+            'target_id',
+            'old_values',
+            'new_values',
+            'reason',
+            'review_status',
+            'review_status_label',
+            'ip_address',
+            'user_agent',
+            'created_at',
+        ]
+
+    def get_actor_name(self, obj):
+        if obj.actor is None:
+            return 'System'
+        full_name = f'{obj.actor.first_name} {obj.actor.last_name}'.strip()
+        return full_name or obj.actor.username
 
 
 class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):

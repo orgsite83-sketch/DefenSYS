@@ -47,6 +47,27 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           {'name': 'Reliability', 'maxScore': 5},
         ];
 
+  String _teammateId(Map<String, dynamic> teammate) =>
+      teammate['id']?.toString() ?? teammate['name']?.toString() ?? '?';
+
+  String _teammateName(Map<String, dynamic> teammate) =>
+      teammate['name']?.toString() ?? _teammateId(teammate);
+
+  String? _submissionKey(Map<String, dynamic> submission) {
+    final id = submission['evaluateeId']?.toString();
+    if (id != null && id.isNotEmpty) return id;
+
+    final name = submission['evaluateeName']?.toString() ?? '';
+    if (name.isEmpty) return null;
+
+    for (final teammate in widget.teammates) {
+      if (_teammateName(teammate) == name) {
+        return _teammateId(teammate);
+      }
+    }
+    return name;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -71,9 +92,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   void _buildScores() {
     for (final t in widget.teammates) {
-      final name = t['name'] as String? ?? t['id'] as String? ?? '?';
-      _posted.putIfAbsent(name, () => false);
-      _scores.putIfAbsent(name, () => {
+      final id = _teammateId(t);
+      _posted.putIfAbsent(id, () => false);
+      _scores.putIfAbsent(id, () => {
         for (final c in _effectiveCriteria)
           (c['name'] as String): 0.0,
       });
@@ -83,11 +104,11 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   void _hydrateFromSubmissions() {
     for (final sub in widget.myPeerSubmissions) {
-      final name = sub['evaluateeName'] as String? ?? '';
-      if (name.isEmpty) continue;
+      final key = _submissionKey(sub);
+      if (key == null || key.isEmpty) continue;
 
-      _posted[name] = true;
-      _scores.putIfAbsent(name, () => {});
+      _posted[key] = true;
+      _scores.putIfAbsent(key, () => {});
 
       final breakdown = (sub['breakdown'] as List? ?? []).cast<Map<String, dynamic>>();
       if (breakdown.isNotEmpty) {
@@ -96,7 +117,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               item['criteriaName'] as String? ?? item['name'] as String?;
           final score = (item['score'] as num?)?.toDouble();
           if (criteriaName != null && score != null) {
-            _scores[name]![criteriaName] = score;
+            _scores[key]![criteriaName] = score;
           }
         }
         continue;
@@ -110,7 +131,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       for (final c in _effectiveCriteria) {
         final criteriaName = c['name'] as String;
         final cMax = ((c['maxScore'] as num?) ?? 5).toDouble();
-        _scores[name]![criteriaName] = (ratio * cMax).clamp(0, cMax);
+        _scores[key]![criteriaName] = (ratio * cMax).clamp(0, cMax);
       }
     }
   }
@@ -169,17 +190,18 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           ),
           const SizedBox(height: 16),
           ...widget.teammates.map((t) {
-            final name = t['name'] as String? ?? t['id'] as String? ?? '?';
-            return _peerCard(name);
+            final id = _teammateId(t);
+            final name = _teammateName(t);
+            return _peerCard(id, name);
           }),
         ],
       ),
     );
   }
 
-  Widget _peerCard(String name) {
-    final scores  = _scores[name] ?? {};
-    final isPosted = _posted[name] ?? false;
+  Widget _peerCard(String teammateId, String name) {
+    final scores = _scores[teammateId] ?? {};
+    final isPosted = _posted[teammateId] ?? false;
     final effectiveCriteria = widget.peerCriteria.isNotEmpty
         ? widget.peerCriteria
         : [
@@ -244,10 +266,10 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             const Divider(height: 20),
             ...criteria.map((c) {
               final cMax = effectiveCriteria.firstWhere(
-                (x) => (x['name'] as String?) == c, 
+                (x) => (x['name'] as String?) == c,
                 orElse: () => <String, Object>{'maxScore': 5}
               )['maxScore'] as num? ?? 5;
-              return _starRow(name, c, scores[c] ?? 0, cMax.toDouble(), isPosted);
+              return _starRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted);
             }),
             const Divider(height: 20),
             Row(
@@ -276,7 +298,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                     foregroundColor: Colors.white,
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
-                  onPressed: () => _confirmPost(name, scores),
+                  onPressed: () => _confirmPost(teammateId, name, scores),
                 ),
               ),
           ],
@@ -296,7 +318,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     return false;
   }
 
-  Future<void> _confirmPost(String name, Map<String, double> scores) async {
+  Future<void> _confirmPost(String teammateId, String name, Map<String, double> scores) async {
     if (_hasUnratedCriteria(scores)) {
       showValidationSnackBar(
         context,
@@ -313,7 +335,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     );
     if (!confirmed || !mounted) return;
 
-    setState(() => _posted[name] = true);
+    setState(() => _posted[teammateId] = true);
 
     final breakdown = scores.entries.map((e) => {
       'criteriaName': e.key,
@@ -333,7 +355,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       httpClient: ref.read(authenticatedHttpClientProvider),
       teamId: widget.teamId,
       evaluatorId: widget.studentId,
-      evaluateeName: name,
+      evaluateeId: teammateId,
       breakdown: breakdown,
       total: total,
       max: max,
@@ -346,7 +368,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     }
   }
 
-  Widget _starRow(String name, String criterion, double value, double maxScore, bool locked) {
+  Widget _starRow(String teammateId, String criterion, double value, double maxScore, bool locked) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Row(
@@ -355,7 +377,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           Expanded(child: Text(criterion, style: const TextStyle(fontSize: 13))),
           Row(
             children: List.generate(maxScore.toInt(), (i) => GestureDetector(
-              onTap: locked ? null : () => setState(() => _scores[name]![criterion] = (i + 1).toDouble()),
+              onTap: locked ? null : () => setState(() => _scores[teammateId]![criterion] = (i + 1).toDouble()),
               child: Icon(
                 i < value ? Icons.star : Icons.star_border,
                 color: locked ? Colors.grey.shade400 : Colors.amber,

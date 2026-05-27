@@ -11,9 +11,11 @@ class VaultEntryAdmin(admin.ModelAdmin):
         'team_name',
         'year_level',
         'academic_year',
+        'defense_stage',
+        'pit_event_config',
         'status',
         'uploaded_at',
     )
-    list_filter = ('entry_type', 'year_level', 'academic_year', 'status')
+    list_filter = ('entry_type', 'year_level', 'academic_year', 'status', 'defense_stage', 'pit_event_config')
     search_fields = ('file_name', 'team_name', 'course_code', 'stage_label')
     readonly_fields = ('created_at', 'updated_at')

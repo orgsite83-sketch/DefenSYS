@@ -1,5 +1,6 @@
 import re
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 
@@ -95,3 +96,36 @@ class Semester(models.Model):
 
     def __str__(self):
         return self.display_name
+
+
+class SemesterTransitionLog(models.Model):
+    from_semester = models.ForeignKey(
+        Semester,
+        related_name='transition_logs_from',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    to_semester = models.ForeignKey(
+        Semester,
+        related_name='transition_logs_to',
+        on_delete=models.PROTECT,
+    )
+    changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='semester_transition_logs',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    forced = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)
+    impact_snapshot = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+
+    def __str__(self):
+        source = self.from_semester.display_name if self.from_semester else 'No active semester'
+        return f'{source} -> {self.to_semester.display_name}'

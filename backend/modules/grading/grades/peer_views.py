@@ -10,7 +10,7 @@ from .peer_eval import submit_student_peer_evaluation
 
 class PeerEvaluationSubmitSerializer(serializers.Serializer):
     teamId = serializers.IntegerField()
-    evaluateeName = serializers.CharField(max_length=200)
+    evaluateeId = serializers.IntegerField()
     breakdown = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     total = serializers.DecimalField(max_digits=7, decimal_places=2)
     max = serializers.DecimalField(max_digits=7, decimal_places=2)
@@ -28,7 +28,7 @@ class StudentPeerEvaluationSubmitView(APIView):
             payload = submit_student_peer_evaluation(
                 evaluator=request.user,
                 team_id=data['teamId'],
-                evaluatee_name=data['evaluateeName'],
+                evaluatee_id=data['evaluateeId'],
                 breakdown=data.get('breakdown') or [],
                 total=data['total'],
                 max_score=data['max'],

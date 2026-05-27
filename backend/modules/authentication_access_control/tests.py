@@ -4,7 +4,12 @@ import jwt
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.test import override_settings
+from rest_framework import status
+from rest_framework.test import APIRequestFactory
 from rest_framework.test import APITestCase
+
+from .audit import log_high_impact_action
+from .models import SystemAuditLog
 
 
 User = get_user_model()
@@ -159,3 +164,156 @@ class JwtSessionApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['username'], 'session-user')
         self.assertEqual(response.data['role'], 'admin')
+
+
+class SystemAuditLogApiTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(
+            username='audit-admin',
+            password='pass12345',
+            role='admin',
+        )
+        self.pit_lead = User.objects.create_user(
+            username='audit-pit-lead',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        self.repo_assistant = User.objects.create_user(
+            username='audit-repo-assistant',
+            password='pass12345',
+            role='faculty',
+            is_repo_assistant=True,
+            repo_assistant_year='3rd Year',
+        )
+        self.client.force_authenticate(user=self.admin)
+
+    def test_log_high_impact_action_captures_request_metadata(self):
+        request = APIRequestFactory().post(
+            '/api/audit-logs/',
+            {},
+            HTTP_USER_AGENT='Audit Test Browser',
+            REMOTE_ADDR='203.0.113.10',
+        )
+        request.user = self.admin
+
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='grade.publish',
+            target=self.admin,
+            target_type='TeamGrade',
+            target_id=128,
+            old_values={'status': 'pending'},
+            new_values={'status': 'published'},
+            reason='Approved after review.',
+            request=request,
+        )
+
+        log = SystemAuditLog.objects.get()
+        self.assertEqual(log.actor, self.admin)
+        self.assertEqual(log.category, SystemAuditLog.CATEGORY_GRADE_CENTER)
+        self.assertEqual(log.action, 'grade.publish')
+        self.assertEqual(log.target_type, 'TeamGrade')
+        self.assertEqual(log.target_id, '128')
+        self.assertEqual(log.ip_address, '203.0.113.10')
+        self.assertEqual(log.user_agent, 'Audit Test Browser')
+        self.assertEqual(log.review_status, SystemAuditLog.REVIEW_CAPTURED)
+
+    def test_audit_log_api_filters_by_category(self):
+        categories = [
+            (SystemAuditLog.CATEGORY_ACADEMIC_PERIOD, 'semester.active_switch'),
+            (SystemAuditLog.CATEGORY_GRADE_CENTER, 'grade.manual_edit'),
+            (SystemAuditLog.CATEGORY_SCHEDULING, 'schedule.status_change'),
+            (SystemAuditLog.CATEGORY_STUDENT_TEAMS, 'team.adviser_change'),
+            (SystemAuditLog.CATEGORY_REPOSITORY, 'repository.vault_upload'),
+            (SystemAuditLog.CATEGORY_GUEST_ACCESS, 'guest_code.exchange'),
+        ]
+        for category, action in categories:
+            SystemAuditLog.objects.create(
+                actor=self.admin,
+                category=category,
+                action=action,
+                target_type='AuditTarget',
+                target_id=action,
+                old_values={'before': 'old'},
+                new_values={'after': 'new'},
+            )
+
+        response = self.client.get(
+            '/api/audit-logs/',
+            {'category': SystemAuditLog.CATEGORY_GRADE_CENTER},
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['counts']['filtered'], 1)
+        self.assertEqual(len(response.data['audit_logs']), 1)
+        self.assertEqual(
+            response.data['audit_logs'][0]['category'],
+            SystemAuditLog.CATEGORY_GRADE_CENTER,
+        )
+        self.assertEqual(response.data['audit_logs'][0]['action'], 'grade.manual_edit')
+
+    def test_admin_can_review_global_audit_trail_records(self):
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.pit_upload',
+            target_type='VaultEntry',
+            target_id='1',
+            new_values={'entry_type': 'pit', 'year_level': '3rd Year'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.capstone_upload',
+            target_type='VaultEntry',
+            target_id='2',
+            new_values={'entry_type': 'capstone', 'year_level': '3rd Year'},
+        )
+
+        response = self.client.get('/api/audit-logs/')
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['counts']['filtered'], 2)
+
+    def test_pit_lead_reviews_only_assigned_year_pit_audit_records(self):
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.assigned_pit_upload',
+            target_type='VaultEntry',
+            target_id='1',
+            new_values={'entry_type': 'pit', 'year_level': '3rd Year'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.other_pit_upload',
+            target_type='VaultEntry',
+            target_id='2',
+            new_values={'entry_type': 'pit', 'year_level': '2nd Year'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.capstone_upload',
+            target_type='VaultEntry',
+            target_id='3',
+            new_values={'entry_type': 'capstone', 'year_level': '3rd Year'},
+        )
+        self.client.force_authenticate(user=self.pit_lead)
+
+        response = self.client.get('/api/audit-logs/')
+        actions = [log['action'] for log in response.data['audit_logs']]
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['counts']['filtered'], 1)
+        self.assertEqual(actions, ['repository.assigned_pit_upload'])
+
+    def test_repository_assistant_cannot_review_audit_trail(self):
+        self.client.force_authenticate(user=self.repo_assistant)
+
+        response = self.client.get('/api/audit-logs/')
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)

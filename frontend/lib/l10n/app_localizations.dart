@@ -317,7 +317,7 @@ abstract class AppLocalizations {
   /// No description provided for @navRepositoryAudit.
   ///
   /// In en, this message translates to:
-  /// **'Repository Audit'**
+  /// **'Repository Vault'**
   String get navRepositoryAudit;
 
   /// No description provided for @navCurriculumAnalytics.

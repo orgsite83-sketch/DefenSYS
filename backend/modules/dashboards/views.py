@@ -408,6 +408,31 @@ def _schedule_payload(schedule):
     }
 
 
+def _student_visible_grade(team, schedule):
+    if team is None:
+        return None
+
+    if schedule is not None:
+        scheduled_grade = (
+            TeamGrade.objects.filter(
+                team=team,
+                semester=schedule.semester,
+                scope=schedule.scope,
+                stage_label=schedule.stage_label,
+                status=TeamGrade.STATUS_PUBLISHED,
+            )
+            .order_by('-updated_at', '-id')
+            .first()
+        )
+        return scheduled_grade
+
+    return (
+        TeamGrade.objects.filter(team=team, status=TeamGrade.STATUS_PUBLISHED)
+        .order_by('-updated_at', '-id')
+        .first()
+    )
+
+
 class AdminDashboardView(APIView):
     permission_classes = [IsAuthenticated, IsAdminRole]
 
@@ -605,13 +630,7 @@ class StudentDashboardView(APIView):
             if team
             else None
         )
-        grade = (
-            TeamGrade.objects.filter(team=team, status=TeamGrade.STATUS_PUBLISHED)
-            .order_by('-updated_at', '-id')
-            .first()
-            if team
-            else None
-        )
+        grade = _student_visible_grade(team, schedule)
         active_sem = Semester.objects.filter(is_active=True).first()
         from grading.grades.services import (
             canonical_capstone_grade_for_team,

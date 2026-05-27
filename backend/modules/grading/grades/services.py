@@ -1,14 +1,25 @@
 from decimal import Decimal
 
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from academic_period_management.models import Semester
+from authentication_access_control.audit import log_high_impact_action
+from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import DefenseSchedule
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam
-from .models import GradeBreakdown, PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
+from student_teams.services import mark_stage_result
+from .models import (
+    GradeBreakdown,
+    PanelistCriterionScore,
+    PanelistGradeSubmission,
+    PeerEvaluationSubmission,
+    StudentPeerGrade,
+    TeamGrade,
+)
 
 
 ACTIVE_SCHEDULE_STATUSES = [
@@ -52,6 +63,14 @@ def panelist_percentage_from_breakdowns(breakdowns):
     """panel_pct = sum(score) / sum(max_score) * 100 for one panelist's criteria rows."""
     total_score = sum((row.score for row in breakdowns), Decimal('0'))
     total_max = sum((row.max_score for row in breakdowns), Decimal('0'))
+    if total_max <= 0:
+        return None
+    return (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
+
+
+def panelist_percentage_from_criterion_scores(scores):
+    total_score = sum((row.score for row in scores), Decimal('0'))
+    total_max = sum((row.max_score_snapshot for row in scores), Decimal('0'))
     if total_max <= 0:
         return None
     return (total_score / total_max * Decimal('100')).quantize(Decimal('0.01'))
@@ -167,6 +186,27 @@ def recompute_panel_score(team_grade):
     panel_score = mean(panelist_i percentage), where each panelist_i percentage is
     sum(criterion scores) / sum(criterion max scores) * 100 from their GradeBreakdown rows.
     """
+    submissions = list(
+        team_grade.panelist_submissions.prefetch_related('criterion_scores').all()
+    )
+    if submissions:
+        percentages = []
+        for submission in submissions:
+            pct = panelist_percentage_from_criterion_scores(
+                submission.criterion_scores.all()
+            )
+            if pct is not None:
+                percentages.append(pct)
+
+        if not percentages:
+            team_grade.panel_score = None
+        else:
+            team_grade.panel_score = (
+                sum(percentages, Decimal('0')) / Decimal(len(percentages))
+            ).quantize(Decimal('0.01'))
+        team_grade.save()
+        return team_grade.panel_score
+
     breakdowns = list(
         team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
             'display_order', 'id'
@@ -198,6 +238,151 @@ def recompute_panel_score(team_grade):
     return team_grade.panel_score
 
 
+def _submitted_criterion_id(item):
+    value = item.get('criterion_id')
+    if value in (None, ''):
+        value = item.get('id')
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise ValidationError({'criteria_scores': 'Each criterion score must include a valid criterion_id.'})
+
+
+def _validated_panel_criterion_rows(schedule, criteria_scores):
+    if schedule is None or schedule.rubric_id is None:
+        raise ValidationError({'rubric': 'A panel rubric is required before grading.'})
+
+    criteria = list(schedule.rubric.criteria.order_by('display_order', 'id'))
+    if not criteria:
+        raise ValidationError({'rubric': 'The assigned panel rubric has no criteria.'})
+    if not isinstance(criteria_scores, list) or not criteria_scores:
+        raise ValidationError({'criteria_scores': 'criteria_scores must be a non-empty list.'})
+
+    payload_by_id = {}
+    duplicate_ids = set()
+    for item in criteria_scores:
+        if not isinstance(item, dict):
+            raise ValidationError({'criteria_scores': 'Each criterion score must be an object.'})
+        criterion_id = _submitted_criterion_id(item)
+        if criterion_id in payload_by_id:
+            duplicate_ids.add(criterion_id)
+        payload_by_id[criterion_id] = item
+
+    if duplicate_ids:
+        raise ValidationError({'criteria_scores': 'Duplicate rubric criteria are not allowed.'})
+
+    expected_ids = {criterion.id for criterion in criteria}
+    submitted_ids = set(payload_by_id)
+    missing_ids = expected_ids - submitted_ids
+    extra_ids = submitted_ids - expected_ids
+    if missing_ids or extra_ids:
+        raise ValidationError({
+            'criteria_scores': 'Submitted criteria must exactly match the assigned panel rubric.'
+        })
+
+    rows = []
+    for criterion in criteria:
+        item = payload_by_id[criterion.id]
+        try:
+            score = Decimal(str(item.get('score')))
+        except Exception as exc:
+            raise ValidationError({'score': 'Score must be numeric.'}) from exc
+        max_score = Decimal(str(criterion.max_score))
+        if score < 0 or score > max_score:
+            raise ValidationError({'score': 'Score must be between 0 and max score.'})
+        rows.append({
+            'criterion': criterion,
+            'score': score,
+            'max_score': max_score,
+        })
+    return rows
+
+
+def _submission_identity_kwargs(panelist=None, guest=None):
+    if panelist is not None:
+        return {
+            'lookup': {'panelist': panelist},
+            'defaults': {
+                'panelist': panelist,
+                'guest_code_id': None,
+                'guest_code': '',
+                'guest_name': '',
+            },
+            'remark_key': panelist_remark_key_for_user(panelist),
+        }
+
+    guest_code_id = str(getattr(guest, 'guest_code_id', '') or getattr(guest, 'guest_code', '') or '').strip()
+    guest_code = str(getattr(guest, 'guest_code', '') or '').strip()
+    guest_name = str(getattr(guest, 'guest_name', '') or '').strip()
+    if not guest_code_id:
+        raise ValidationError({'guest': 'Guest panelist identity is required.'})
+    return {
+        'lookup': {'guest_code_id': guest_code_id},
+        'defaults': {
+            'panelist': None,
+            'guest_code_id': guest_code_id,
+            'guest_code': guest_code,
+            'guest_name': guest_name,
+        },
+        'remark_key': guest_panelist_remark_key(guest_name, guest_code),
+    }
+
+
+@transaction.atomic
+def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks=''):
+    if bool(panelist) == bool(guest):
+        raise ValidationError({'panelist': 'Use either a panelist or a guest identity.'})
+
+    rows = _validated_panel_criterion_rows(schedule, criteria_scores)
+    identity = _submission_identity_kwargs(panelist=panelist, guest=guest)
+    submission, _created = PanelistGradeSubmission.objects.update_or_create(
+        team_grade=team_grade,
+        schedule=schedule,
+        **identity['lookup'],
+        defaults={
+            **identity['defaults'],
+            'remarks': remarks or '',
+        },
+    )
+
+    PanelistCriterionScore.objects.filter(submission=submission).delete()
+    PanelistCriterionScore.objects.bulk_create([
+        PanelistCriterionScore(
+            submission=submission,
+            criterion=row['criterion'],
+            criterion_name_snapshot=row['criterion'].name,
+            score=row['score'],
+            max_score_snapshot=row['max_score'],
+            display_order=row['criterion'].display_order,
+        )
+        for row in rows
+    ])
+
+    remark = f"{identity['remark_key']}\n{remarks or ''}"
+    GradeBreakdown.objects.filter(
+        team_grade=team_grade,
+        evaluation_type=GradeBreakdown.EVAL_PANEL,
+        remarks__startswith=identity['remark_key'],
+    ).delete()
+    GradeBreakdown.objects.bulk_create([
+        GradeBreakdown(
+            team_grade=team_grade,
+            rubric=schedule.rubric,
+            evaluation_type=GradeBreakdown.EVAL_PANEL,
+            criterion_name=row['criterion'].name,
+            score=row['score'],
+            max_score=row['max_score'],
+            remarks=remark,
+            display_order=row['criterion'].display_order,
+        )
+        for row in rows
+    ])
+
+    recompute_panel_score(team_grade)
+    submission.refresh_from_db()
+    return submission
+
+
 def weights_for_schedule(schedule):
     if schedule and schedule.scope == TeamGrade.SCOPE_CAPSTONE and schedule.defense_stage_id:
         from defense.stages.grading_config import weights_for_capstone_stage
@@ -205,9 +390,16 @@ def weights_for_schedule(schedule):
         return weights_for_capstone_stage(schedule.defense_stage, schedule.semester)
 
     if schedule and schedule.scope == TeamGrade.SCOPE_PIT:
-        from defense.scheduler.pit_config import weights_for_pit_event
+        from defense.scheduler.pit_config import get_pit_event_config, weights_for_pit_event
 
         label = schedule.event_name or schedule.stage_label
+        config = get_pit_event_config(schedule.semester, label)
+        if config is not None:
+            return {
+                'panel_weight': config.panel_weight,
+                'peer_weight': config.peer_weight,
+                'adviser_weight': 0,
+            }
         return weights_for_pit_event(schedule.semester, label)
 
     if schedule and schedule.rubric_id:
@@ -226,6 +418,10 @@ def grade_queryset():
             'schedule',
             'schedule__rubric',
             'schedule__defense_stage',
+            'defense_stage',
+            'pit_event_config',
+            'pit_event_config__panel_rubric',
+            'pit_event_config__peer_rubric',
             'team',
             'team__leader',
             'team__adviser',
@@ -247,47 +443,21 @@ def grade_queryset():
 
 
 def _is_pit_lead_only(user):
-    return bool(
-        user
-        and getattr(user, 'is_authenticated', False)
-        and getattr(user, 'is_pit_lead', False)
-        and getattr(user, 'role', None) != 'admin'
-        and not getattr(user, 'is_superuser', False)
-    )
+    from authentication_access_control.scopes import is_pit_lead_only
+
+    return is_pit_lead_only(user)
 
 
 def grade_queryset_for_user(user):
-    queryset = grade_queryset()
-    if _is_pit_lead_only(user):
-        queryset = queryset.filter(
-            scope=TeamGrade.SCOPE_PIT,
-            team__level__icontains='PIT',
-            team__year_level=getattr(user, 'pit_lead_year', None),
-        ).exclude(team__year_level='3rd Year', semester__label=Semester.SECOND)
-    return queryset
+    from authentication_access_control.scopes import grade_records_for
+
+    return grade_records_for(user)
 
 
 def schedule_queryset_for_user(user):
-    queryset = (
-        DefenseSchedule.objects.select_related(
-            'semester',
-            'semester__school_year',
-            'team',
-            'team__leader',
-            'team__adviser',
-            'defense_stage',
-            'rubric',
-        )
-        .filter(status__in=ACTIVE_SCHEDULE_STATUSES)
-        .order_by('scheduled_date', 'start_time', 'team__name')
-    )
-    if _is_pit_lead_only(user):
-        queryset = queryset.filter(
-            scope=DefenseSchedule.SCOPE_PIT,
-            team__level__icontains='PIT',
-            team__year_level=getattr(user, 'pit_lead_year', None),
-        ).exclude(team__year_level='3rd Year', semester__label=Semester.SECOND)
-    return queryset
+    from authentication_access_control.scopes import visible_schedules_for
+
+    return visible_schedules_for(user).filter(status__in=ACTIVE_SCHEDULE_STATUSES)
 
 
 def _scope_for_team(team):
@@ -309,6 +479,10 @@ def _grade_has_score_data(grade):
     )
 
 
+def _is_unscheduled_placeholder_label(stage_label):
+    return (stage_label or '').strip() in {'', 'Unscheduled'}
+
+
 def _merge_stale_grade(stale, canonical):
     score_fields = ('panel_score', 'adviser_score', 'peer_score')
     for field in score_fields:
@@ -328,7 +502,7 @@ def _merge_stale_grade(stale, canonical):
 
 
 def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
-    """Prefer the scheduled capstone grade row; fall back to team stage context."""
+    """Resolve the capstone grade for a team without crossing real stage records."""
     semester_obj = semester
     if semester_obj is None:
         semester_obj = team.semester
@@ -350,12 +524,14 @@ def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
     )
 
     resolved_label = (stage_label or '').strip()
+    label_is_placeholder = _is_unscheduled_placeholder_label(resolved_label)
+
     if not resolved_label and schedule:
         resolved_label = schedule.stage_label or ''
     if not resolved_label:
         resolved_label = _context_for_team(team)
 
-    if schedule:
+    if schedule and (label_is_placeholder or schedule.stage_label == resolved_label):
         grade = TeamGrade.objects.filter(
             team=team,
             semester=semester_obj,
@@ -364,6 +540,18 @@ def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
         ).first()
         if grade is not None:
             return grade
+
+    if stage_label and not label_is_placeholder:
+        return (
+            TeamGrade.objects.filter(
+                team=team,
+                semester=semester_obj,
+                scope=TeamGrade.SCOPE_CAPSTONE,
+                stage_label=resolved_label,
+            )
+            .order_by('-updated_at', '-id')
+            .first()
+        )
 
     grade = (
         TeamGrade.objects.filter(
@@ -400,6 +588,10 @@ def _cleanup_stale_capstone_grades_for_team(canonical, team, semester):
     ).exclude(pk=canonical.pk)
 
     for stale in stale_grades:
+        if stale.schedule_id:
+            continue
+        if not _is_unscheduled_placeholder_label(stale.stage_label):
+            continue
         if _grade_has_score_data(stale):
             _merge_stale_grade(stale, canonical)
         else:
@@ -514,57 +706,267 @@ def _cleanup_stale_grades_for_unscheduled_team(canonical, team):
             stale.delete()
 
 
-def _sync_grade_for_schedule(schedule):
-    stage_label = schedule.stage_label or 'Defense'
-    weights = weights_for_schedule(schedule)
-    grade, created = TeamGrade.objects.get_or_create(
+def _pit_event_config_for_schedule(schedule):
+    if not schedule or schedule.scope != TeamGrade.SCOPE_PIT:
+        return None
+    from defense.scheduler.pit_config import get_pit_event_config
+
+    return get_pit_event_config(schedule.semester, schedule.event_name or schedule.stage_label)
+
+
+def _identity_for_schedule(schedule):
+    if schedule.scope == TeamGrade.SCOPE_CAPSTONE:
+        return {
+            'defense_stage': schedule.defense_stage if schedule.defense_stage_id else None,
+            'pit_event_config': None,
+        }
+    return {
+        'defense_stage': None,
+        'pit_event_config': _pit_event_config_for_schedule(schedule),
+    }
+
+
+def _lookup_grade_for_schedule(schedule, stage_label):
+    identity = _identity_for_schedule(schedule)
+    base = TeamGrade.objects.filter(
         team=schedule.team,
         semester=schedule.semester,
         scope=schedule.scope,
-        stage_label=stage_label,
-        defaults={
-            'schedule': schedule,
-            **weights,
-        },
     )
+    if identity['defense_stage'] is not None:
+        grade = base.filter(defense_stage=identity['defense_stage']).order_by('-updated_at', '-id').first()
+        if grade is not None:
+            return grade, identity
+    if identity['pit_event_config'] is not None:
+        grade = base.filter(pit_event_config=identity['pit_event_config']).order_by('-updated_at', '-id').first()
+        if grade is not None:
+            return grade, identity
 
-    changed = False
-    if grade.schedule_id != schedule.id:
-        grade.schedule = schedule
-        changed = True
-    if grade.status not in TeamGrade.LOCKED_STATUSES:
-        for field, value in weights.items():
-            if getattr(grade, field) != value:
-                setattr(grade, field, value)
-                changed = True
-    if changed:
+    legacy = base.filter(stage_label__iexact=stage_label)
+    if identity['defense_stage'] is not None:
+        legacy = legacy.filter(defense_stage__isnull=True)
+    if identity['pit_event_config'] is not None:
+        legacy = legacy.filter(pit_event_config__isnull=True)
+    return legacy.order_by('-updated_at', '-id').first(), identity
+
+
+class GradeContextService:
+    """Central resolver for TeamGrade lifecycle operations."""
+
+    @staticmethod
+    def get_or_create_for_schedule(schedule, *, repair_placeholders=True):
+        stage_label = schedule.stage_label or 'Defense'
+        weights = weights_for_schedule(schedule)
+        grade, identity = _lookup_grade_for_schedule(schedule, stage_label)
+        created = grade is None
+        if created:
+            grade = TeamGrade.objects.create(
+                team=schedule.team,
+                semester=schedule.semester,
+                scope=schedule.scope,
+                stage_label=stage_label,
+                schedule=schedule,
+                defense_stage=identity['defense_stage'],
+                pit_event_config=identity['pit_event_config'],
+                **weights,
+            )
+            if repair_placeholders:
+                _cleanup_stale_grades_for_schedule(grade, schedule)
+            return grade, created, True
+
+        changed = False
+        if grade.schedule_id != schedule.id:
+            grade.schedule = schedule
+            changed = True
+        if grade.defense_stage_id != (identity['defense_stage'].id if identity['defense_stage'] else None):
+            grade.defense_stage = identity['defense_stage']
+            changed = True
+        if grade.pit_event_config_id != (identity['pit_event_config'].id if identity['pit_event_config'] else None):
+            grade.pit_event_config = identity['pit_event_config']
+            changed = True
+        if stage_label and grade.stage_label != stage_label:
+            grade.stage_label = stage_label
+            changed = True
+        if grade.status not in TeamGrade.LOCKED_STATUSES:
+            for field, value in weights.items():
+                if getattr(grade, field) != value:
+                    setattr(grade, field, value)
+                    changed = True
+        if changed:
+            grade.save()
+        if repair_placeholders:
+            _cleanup_stale_grades_for_schedule(grade, schedule)
+        return grade, created, changed
+
+    @staticmethod
+    def get_or_create_unscheduled_team(team, *, repair_placeholders=True):
+        scope = _scope_for_team(team)
+        stage_label = _context_for_team(team)
+        weights = default_weights(scope)
+        defense_stage = None
+        if scope == TeamGrade.SCOPE_CAPSTONE and not _is_unscheduled_placeholder_label(stage_label):
+            from defense.stages.models import DefenseStage
+
+            defense_stage = DefenseStage.objects.filter(label=stage_label).first()
+        lookup = {
+            'team': team,
+            'semester': team.semester,
+            'scope': scope,
+        }
+        if defense_stage is not None:
+            lookup['defense_stage'] = defense_stage
+            legacy = TeamGrade.objects.filter(
+                team=team,
+                semester=team.semester,
+                scope=scope,
+                defense_stage__isnull=True,
+                stage_label__iexact=stage_label,
+            ).order_by('-updated_at', '-id').first()
+            if legacy is not None:
+                legacy.defense_stage = defense_stage
+                legacy.save()
+                if repair_placeholders:
+                    _cleanup_stale_grades_for_unscheduled_team(legacy, team)
+                return legacy, False
+        else:
+            lookup['stage_label'] = stage_label
+        grade, created = TeamGrade.objects.get_or_create(
+            **lookup,
+            defaults={
+                'stage_label': stage_label,
+                **weights,
+            },
+        )
+        if repair_placeholders:
+            _cleanup_stale_grades_for_unscheduled_team(grade, team)
+        return grade, created
+
+    @staticmethod
+    def get_for_panel_submission(schedule, panelist=None):
+        return GradeContextService.get_or_create_for_schedule(schedule)[0]
+
+    @staticmethod
+    def get_for_guest_panel_submission(schedule, guest=None):
+        return GradeContextService.get_or_create_for_schedule(schedule)[0]
+
+    @staticmethod
+    def get_for_current_student_peer_context(team):
+        scope = _scope_for_team(team)
+        if scope == TeamGrade.SCOPE_CAPSTONE:
+            grade = canonical_capstone_grade_for_team(team, team.semester)
+            if grade is None:
+                grade, _created = GradeContextService.get_or_create_unscheduled_team(team)
+                return resolve_canonical_capstone_grade(grade)
+            return resolve_canonical_capstone_grade(grade)
+
+        grade = (
+            TeamGrade.objects.filter(team=team, scope=scope)
+            .order_by('-updated_at', '-id')
+            .first()
+        )
+        if grade:
+            return grade
+        grade, _created = GradeContextService.get_or_create_unscheduled_team(team)
+        return grade
+
+    @staticmethod
+    def get_for_adviser_context(adviser, grade):
+        if grade.team.adviser_id != getattr(adviser, 'id', None):
+            raise ValidationError({'grade': 'This grade does not belong to one of your advised teams.'})
+        return resolve_canonical_capstone_grade(grade)
+
+    @staticmethod
+    def finalize_for_archive(grade, user=None):
+        old_values = {
+            'status': grade.status,
+            'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
+        }
+        grade.recalculate()
+        if not grade.is_complete:
+            raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
+        if grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD:
+            raise ValidationError({'status': 'Only passed grades can be finalized for archive.'})
+        if grade.status == TeamGrade.STATUS_PUBLISHED:
+            return grade
+
+        grade.status = TeamGrade.STATUS_READY_FOR_ARCHIVE
+        grade.published_by = user
+        grade.published_at = timezone.now()
         grade.save()
-    _cleanup_stale_grades_for_schedule(grade, schedule)
-    return grade, created, changed
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='grade.finalize_for_archive',
+            target=grade,
+            actor=user,
+            old_values=old_values,
+            new_values={
+                'status': grade.status,
+                'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
+            },
+        )
 
+        if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
+            grade.schedule.status = DefenseSchedule.STATUS_DONE
+            grade.schedule.save(update_fields=['status', 'updated_at'])
 
-def _sync_unscheduled_team(team):
-    scope = _scope_for_team(team)
-    stage_label = _context_for_team(team)
-    weights = default_weights(scope)
-    grade, created = TeamGrade.objects.get_or_create(
-        team=team,
-        semester=team.semester,
-        scope=scope,
-        stage_label=stage_label,
-        defaults=weights,
+        _apply_team_result_from_grade(grade)
+        return grade
+
+    @staticmethod
+    def publish(grade, user=None):
+        grade.publish(user=user)
+        if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
+            grade.schedule.status = DefenseSchedule.STATUS_DONE
+            grade.schedule.save(update_fields=['status', 'updated_at'])
+
+        _apply_team_result_from_grade(grade)
+        return grade
+
+    @staticmethod
+    def grade_ready_for_archive(team, *, scope, semester=None, defense_stage_id=None, pit_event_config_id=None, stage_label=None):
+        if not team:
+            return None
+        if semester is None:
+            semester = team.semester if getattr(team, 'semester_id', None) else active_semester()
+        grades = TeamGrade.objects.filter(
+            team=team,
+            scope=scope,
+            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+        )
+        if semester:
+            grades = grades.filter(semester=semester)
+        if defense_stage_id:
+            grades = grades.filter(defense_stage_id=defense_stage_id)
+        elif pit_event_config_id:
+            grades = grades.filter(pit_event_config_id=pit_event_config_id)
+        elif stage_label:
+            grades = grades.filter(stage_label=stage_label)
+        return grades.order_by('-updated_at').first()
+
+def _sync_grade_for_schedule(schedule, *, repair_placeholders=True):
+    return GradeContextService.get_or_create_for_schedule(
+        schedule,
+        repair_placeholders=repair_placeholders,
     )
-    _cleanup_stale_grades_for_unscheduled_team(grade, team)
-    return grade, created
+
+
+def _sync_unscheduled_team(team, *, repair_placeholders=True):
+    return GradeContextService.get_or_create_unscheduled_team(
+        team,
+        repair_placeholders=repair_placeholders,
+    )
 
 
 @transaction.atomic
-def sync_missing_grade_rows(user=None):
+def sync_missing_grade_rows(user=None, *, repair_placeholders=True):
     created = 0
     updated = 0
 
     for schedule in schedule_queryset_for_user(user):
-        _, made, changed = _sync_grade_for_schedule(schedule)
+        _, made, changed = _sync_grade_for_schedule(
+            schedule,
+            repair_placeholders=repair_placeholders,
+        )
         if made:
             created += 1
         elif changed:
@@ -588,7 +990,10 @@ def sync_missing_grade_rows(user=None):
             ).exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
         for team in teams:
-            _, made = _sync_unscheduled_team(team)
+            _, made = _sync_unscheduled_team(
+                team,
+                repair_placeholders=repair_placeholders,
+            )
             if made:
                 created += 1
 
@@ -600,7 +1005,9 @@ def _stage_grading_config_for_grade(grade):
     from defense.stages.models import DefenseStage
 
     stage = None
-    if grade.schedule and grade.schedule.defense_stage_id:
+    if grade.defense_stage_id:
+        stage = grade.defense_stage
+    elif grade.schedule and grade.schedule.defense_stage_id:
         stage = grade.schedule.defense_stage
     else:
         stage = DefenseStage.objects.filter(label=grade.stage_label).first()
@@ -651,7 +1058,9 @@ def find_matching_rubric(grade, evaluation_type):
         )
     )
     if grade.scope == TeamGrade.SCOPE_CAPSTONE:
-        if grade.schedule and grade.schedule.defense_stage_id:
+        if grade.defense_stage_id:
+            queryset = queryset.filter(defense_stage=grade.defense_stage)
+        elif grade.schedule and grade.schedule.defense_stage_id:
             queryset = queryset.filter(defense_stage=grade.schedule.defense_stage)
         else:
             queryset = queryset.filter(defense_stage__label=grade.stage_label)
@@ -660,7 +1069,9 @@ def find_matching_rubric(grade, evaluation_type):
     if evaluation_type == Rubric.EVAL_PEER:
         from defense.scheduler.pit_config import peer_rubric_for_pit_event
 
-        rubric = peer_rubric_for_pit_event(grade.semester, grade.stage_label)
+        rubric = grade.pit_event_config.peer_rubric if grade.pit_event_config_id else None
+        if rubric is None:
+            rubric = peer_rubric_for_pit_event(grade.semester, grade.stage_label)
         if rubric is not None:
             return (
                 Rubric.objects.select_related('defense_stage')
@@ -670,6 +1081,63 @@ def find_matching_rubric(grade, evaluation_type):
             )
 
     return queryset.order_by('-updated_at', 'name').first()
+
+
+def _evaluation_type_label(evaluation_type):
+    return {
+        Rubric.EVAL_PANEL: 'panel',
+        Rubric.EVAL_ADVISER: 'adviser',
+        Rubric.EVAL_PEER: 'peer',
+    }.get(evaluation_type, 'grading')
+
+
+def _configured_rubric_for_grade(grade, evaluation_type):
+    if grade.scope == TeamGrade.SCOPE_CAPSTONE:
+        if evaluation_type == Rubric.EVAL_PANEL and grade.schedule and grade.schedule.rubric_id:
+            return grade.schedule.rubric
+        config = _stage_grading_config_for_grade(grade)
+        if config is None:
+            return None
+        if evaluation_type == Rubric.EVAL_PANEL:
+            return config.panel_rubric
+        if evaluation_type == Rubric.EVAL_ADVISER:
+            return config.adviser_rubric
+        if evaluation_type == Rubric.EVAL_PEER:
+            return config.peer_rubric
+        return None
+
+    if evaluation_type == Rubric.EVAL_PANEL and grade.schedule and grade.schedule.rubric_id:
+        return grade.schedule.rubric
+    config = grade.pit_event_config if grade.pit_event_config_id else None
+    if config is None:
+        from defense.scheduler.pit_config import get_pit_event_config
+
+        config = get_pit_event_config(grade.semester, grade.stage_label)
+    if config is None:
+        return None
+    if evaluation_type == Rubric.EVAL_PANEL:
+        return config.panel_rubric
+    if evaluation_type == Rubric.EVAL_PEER:
+        return config.peer_rubric
+    return None
+
+
+def require_matching_rubric(grade, evaluation_type):
+    rubric = _configured_rubric_for_grade(grade, evaluation_type)
+    label = _evaluation_type_label(evaluation_type)
+    if rubric is None:
+        raise ValidationError({
+            'rubric': f'Configure a published {label} rubric before grading this team.'
+        })
+    if rubric.status != Rubric.STATUS_PUBLISHED:
+        raise ValidationError({
+            'rubric': f'Configure a published {label} rubric before grading this team.'
+        })
+    if not rubric.criteria.exists():
+        raise ValidationError({
+            'rubric': f'The configured {label} rubric must have at least one criterion.'
+        })
+    return rubric
 
 
 def assigned_adviser_rubric_payload(grade):
@@ -697,43 +1165,16 @@ def assigned_adviser_rubric_payload(grade):
         'assigned_adviser_criteria': criteria,
     }
 
-
-def _fallback_criteria(evaluation_type):
-    if evaluation_type == Rubric.EVAL_ADVISER:
-        return [
-            {'name': 'Research Quality', 'max_score': Decimal('10')},
-            {'name': 'Technical Depth', 'max_score': Decimal('10')},
-            {'name': 'Documentation', 'max_score': Decimal('10')},
-        ]
-    if evaluation_type == Rubric.EVAL_PEER:
-        return [
-            {'name': 'Teamwork', 'max_score': Decimal('5')},
-            {'name': 'Contribution', 'max_score': Decimal('5')},
-        ]
-    return [
-        {'name': 'Technical Feasibility', 'max_score': Decimal('10')},
-        {'name': 'Presentation and Defense', 'max_score': Decimal('10')},
-        {'name': 'Project Quality', 'max_score': Decimal('10')},
-    ]
-
-
 def rebuild_component_breakdown(grade, evaluation_type, ratio):
-    rubric = find_matching_rubric(grade, evaluation_type)
-    criteria = list(rubric.criteria.all()) if rubric else []
-    if criteria:
-        rows = [
-            {
-                'name': criterion.name,
-                'max_score': Decimal(str(criterion.max_score)),
-                'display_order': criterion.display_order,
-            }
-            for criterion in criteria
-        ]
-    else:
-        rows = [
-            {**item, 'display_order': index}
-            for index, item in enumerate(_fallback_criteria(evaluation_type))
-        ]
+    rubric = require_matching_rubric(grade, evaluation_type)
+    rows = [
+        {
+            'name': criterion.name,
+            'max_score': Decimal(str(criterion.max_score)),
+            'display_order': criterion.display_order,
+        }
+        for criterion in rubric.criteria.all()
+    ]
 
     GradeBreakdown.objects.filter(team_grade=grade, evaluation_type=evaluation_type).delete()
     breakdowns = []
@@ -794,21 +1235,25 @@ def group_settings_key(scope, stage_label):
 def _default_group_settings(scope, stage_label):
     return {
         'scope': scope,
+        'defense_stage_id': None,
+        'pit_event_config_id': None,
         'stage_label': stage_label or '',
         'is_officially_complete': False,
         'peer_grading_enabled': False,
     }
 
 
-def _pit_group_settings(semester, stage_label):
+def _pit_group_settings(semester, stage_label=None, *, pit_event_config=None):
     from defense.scheduler.pit_config import get_pit_event_config, pit_event_config_payload
 
-    config = get_pit_event_config(semester, stage_label)
+    config = pit_event_config or get_pit_event_config(semester, stage_label)
     if config is None:
         return _default_group_settings(TeamGrade.SCOPE_PIT, stage_label)
     payload = pit_event_config_payload(config)
     return {
         'scope': TeamGrade.SCOPE_PIT,
+        'pit_event_config_id': config.id,
+        'defense_stage_id': None,
         'stage_label': config.event_name,
         'is_officially_complete': payload['is_officially_complete'],
         'peer_grading_enabled': payload['peer_grading_enabled'],
@@ -819,17 +1264,19 @@ def _pit_group_settings(semester, stage_label):
     }
 
 
-def _capstone_group_settings(semester, stage_label):
+def _capstone_group_settings(semester, stage_label=None, *, defense_stage=None):
     from defense.stages.grading_config import get_or_create_stage_grading_config, grading_config_payload
     from defense.stages.models import DefenseStage
 
-    stage = DefenseStage.objects.filter(label=stage_label).first()
+    stage = defense_stage or DefenseStage.objects.filter(label=stage_label).first()
     if stage is None:
         return _default_group_settings(TeamGrade.SCOPE_CAPSTONE, stage_label)
     config = get_or_create_stage_grading_config(stage, semester)
     payload = grading_config_payload(config)
     return {
         'scope': TeamGrade.SCOPE_CAPSTONE,
+        'defense_stage_id': stage.id,
+        'pit_event_config_id': None,
         'stage_label': stage.label,
         'is_officially_complete': payload['is_officially_complete'],
         'peer_grading_enabled': payload['peer_grading_enabled'],
@@ -843,8 +1290,16 @@ def _capstone_group_settings(semester, stage_label):
 
 def group_settings_for_grade(grade):
     if grade.scope == TeamGrade.SCOPE_PIT:
-        return _pit_group_settings(grade.semester, grade.stage_label)
-    return _capstone_group_settings(grade.semester, grade.stage_label)
+        return _pit_group_settings(
+            grade.semester,
+            grade.stage_label,
+            pit_event_config=grade.pit_event_config if grade.pit_event_config_id else None,
+        )
+    return _capstone_group_settings(
+        grade.semester,
+        grade.stage_label,
+        defense_stage=grade.defense_stage if grade.defense_stage_id else None,
+    )
 
 
 def build_group_settings_map(grades_queryset, semester):
@@ -855,23 +1310,39 @@ def build_group_settings_map(grades_queryset, semester):
 
     result = {}
 
-    def _put(scope, label):
+    def _put(scope, label, *, defense_stage=None, pit_event_config=None):
         key = group_settings_key(scope, label)
         if key in result:
             return
         if scope == TeamGrade.SCOPE_PIT:
-            result[key] = _pit_group_settings(semester, label)
+            result[key] = _pit_group_settings(semester, label, pit_event_config=pit_event_config)
         else:
-            result[key] = _capstone_group_settings(semester, label)
+            result[key] = _capstone_group_settings(semester, label, defense_stage=defense_stage)
 
-    for scope, stage_label in grades_queryset.values_list('scope', 'stage_label').distinct():
-        _put(scope, (stage_label or '').strip())
+    for scope, stage_label, defense_stage_id, pit_event_config_id in grades_queryset.values_list(
+        'scope',
+        'stage_label',
+        'defense_stage_id',
+        'pit_event_config_id',
+    ).distinct():
+        defense_stage = None
+        pit_event_config = None
+        if defense_stage_id:
+            defense_stage = DefenseStage.objects.filter(pk=defense_stage_id).first()
+        if pit_event_config_id:
+            pit_event_config = PitEventGradingConfig.objects.filter(pk=pit_event_config_id).first()
+        _put(
+            scope,
+            (stage_label or '').strip(),
+            defense_stage=defense_stage,
+            pit_event_config=pit_event_config,
+        )
 
     for stage in DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label'):
-        _put(TeamGrade.SCOPE_CAPSTONE, stage.label)
+        _put(TeamGrade.SCOPE_CAPSTONE, stage.label, defense_stage=stage)
 
     for config in PitEventGradingConfig.objects.filter(semester=semester):
-        _put(TeamGrade.SCOPE_PIT, config.event_name)
+        _put(TeamGrade.SCOPE_PIT, config.event_name, pit_event_config=config)
 
     return result
 
@@ -888,6 +1359,10 @@ class IncompleteGradingTeamsError(Exception):
 
 
 def _apply_team_result_from_grade(grade):
+    if grade.scope == TeamGrade.SCOPE_CAPSTONE and grade.defense_stage_id:
+        mark_stage_result(grade, user=grade.published_by)
+        return
+
     next_status = (
         StudentTeam.STATUS_APPROVED
         if grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD
@@ -898,26 +1373,14 @@ def _apply_team_result_from_grade(grade):
         grade.team.save(update_fields=['status', 'updated_at'])
 
 
-def finalize_passed_grade_for_archive(grade, user=None):
-    grade.recalculate()
-    if not grade.is_complete:
-        raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
-    if grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD:
-        raise ValidationError({'status': 'Only passed grades can be finalized for archive.'})
-    if grade.status == TeamGrade.STATUS_PUBLISHED:
-        return grade
-
-    grade.status = TeamGrade.STATUS_READY_FOR_ARCHIVE
-    grade.published_by = user
-    grade.published_at = timezone.now()
-    grade.save()
-
+def _mark_schedule_done_from_grade(grade):
     if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
         grade.schedule.status = DefenseSchedule.STATUS_DONE
         grade.schedule.save(update_fields=['status', 'updated_at'])
 
-    _apply_team_result_from_grade(grade)
-    return grade
+
+def finalize_passed_grade_for_archive(grade, user=None):
+    return GradeContextService.finalize_for_archive(grade, user=user)
 
 
 finalize_passed_pit_grade_for_archive = finalize_passed_grade_for_archive
@@ -958,12 +1421,37 @@ def _grading_config_for_grade(grade, semester, scope, config=None):
     if scope == TeamGrade.SCOPE_PIT:
         from defense.scheduler.pit_config import get_pit_event_config
 
+        if grade.pit_event_config_id:
+            return grade.pit_event_config
         return get_pit_event_config(semester, grade.stage_label)
 
     class _CapstonePlaceholder:
         peer_grading_enabled = False
 
     return _CapstonePlaceholder()
+
+
+def _grades_for_group(semester, scope, stage_label, *, config=None, year_level=None):
+    label = (stage_label or '').strip()
+    grades = TeamGrade.objects.filter(
+        semester=semester,
+        scope=scope,
+    )
+    if year_level:
+        grades = grades.filter(team__year_level=year_level)
+    if scope == TeamGrade.SCOPE_PIT:
+        if config is not None:
+            return grades.filter(
+                Q(pit_event_config=config)
+                | Q(pit_event_config__isnull=True, stage_label__iexact=getattr(config, 'event_name', label))
+            )
+        return grades.filter(stage_label__iexact=label)
+    if config is not None and getattr(config, 'defense_stage_id', None):
+        return grades.filter(
+            Q(defense_stage_id=config.defense_stage_id)
+            | Q(defense_stage__isnull=True, stage_label__iexact=getattr(config.defense_stage, 'label', label))
+        )
+    return grades.filter(stage_label__iexact=label)
 
 
 def team_grading_readiness(grade, semester, scope, config=None):
@@ -1000,13 +1488,25 @@ def team_grading_readiness(grade, semester, scope, config=None):
     }
 
 
-def incomplete_grading_teams_for_group(semester, scope, stage_label, *, config=None):
-    label = (stage_label or '').strip()
-    grades = TeamGrade.objects.filter(
-        semester=semester,
-        scope=scope,
-        stage_label__iexact=label,
-    ).select_related('team', 'semester')
+def incomplete_grading_teams_for_group(
+    semester,
+    scope,
+    stage_label,
+    *,
+    config=None,
+    year_level=None,
+    grades_queryset=None,
+):
+    grades = grades_queryset
+    if grades is None:
+        grades = _grades_for_group(
+            semester,
+            scope,
+            stage_label,
+            config=config,
+            year_level=year_level,
+        )
+    grades = grades.select_related('team', 'semester')
     incomplete = []
     for grade in grades:
         readiness = team_grading_readiness(grade, semester, scope, config)
@@ -1034,13 +1534,14 @@ def incomplete_grading_teams_for_group(semester, scope, stage_label, *, config=N
 incomplete_peer_teams_for_group = incomplete_grading_teams_for_group
 
 
-def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None):
-    label = (stage_label or '').strip()
+def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None):
     grades = list(
-        TeamGrade.objects.filter(
-            semester=semester,
-            scope=scope,
-            stage_label__iexact=label,
+        _grades_for_group(
+            semester,
+            scope,
+            stage_label,
+            config=config,
+            year_level=year_level,
         ).select_related('team', 'semester')
     )
     total = len(grades)
@@ -1080,6 +1581,8 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
             skipped_incomplete += 1
             continue
         if grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD:
+            _mark_schedule_done_from_grade(grade)
+            _apply_team_result_from_grade(grade)
             skipped_below_threshold += 1
             continue
         if grade.status in TeamGrade.LOCKED_STATUSES:
@@ -1095,28 +1598,31 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
     }
 
 
-def auto_publish_passed_grades_for_event(semester, event_name, user=None):
+def auto_publish_passed_grades_for_event(semester, event_name, user=None, *, config=None, year_level=None):
     label = (event_name or '').strip()
-    if not label:
+    if not label and config is None:
         return _empty_auto_finalize_result()
 
-    grades = TeamGrade.objects.filter(
-        semester=semester,
-        scope=TeamGrade.SCOPE_PIT,
-        stage_label__iexact=label,
+    grades = _grades_for_group(
+        semester,
+        TeamGrade.SCOPE_PIT,
+        label or getattr(config, 'event_name', ''),
+        config=config,
+        year_level=year_level,
     ).select_related('team', 'schedule')
     return _auto_finalize_passed_grades_in_queryset(grades, user=user)
 
 
-def auto_finalize_passed_capstone_grades_for_stage(semester, stage_label, user=None):
+def auto_finalize_passed_capstone_grades_for_stage(semester, stage_label, user=None, *, config=None):
     label = (stage_label or '').strip()
-    if not label:
+    if not label and config is None:
         return _empty_auto_finalize_result()
 
-    grades = TeamGrade.objects.filter(
-        semester=semester,
-        scope=TeamGrade.SCOPE_CAPSTONE,
-        stage_label__iexact=label,
+    grades = _grades_for_group(
+        semester,
+        TeamGrade.SCOPE_CAPSTONE,
+        label or getattr(getattr(config, 'defense_stage', None), 'label', ''),
+        config=config,
     ).select_related('team', 'schedule')
     return _auto_finalize_passed_grades_in_queryset(grades, user=user)
 
@@ -1149,6 +1655,115 @@ def repair_pending_passed_grades_in_queryset(queryset, user=None):
         maybe_auto_finalize_passed_grade(grade, user=user)
 
 
+class StageCompletionService:
+    @staticmethod
+    def _lock_config(scope, config):
+        if scope == TeamGrade.SCOPE_PIT:
+            from defense.scheduler.models import PitEventGradingConfig
+
+            return PitEventGradingConfig.objects.select_for_update().get(pk=config.pk)
+
+        from defense.stages.models import StageGradingConfig
+
+        return StageGradingConfig.objects.select_for_update().get(pk=config.pk)
+
+    @staticmethod
+    def _pit_year_scope(user):
+        if _is_pit_lead_only(user):
+            return (getattr(user, 'pit_lead_year', '') or '').strip()
+        return None
+
+    @classmethod
+    def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None):
+        if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
+            raise PermissionDenied('PIT leads can only complete PIT events.')
+        if peer_grading_enabled is True:
+            raise ValidationError({'peer_grading_enabled': 'Peer grading cannot be enabled while the event is officially complete.'})
+
+        label = (stage_label or '').strip()
+        year_level = cls._pit_year_scope(user) if scope == TeamGrade.SCOPE_PIT else None
+
+        with transaction.atomic():
+            config = cls._lock_config(scope, config)
+            old_values = {
+                'is_officially_complete': config.is_officially_complete,
+                'peer_grading_enabled': config.peer_grading_enabled,
+            }
+            grades = (
+                _grades_for_group(
+                    semester,
+                    scope,
+                    label,
+                    config=config,
+                    year_level=year_level,
+                )
+                .select_for_update(of=('self',))
+                .select_related('team', 'schedule', 'semester')
+            )
+            if year_level and not grades.exists():
+                raise ValidationError({'stage_label': 'No PIT grades found for your assigned year.'})
+
+            incomplete = incomplete_grading_teams_for_group(
+                semester,
+                scope,
+                label,
+                config=config,
+                year_level=year_level,
+                grades_queryset=grades,
+            )
+            if incomplete:
+                raise IncompleteGradingTeamsError(incomplete)
+
+            if scope == TeamGrade.SCOPE_PIT:
+                auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
+            else:
+                auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
+
+            config.is_officially_complete = True
+            config.peer_grading_enabled = False
+            config.save(update_fields=['is_officially_complete', 'peer_grading_enabled', 'updated_at'])
+            log_high_impact_action(
+                category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+                action='grading.official_completion',
+                target=config,
+                target_type=config.__class__.__name__,
+                target_id=config.pk,
+                actor=user,
+                old_values=old_values,
+                new_values={
+                    'is_officially_complete': config.is_officially_complete,
+                    'peer_grading_enabled': config.peer_grading_enabled,
+                    'scope': scope,
+                    'stage_label': label,
+                },
+            )
+
+            if scope == TeamGrade.SCOPE_PIT:
+                from realtime.broadcast import notify_pit_peer_grading
+
+                notify_pit_peer_grading(
+                    semester,
+                    label,
+                    peer_eval_enabled=False,
+                )
+                settings_payload = _pit_group_settings(semester, label, pit_event_config=config)
+                settings_payload['auto_publish'] = auto_result
+            else:
+                settings_payload = _capstone_group_settings(semester, label, defense_stage=config.defense_stage)
+                settings_payload['auto_finalize'] = auto_result
+                settings_payload['auto_publish'] = auto_result
+
+            readiness_counts = grading_readiness_counts_for_group(
+                semester,
+                scope,
+                label,
+                config=config,
+                year_level=year_level,
+            )
+            settings_payload.update(readiness_counts)
+            return settings_payload
+
+
 def update_group_settings(
     *,
     semester,
@@ -1161,6 +1776,8 @@ def update_group_settings(
     label = (stage_label or '').strip()
     if not label:
         raise ValidationError({'stage_label': 'Stage or event label is required.'})
+    if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
+        raise PermissionDenied('PIT leads can only manage PIT event settings.')
 
     update_fields = []
     if scope == TeamGrade.SCOPE_PIT:
@@ -1185,14 +1802,14 @@ def update_group_settings(
             config = get_or_create_stage_grading_config(stage, semester)
 
     if is_officially_complete is True:
-        incomplete = incomplete_grading_teams_for_group(
-            semester,
-            scope,
-            label,
+        return StageCompletionService.complete_group(
+            semester=semester,
+            scope=scope,
+            stage_label=label,
             config=config,
+            user=user,
+            peer_grading_enabled=peer_grading_enabled,
         )
-        if incomplete:
-            raise IncompleteGradingTeamsError(incomplete)
 
     if is_officially_complete is not None:
         config.is_officially_complete = is_officially_complete
@@ -1209,7 +1826,26 @@ def update_group_settings(
             update_fields.append('peer_grading_enabled')
 
     if update_fields:
+        old_values = {
+            'is_officially_complete': config.__class__.objects.get(pk=config.pk).is_officially_complete,
+            'peer_grading_enabled': config.__class__.objects.get(pk=config.pk).peer_grading_enabled,
+        }
         config.save(update_fields=list(dict.fromkeys(update_fields)) + ['updated_at'])
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='grading.settings_update',
+            target=config,
+            target_type=config.__class__.__name__,
+            target_id=config.pk,
+            actor=user,
+            old_values=old_values,
+            new_values={
+                'is_officially_complete': config.is_officially_complete,
+                'peer_grading_enabled': config.peer_grading_enabled,
+                'scope': scope,
+                'stage_label': label,
+            },
+        )
         if 'peer_grading_enabled' in update_fields and scope == TeamGrade.SCOPE_PIT:
             from realtime.broadcast import notify_pit_peer_grading
 
@@ -1221,9 +1857,9 @@ def update_group_settings(
 
     settings_payload = None
     if scope == TeamGrade.SCOPE_PIT:
-        settings_payload = _pit_group_settings(semester, label)
+        settings_payload = _pit_group_settings(semester, label, pit_event_config=config)
     else:
-        settings_payload = _capstone_group_settings(semester, label)
+        settings_payload = _capstone_group_settings(semester, label, defense_stage=config.defense_stage)
 
     readiness_counts = grading_readiness_counts_for_group(
         semester,
@@ -1232,21 +1868,6 @@ def update_group_settings(
         config=config,
     )
     settings_payload.update(readiness_counts)
-
-    if scope == TeamGrade.SCOPE_PIT and is_officially_complete is True:
-        settings_payload['auto_publish'] = auto_publish_passed_grades_for_event(
-            semester,
-            label,
-            user=user,
-        )
-    elif scope == TeamGrade.SCOPE_CAPSTONE and is_officially_complete is True:
-        auto_finalize = auto_finalize_passed_capstone_grades_for_stage(
-            semester,
-            label,
-            user=user,
-        )
-        settings_payload['auto_finalize'] = auto_finalize
-        settings_payload['auto_publish'] = auto_finalize
 
     return settings_payload
 
@@ -1267,20 +1888,7 @@ def peer_grading_allowed_for_grade(grade):
 
 
 def publish_grade_record(grade, user=None):
-    grade.publish(user=user)
-    if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
-        grade.schedule.status = DefenseSchedule.STATUS_DONE
-        grade.schedule.save(update_fields=['status', 'updated_at'])
-
-    next_status = (
-        StudentTeam.STATUS_APPROVED
-        if grade.final_grade is not None and grade.final_grade >= Decimal('75.00')
-        else StudentTeam.STATUS_FAILED
-    )
-    if grade.team.status != next_status:
-        grade.team.status = next_status
-        grade.team.save(update_fields=['status', 'updated_at'])
-    return grade
+    return GradeContextService.publish(grade, user=user)
 
 
 def require_complete_for_publish(grade):

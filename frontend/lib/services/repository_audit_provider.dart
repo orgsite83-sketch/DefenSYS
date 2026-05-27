@@ -491,6 +491,10 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
+    final payloadScope = payload['scope'] is Map
+        ? Map<String, dynamic>.from(payload['scope'])
+        : const <String, dynamic>{};
+    final scopeKey = payloadScope['scope']?.toString() ?? '';
     state = state.copyWith(
       isLoading: false,
       isSaving: false,
@@ -501,9 +505,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       options: payload['options'] is Map
           ? Map<String, dynamic>.from(payload['options'])
           : const {},
-      scope: payload['scope'] is Map
-          ? Map<String, dynamic>.from(payload['scope'])
-          : const {},
+      scope: payloadScope,
       uploadWindow: payload['upload_window'] is Map
           ? Map<String, dynamic>.from(payload['upload_window'])
           : const {},
@@ -514,6 +516,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       deliverableSummary: payload['deliverable_summary'] is Map
           ? Map<String, dynamic>.from(payload['deliverable_summary'])
           : const {},
+      type: scopeKey == 'admin' ? state.type : 'pit',
       message: successMessage,
       clearError: true,
       clearLastUploadSkipped: true,
@@ -524,6 +527,10 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     Map<String, dynamic> payload, {
     String uploadLabel = 'PIT',
   }) {
+    final payloadScope = payload['scope'] is Map
+        ? Map<String, dynamic>.from(payload['scope'])
+        : const <String, dynamic>{};
+    final scopeKey = payloadScope['scope']?.toString() ?? '';
     final skipped = _readMapList(payload['skipped']);
     final createdCount = payload['created_count'] is int
         ? payload['created_count'] as int
@@ -541,9 +548,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       options: payload['options'] is Map
           ? Map<String, dynamic>.from(payload['options'])
           : const {},
-      scope: payload['scope'] is Map
-          ? Map<String, dynamic>.from(payload['scope'])
-          : const {},
+      scope: payloadScope,
       uploadWindow: payload['upload_window'] is Map
           ? Map<String, dynamic>.from(payload['upload_window'])
           : const {},
@@ -554,6 +559,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       deliverableSummary: payload['deliverable_summary'] is Map
           ? Map<String, dynamic>.from(payload['deliverable_summary'])
           : const {},
+      type: scopeKey == 'admin' ? state.type : 'pit',
       message: feedback.message,
       error: feedback.error,
       lastUploadSkipped: skipped,

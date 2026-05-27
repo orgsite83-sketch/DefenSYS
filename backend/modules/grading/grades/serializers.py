@@ -48,6 +48,8 @@ class StudentPeerGradeSerializer(serializers.ModelSerializer):
 
 class TeamGradeSerializer(serializers.ModelSerializer):
     schedule_id = serializers.IntegerField(source='schedule.id', read_only=True, allow_null=True)
+    defense_stage_id = serializers.IntegerField(source='defense_stage.id', read_only=True, allow_null=True)
+    pit_event_config_id = serializers.IntegerField(source='pit_event_config.id', read_only=True, allow_null=True)
     defense_status = serializers.CharField(source='schedule.status', read_only=True, allow_null=True)
     scheduled_date = serializers.DateField(source='schedule.scheduled_date', read_only=True, allow_null=True)
     room = serializers.CharField(source='schedule.room', read_only=True, allow_null=True)
@@ -83,6 +85,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
         fields = [
             'id',
             'schedule_id',
+            'defense_stage_id',
+            'pit_event_config_id',
             'defense_status',
             'scheduled_date',
             'room',

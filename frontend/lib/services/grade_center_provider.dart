@@ -354,10 +354,10 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
               autoPublish['published_count'];
           if (readyCount is int && readyCount > 0) {
             message =
-                'Event marked officially complete. $readyCount passed team(s) are ready to archive in Repository Audit.';
+                'Event marked officially complete. $readyCount passed team(s) are ready to archive in Repository Vault.';
           } else if (scope == 'pit' || scope == 'capstone') {
             message =
-                'Stage marked officially complete. Passed teams with complete scores are ready to archive in Repository Audit.';
+                'Stage marked officially complete. Passed teams with complete scores are ready to archive in Repository Vault.';
           }
         }
         state = state.copyWith(

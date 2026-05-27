@@ -126,6 +126,85 @@ class TeamMembership(models.Model):
         return f'{self.student} -> {self.team}'
 
 
+class TeamStageProgress(models.Model):
+    STATUS_LOCKED = 'locked'
+    STATUS_READY = 'ready'
+    STATUS_SCHEDULED = 'scheduled'
+    STATUS_GRADING = 'grading'
+    STATUS_PASSED = 'passed'
+    STATUS_FAILED = 'failed'
+    STATUS_ARCHIVED = 'archived'
+
+    STATUS_CHOICES = (
+        (STATUS_LOCKED, 'Locked'),
+        (STATUS_READY, 'Ready'),
+        (STATUS_SCHEDULED, 'Scheduled'),
+        (STATUS_GRADING, 'Grading'),
+        (STATUS_PASSED, 'Passed'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_ARCHIVED, 'Archived'),
+    )
+
+    team = models.ForeignKey(
+        StudentTeam,
+        related_name='stage_progress',
+        on_delete=models.CASCADE,
+    )
+    semester = models.ForeignKey(
+        'academic_period_management.Semester',
+        related_name='team_stage_progress',
+        on_delete=models.PROTECT,
+    )
+    defense_stage = models.ForeignKey(
+        'defense.DefenseStage',
+        related_name='team_progress',
+        on_delete=models.PROTECT,
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_LOCKED)
+    grade = models.ForeignKey(
+        'grading.TeamGrade',
+        related_name='stage_progress_records',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    ready_at = models.DateTimeField(null=True, blank=True)
+    scheduled_at = models.DateTimeField(null=True, blank=True)
+    graded_at = models.DateTimeField(null=True, blank=True)
+    archived_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='created_team_stage_progress',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='updated_team_stage_progress',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['team__name', 'defense_stage__display_order', 'defense_stage__label']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['team', 'semester', 'defense_stage'],
+                name='unique_team_stage_progress',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['semester', 'defense_stage', 'status'], name='team_stage_progress_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.team} - {self.defense_stage}: {self.status}'
+
+
 class TeamAdviserAssignment(models.Model):
     """Audit trail when a team's capstone adviser is assigned or changed."""
 

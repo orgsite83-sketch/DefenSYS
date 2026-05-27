@@ -459,7 +459,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
           _buildSidebarItem(
             icon: Icons.manage_search,
-            label: 'Repository Audit',
+            label: 'Repository Vault',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('repository_audit'),
@@ -501,7 +501,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return [
           _buildSidebarItem(
             icon: Icons.manage_search,
-            label: 'Repository Audit',
+            label: 'Repository Vault',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('repository_audit'),
@@ -777,8 +777,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             const SizedBox(height: 12),
             Text(
               repoYear.isNotEmpty
-                  ? 'Repository Assistant for $repoYear — open Repository Audit to upload passed PIT project files after the PIT lead marks the event officially complete in Grade Center.'
-                  : 'Repository Assistant workspace — open Repository Audit once your PIT lead assigns your year level.',
+                  ? 'Repository Assistant for $repoYear — open Repository Vault to upload passed PIT project files after the PIT lead marks the event officially complete in Grade Center.'
+                  : 'Repository Assistant workspace — open Repository Vault once your PIT lead assigns your year level.',
               style: const TextStyle(color: Colors.grey),
             ),
           ],
