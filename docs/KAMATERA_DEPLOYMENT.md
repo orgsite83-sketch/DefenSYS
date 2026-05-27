@@ -6,6 +6,8 @@ End-to-end guide: create a Kamatera VPS → deploy this repository → serve ove
 
 **Stack on one VM:** Ubuntu · PostgreSQL · Gunicorn (Django) · nginx (TLS + Flutter web static files)
 
+**Rebuild after terminating a paid VPS:** [KAMATERA_REBUILD_RUNBOOK.md](KAMATERA_REBUILD_RUNBOOK.md) - backup checklist, terminate safely, restore DefenSYS on a fresh server.
+
 ---
 
 ## Table of contents
@@ -213,7 +215,7 @@ chmod 600 .env
 nano .env
 ```
 
-The repo includes [`backend/.env.production.example`](../backend/.env.production.example) with Kamatera `DJANGO_ALLOWED_HOSTS` pre-filled (`79.108.225.153`). Add your domain when DNS is ready.
+The repo includes [`backend/.env.production.example`](../backend/.env.production.example) with documentation-safe placeholder values. Replace `203.0.113.50` with your Kamatera public IP, and add your domain when DNS is ready.
 
 Example production values (edit domain and IP):
 
@@ -659,7 +661,7 @@ sudo systemctl status defensys
 
 **Implemented in** [`frontend/lib/config/api_config.dart`](../frontend/lib/config/api_config.dart).
 
-Production web on a **public host** (e.g. `http://79.108.225.153/`) automatically uses **`http://79.108.225.153/api`** (no `:8000`). Local dev on `localhost` still uses **`:8000`**.
+Production web on a **public host** (e.g. `http://203.0.113.50/`) automatically uses **`http://203.0.113.50/api`** (no `:8000`). Local dev on `localhost` still uses **`:8000`**.
 
 ### 1. Add dart-define keys in `frontend/lib/config/api_config.dart`
 
