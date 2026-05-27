@@ -264,22 +264,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           ),
           const SizedBox(height: 26),
           _buildStats(state),
-          if (state.error != null) ...[
-            const SizedBox(height: 14),
-            _buildNotice(
-              icon: Icons.error_outline_rounded,
-              text: state.error!,
-              color: const Color(0xFFDC2626),
-            ),
-          ],
-          if (state.message != null) ...[
-            const SizedBox(height: 14),
-            _buildNotice(
-              icon: Icons.check_circle_outline_rounded,
-              text: state.message!,
-              color: const Color(0xFF10B981),
-            ),
-          ],
+
           const SizedBox(height: 22),
           _buildMainCard(state),
         ],
@@ -769,28 +754,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     return '"$text"';
   }
 
-  Widget _buildNotice({
-    required IconData icon,
-    required String text,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-        ],
-      ),
-    );
-  }
+
 
   int _count(GradeCenterState state, String key) {
     final value = state.counts[key];

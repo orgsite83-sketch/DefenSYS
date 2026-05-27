@@ -496,9 +496,18 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         return team
 
     def _validate_duplicate(self, attrs):
-        queryset = self._context_filter(attrs).filter(team=attrs['team'])
+        queryset = DefenseSchedule.objects.filter(
+            scope=attrs['scope'],
+            semester=attrs['semester'],
+            team=attrs['team'],
+            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+        )
+        if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
+            queryset = queryset.filter(event_name__iexact=attrs['event_name'])
+        else:
+            queryset = queryset.filter(defense_stage=attrs['defense_stage'])
         if queryset.exists():
-            raise serializers.ValidationError({'team_id': 'This team already has an active schedule for this stage or event.'})
+            raise serializers.ValidationError({'team_id': 'This team already has a scheduled or completed defense for this stage or event.'})
 
     def _sync_panelists(self, schedule, panelists):
         SchedulePanelist.objects.bulk_create([
@@ -576,8 +585,18 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             elif not team.is_pit:
                 raise serializers.ValidationError({'slots': 'PIT plans can only include PIT teams.'})
 
-            if self._context_filter(attrs).filter(team=team).exists():
-                raise serializers.ValidationError({'slots': f'{team.name} already has an active schedule for this stage or event.'})
+            existing = DefenseSchedule.objects.filter(
+                scope=attrs['scope'],
+                semester=attrs['semester'],
+                team=team,
+                status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+            )
+            if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
+                existing = existing.filter(event_name__iexact=attrs['event_name'])
+            else:
+                existing = existing.filter(defense_stage=attrs['defense_stage'])
+            if existing.exists():
+                raise serializers.ValidationError({'slots': f'{team.name} already has a scheduled or completed defense for this stage or event.'})
 
         attrs['teams'] = [team_map[team_id] for team_id in team_ids]
         slot_intervals = [
@@ -631,13 +650,39 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
 
 
 class DefenseScheduleStatusSerializer(serializers.Serializer):
+    VALID_TRANSITIONS = {
+        DefenseSchedule.STATUS_SCHEDULED: [
+            DefenseSchedule.STATUS_DONE,
+            DefenseSchedule.STATUS_CANCELLED,
+        ],
+        DefenseSchedule.STATUS_DONE: [
+            DefenseSchedule.STATUS_ARCHIVED,
+        ],
+        DefenseSchedule.STATUS_CANCELLED: [
+            DefenseSchedule.STATUS_SCHEDULED,
+        ],
+        DefenseSchedule.STATUS_ARCHIVED: [],
+    }
+
     status = serializers.ChoiceField(choices=[choice[0] for choice in DefenseSchedule.STATUS_CHOICES])
+
+    def validate_status(self, value):
+        current = self.context['schedule'].status
+        allowed = self.VALID_TRANSITIONS.get(current, [])
+        if value == current:
+            return value
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f'Cannot change status from "{current}" to "{value}".'
+            )
+        return value
 
     def save(self):
         schedule = self.context['schedule']
         schedule.status = self.validated_data['status']
         schedule.save()
         return schedule
+
 
 
 def minutes_to_time(minutes):

@@ -222,6 +222,16 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         return true;
       }
 
+      if (response.statusCode == 409) {
+        final data = jsonDecode(response.body);
+        final warning = data is Map ? data['warning']?.toString() : null;
+        state = state.copyWith(
+          isSaving: false,
+          error: warning ?? 'This stage cannot be deleted.',
+        );
+        return false;
+      }
+
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
@@ -232,6 +242,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       return false;
     }
   }
+
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 

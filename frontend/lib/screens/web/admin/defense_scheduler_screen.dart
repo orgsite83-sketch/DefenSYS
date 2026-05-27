@@ -108,22 +108,7 @@ class _DefenseSchedulerScreenState
               const SizedBox(height: 26),
               _buildStepProgress(currentStep),
               const SizedBox(height: 12),
-              if (state.error != null) ...[
-                const SizedBox(height: 14),
-                _buildNotice(
-                  icon: Icons.error_outline_rounded,
-                  text: state.error!,
-                  color: AppColors.danger,
-                ),
-              ],
-              if (state.message != null) ...[
-                const SizedBox(height: 14),
-                _buildNotice(
-                  icon: Icons.check_circle_outline_rounded,
-                  text: state.message!,
-                  color: AppColors.success,
-                ),
-              ],
+
               const SizedBox(height: 12),
               if (state.isLoading &&
                   state.schedules.isEmpty &&
@@ -2624,28 +2609,6 @@ class _DefenseSchedulerScreenState
     return text.length >= 5 ? text.substring(0, 5) : text;
   }
 
-  Widget _buildNotice({
-    required IconData icon,
-    required String text,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-        ],
-      ),
-    );
-  }
 
   void _showSnack(String message) {
     showValidationToast(context, message);

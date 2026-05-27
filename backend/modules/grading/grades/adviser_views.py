@@ -17,6 +17,7 @@ from .services import (
     adviser_capstone_grades_for_user,
     assigned_adviser_rubric_payload,
     grade_queryset,
+    require_grade_editable,
     require_matching_rubric,
 )
 
@@ -143,6 +144,21 @@ class AdviserSubmitGradeView(APIView):
             pk=grade_id,
         )
         grade = GradeContextService.get_for_adviser_context(request.user, grade)
+
+        if grade.status in TeamGrade.LOCKED_STATUSES:
+            return Response(
+                {'detail': 'Grades for this team have already been finalized and cannot be changed.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            require_grade_editable(grade)
+        except DjangoValidationError as exc:
+            return Response(
+                {'detail': exc.message if hasattr(exc, 'message') else str(exc)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         serializer = _AdviserGradeSubmitSerializer(
             data=request.data, context={'grade': grade}
         )

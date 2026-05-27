@@ -80,22 +80,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             _buildHeader(state),
             const SizedBox(height: 26),
             _buildLifecycleInfo(state),
-            if (state.error != null) ...[
-              const SizedBox(height: 14),
-              _buildNotice(
-                icon: Icons.error_outline,
-                text: state.error!,
-                color: AppColors.danger,
-              ),
-            ],
-            if (state.message != null) ...[
-              const SizedBox(height: 14),
-              _buildNotice(
-                icon: Icons.check_circle_outline,
-                text: state.message!,
-                color: AppColors.success,
-              ),
-            ],
+
             const SizedBox(height: 22),
             if (state.isLoading)
               _buildLoadingState()
@@ -1195,36 +1180,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
-  Widget _buildNotice({
-    required IconData icon,
-    required String text,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.20)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+
 
   Widget _buildLoadingState() {
     return Container(

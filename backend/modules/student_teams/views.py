@@ -316,8 +316,26 @@ class StudentTeamDetailView(APIView):
     def delete(self, request, team_id):
         team = self.get_object(team_id)
         from .term_scope import assert_team_writable
+        from defense.scheduler.models import DefenseSchedule
+        from grading.grades.models import TeamGrade
 
         assert_team_writable(request.user, team)
+
+        has_schedules = DefenseSchedule.objects.filter(team=team).exists()
+        has_grades = TeamGrade.objects.filter(team=team).exists()
+        if has_schedules or has_grades:
+            return Response(
+                {
+                    'warning': (
+                        'This team has defense schedules or grade records. '
+                        'Deleting it will permanently remove all grades, '
+                        'panelist scores, and peer evaluations. '
+                        'Consider changing the team status instead.'
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         member_ids = list(team.memberships.values_list('student_id', flat=True))
         audit_values = team_audit_values(
             team,
@@ -340,6 +358,7 @@ class StudentTeamDetailView(APIView):
         )
         User.objects.filter(pk__in=member_ids, team_id=str(team_id)).update(team_id=None)
         return Response({'counts': counts_payload()}, status=status.HTTP_200_OK)
+
 
 
 class TeamAdviserHistoryView(APIView):

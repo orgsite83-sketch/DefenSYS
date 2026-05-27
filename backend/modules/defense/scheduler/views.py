@@ -12,6 +12,7 @@ from grading.grades.services import (
     guest_panelist_remark_key,
     panelist_remark_key_for_user,
     panelist_result_payload,
+    require_grade_editable,
     submit_panelist_grade,
     weights_for_schedule,
 )
@@ -523,6 +524,20 @@ class PanelistGradeSubmissionView(APIView):
                     team=team,
                 )
 
+            if team_grade.status in TeamGrade.LOCKED_STATUSES:
+                return Response(
+                    {'detail': 'Grades for this team have already been finalized and cannot be changed.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                require_grade_editable(team_grade)
+            except ValidationError as e:
+                return Response(
+                    {'detail': e.message if hasattr(e, 'message') else str(e)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
             submit_panelist_grade(
                 schedule,
                 team_grade,
@@ -539,8 +554,14 @@ class PanelistGradeSubmissionView(APIView):
             }, status=status.HTTP_201_CREATED)
 
         except ValidationError as e:
+            errors = e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages[0] if e.messages else str(e)}
+            if isinstance(errors, dict) and 'detail' not in errors and 'error' not in errors:
+                first_key = list(errors.keys())[0]
+                first_val = errors[first_key]
+                first_msg = first_val[0] if isinstance(first_val, list) else first_val
+                errors['detail'] = f"{first_key}: {first_msg}"
             return Response(
-                e.message_dict if hasattr(e, 'message_dict') else {'detail': e.messages},
+                errors,
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as e:
@@ -718,6 +739,20 @@ class GuestPanelistGradeSubmissionView(APIView):
                 )
 
             team_grade = GradeContextService.get_for_guest_panel_submission(schedule, guest=principal)
+
+            if team_grade.status in TeamGrade.LOCKED_STATUSES:
+                return Response(
+                    {'detail': 'Grades for this team have already been finalized and cannot be changed.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+            try:
+                require_grade_editable(team_grade)
+            except ValidationError as e:
+                return Response(
+                    {'detail': e.message if hasattr(e, 'message') else str(e)},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
             submit_panelist_grade(
                 schedule,

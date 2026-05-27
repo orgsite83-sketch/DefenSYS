@@ -35,7 +35,7 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
 
   void connect({required String? role}) {
     _activeRole = role;
-    if (role != 'student') {
+    if (role == null) {
       _disconnect();
       return;
     }
@@ -48,7 +48,7 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
   }
 
   Future<void> _connectInternal() async {
-    if (_activeRole != 'student') return;
+    if (_activeRole == null) return;
 
     final auth = ref.read(authProvider);
     final token = auth.token;

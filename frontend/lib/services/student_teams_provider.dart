@@ -242,6 +242,16 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         return true;
       }
 
+      if (response.statusCode == 409) {
+        final data = jsonDecode(response.body);
+        final warning = data is Map ? data['warning']?.toString() : null;
+        state = state.copyWith(
+          isSaving: false,
+          error: warning ?? 'This team cannot be deleted.',
+        );
+        return false;
+      }
+
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
@@ -252,6 +262,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       return false;
     }
   }
+
 
   Future<Map<String, dynamic>?> bulkImportPreview(
     List<Map<String, dynamic>> rows, {

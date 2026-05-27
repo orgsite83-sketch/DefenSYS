@@ -135,5 +135,19 @@ class DefenseBoardDetailView(APIView):
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(request, schedule_id)
+
+        has_grade_data = schedule.panelist_grade_submissions.exists()
+        if has_grade_data:
+            return Response(
+                {
+                    'warning': (
+                        'This schedule has panelist grades already submitted. '
+                        'Deleting it will permanently remove those individual scores. '
+                        'Consider cancelling the schedule instead.'
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
         schedule.delete()
         return Response(board_payload(request), status=status.HTTP_200_OK)

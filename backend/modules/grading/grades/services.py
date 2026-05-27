@@ -573,7 +573,7 @@ def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
             .first()
         )
 
-    grade = (
+    return (
         TeamGrade.objects.filter(
             team=team,
             semester=semester_obj,
@@ -583,18 +583,7 @@ def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
         .order_by('-updated_at', '-id')
         .first()
     )
-    if grade is not None:
-        return grade
 
-    return (
-        TeamGrade.objects.filter(
-            team=team,
-            semester=semester_obj,
-            scope=TeamGrade.SCOPE_CAPSTONE,
-        )
-        .order_by('-updated_at', '-id')
-        .first()
-    )
 
 
 def _cleanup_stale_capstone_grades_for_team(canonical, team, semester):
@@ -643,7 +632,6 @@ def resolve_canonical_capstone_grade(grade):
 
 def adviser_capstone_grades_for_user(user):
     """One canonical capstone grade row per advised team."""
-    sync_missing_grade_rows(user=user)
     grades = (
         grade_queryset()
         .filter(team__adviser=user, scope=TeamGrade.SCOPE_CAPSTONE)
@@ -1225,31 +1213,6 @@ def rebuild_component_breakdown(grade, evaluation_type, ratio):
         return None
     return (total / max_total * Decimal('100')).quantize(Decimal('0.01'))
 
-
-def rebuild_peer_member_grades(grade):
-    StudentPeerGrade.objects.filter(team_grade=grade).delete()
-    memberships = list(grade.team.memberships.select_related('student').all())
-    if not memberships:
-        return Decimal('88.00')
-
-    peer_rows = []
-    normalized_total = Decimal('0.00')
-    for index, membership in enumerate(memberships):
-        average = Decimal('4.20') + (Decimal(index % 4) * Decimal('0.20'))
-        if average > Decimal('4.90'):
-            average = Decimal('4.90')
-        peer_rows.append(
-            StudentPeerGrade(
-                team_grade=grade,
-                student=membership.student,
-                average_score=average,
-                max_score=Decimal('5.00'),
-            )
-        )
-        normalized_total += average / Decimal('5.00') * Decimal('100')
-
-    StudentPeerGrade.objects.bulk_create(peer_rows)
-    return (normalized_total / Decimal(len(peer_rows))).quantize(Decimal('0.01'))
 
 
 def group_settings_key(scope, stage_label):

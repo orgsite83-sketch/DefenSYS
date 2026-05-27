@@ -126,9 +126,23 @@ class DefenseStageDetailView(APIView):
         })
 
     def delete(self, request, stage_id):
+        from django.db.models import ProtectedError
+
         stage = self.get_object(stage_id)
-        stage.delete()
+        try:
+            stage.delete()
+        except ProtectedError:
+            return Response(
+                {
+                    'warning': (
+                        'This stage cannot be deleted because it has existing '
+                        'schedules, grades, or team progress records linked to it.'
+                    ),
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         return Response(stage_list_payload(), status=status.HTTP_200_OK)
+
 
 
 

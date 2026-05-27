@@ -120,22 +120,7 @@ class _StudentAcademicRecordsScreenState
           ),
           const SizedBox(height: 26),
           _buildStats(state),
-          if (state.error != null) ...[
-            const SizedBox(height: 14),
-            _buildNotice(
-              icon: Icons.error_outline_rounded,
-              text: state.error!,
-              color: _red,
-            ),
-          ],
-          if (state.message != null) ...[
-            const SizedBox(height: 14),
-            _buildNotice(
-              icon: Icons.check_circle_outline_rounded,
-              text: state.message!,
-              color: _green,
-            ),
-          ],
+
           const SizedBox(height: 22),
           _recordsTableCard(state),
         ],
@@ -1232,33 +1217,6 @@ class _StudentAcademicRecordsScreenState
     return _asInt(semesters.first['id']);
   }
 
-  Widget _buildNotice({
-    required IconData icon,
-    required String text,
-    required Color color,
-  }) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color, size: 18),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              text,
-              style: TextStyle(color: color, fontWeight: FontWeight.w700),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   Widget _yearLevelBadge(String raw) {
     final label = raw.trim().isEmpty ? '-' : raw.trim();

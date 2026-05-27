@@ -5,12 +5,13 @@ from django.db import transaction
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam, TeamMembership
 
-from .models import PeerEvaluationSubmission, StudentPeerGrade
+from .models import PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
 from .services import (
     GradeContextService,
     display_name,
     find_matching_rubric,
     peer_grading_allowed_for_grade,
+    require_grade_editable,
     require_matching_rubric,
 )
 
@@ -200,6 +201,11 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
     grade = _grade_for_team(team)
+
+    if grade.status in TeamGrade.LOCKED_STATUSES:
+        raise ValidationError({'detail': 'Grades for this team have already been finalized and cannot be changed.'})
+    require_grade_editable(grade)
+
     if not peer_grading_allowed_for_grade(grade):
         raise ValidationError({'detail': 'Peer grading is not open for this event or stage.'})
     require_matching_rubric(grade, Rubric.EVAL_PEER)
