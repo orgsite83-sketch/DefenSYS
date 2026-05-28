@@ -439,7 +439,7 @@ class StudentTeamApiTests(APITestCase):
             project_title='Smart Campus',
             level=StudentTeam.LEVEL_3_PIT,
             year_level='3rd Year',
-            semester=self.first_semester,
+            semester=self.second_semester,
             leader=self.student_1,
         )
         TeamMembership.objects.create(
@@ -508,7 +508,7 @@ class StudentTeamApiTests(APITestCase):
             project_title='Blocked',
             level=StudentTeam.LEVEL_3_PIT,
             year_level='3rd Year',
-            semester=self.first_semester,
+            semester=self.second_semester,
             leader=self.student_1,
         )
         TeamMembership.objects.create(

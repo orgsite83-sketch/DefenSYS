@@ -228,8 +228,11 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         team_id = self.context.get('team_id')  # Current team ID when updating
         
         for student_id in member_ids:
-            # Find existing team memberships for this student
-            existing_memberships = TeamMembership.objects.filter(student_id=student_id)
+            # Find existing team memberships for this student in the active semester
+            existing_memberships = TeamMembership.objects.filter(
+                student_id=student_id,
+                team__semester__is_active=True,
+            )
             
             # If updating, exclude the current team
             if team_id:

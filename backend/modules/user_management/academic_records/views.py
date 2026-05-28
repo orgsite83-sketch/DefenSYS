@@ -174,7 +174,7 @@ class RolloverConfirmView(APIView):
 
         created = []
         skipped = []
-        promoted_student_ids = set()
+        affected_student_ids = set()
 
         for item in serializer.validated_data:
             record = records_queryset().filter(pk=item['record_id']).first()
@@ -186,8 +186,8 @@ class RolloverConfirmView(APIView):
             if action == 'drop':
                 skipped.append({'record_id': record.id, 'reason': 'dropped'})
                 continue
-            if action == 'promote':
-                promoted_student_ids.add(record.student_id)
+            
+            affected_student_ids.add(record.student_id)
 
             year_level, semester_label, target_semester = rollover_target_semester(
                 record,
@@ -213,10 +213,6 @@ class RolloverConfirmView(APIView):
                 rolled_from=record,
             ))
 
-        pit_memberships_cleared, pit_teams_emptied = self._dissolve_pit_memberships_for_capstone_intake(
-            promoted_student_ids,
-            active,
-        )
         team_updates = self._advance_capstone_teams(active)
         sync_capstone_flags_after_rollover(active, team_updates)
 
@@ -226,37 +222,10 @@ class RolloverConfirmView(APIView):
             'skipped': skipped,
             'skipped_count': len(skipped),
             'team_updates': team_updates,
-            'pit_memberships_cleared': pit_memberships_cleared,
-            'pit_teams_emptied': pit_teams_emptied,
             'schedules_archived': 0,
             'counts': counts_payload(),
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
-    def _dissolve_pit_memberships_for_capstone_intake(self, promoted_student_ids, active):
-        """
-        Capstone 1 intake: promoted students leave PIT rosters (fresh capstone teams).
-        PIT StudentTeam rows remain on prior terms for audit; only memberships are removed.
-        """
-        if not promoted_student_ids:
-            return 0, 0
-        if active.label != Semester.SECOND:
-            return 0, 0
-        if derive_capstone_program_phase(active) != Semester.PHASE_CAPSTONE_1:
-            return 0, 0
-
-        pit_memberships_cleared, _ = TeamMembership.objects.filter(
-            student_id__in=promoted_student_ids,
-            team__level__icontains='PIT',
-        ).delete()
-
-        pit_teams_emptied = (
-            StudentTeam.objects.filter(level__icontains='PIT')
-            .annotate(member_count=Count('memberships'))
-            .filter(member_count=0)
-            .count()
-        )
-
-        return pit_memberships_cleared, pit_teams_emptied
 
     def _advance_capstone_teams(self, active):
         first_semester = active.school_year.semesters.filter(label='1st Semester').first()

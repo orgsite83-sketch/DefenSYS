@@ -117,7 +117,10 @@ def _existing_team_membership_issues(member_user_ids, *, team_name='', level='')
 
     for student_id in member_user_ids:
         membership = (
-            TeamMembership.objects.filter(student_id=student_id)
+            TeamMembership.objects.filter(
+                student_id=student_id,
+                team__semester__is_active=True,
+            )
             .select_related('team', 'student')
             .first()
         )

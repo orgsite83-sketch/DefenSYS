@@ -161,7 +161,7 @@ class StudentAcademicRecordApiTests(APITestCase):
         self.assertEqual(promoted.year_level, StudentAcademicRecord.FIRST_YEAR)
         self.assertEqual(response.data['team_updates'], 0)
 
-    def test_rollover_dissolves_pit_memberships_on_capstone_intake(self):
+    def test_rollover_preserves_pit_memberships_on_capstone_intake(self):
         pit_team = StudentTeam.objects.create(
             name='Team CodeLearners',
             project_title='Smart Campus',
@@ -194,9 +194,9 @@ class StudentAcademicRecordApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['pit_memberships_cleared'], 1)
-        self.assertEqual(response.data['pit_teams_emptied'], 1)
-        self.assertFalse(
+        self.assertNotIn('pit_memberships_cleared', response.data)
+        self.assertNotIn('pit_teams_emptied', response.data)
+        self.assertTrue(
             TeamMembership.objects.filter(student=self.student, team=pit_team).exists(),
         )
         self.assertTrue(StudentTeam.objects.filter(pk=pit_team.id).exists())
@@ -208,7 +208,7 @@ class StudentAcademicRecordApiTests(APITestCase):
             ).exists(),
         )
 
-    def test_rollover_does_not_dissolve_pit_when_not_capstone_intake(self):
+    def test_rollover_preserves_pit_history(self):
         pit_team = StudentTeam.objects.create(
             name='Team PIT',
             project_title='PIT Project',
@@ -225,8 +225,8 @@ class StudentAcademicRecordApiTests(APITestCase):
         )
         record = StudentAcademicRecord.objects.create(
             student=self.student,
-            semester=self.first_semester,
-            year_level=StudentAcademicRecord.FIRST_YEAR,
+            semester=self.second_semester,
+            year_level=StudentAcademicRecord.SECOND_YEAR,
         )
 
         response = self.client.post(
@@ -236,7 +236,7 @@ class StudentAcademicRecordApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        self.assertEqual(response.data['pit_memberships_cleared'], 0)
+        self.assertNotIn('pit_memberships_cleared', response.data)
         self.assertTrue(
             TeamMembership.objects.filter(student=self.student, team=pit_team).exists(),
         )
