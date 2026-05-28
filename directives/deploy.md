@@ -11,6 +11,7 @@
 - [3. Web (Flutter) Changes](#3-web-flutter-changes)
 - [4. Android App Changes](#4-android-app-changes)
 - [5. Full Deploy (All)](#5-full-deploy-all)
+- [6. Database Reset](#6-database-reset)
 
 ---
 
@@ -222,6 +223,33 @@ curl.exe -I https://dev.defensys.site/assets/FontManifest.json
 
 # API
 curl.exe -I https://dev.defensys.site/api/
+```
+
+---
+
+## 6. Database Reset
+
+When completely wiping the database (e.g. `manage.py flush`), you must restore default data using custom seed commands because the initial migrations are not rerun.
+
+### Steps (run on server)
+
+```bash
+ssh defensys@79.108.225.153
+
+cd /opt/defensys/backend
+source venv/bin/activate
+
+# 1. Flush database
+python manage.py flush
+
+# 2. Recreate admin user
+python manage.py createsuperuser
+
+# 3. Seed default defense stages
+python manage.py seed_defense_stages
+
+# 4. (Optional) Seed suggested deliverables
+python manage.py seed_suggested_stage_deliverables
 ```
 
 ---

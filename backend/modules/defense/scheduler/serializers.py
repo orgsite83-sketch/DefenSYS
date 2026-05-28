@@ -517,6 +517,14 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
 
 class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
+    def _validate_capstone_stage_setup(self, attrs):
+        # Frontend syncs Capstone rubrics to StageGradingConfig immediately *before* 
+        # calling confirm-plan. During generate-plan, the config might be incomplete, 
+        # so we only require the panel rubric from the form payload.
+        if not attrs.get('rubric'):
+            raise serializers.ValidationError({'rubric_id': 'Capstone schedules require a panel rubric.'})
+        return attrs
+
     def generate_slots(self):
         attrs = self.validated_data
         teams = self._ready_teams(attrs)
