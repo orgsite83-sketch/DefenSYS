@@ -18,17 +18,15 @@ class TeamGrade(models.Model):
 
     STATUS_PENDING = 'pending'
     STATUS_AWAITING_PEERS = 'awaiting_peers'
-    STATUS_READY_FOR_ARCHIVE = 'ready_for_archive'
     STATUS_PUBLISHED = 'published'
 
     STATUS_CHOICES = (
         (STATUS_PENDING, 'Pending'),
         (STATUS_AWAITING_PEERS, 'Awaiting Peers'),
-        (STATUS_READY_FOR_ARCHIVE, 'Ready for Archive'),
         (STATUS_PUBLISHED, 'Published'),
     )
 
-    LOCKED_STATUSES = frozenset({STATUS_READY_FOR_ARCHIVE, STATUS_PUBLISHED})
+    LOCKED_STATUSES = frozenset({STATUS_PUBLISHED})
 
     schedule = models.ForeignKey(
         'defense.DefenseSchedule',

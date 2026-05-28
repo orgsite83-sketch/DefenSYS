@@ -149,7 +149,6 @@ def _impact_counts(current_semester):
             status__in=[
                 TeamGrade.STATUS_PENDING,
                 TeamGrade.STATUS_AWAITING_PEERS,
-                TeamGrade.STATUS_READY_FOR_ARCHIVE,
             ],
         ).count(),
         'capstone_peer_evaluation_enabled': int(
@@ -163,11 +162,16 @@ def _impact_counts(current_semester):
             peer_grading_enabled=True,
         ).count(),
         'incomplete_official_workflows': incomplete_official_workflows,
-        'open_archive_queues': TeamGrade.objects.filter(
-            semester=current_semester,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-        ).count(),
+        'open_archive_queues': _calculate_open_archive_queues(current_semester),
     }
+
+
+def _calculate_open_archive_queues(semester):
+    from repository.audit.services import capstone_vault_upload_queue, pit_vault_upload_queue
+    count = len(capstone_vault_upload_queue(semester=semester))
+    for year_level in ['1st Year', '2nd Year', '3rd Year', '4th Year']:
+        count += len(pit_vault_upload_queue(year_level, semester=semester))
+    return count
 
 
 def _transition_issues(current_semester, counts):

@@ -168,7 +168,6 @@ double? asDouble(dynamic value) {
 String statusLabel(String status) {
   return switch (status) {
     'published' => 'Published',
-    'ready_for_archive' => 'Ready to archive',
     'awaiting_peers' => 'Awaiting Peers',
     'passed' => 'Passed',
     'failed' => 'Failed',
@@ -181,7 +180,6 @@ String statusLabel(String status) {
 String gradeDisplayStatus(Map<String, dynamic> grade) {
   final workflow = grade['status']?.toString() ?? '';
   if (workflow == 'published' ||
-      workflow == 'ready_for_archive' ||
       workflow == 'awaiting_peers') {
     return workflow;
   }
@@ -316,7 +314,6 @@ Widget gradeStatusChipWidget(Map<String, dynamic> grade) {
 Widget _statusChip(String label, String status) {
   final color = switch (status) {
     'published' => AppColors.success,
-    'ready_for_archive' => const Color(0xFFD97706),
     'passed' => AppColors.success,
     'failed' => const Color(0xFFDC2626),
     'awaiting_peers' => Colors.blue,
@@ -324,7 +321,6 @@ Widget _statusChip(String label, String status) {
   };
   final icon = switch (status) {
     'published' => Icons.lock_outline,
-    'ready_for_archive' => Icons.upload_file_outlined,
     'passed' => Icons.check_circle_outline,
     'failed' => Icons.cancel_outlined,
     'awaiting_peers' => Icons.people_outline,

@@ -94,7 +94,6 @@ def counts_payload(base_queryset, current_queryset=None):
         'all': base_queryset.count(),
         'filtered': current.count(),
         'published': current.filter(status=TeamGrade.STATUS_PUBLISHED).count(),
-        'ready_for_archive': current.filter(status=TeamGrade.STATUS_READY_FOR_ARCHIVE).count(),
         'pending': current.filter(status=TeamGrade.STATUS_PENDING).count(),
         'awaiting_peers': current.filter(status=TeamGrade.STATUS_AWAITING_PEERS).count(),
         'passed': current.filter(final_grade__gte=75).count(),

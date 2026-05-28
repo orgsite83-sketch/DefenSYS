@@ -926,7 +926,7 @@ class GradeContextService:
         if grade.status == TeamGrade.STATUS_PUBLISHED:
             return grade
 
-        grade.status = TeamGrade.STATUS_READY_FOR_ARCHIVE
+        grade.status = TeamGrade.STATUS_PUBLISHED
         grade.published_by = user
         grade.published_at = timezone.now()
         grade.save()
@@ -969,7 +969,8 @@ class GradeContextService:
         grades = TeamGrade.objects.filter(
             team=team,
             scope=scope,
-            status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
+            status=TeamGrade.STATUS_PUBLISHED,
+            final_grade__gte=Decimal('75.00'),
         )
         if semester:
             grades = grades.filter(semester=semester)
@@ -1669,11 +1670,7 @@ def repair_pending_passed_grades_in_queryset(queryset, user=None):
 
 
 def _single_year_level_for_grades(grades):
-    year_levels = list(
-        grades.order_by()
-        .values_list('team__year_level', flat=True)
-        .distinct()[:2]
-    )
+    year_levels = list(set(grade.team.year_level for grade in grades if getattr(grade, 'team', None)))
     return year_levels[0] if len(year_levels) == 1 else ''
 
 

@@ -142,7 +142,7 @@ def all_completed_pit_event_names(semester=None):
 
 
 def pit_archive_queue_statuses():
-    return [TeamGrade.STATUS_READY_FOR_ARCHIVE, TeamGrade.STATUS_PUBLISHED]
+    return [TeamGrade.STATUS_PUBLISHED]
 
 
 def _complete_passing_grades(scope):
@@ -303,13 +303,11 @@ def pit_upload_diagnostics(year_level, semester=None):
             if label
         }
     )
-    ready_for_archive = pit_grades.filter(
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-    ).count()
+    ready_for_archive = len(pit_vault_upload_queue(year_level, semester=semester))
     unpublished_passed = pit_grades.filter(
         final_grade__gte=Decimal('75.00'),
     ).exclude(
-        status__in=[TeamGrade.STATUS_READY_FOR_ARCHIVE, TeamGrade.STATUS_PUBLISHED],
+        status=TeamGrade.STATUS_PUBLISHED,
     ).count()
 
     return {
@@ -452,13 +450,11 @@ def capstone_upload_diagnostics(semester=None):
         semester=semester,
         scope=TeamGrade.SCOPE_CAPSTONE,
     )
-    ready_for_archive = capstone_grades.filter(
-        status=TeamGrade.STATUS_READY_FOR_ARCHIVE,
-    ).count()
+    ready_for_archive = len(capstone_vault_upload_queue(semester=semester))
     unpublished_passed = capstone_grades.filter(
         final_grade__gte=Decimal('75.00'),
     ).exclude(
-        status__in=capstone_archive_queue_statuses(),
+        status=TeamGrade.STATUS_PUBLISHED,
     ).count()
 
     return {

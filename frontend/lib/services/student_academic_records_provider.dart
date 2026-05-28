@@ -283,6 +283,17 @@ class StudentAcademicRecordsNotifier
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         final created = payload['created_count'] ?? 0;
         final skipped = payload['skipped_count'] ?? 0;
+
+        if (created == 0 && skipped > 0) {
+          state = state.copyWith(
+            isSaving: false,
+            error: 'Rollover skipped $skipped records. No new records were created. Please check if the target semester exists.',
+          );
+          // Refresh records just in case, but return false to show the error toast
+          await fetchRecords();
+          return false;
+        }
+
         await fetchRecords(
           successMessage:
               'Rollover complete. $created created, $skipped skipped.',

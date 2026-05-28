@@ -747,7 +747,7 @@ class GradeCenterApiTests(APITestCase):
         self.pit_schedule.refresh_from_db()
         config = PitEventGradingConfig.objects.get(semester=self.semester, event_name='PIT Expo')
         self.assertTrue(config.is_officially_complete)
-        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
         self.assertEqual(self.pit_schedule.status, DefenseSchedule.STATUS_DONE)
         self.assertEqual(self.pit_team.status, StudentTeam.STATUS_APPROVED)
 
@@ -822,7 +822,7 @@ class GradeCenterApiTests(APITestCase):
         self.capstone_schedule.refresh_from_db()
         stage_config = get_or_create_stage_grading_config(self.stage, self.semester)
         self.assertTrue(stage_config.is_officially_complete)
-        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
         self.assertEqual(self.capstone_schedule.status, DefenseSchedule.STATUS_DONE)
         self.assertEqual(self.capstone_team.status, StudentTeam.STATUS_APPROVED)
         progress = TeamStageProgress.objects.get(team=self.capstone_team, defense_stage=self.stage)
@@ -888,7 +888,7 @@ class GradeCenterApiTests(APITestCase):
         other_grade.refresh_from_db()
         self.pit_schedule.refresh_from_db()
         third_schedule.refresh_from_db()
-        self.assertEqual(own_grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertEqual(own_grade.status, TeamGrade.STATUS_PUBLISHED)
         self.assertEqual(self.pit_schedule.status, DefenseSchedule.STATUS_DONE)
         self.assertEqual(other_grade.status, TeamGrade.STATUS_PENDING)
         self.assertEqual(third_schedule.status, DefenseSchedule.STATUS_SCHEDULED)
@@ -1040,7 +1040,7 @@ class GradeCenterApiTests(APITestCase):
         )
         grade.refresh_from_db()
         self.assertGreaterEqual(grade.final_grade, Decimal('75.00'))
-        self.assertEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
 
     def test_partial_peer_submission_does_not_set_peer_score(self):
         grade = self._capstone_grade()
@@ -1212,8 +1212,10 @@ class GradeCenterApiTests(APITestCase):
         )
         grade.refresh_from_db()
         grade.status = TeamGrade.STATUS_PENDING
-        grade.save(update_fields=['status', 'updated_at'])
+        grade.peer_score = None
+        grade.save(update_fields=['status', 'peer_score', 'updated_at'])
         PeerEvaluationSubmission.objects.filter(team_grade=grade).delete()
+        StudentPeerGrade.objects.filter(team_grade=grade).delete()
         self.client.force_authenticate(user=self.student)
         self.client.post(
             '/api/grading/grades/peer-evaluations/',
@@ -1222,7 +1224,7 @@ class GradeCenterApiTests(APITestCase):
         )
         grade.refresh_from_db()
         self.assertIsNone(grade.peer_score)
-        self.assertNotEqual(grade.status, TeamGrade.STATUS_READY_FOR_ARCHIVE)
+        self.assertNotEqual(grade.status, TeamGrade.STATUS_PUBLISHED)
 
     def test_patch_grade_blocked_when_event_officially_complete(self):
         grade = self._capstone_grade()
