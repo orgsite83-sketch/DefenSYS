@@ -254,13 +254,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
             title: 'Evaluation & Grade Center',
             subtitle:
                 'Monitor real-time grading from Panelists, Advisors, and Peer-to-Peer rubrics.',
-            actions: _primaryButton(
-              icon: Icons.file_download_rounded,
-              label: 'Export Grading Sheet',
-              onTap: state.grades.isEmpty
-                  ? null
-                  : () => _showExportDialog(state),
-            ),
+            actions: null,
           ),
           const SizedBox(height: 26),
           _buildStats(state),
@@ -707,54 +701,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     }
     return ((_count(state, key) / total) * 100).round();
   }
-
-  void _showExportDialog(GradeCenterState state) {
-    final csv = _csvFor(state.grades);
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Export Grading Sheet'),
-        content: SizedBox(
-          width: 720,
-          height: 420,
-          child: SingleChildScrollView(child: SelectableText(csv)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
-  String _csvFor(List<Map<String, dynamic>> grades) {
-    final rows = [
-      'Team,Scope,Year Level,Event/Stage,Panel,Adviser,Peer,Final,Status',
-      ...grades.map((grade) {
-        return [
-          grade['team_name'],
-          grade['scope'],
-          grade['year_level'],
-          grade['stage_label'],
-          grade['panel_score'],
-          grade['adviser_score'],
-          grade['peer_score'],
-          grade['final_grade'],
-          grade['status'],
-        ].map(_csvCell).join(',');
-      }),
-    ];
-    return rows.join('\n');
-  }
-
-  String _csvCell(dynamic value) {
-    final text = (value ?? '').toString().replaceAll('"', '""');
-    return '"$text"';
-  }
-
-
 
   int _count(GradeCenterState state, String key) {
     final value = state.counts[key];

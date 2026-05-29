@@ -32,6 +32,7 @@ urlpatterns = [
     path('api/grading/', include('grading.urls')),
     path('api/repository/', include('repository.urls')),
     path('api/curriculum-analytics/', include('curriculum_analytics.urls')),
+    path('api/reports/', include('reports.urls')),
     path(
         'api/media/files/<path:file_path>',
         AuthenticatedMediaFileView.as_view(),

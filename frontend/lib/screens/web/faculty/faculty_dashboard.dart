@@ -515,6 +515,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'adviser_grading',
           ),
+          _buildSidebarItem(
+            icon: Icons.summarize_rounded,
+            label: 'Reports',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('audit_compliance'),
+            ),
+            isActive: _activeSection == 'audit_compliance',
+          ),
         ];
       case FacultyWorkspace.repoAssistant:
         return [
@@ -712,7 +721,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const RepositoryAuditScreen(),
         );
       case 'audit_compliance':
-        if (roles['pit_lead'] != true) {
+        if (roles['pit_lead'] != true && roles['adviser'] != true) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: _buildWorkspaceDashboard(

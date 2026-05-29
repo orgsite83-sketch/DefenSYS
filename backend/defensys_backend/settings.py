@@ -80,6 +80,7 @@ INSTALLED_APPS = [
     'curriculum_analytics',
     'channels',
     'realtime',
+    'reports',
 ]
 
 # App API tests only; do not collect ad-hoc scripts in backend/tests/ (see tests/README.md).
