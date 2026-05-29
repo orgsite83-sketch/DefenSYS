@@ -157,15 +157,25 @@ def stage_payload(team, stage_label):
     unlocked = vault_unlocked(team, stage_label)
     rows = []
 
+    from repository.audit.services import suggested_capstone_file_name
+    from academic_period_management.models import Semester
+    semester_label = team.semester.label if team.semester_id else Semester.FIRST
+
     for item in definitions:
         submission = submitted.get(item['id'])
         is_vault = item['type'] == DeliverableSubmission.TYPE_VAULT
+        
+        suggested = ''
+        if is_vault:
+            suggested = suggested_capstone_file_name(team, stage_label, semester_label)
+
         rows.append({
             'id': item['id'],
             'label': item['label'],
             'required': item['required'],
             'type': item['type'],
             'vault_note': item.get('vault_note', ''),
+            'suggested_file_name': suggested,
             'uploaded': submission is not None,
             'locked': is_vault and not unlocked,
             'submission': submission_payload(submission) if submission else None,

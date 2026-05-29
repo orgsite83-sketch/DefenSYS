@@ -700,17 +700,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         ..add(const SizedBox(height: 16))
         ..add(_buildUploadQueuePanel(state));
     }
-    if (_scopeKey(state) == 'admin') {
-      children
-        ..add(const SizedBox(height: 16))
-        ..add(_buildCapstoneUploadWindowBanner(state))
-        ..add(_buildCapstoneEmptyQueueBanner(state));
-      if (_showCapstoneUploadQueue(state)) {
-        children
-          ..add(const SizedBox(height: 16))
-          ..add(_buildCapstoneUploadQueuePanel(state));
-      }
-    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,

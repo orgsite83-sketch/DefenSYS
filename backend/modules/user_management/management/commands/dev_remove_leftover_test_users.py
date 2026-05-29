@@ -19,6 +19,7 @@ LEFTOVER_DEV_USERNAMES = [
     'f1',
     's1',
     's2',
+    'pit_lead_test',
 ]
 
 

@@ -141,6 +141,15 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     team = submission.team
     is_vault = submission.deliverable_type == DeliverableSubmission.TYPE_VAULT
     kind = _submission_kind_for_deliverable(submission)
+
+    import re
+    if is_vault and re.match(
+        r'^(?:3rdYear)\.(?:[A-Za-z0-9]+)\.(?:[A-Za-z0-9_-]+)\.(?:1stSemester|2ndSemester|Summer)\.pdf$',
+        (submission.file_name or '').strip(),
+        re.IGNORECASE,
+    ):
+        kind = 'archive'
+
     payload = {
         'id': f'capstone-{submission.id}',
         'source_id': submission.id,

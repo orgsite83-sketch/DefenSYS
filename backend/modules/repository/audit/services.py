@@ -397,6 +397,14 @@ def capstone_vault_upload_queue(semester=None):
             team_id__isnull=False,
         ).values_list('team_id', 'stage_label')
     )
+    
+    from repository.deliverables.models import DeliverableSubmission
+    for t_id, s_label, f_name in DeliverableSubmission.objects.filter(
+        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        team_id__isnull=False,
+    ).values_list('team_id', 'stage_label', 'file_name'):
+        if CAPSTONE_FILENAME_RE.fullmatch((f_name or '').strip()):
+            uploaded_legacy_keys.add((t_id, s_label))
 
     grades = (
         _complete_passing_grades(TeamGrade.SCOPE_CAPSTONE)
@@ -529,7 +537,7 @@ def repository_scope(user):
             'label': 'Admin repository audit',
             'pit_year_level': '',
             'can_upload_pit': False,
-            'can_upload_capstone': capstone_open,
+            'can_upload_capstone': True,
             'can_override': True,
             'can_export': True,
             'has_assigned_assistant': False,
