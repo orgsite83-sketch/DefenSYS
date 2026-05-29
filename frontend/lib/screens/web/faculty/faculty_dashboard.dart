@@ -50,6 +50,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final routerState = GoRouterState.of(context);
+    final sectionFromRoute = FacultyRoutes.sectionForLocation(routerState.uri.path);
+    if (sectionFromRoute != null && sectionFromRoute != _activeSection) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setState(() => _activeSection = sectionFromRoute);
+      });
+    }
+
     final dashState = ref.watch(dashboardProvider('faculty'));
     final roles =
         (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
@@ -169,6 +177,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       _activeSection = 'dashboard';
       _schedulingExpanded = false;
     });
+    context.go(FacultyRoutes.dashboard);
   }
 
   void _goToSection(String section) {

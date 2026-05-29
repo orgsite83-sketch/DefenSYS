@@ -315,10 +315,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     if (!_canManageTeams(state) || state.isSaving) {
       return;
     }
-    if (!_isPitLeadManager) {
-      context.go(AdminRoutes.studentTeamsBulkImport);
-      return;
-    }
     _openBulkImport();
   }
 
@@ -1082,15 +1078,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       _scheduleDraftSave();
     }
     if (!mounted) return;
-    if (context.canPop()) {
-      context.pop();
-      return;
-    }
-    context.go(
-      _isPitLeadManager
-          ? FacultyRoutes.studentTeams
-          : AdminRoutes.studentTeams,
-    );
+    setState(() => _showBulkImport = false);
   }
 
   Future<void> _discardBulkDraftConfirmed() async {

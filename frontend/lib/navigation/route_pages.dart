@@ -6,7 +6,6 @@ import '../screens/web/admin/defense_stage_editor_screen.dart';
 import '../screens/web/admin/grade_center_event_teams_screen.dart';
 import '../screens/web/admin/grade_center_team_detail_screen.dart';
 import '../screens/web/admin/rubric_full_page_editor.dart';
-import '../screens/web/admin/student_teams_screen.dart';
 import '../screens/web/admin/team_detail_page.dart';
 import '../services/dashboard_provider.dart';
 import '../services/rubric_engine_provider.dart';
@@ -139,19 +138,3 @@ class AdminDefenseStageEditorRoute extends ConsumerWidget {
   }
 }
 
-class StudentTeamsBulkImportRoute extends StatelessWidget {
-  const StudentTeamsBulkImportRoute({
-    super.key,
-    this.pitLeadMode = false,
-  });
-
-  final bool pitLeadMode;
-
-  @override
-  Widget build(BuildContext context) {
-    return StudentTeamsScreen(
-      mode: pitLeadMode ? TeamListMode.pitLead : TeamListMode.capstoneAdmin,
-      initialBulkImport: true,
-    );
-  }
-}

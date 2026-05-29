@@ -2,9 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../navigation/admin_route_paths.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/clipboard_copy.dart';
@@ -231,7 +229,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           label: 'Bulk Import CSV',
           onTap: state.isSaving
               ? null
-              : () => context.go(AdminRoutes.usersBulkImport),
+              : () => setState(() => _showBulkImport = true),
         ),
         const SizedBox(width: 14),
         _goldButton(
@@ -517,10 +515,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     UserManagementState state,
     List<Map<String, dynamic>> visibleUsers,
   ) {
-    if (state.users.isEmpty) {
-      return _emptyRows();
-    }
-
     return ConstrainedBox(
       constraints: const BoxConstraints(maxHeight: 640),
       child: Scrollbar(
@@ -536,7 +530,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 _ColumnSpec('Status', 1.55),
                 _ColumnSpec('Action', 1.1),
               ]),
-              ...visibleUsers.map((user) => _userRow(state, user)),
+              if (state.users.isEmpty)
+                _emptyRows()
+              else
+                ...visibleUsers.map((user) => _userRow(state, user)),
             ],
           ),
         ),

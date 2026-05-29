@@ -8,7 +8,6 @@ import '../screens/app/student_dashboard.dart';
 import '../screens/login_screen.dart';
 import '../screens/terms_agreement_screen.dart';
 import '../screens/web/admin/admin_shell.dart';
-import '../screens/web/admin/user_management_screen.dart';
 import '../screens/web/faculty/faculty_dashboard.dart';
 import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
@@ -71,7 +70,7 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     return null;
   }
 
-  return GoRouter(
+  final router = GoRouter(
     navigatorKey: rootNavigatorKey,
     refreshListenable: refresh,
     redirect: redirect,
@@ -144,6 +143,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
     ],
   );
+
+  router.routerDelegate.addListener(() {
+    final location = router.routerDelegate.currentConfiguration.uri.path;
+    final routeSection = AdminRoutes.sectionForLocation(location);
+    if (routeSection != null) {
+      final current = ref.read(activeAdminSectionProvider);
+      if (routeSection != current) {
+        ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
+      }
+    }
+  });
+
+  return router;
 });
 
 String _defaultHomeForUser(Map<String, dynamic> user) {
@@ -219,22 +231,11 @@ List<RouteBase> _adminRoutes() {
         GoRoute(
           path: 'users',
           builder: (_, __) => const SizedBox.shrink(),
-          routes: [
-            GoRoute(
-              path: 'bulk-import',
-              builder: (_, __) =>
-                  const UserManagementScreen(initialBulkImport: true),
-            ),
-          ],
         ),
         GoRoute(
           path: 'student-teams',
           builder: (_, __) => const SizedBox.shrink(),
           routes: [
-            GoRoute(
-              path: 'bulk-import',
-              builder: (_, __) => const StudentTeamsBulkImportRoute(),
-            ),
             GoRoute(
               path: ':teamId',
               builder: (_, state) {

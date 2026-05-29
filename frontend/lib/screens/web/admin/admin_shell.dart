@@ -67,12 +67,6 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final activeSection =
         routeSection ?? DefensysAdminSection.overview;
 
-    if (routeSection != null &&
-        routeSection != ref.read(activeAdminSectionProvider)) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
-      });
-    }
 
     final isDetail = _isAdminDetailRoute(routerState);
     final shellContent = isDetail
@@ -100,14 +94,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   /// are built locally so sidebar navigation works even when shell child is empty.
   bool _isAdminDetailRoute(GoRouterState state) {
     final params = state.pathParameters;
-    if (params.containsKey('teamId') ||
+    return params.containsKey('teamId') ||
         params.containsKey('gradeId') ||
         params.containsKey('groupKey') ||
         params.containsKey('stageId') ||
-        params.containsKey('rubricId')) {
-      return true;
-    }
-    return state.uri.path.endsWith('/bulk-import');
+        params.containsKey('rubricId');
   }
 
   Widget _buildSectionContent(
