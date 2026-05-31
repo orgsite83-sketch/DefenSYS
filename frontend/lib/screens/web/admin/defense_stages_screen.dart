@@ -55,6 +55,28 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<DefenseStagesState>(
+      defenseStagesProvider,
+      (previous, next) {
+        if (next.error != null && next.error != previous?.error) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(next.error!),
+              backgroundColor: AppColors.danger,
+            ),
+          );
+        }
+        if (next.message != null && next.message != previous?.message) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(next.message!),
+              backgroundColor: AppColors.success,
+            ),
+          );
+        }
+      },
+    );
+
     final onAdminList =
         GoRouterState.of(context).uri.path == AdminRoutes.defenseStages;
 

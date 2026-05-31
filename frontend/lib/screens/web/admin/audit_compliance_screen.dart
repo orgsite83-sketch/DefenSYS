@@ -203,18 +203,12 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               children: [
                 Text('Audit Filters', style: DefensysUi.sectionTitle),
                 const SizedBox(height: 10),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
                     // Row 1: Dropdown filters
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        if (isAdmin)
-                          SizedBox(
-                            width: 220,
+                        if (isAdmin) ...[
+                          Expanded(
                             child: DropdownButtonFormField<String>(
                               value: _getCurrentAcademicScope(state),
                               isExpanded: true,
@@ -234,8 +228,10 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                               ],
                               onChanged: _onAcademicScopeChanged,
                             ),
-                          )
-                        else if (isPitLead)
+                          ),
+                          const SizedBox(width: 10),
+                        ]
+                        else if (isPitLead) ...[
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                             decoration: BoxDecoration(
@@ -251,45 +247,53 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                               ),
                             ),
                           ),
-                        _FilterDropdown(
-                          label: 'Category',
-                          value: state.category,
-                          options: _categoryOptions,
-                          onChanged: ref
-                              .read(systemAuditProvider.notifier)
-                              .setCategory,
+                          const SizedBox(width: 10),
+                        ],
+                        Expanded(
+                          child: _FilterDropdown(
+                            label: 'Category',
+                            value: state.category,
+                            options: _categoryOptions,
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setCategory,
+                          ),
                         ),
-                        _FilterDropdown(
-                          label: 'Review Status',
-                          value: state.reviewStatus,
-                          options: state.options['review_statuses'],
-                          onChanged: ref
-                              .read(systemAuditProvider.notifier)
-                              .setReviewStatus,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _FilterDropdown(
+                            label: 'Review Status',
+                            value: state.reviewStatus,
+                            options: state.options['review_statuses'],
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setReviewStatus,
+                          ),
                         ),
-                        _FilterDropdown(
-                          label: 'Action',
-                          value: state.action,
-                          options: (state.options['actions'] as List?)
-                              ?.map(
-                                (item) => {'value': '$item', 'label': '$item'},
-                              )
-                              .toList(),
-                          onChanged: ref
-                              .read(systemAuditProvider.notifier)
-                              .setAction,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _FilterDropdown(
+                            label: 'Action',
+                            value: state.action,
+                            options: (state.options['actions'] as List?)
+                                ?.map(
+                                  (item) => {'value': '$item', 'label': '$item'},
+                                )
+                                .toList(),
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setAction,
+                          ),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
                     // Row 2: Search, date fields and Action buttons
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
-                        SizedBox(
-                          width: 260,
+                        Expanded(
+                          flex: 3,
                           child: TextField(
                             controller: _searchController,
                             decoration: const InputDecoration(
@@ -304,8 +308,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                                 ref.read(systemAuditProvider.notifier).fetch(),
                           ),
                         ),
-                        SizedBox(
-                          width: 160,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
                           child: TextField(
                             controller: _startDateController,
                             decoration: const InputDecoration(
@@ -321,8 +326,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                                 ref.read(systemAuditProvider.notifier).fetch(),
                           ),
                         ),
-                        SizedBox(
-                          width: 160,
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
                           child: TextField(
                             controller: _endDateController,
                             decoration: const InputDecoration(
@@ -338,6 +344,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                                 ref.read(systemAuditProvider.notifier).fetch(),
                           ),
                         ),
+                        const SizedBox(width: 20),
                         SizedBox(
                           height: 44,
                           child: FilledButton.icon(
@@ -347,7 +354,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                             label: const Text('Apply'),
                           ),
                         ),
-                        // Quick-Export PDF button in the same row
+                        const SizedBox(width: 10),
                         SizedBox(
                           height: 44,
                           child: OutlinedButton.icon(
@@ -370,10 +377,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
         const SizedBox(height: 14),
         LayoutBuilder(
           builder: (context, constraints) {
@@ -1437,12 +1442,14 @@ class _FilterDropdown extends StatelessWidget {
   final String value;
   final dynamic options;
   final ValueChanged<String> onChanged;
+  final double? width;
 
   const _FilterDropdown({
     required this.label,
     required this.value,
     required this.options,
     required this.onChanged,
+    this.width,
   });
 
   @override
@@ -1451,38 +1458,40 @@ class _FilterDropdown extends StatelessWidget {
       {'value': '', 'label': 'All $label'},
       ...List<Map<String, dynamic>>.from(options ?? const []),
     ];
-    return SizedBox(
-      width: 220,
-      child: DropdownButtonFormField<String>(
-        initialValue: value,
-        isExpanded: true,
-        decoration: InputDecoration(
-          labelText: label,
-          border: const OutlineInputBorder(),
-          isDense: true,
-        ),
-        items: items
-            .map(
-              (item) => DropdownMenuItem<String>(
-                value: item['value']?.toString() ?? '',
-                child: Text(
-                  item['label']?.toString() ?? '',
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ),
-            )
-            .toList(),
-        selectedItemBuilder: (context) => items
-            .map(
-              (item) => Text(
+    final dropdown = DropdownButtonFormField<String>(
+      initialValue: value,
+      isExpanded: true,
+      decoration: InputDecoration(
+        labelText: label,
+        border: const OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: items
+          .map(
+            (item) => DropdownMenuItem<String>(
+              value: item['value']?.toString() ?? '',
+              child: Text(
                 item['label']?.toString() ?? '',
                 overflow: TextOverflow.ellipsis,
               ),
-            )
-            .toList(),
-        onChanged: (next) => onChanged(next ?? ''),
-      ),
+            ),
+          )
+          .toList(),
+      selectedItemBuilder: (context) => items
+          .map(
+            (item) => Text(
+              item['label']?.toString() ?? '',
+              overflow: TextOverflow.ellipsis,
+            ),
+          )
+          .toList(),
+      onChanged: (next) => onChanged(next ?? ''),
     );
+
+    if (width != null) {
+      return SizedBox(width: width, child: dropdown);
+    }
+    return dropdown;
   }
 }
 

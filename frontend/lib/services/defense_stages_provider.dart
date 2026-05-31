@@ -101,11 +101,22 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       clearMessage: true,
     );
 
+    final cleanedPayload = Map<String, dynamic>.from(payload);
+    if (cleanedPayload['deliverables'] is List) {
+      cleanedPayload['deliverables'] = (cleanedPayload['deliverables'] as List).map((d) {
+        if (d is Map) {
+          final copy = Map<String, dynamic>.from(d);
+          copy.removeWhere((key, _) => key.startsWith('_'));
+          return copy;
+        }
+        return d;
+      }).toList();
+    }
+
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
-        body: jsonEncode(payload),
+        body: jsonEncode(cleanedPayload),
       );
 
       if (response.statusCode == 201) {
@@ -133,11 +144,22 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       clearMessage: true,
     );
 
+    final cleanedPayload = Map<String, dynamic>.from(payload);
+    if (cleanedPayload['deliverables'] is List) {
+      cleanedPayload['deliverables'] = (cleanedPayload['deliverables'] as List).map((d) {
+        if (d is Map) {
+          final copy = Map<String, dynamic>.from(d);
+          copy.removeWhere((key, _) => key.startsWith('_'));
+          return copy;
+        }
+        return d;
+      }).toList();
+    }
+
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$stageId/'),
-        
-        body: jsonEncode(payload),
+        body: jsonEncode(cleanedPayload),
       );
 
       if (response.statusCode == 200) {
