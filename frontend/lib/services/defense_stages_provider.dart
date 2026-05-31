@@ -94,7 +94,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
-  Future<bool> addStage(Map<String, dynamic> payload) async {
+  Future<int?> addStage(Map<String, dynamic> payload) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -109,18 +109,20 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       );
 
       if (response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        final newId = data is Map ? _asInt(data['stage']?['id']) : null;
         await fetchStages(successMessage: 'Defense stage added.');
-        return true;
+        return newId;
       }
 
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
       );
-      return false;
+      return null;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
-      return false;
+      return null;
     }
   }
 
@@ -269,6 +271,12 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '');
   }
 
   String _errorFromResponse(http.Response response) {

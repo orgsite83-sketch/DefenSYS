@@ -242,10 +242,17 @@ def _entries_for_stage_deliverables(
             vault.append(payload)
         included_source_ids.add(submission.id)
 
+    included_ids = {
+        entry.get('id')
+        for entry in pre_defense + vault
+        if entry.get('id')
+    }
     archive = [
         entry
         for entry in entries_for_team
-        if entry.get('submission_kind') == 'archive' and entry.get('stage') == stage_label
+        if entry.get('submission_kind') == 'archive'
+        and entry.get('stage') == stage_label
+        and entry.get('id') not in included_ids
     ]
     return pre_defense, vault, archive
 

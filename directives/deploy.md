@@ -38,6 +38,28 @@ cp -a /opt/defensys/backend/media ~/deploy-backups/media_$(date +%F_%H%M)
 ls -lh ~/deploy-backups/
 ```
 
+### Clean up older backups (Optional)
+
+To free up disk space, you can delete old backups manually:
+
+```bash
+# Delete a specific database backup
+rm ~/deploy-backups/db_YYYY-MM-DD_HHMM.sql.gz
+
+# Delete a specific media backup folder
+rm -rf ~/deploy-backups/media_YYYY-MM-DD_HHMM
+```
+
+Alternatively, you can automatically delete backups older than 30 days:
+
+```bash
+# Delete DB backups older than 30 days
+find ~/deploy-backups/ -name "db_*.sql.gz" -type f -mtime +30 -delete
+
+# Delete media folders older than 30 days
+find ~/deploy-backups/ -maxdepth 1 -name "media_*" -type d -mtime +30 -exec rm -rf {} +
+```
+
 ### Restore database (if needed)
 
 ```bash
@@ -250,6 +272,10 @@ python manage.py seed_defense_stages
 
 # 4. (Optional) Seed suggested deliverables
 python manage.py seed_suggested_stage_deliverables
+
+# 5. Populate the system
+python manage.py seed_student_progression
+
 ```
 
 ---

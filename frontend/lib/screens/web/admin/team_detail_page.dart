@@ -284,9 +284,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     final level = team['level']?.toString() ?? '';
     final yearLevel = team['year_level']?.toString() ?? '3rd Year';
     final isCapstone = level.toUpperCase().contains('CAPSTONE');
-    final programLabel = widget.isPitLead
-        ? '${widget.pitLeadYear ?? yearLevel} PIT'
-        : 'Capstone · $yearLevel';
+    final programLabel = isCapstone
+        ? 'Capstone · $yearLevel'
+        : '$yearLevel PIT';
     final adviserName = team['adviser_name']?.toString() ??
         _adviserLabel(_asInt(team['adviser_id']), detailState.advisers);
 
@@ -444,9 +444,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
             InputDecorator(
               decoration: const InputDecoration(labelText: 'Program'),
               child: Text(
-                widget.isPitLead
-                    ? '${widget.pitLeadYear ?? yearLevel} PIT'
-                    : 'Capstone · $yearLevel',
+                isCapstone
+                    ? 'Capstone · $yearLevel'
+                    : '$yearLevel PIT',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),

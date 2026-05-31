@@ -285,6 +285,20 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             if year_issues:
                 raise serializers.ValidationError({'member_ids': year_issues})
             attrs['year_level'] = inferred
+        elif user_is_pit_lead_only(user):
+            inferred, year_issues = infer_year_level_from_members(
+                member_ids,
+                semester,
+                leader_id=attrs['leader_id'],
+            )
+            if year_issues:
+                raise serializers.ValidationError({'member_ids': year_issues})
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if pit_year and inferred != pit_year:
+                raise serializers.ValidationError({
+                    'member_ids': f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
+                })
+            attrs['year_level'] = inferred
 
         if user and (user_is_admin(user) or user_is_pit_lead_only(user)):
             try:

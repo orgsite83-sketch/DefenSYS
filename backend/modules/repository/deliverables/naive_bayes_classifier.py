@@ -129,6 +129,7 @@ class NaiveBayesClassifier:
         # Train classifier
         self.classifier.fit(X_train, training_labels)
         self.is_trained = True
+        self.categories = list(self.classifier.classes_)
         
         print(f'Classifier trained on {len(training_docs)} documents')
         print(f'Categories: {len(self.categories)}')
@@ -161,9 +162,9 @@ class NaiveBayesClassifier:
         
         # Build results
         all_probabilities = []
-        for category, prob in zip(self.categories, probabilities):
+        for category, prob in zip(self.classifier.classes_, probabilities):
             all_probabilities.append({
-                'category': category,
+                'category': str(category),
                 'probability': prob * 100,
                 'confidence': f'{prob * 100:.1f}%'
             })

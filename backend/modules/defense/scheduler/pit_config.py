@@ -53,21 +53,27 @@ def upsert_pit_event_config(
     peer_rubric,
     panel_weight,
     peer_weight,
+    vault_file_template=None,
 ):
     event_name = (event_name or '').strip()
     if not event_name:
         raise ValidationError({'event_name': 'PIT event name is required.'})
     if panel_weight + peer_weight != 100:
         raise ValidationError('Panel and peer weights must total 100%.')
+    
+    defaults = {
+        'panel_rubric': panel_rubric,
+        'peer_rubric': peer_rubric,
+        'panel_weight': panel_weight,
+        'peer_weight': peer_weight,
+    }
+    if vault_file_template is not None:
+        defaults['vault_file_template'] = vault_file_template.strip()
+
     config, _created = PitEventGradingConfig.objects.update_or_create(
         semester=semester,
         event_name=event_name,
-        defaults={
-            'panel_rubric': panel_rubric,
-            'peer_rubric': peer_rubric,
-            'panel_weight': panel_weight,
-            'peer_weight': peer_weight,
-        },
+        defaults=defaults,
     )
     return config
 
@@ -84,4 +90,5 @@ def pit_event_config_payload(config):
         'peer_weight': config.peer_weight,
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
+        'vault_file_template': config.vault_file_template,
     }

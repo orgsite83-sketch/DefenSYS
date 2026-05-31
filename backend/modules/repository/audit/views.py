@@ -63,6 +63,7 @@ class RepositoryAuditUploadPitView(APIView):
             )
         except DjangoValidationError as exc:
             _raise_drf_validation_error(exc)
+
         payload = repository_audit_payload(request)
         payload['created_count'] = len(entries)
         payload['skipped'] = skipped

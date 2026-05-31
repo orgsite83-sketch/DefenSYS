@@ -6,6 +6,7 @@ from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework.throttling import AnonRateThrottle
 
 from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
@@ -339,6 +340,7 @@ class GuestPanelistCodeDetailView(APIView):
 class GuestCodeValidateView(APIView):
     """Public endpoint to validate guest panelist codes"""
     permission_classes = [AllowAny]
+    throttle_classes = [AnonRateThrottle]
     
     def get(self, request, code):
         """Validate a guest code and return guest info if valid"""

@@ -26,6 +26,7 @@ class _DefenseSchedulerScreenState
   final _timeController = TextEditingController(text: '08:00');
   final _durationController = TextEditingController(text: '60');
   final _roomController = TextEditingController(text: 'Room 301');
+  final _pitTemplateController = TextEditingController();
 
   final Set<int> _selectedPanelistIds = {};
 
@@ -47,6 +48,7 @@ class _DefenseSchedulerScreenState
     _timeController.dispose();
     _durationController.dispose();
     _roomController.dispose();
+    _pitTemplateController.dispose();
     super.dispose();
   }
 
@@ -579,15 +581,57 @@ class _DefenseSchedulerScreenState
                         ),
                       ),
                       const SizedBox(height: 14),
-                      _labeledField(
-                        'Event name *',
-                        TextField(
-                          controller: _eventController,
-                          decoration: _schedulerInputDecoration(
-                            hintText: 'e.g. 2nd Year PIT Expo',
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _labeledField(
+                              'Event name *',
+                              TextField(
+                                controller: _eventController,
+                                decoration: _schedulerInputDecoration(
+                                  hintText: 'e.g. 2nd Year PIT Expo',
+                                ),
+                                onChanged: (val) {
+                                  _prefillPitEventConfig();
+                                  setState(() {});
+                                },
+                              ),
+                            ),
                           ),
-                          onChanged: (_) => _prefillPitEventConfig(),
-                        ),
+                          const SizedBox(width: 12),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 28),
+                            child: SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: Tooltip(
+                                message: _eventController.text.trim().isEmpty
+                                    ? 'Enter an Event Name first to configure settings'
+                                    : 'Configure event weights and file template',
+                                child: IconButton(
+                                  icon: const Icon(Icons.tune_rounded),
+                                  color: _eventController.text.trim().isNotEmpty
+                                      ? AppColors.maroon
+                                      : Colors.grey,
+                                  onPressed: _eventController.text.trim().isNotEmpty
+                                      ? () => _showPitConfigDialog(state)
+                                      : null,
+                                  style: IconButton.styleFrom(
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                      side: BorderSide(
+                                        color: _eventController.text.trim().isNotEmpty
+                                            ? AppColors.maroon.withValues(alpha: 0.2)
+                                            : Colors.grey.withValues(alpha: 0.2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 14),
                       Row(
@@ -651,48 +695,6 @@ class _DefenseSchedulerScreenState
                           ),
                         ],
                       ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _labeledField(
-                              'Panel %',
-                              TextField(
-                                controller: _panelWeightController,
-                                keyboardType: TextInputType.number,
-                                decoration: _schedulerInputDecoration(),
-                                onChanged: (_) => setState(() {}),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _labeledField(
-                              'Peer %',
-                              TextField(
-                                controller: _peerWeightController,
-                                keyboardType: TextInputType.number,
-                                decoration: _schedulerInputDecoration(),
-                                onChanged: (_) => setState(() {}),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 22),
-                            child: Text(
-                              'Total ${_pitWeightTotal()}%',
-                              style: TextStyle(
-                                color: _pitWeightTotal() == 100
-                                    ? const Color(0xFF027A48)
-                                    : const Color(0xFFB42318),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
                     ],
                   ),
                 ),
@@ -700,7 +702,7 @@ class _DefenseSchedulerScreenState
                 const Padding(
                   padding: EdgeInsets.only(left: 2),
                   child: Text(
-                    'Panel and peer rubrics define criteria only. The split above applies to all teams in this event.',
+                    'Panel and peer rubrics define criteria only. Click the tune settings icon next to the event name to configure grading weights and templates.',
                     style: TextStyle(
                       color: Color(0xFF98A2B3),
                       fontSize: 12,
@@ -1777,6 +1779,7 @@ class _DefenseSchedulerScreenState
           int.tryParse(_panelWeightController.text.trim()) ?? 80;
       payload['peer_weight'] =
           int.tryParse(_peerWeightController.text.trim()) ?? 20;
+      payload['vault_file_template'] = _pitTemplateController.text.trim();
     }
     return payload;
   }
@@ -1809,7 +1812,282 @@ class _DefenseSchedulerScreenState
       _peerRubricId = _asInt(config['peer_rubric_id']) ?? _peerRubricId;
       _panelWeightController.text = config['panel_weight']?.toString() ?? '80';
       _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
+      _pitTemplateController.text = config['vault_file_template']?.toString() ?? '';
     });
+  }
+
+  void _showPitConfigDialog(DefenseSchedulerState state) {
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final total = (int.tryParse(_panelWeightController.text.trim()) ?? 0) +
+                (int.tryParse(_peerWeightController.text.trim()) ?? 0);
+            final isValid = total == 100 &&
+                _rubricId != null &&
+                _peerRubricId != null;
+
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              title: const Row(
+                children: [
+                  Icon(Icons.tune_rounded, color: AppColors.maroon),
+                  SizedBox(width: 8),
+                  Text(
+                    'Configure PIT Event Settings',
+                    style: TextStyle(
+                      color: AppColors.maroon,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16,
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 500,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Set the grading weight distribution and vault template for this event. These settings will persist and be used during scheduling.',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      _labeledField(
+                        'Vault File Template',
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextField(
+                              controller: _pitTemplateController,
+                              decoration: _schedulerInputDecoration(
+                                hintText: 'e.g. {course}_{year}_{project}_Expo',
+                              ),
+                              onChanged: (_) => setDialogState(() {}),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              children: [
+                                '{year}',
+                                '{course}',
+                                '{project}',
+                                '{event}',
+                                '{semester}',
+                              ].map((variable) {
+                                return InkWell(
+                                  onTap: () {
+                                    _insertVariable(_pitTemplateController, variable);
+                                    setDialogState(() {});
+                                  },
+                                  borderRadius: BorderRadius.circular(6),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      variable,
+                                      style: const TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.maroon,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 10),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF9FAFB),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: const Color(0xFFE5E7EB),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  const Icon(
+                                    Icons.insert_drive_file_outlined,
+                                    size: 16,
+                                    color: AppColors.maroon,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Preview: ',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 12,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      _resolvePitPreview(
+                                        _pitTemplateController.text,
+                                        _eventController.text,
+                                      ),
+                                      style: const TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.maroon,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: _labeledField(
+                              'Panel %',
+                              TextField(
+                                controller: _panelWeightController,
+                                keyboardType: TextInputType.number,
+                                decoration: _schedulerInputDecoration(),
+                                onChanged: (_) => setDialogState(() {}),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: _labeledField(
+                              'Peer %',
+                              TextField(
+                                controller: _peerWeightController,
+                                keyboardType: TextInputType.number,
+                                decoration: _schedulerInputDecoration(),
+                                onChanged: (_) => setDialogState(() {}),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 22),
+                            child: Text(
+                              'Total $total%',
+                              style: TextStyle(
+                                color: total == 100
+                                    ? const Color(0xFF027A48)
+                                    : const Color(0xFFB42318),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (_rubricId == null || _peerRubricId == null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFBBF24)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 16),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Please select a Panel Rubric and Peer Rubric on the scheduling card first.',
+                                  style: TextStyle(
+                                    color: Color(0xFF92400E),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text(
+                    'Cancel',
+                    style: TextStyle(color: AppColors.textSecondary),
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: isValid && !state.isSaving
+                      ? () async {
+                          final eventName = _eventController.text.trim();
+                          final panelWeight = int.tryParse(_panelWeightController.text.trim()) ?? 80;
+                          final peerWeight = int.tryParse(_peerWeightController.text.trim()) ?? 20;
+                          final activeSemesterId = state.activeSemester?['id'];
+
+                          final payload = {
+                            'event_name': eventName,
+                            'panel_rubric_id': _rubricId,
+                            'peer_rubric_id': _peerRubricId,
+                            'panel_weight': panelWeight,
+                            'peer_weight': peerWeight,
+                            'vault_file_template': _pitTemplateController.text.trim(),
+                            if (activeSemesterId != null) 'semester_id': activeSemesterId,
+                          };
+
+                          final success = await ref
+                              .read(defenseSchedulerProvider.notifier)
+                              .savePitEventConfig(payload);
+
+                          if (success && context.mounted) {
+                            Navigator.pop(dialogContext);
+                          }
+                        }
+                      : null,
+                  icon: const Icon(Icons.save_rounded, size: 16),
+                  label: const Text('Save Settings'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.maroon,
+                    foregroundColor: AppColors.gold,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
   }
 
   Future<void> _showManualDialog(DefenseSchedulerState state) async {
@@ -1826,6 +2104,7 @@ class _DefenseSchedulerScreenState
     final peerWeight = TextEditingController(text: _peerWeightController.text);
 
     final event = TextEditingController(text: _eventController.text);
+    final vaultFileTemplate = TextEditingController(text: _pitTemplateController.text);
     final date = TextEditingController(text: _dateController.text);
     final time = TextEditingController(text: _timeController.text);
     final duration = TextEditingController(text: _durationController.text);
@@ -1975,13 +2254,132 @@ class _DefenseSchedulerScreenState
                             });
                           },
                         )
-                      else
+                      else ...[
                         TextField(
                           controller: event,
                           decoration: const InputDecoration(
                             labelText: 'PIT Event Name',
                           ),
+                          onChanged: (val) async {
+                            final eventName = val.trim();
+                            if (eventName.length >= 3) {
+                              final semesterId = _asInt(
+                                ref.read(defenseSchedulerProvider).activeSemester?['id'],
+                              );
+                              final config = await ref
+                                  .read(defenseSchedulerProvider.notifier)
+                                  .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+                              if (config != null) {
+                                setDialogState(() {
+                                  rubricId = _asInt(config['panel_rubric_id']) ?? rubricId;
+                                  peerRubricId = _asInt(config['peer_rubric_id']) ?? peerRubricId;
+                                  panelWeight.text = config['panel_weight']?.toString() ?? '80';
+                                  peerWeight.text = config['peer_weight']?.toString() ?? '20';
+                                  vaultFileTemplate.text = config['vault_file_template']?.toString() ?? '';
+                                });
+                              }
+                            } else {
+                              setDialogState(() {});
+                            }
+                          },
                         ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: vaultFileTemplate,
+                          decoration: const InputDecoration(
+                            labelText: 'Vault File Template',
+                            hintText: 'e.g. {course}_{year}_{project}_Expo',
+                          ),
+                          onChanged: (_) => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: [
+                            '{year}',
+                            '{course}',
+                            '{project}',
+                            '{event}',
+                            '{semester}',
+                          ].map((variable) {
+                            return InkWell(
+                              onTap: () {
+                                _insertVariable(vaultFileTemplate, variable);
+                                setDialogState(() {});
+                              },
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 6,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3F4F6),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: const Color(0xFFE5E7EB),
+                                  ),
+                                ),
+                                child: Text(
+                                  variable,
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                        const SizedBox(height: 10),
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF9FAFB),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFFE5E7EB),
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(
+                                Icons.insert_drive_file_outlined,
+                                size: 16,
+                                color: AppColors.maroon,
+                              ),
+                              const SizedBox(width: 8),
+                              const Text(
+                                'Preview: ',
+                                style: TextStyle(
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 12,
+                                  color: AppColors.textSecondary,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  _resolvePitPreview(
+                                    vaultFileTemplate.text,
+                                    event.text,
+                                  ),
+                                  style: const TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.maroon,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 12),
                       DropdownButtonFormField<int?>(
                         initialValue: validRubric,
@@ -2216,6 +2614,7 @@ class _DefenseSchedulerScreenState
     final roomText = room.text.trim();
 
     event.dispose();
+    vaultFileTemplate.dispose();
     panelWeight.dispose();
     peerWeight.dispose();
     date.dispose();
@@ -2300,6 +2699,7 @@ class _DefenseSchedulerScreenState
         _peerRubricId = peerRubricId;
         _panelWeightController.text = manualPanelWeight.toString();
         _peerWeightController.text = manualPeerWeight.toString();
+        _pitTemplateController.text = vaultFileTemplate.text.trim();
       });
     }
 
@@ -2319,6 +2719,7 @@ class _DefenseSchedulerScreenState
       schedulePayload['peer_rubric_id'] = peerRubricId;
       schedulePayload['panel_weight'] = int.tryParse(panelWeightText) ?? 80;
       schedulePayload['peer_weight'] = int.tryParse(peerWeightText) ?? 20;
+      schedulePayload['vault_file_template'] = vaultFileTemplate.text.trim();
     }
     await ref
         .read(defenseSchedulerProvider.notifier)
@@ -2798,5 +3199,57 @@ class _DefenseSchedulerScreenState
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  void _insertVariable(TextEditingController controller, String variable) {
+    final text = controller.text;
+    final selection = controller.selection;
+    final start = selection.start;
+    final end = selection.end;
+
+    if (start < 0 || end < 0) {
+      final newText = text + variable;
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newText.length),
+      );
+    } else {
+      final newText = text.replaceRange(start, end, variable);
+      final newCursorOffset = start + variable.length;
+      controller.value = TextEditingValue(
+        text: newText,
+        selection: TextSelection.collapsed(offset: newCursorOffset),
+      );
+    }
+  }
+
+  String _slugify(String text) {
+    return text
+        .trim()
+        .replaceAll(RegExp(r'[^a-zA-Z0-9\s\-_]'), '')
+        .replaceAll(RegExp(r'[\s_]+'), '-');
+  }
+
+  String _resolvePitPreview(String template, String eventName) {
+    if (template.isEmpty) {
+      return '3rdYear.PIT301.Project-Alpha.1stSemester.pdf';
+    }
+
+    final slugifiedEvent = eventName.trim().isEmpty 
+        ? 'PIT-Event' 
+        : _slugify(eventName);
+
+    String result = template
+        .replaceAll('{year}', '3rdYear')
+        .replaceAll('{course}', 'PIT301')
+        .replaceAll('{project}', 'Project-Alpha')
+        .replaceAll('{event}', slugifiedEvent)
+        .replaceAll('{stage}', slugifiedEvent)
+        .replaceAll('{semester}', '1stSemester');
+
+    if (!result.toLowerCase().endsWith('.pdf')) {
+      result = '$result.pdf';
+    }
+    return result;
   }
 }

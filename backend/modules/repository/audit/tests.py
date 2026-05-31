@@ -961,3 +961,47 @@ class RepositoryAuditApiTests(APITestCase):
         else:
             body = str(payload)
         self.assertIn('upload', body.lower())
+
+    def test_upload_pit_custom_template_filename_matches(self):
+        # 1. Open upload window
+        self._open_upload_window_for_pit_team(event_name='3rd Year Expo')
+        
+        # 2. Get the config and set a custom template
+        config = PitEventGradingConfig.objects.get(event_name='3rd Year Expo')
+        config.vault_file_template = '{year}{course}{project}{semester}{event}'
+        config.save()
+
+        # 3. Authenticate as PIT lead
+        self.client.force_authenticate(user=self.pit_lead)
+
+        # 4. Upload file with custom template filename format (no dots)
+        # Expected filename is 3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf
+        pdf_bytes = b'%PDF-1.4 custom template test'
+        upload_file = SimpleUploadedFile(
+            '3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf',
+            pdf_bytes,
+            content_type='application/pdf',
+        )
+
+        response = self.client.post(
+            '/api/repository/audit/upload-pit/',
+            {
+                'files': upload_file,
+                'year_level': '3rd Year',
+            },
+            format='multipart',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(len(response.data['skipped']), 0)
+        
+        # Verify it was successfully saved and matched to self.pit_team
+        entry = VaultEntry.objects.get(
+            file_name='3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf',
+        )
+        self.assertEqual(entry.team, self.pit_team)
+        self.assertEqual(entry.year_level, '3rd Year')
+        self.assertEqual(entry.course_code, 'PIT301')
+        self.assertEqual(entry.semester_label, '1st Semester')
+

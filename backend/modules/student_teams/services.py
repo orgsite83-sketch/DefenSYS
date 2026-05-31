@@ -33,6 +33,26 @@ def is_stage_ready(team, stage):
     return bool(progress and progress.status == TeamStageProgress.STATUS_READY)
 
 
+# Statuses that indicate endorsement already happened (ready or any later stage).
+_ENDORSED_STATUSES = frozenset({
+    TeamStageProgress.STATUS_READY,
+    TeamStageProgress.STATUS_SCHEDULED,
+    TeamStageProgress.STATUS_GRADING,
+    TeamStageProgress.STATUS_PASSED,
+    TeamStageProgress.STATUS_ARCHIVED,
+})
+
+
+def was_stage_endorsed(team, stage):
+    """Return True if the team has been endorsed for this stage at any point.
+
+    Unlike ``is_stage_ready`` (which matches only 'ready'), this also matches
+    later lifecycle statuses such as 'scheduled', 'passed', etc.
+    """
+    progress = get_stage_progress(team, stage)
+    return bool(progress and progress.status in _ENDORSED_STATUSES)
+
+
 def _progress_for(team, stage, user=None):
     progress, created = TeamStageProgress.objects.get_or_create(
         team=team,

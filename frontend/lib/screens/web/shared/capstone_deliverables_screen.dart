@@ -14,6 +14,7 @@ import '../../../theme/app_theme.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../utils/progress_upload.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
   try {
@@ -641,99 +642,112 @@ class _CapstoneDeliverablesScreenState
   }
 
   void _showTeamDialog(Map<String, dynamic> team) {
+    final teamId = team['id'];
     String selectedStage = ref.read(capstoneDeliverablesProvider).selectedStage;
-    final stages = _stageList(team);
 
     showDialog<void>(
       context: context,
       builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final stage = _stagePayload(stages, selectedStage);
-            final pre = _deliverables(stage, 'pre');
-            final vault = _deliverables(stage, 'vault');
-            final configured = stage['deliverables_configured'] == true;
-            final complete = stage['required_complete'] == true;
-            final endorsed = stage['endorsed'] == true;
-            final canEndorse = configured && complete && !endorsed;
+        return Consumer(
+          builder: (context, ref, child) {
+            final state = ref.watch(capstoneDeliverablesProvider);
+            final currentTeam = state.teams.firstWhere(
+              (t) => t['id'] == teamId,
+              orElse: () => team,
+            );
+            final stages = _stageList(currentTeam);
 
-            return AlertDialog(
-              title: Text('Deliverables - ${team['name'] ?? ''}'),
-              content: SizedBox(
-                width: 780,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: stages.map((item) {
-                          final label = item['stage_label']?.toString() ?? '';
-                          final active = label == selectedStage;
-                          return ChoiceChip(
-                            label: Text(label),
-                            selected: active,
-                            onSelected: (_) {
-                              setDialogState(() {
-                                selectedStage = label;
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                      const SizedBox(height: 18),
-                      _sectionTitle('Pre-Defense Requirements'),
-                      ...pre.map(
-                        (item) => _deliverableRow(
-                          team,
-                          selectedStage,
-                          item,
-                          setDialogState,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _sectionTitle('Post-Defense Vault Submissions'),
-                      if (stage['vault_unlocked'] != true)
-                        _lockedVaultNotice(selectedStage)
-                      else
-                        ...vault.map(
-                          (item) => _deliverableRow(
-                            team,
-                            selectedStage,
-                            item,
-                            setDialogState,
+            return StatefulBuilder(
+              builder: (context, setDialogState) {
+                final stage = _stagePayload(stages, selectedStage);
+                final pre = _deliverables(stage, 'pre');
+                final vault = _deliverables(stage, 'vault');
+                final configured = stage['deliverables_configured'] == true;
+                final complete = stage['required_complete'] == true;
+                final endorsed = stage['endorsed'] == true;
+                final canEndorse = configured && complete && !endorsed;
+
+                return AlertDialog(
+                  title: Text('Deliverables - ${currentTeam['name'] ?? ''}'),
+                  content: SizedBox(
+                    width: 780,
+                    child: SingleChildScrollView(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Wrap(
+                            spacing: 8,
+                            runSpacing: 8,
+                            children: stages.map((item) {
+                              final label = item['stage_label']?.toString() ?? '';
+                              final active = label == selectedStage;
+                              return ChoiceChip(
+                                label: Text(label),
+                                selected: active,
+                                onSelected: (_) {
+                                  setDialogState(() {
+                                    selectedStage = label;
+                                  });
+                                },
+                              );
+                            }).toList(),
                           ),
-                        ),
-                    ],
+                          const SizedBox(height: 18),
+                          _sectionTitle('Pre-Defense Requirements'),
+                          ...pre.map(
+                            (item) => _deliverableRow(
+                              currentTeam,
+                              selectedStage,
+                              item,
+                              setDialogState,
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          _sectionTitle('Post-Defense Vault Submissions'),
+                          if (stage['vault_unlocked'] != true)
+                            _lockedVaultNotice(selectedStage)
+                          else
+                            ...vault.map(
+                              (item) => _deliverableRow(
+                                currentTeam,
+                                selectedStage,
+                                item,
+                                setDialogState,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text('Close'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: canEndorse
-                      ? () async {
-                          await ref
-                              .read(capstoneDeliverablesProvider.notifier)
-                              .endorseTeam(_asInt(team['id']), selectedStage);
-                          if (context.mounted) {
-                            Navigator.pop(dialogContext);
-                          }
-                        }
-                      : null,
-                  icon: const Icon(Icons.verified_outlined),
-                  label: Text(
-                    endorsed
-                        ? 'Already Endorsed'
-                        : (configured ? 'Endorse' : 'Configure Stage First'),
-                  ),
-                ),
-              ],
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(dialogContext),
+                      child: const Text('Close'),
+                    ),
+                    ElevatedButton.icon(
+                      onPressed: canEndorse
+                          ? () async {
+                              await ref
+                                  .read(capstoneDeliverablesProvider.notifier)
+                                  .endorseTeam(_asInt(currentTeam['id']), selectedStage);
+                              // We don't pop the dialogContext here, but wait, the plan says we can pop here because it's the "endorse" action which is complete.
+                              // Actually, if we pop, that's fine or we don't have to pop. Wait, line 725 in original popped. So keeping pop on endorse is okay.
+                              if (context.mounted) {
+                                Navigator.pop(dialogContext);
+                              }
+                            }
+                          : null,
+                      icon: const Icon(Icons.verified_outlined),
+                      label: Text(
+                        endorsed
+                            ? 'Already Endorsed'
+                            : (configured ? 'Endorse' : 'Configure Stage First'),
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           },
         );
@@ -936,9 +950,13 @@ class _CapstoneDeliverablesScreenState
     String? selectedFileName;
     String? selectedFileSize;
     List<int>? selectedFileBytes;
+    bool isUploading = false;
+    double uploadProgress = 0.0;
+    String? uploadError;
 
-    final saved = await showDialog<bool>(
+    await showDialog<bool>(
       context: context,
+      barrierDismissible: false, // Prevent dismissal during upload
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
           title: Text('Upload ${item['id']}'),
@@ -950,32 +968,34 @@ class _CapstoneDeliverablesScreenState
               children: [
                 Text(item['label']?.toString() ?? ''),
                 const SizedBox(height: 14),
-                OutlinedButton.icon(
-                  onPressed: () async {
-                    FilePickerResult? result = await FilePicker.platform.pickFiles(
-                      type: FileType.custom,
-                      allowedExtensions: ['pdf'],
-                      withData: true, // Load file bytes
-                    );
+                if (!isUploading)
+                  OutlinedButton.icon(
+                    onPressed: () async {
+                      FilePickerResult? result = await FilePicker.platform.pickFiles(
+                        type: FileType.custom,
+                        allowedExtensions: ['pdf'],
+                        withData: true, // Load file bytes
+                      );
 
-                    if (result != null && result.files.single.name.isNotEmpty) {
-                      setState(() {
-                        selectedFileName = result.files.single.name;
-                        selectedFileBytes = result.files.single.bytes; // Store file bytes
-                        // Convert bytes to KB
-                        final bytes = result.files.single.size;
-                        selectedFileSize = '${(bytes / 1024).toStringAsFixed(2)} KB';
-                      });
-                    }
-                  },
-                  icon: const Icon(Icons.attach_file),
-                  label: const Text('Choose PDF File'),
-                  style: OutlinedButton.styleFrom(
-                    minimumSize: const Size(double.infinity, 48),
+                      if (result != null && result.files.single.name.isNotEmpty) {
+                        setState(() {
+                          selectedFileName = result.files.single.name;
+                          selectedFileBytes = result.files.single.bytes; // Store file bytes
+                          // Convert bytes to KB
+                          final bytes = result.files.single.size;
+                          selectedFileSize = '${(bytes / 1024).toStringAsFixed(2)} KB';
+                          uploadError = null;
+                        });
+                      }
+                    },
+                    icon: const Icon(Icons.attach_file),
+                    label: const Text('Choose PDF File'),
+                    style: OutlinedButton.styleFrom(
+                      minimumSize: const Size(double.infinity, 48),
+                    ),
                   ),
-                ),
                 const SizedBox(height: 16),
-                if (selectedFileName != null) ...[
+                if (selectedFileName != null && !isUploading) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1014,7 +1034,7 @@ class _CapstoneDeliverablesScreenState
                       ],
                     ),
                   ),
-                ] else ...[
+                ] else if (!isUploading) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
@@ -1039,17 +1059,120 @@ class _CapstoneDeliverablesScreenState
                     ),
                   ),
                 ],
+                if (isUploading) ...[
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: uploadProgress,
+                            color: AppColors.success,
+                            backgroundColor: AppColors.success.withValues(alpha: 0.12),
+                            minHeight: 8,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Text(
+                        '${(uploadProgress * 100).toStringAsFixed(0)}%',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Uploading ${selectedFileName ?? "file"}...',
+                    style: const TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
+                if (uploadError != null) ...[
+                  const SizedBox(height: 12),
+                  Text(
+                    uploadError!,
+                    style: const TextStyle(
+                      color: AppColors.danger,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
           actions: [
             TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
+              onPressed: isUploading ? null : () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
-              onPressed: selectedFileName != null
-                  ? () => Navigator.pop(dialogContext, true)
+              onPressed: (selectedFileName != null && !isUploading)
+                  ? () async {
+                      setState(() {
+                        isUploading = true;
+                        uploadProgress = 0.0;
+                        uploadError = null;
+                      });
+
+                      try {
+                        final client = ref.read(authenticatedHttpClientProvider);
+                        final uri = Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/upload/');
+                        
+                        final request = MultipartRequestWithProgress(
+                          'POST',
+                          uri,
+                          onProgress: (bytesSent, totalBytes) {
+                            if (totalBytes > 0) {
+                              setState(() {
+                                uploadProgress = bytesSent / totalBytes;
+                              });
+                            }
+                          },
+                        );
+
+                        // Add form fields
+                        request.fields['team_id'] = team['id'].toString();
+                        request.fields['stage_label'] = stageLabel;
+                        request.fields['deliverable_id'] = item['id'].toString();
+                        request.fields['file_name'] = selectedFileName!;
+                        request.fields['file_size'] = selectedFileSize ?? '';
+                        
+                        // Add file
+                        request.files.add(http.MultipartFile.fromBytes(
+                          'file',
+                          selectedFileBytes!,
+                          filename: selectedFileName!,
+                        ));
+                        
+                        final response = await client.sendAuthenticated(request);
+
+                        if (response.statusCode == 200) {
+                          // Refresh deliverables list
+                          await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                            successMessage: 'Deliverable file uploaded successfully.',
+                          );
+                          if (context.mounted) {
+                            Navigator.pop(dialogContext, true);
+                          }
+                        } else {
+                          final responseBody = await response.stream.bytesToString();
+                          setState(() {
+                            isUploading = false;
+                            uploadError = _formatUploadFailureMessage(response.statusCode, responseBody);
+                          });
+                        }
+                      } catch (e) {
+                        setState(() {
+                          isUploading = false;
+                          uploadError = 'Upload error: $e';
+                        });
+                      }
+                    }
                   : null,
               child: const Text('Save Upload'),
             ),
@@ -1057,55 +1180,6 @@ class _CapstoneDeliverablesScreenState
         ),
       ),
     );
-
-    if (!mounted || saved != true || selectedFileName == null || selectedFileBytes == null) {
-      return;
-    }
-
-    // Send file as multipart/form-data
-    try {
-      final client = ref.read(authenticatedHttpClientProvider);
-      final uri = Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/upload/');
-      final request = http.MultipartRequest('POST', uri);
-
-      // Add form fields
-      request.fields['team_id'] = team['id'].toString();
-      request.fields['stage_label'] = stageLabel;
-      request.fields['deliverable_id'] = item['id'].toString();
-      request.fields['file_name'] = selectedFileName!;
-      request.fields['file_size'] = selectedFileSize ?? '';
-      
-      // Add file
-      request.files.add(http.MultipartFile.fromBytes(
-        'file',
-        selectedFileBytes!,
-        filename: selectedFileName!,
-      ));
-      
-      final response = await client.sendAuthenticated(request);
-
-      if (response.statusCode == 200) {
-        // Refresh deliverables list
-        await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-          successMessage: 'Deliverable file uploaded successfully.',
-        );
-        if (mounted) {
-          Navigator.of(context, rootNavigator: true).pop();
-        }
-      } else {
-        final responseBody = await response.stream.bytesToString();
-        if (mounted) {
-          showErrorToast(
-            context,
-            _formatUploadFailureMessage(response.statusCode, responseBody),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        showErrorToast(context, 'Upload error: $e');
-      }
-    }
   }
 
   Future<void> _removeFile(
@@ -1150,9 +1224,7 @@ class _CapstoneDeliverablesScreenState
       final removed = await ref
           .read(capstoneDeliverablesProvider.notifier)
           .removeDeliverable(payload);
-      if (mounted && removed) {
-        Navigator.of(context, rootNavigator: true).pop();
-      } else if (mounted) {
+      if (mounted && !removed) {
         showErrorToast(context, context.l10n.fileRemoveFailed);
       }
     });

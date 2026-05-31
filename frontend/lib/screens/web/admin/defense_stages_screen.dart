@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../navigation/admin_route_paths.dart';
 import '../../../services/defense_stages_provider.dart';
+import '../../../services/academic_period_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -718,7 +719,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 : () => _confirmDelete(
                     stageId,
                     stage['label']?.toString() ?? 'stage',
-                  ),
+                ),
             icon: const Icon(Icons.delete_outline, size: 19),
           ),
       ],
@@ -727,6 +728,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   Future<void> _showStageDialog([Map<String, dynamic>? stage]) async {
     final editing = stage != null;
+
+    // Fetch periods for grade composition weights
+    await ref.read(academicPeriodProvider.notifier).fetchPeriods();
+
+    final semesters = <Map<String, dynamic>>[];
+    for (final year in ref.read(academicPeriodProvider).schoolYears) {
+      final sems = year['semesters'];
+      if (sems is! List) continue;
+      for (final sem in sems) {
+        if (sem is Map) {
+          semesters.add(Map<String, dynamic>.from(sem));
+        }
+      }
+    }
+
     final label = TextEditingController(
       text: stage?['label']?.toString() ?? '',
     );
@@ -734,12 +750,20 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       text: stage?['description']?.toString() ?? '',
     );
     final order = TextEditingController(
-      text:
-          stage?['display_order']?.toString() ??
+      text: stage?['display_order']?.toString() ??
           _nextDisplayOrder(ref.read(defenseStagesProvider)).toString(),
     );
+    final panelCtrl = TextEditingController(text: '50');
+    final adviserCtrl = TextEditingController(text: '30');
+    final peerCtrl = TextEditingController(text: '20');
     var isActive = stage?['is_active'] != false;
-    
+
+    final activePeriod = ref.read(academicPeriodProvider).activeSemester;
+    int? semesterId = activePeriod != null ? _asInt(activePeriod['id']) : null;
+    if (semesterId == null && semesters.isNotEmpty) {
+      semesterId = _asInt(semesters.first['id']);
+    }
+
     // Get deliverables from stage
     List<Map<String, dynamic>> deliverables = [];
     if (stage != null && stage['deliverables'] != null) {
@@ -751,174 +775,331 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       }
     }
 
-    final saved = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Text(editing ? 'Edit Defense Stage' : 'Add Defense Stage'),
-              content: SizedBox(
-                width: 720,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextField(
-                        controller: label,
-                        decoration: const InputDecoration(
-                          labelText: 'Stage Name',
+    if (!mounted) return;
+    bool? saved;
+    try {
+      saved = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) {
+          return StatefulBuilder(
+            builder: (context, setDialogState) {
+              final total = (int.tryParse(panelCtrl.text.trim()) ?? 0) +
+                  (int.tryParse(adviserCtrl.text.trim()) ?? 0) +
+                  (int.tryParse(peerCtrl.text.trim()) ?? 0);
+
+              return AlertDialog(
+                title: Text(editing ? 'Edit Defense Stage' : 'Add Defense Stage'),
+                content: SizedBox(
+                  width: 720,
+                  child: SingleChildScrollView(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextField(
+                          controller: label,
+                          decoration: const InputDecoration(
+                            labelText: 'Stage Name',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: order,
-                        keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
-                          labelText: 'Display Order',
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: order,
+                          keyboardType: TextInputType.number,
+                          decoration: const InputDecoration(
+                            labelText: 'Display Order',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      TextField(
-                        controller: description,
-                        minLines: 2,
-                        maxLines: 3,
-                        decoration: const InputDecoration(
-                          labelText: 'Description',
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: description,
+                          minLines: 2,
+                          maxLines: 3,
+                          decoration: const InputDecoration(
+                            labelText: 'Description',
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 20),
-                      
-                      // Deliverables Section
-                      Row(
-                        children: [
-                          const Icon(Icons.inventory_2, size: 18, color: AppColors.maroon),
-                          const SizedBox(width: 8),
+                        if (!editing) ...[
+                          const SizedBox(height: 20),
+                          Row(
+                            children: const [
+                              Icon(Icons.balance, size: 18, color: AppColors.maroon),
+                              SizedBox(width: 8),
+                              Text(
+                                'Grade composition',
+                                style: TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w900,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
                           const Text(
-                            'Deliverables',
+                            'How Panel, Adviser, and Peer scores combine for this stage. Defaults are 50 / 30 / 20.',
                             style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w900,
-                              color: AppColors.textPrimary,
+                              color: AppColors.textSecondary,
+                              fontSize: 13,
+                              height: 1.4,
                             ),
                           ),
-                          const Spacer(),
+                          const SizedBox(height: 14),
+                          if (semesters.isNotEmpty) ...[
+                            DropdownButtonFormField<int>(
+                              initialValue: semesterId,
+                              decoration: const InputDecoration(
+                                labelText: 'Semester',
+                                isDense: true,
+                                border: OutlineInputBorder(),
+                              ),
+                              items: semesters
+                                  .map(
+                                    (sem) => DropdownMenuItem<int>(
+                                      value: _asInt(sem['id']),
+                                      child: Text(
+                                        sem['display_name']?.toString() ??
+                                            sem['label']?.toString() ??
+                                            'Semester ${sem['id']}',
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (value) {
+                                setDialogState(() {
+                                  semesterId = value;
+                                });
+                              },
+                            ),
+                            const SizedBox(height: 14),
+                          ],
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextField(
+                                  controller: panelCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Panel %',
+                                    isDense: true,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) {
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: adviserCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Advisor %',
+                                    isDense: true,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) {
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: TextField(
+                                  controller: peerCtrl,
+                                  keyboardType: TextInputType.number,
+                                  decoration: const InputDecoration(
+                                    labelText: 'Peer %',
+                                    isDense: true,
+                                    border: OutlineInputBorder(),
+                                  ),
+                                  onChanged: (_) {
+                                    setDialogState(() {});
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            'Total: $total%${total == 100 ? '' : ' — must equal 100%'}',
+                            style: TextStyle(
+                              color: total == 100
+                                  ? AppColors.success
+                                  : AppColors.danger,
+                              fontWeight: FontWeight.w700,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
                           OutlinedButton.icon(
                             onPressed: () {
                               setDialogState(() {
-                                deliverables.add({
-                                  'deliverable_id': 'D${deliverables.length + 1}',
-                                  'label': '',
-                                  'deliverable_type': 'pre',
-                                  'required': true,
-                                  'display_order': deliverables.length + 1,
-                                  'vault_note': '',
-                                });
+                                panelCtrl.text = '50';
+                                adviserCtrl.text = '30';
+                                peerCtrl.text = '20';
                               });
                             },
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('Add Deliverable'),
+                            icon: const Icon(Icons.restore, size: 16),
+                            label: const Text('Reset to 50 / 30 / 20'),
                             style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              textStyle: const TextStyle(
+                                  fontSize: 12, fontWeight: FontWeight.w600),
                             ),
                           ),
                         ],
-                      ),
-                      const SizedBox(height: 8),
-                      Container(
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF0F9FF),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFFBAE6FD)),
-                        ),
-                        child: const Row(
+                        const SizedBox(height: 20),
+                        // Deliverables Section
+                        Row(
                           children: [
-                            Icon(Icons.info_outline, size: 16, color: Color(0xFF0369A1)),
-                            SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                'Pre-Defense items gate endorsement. Vault items unlock after defense is approved.',
-                                style: TextStyle(
-                                  color: Color(0xFF0369A1),
-                                  fontSize: 12,
-                                ),
+                            const Icon(Icons.inventory_2,
+                                size: 18, color: AppColors.maroon),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Deliverables',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const Spacer(),
+                            OutlinedButton.icon(
+                              onPressed: () {
+                                setDialogState(() {
+                                  deliverables.add({
+                                    'deliverable_id':
+                                        'D${deliverables.length + 1}',
+                                    'label': '',
+                                    'deliverable_type': 'pre',
+                                    'required': true,
+                                    'display_order': deliverables.length + 1,
+                                    'vault_note': '',
+                                    'vault_file_template': '',
+                                  });
+                                });
+                              },
+                              icon: const Icon(Icons.add, size: 16),
+                              label: const Text('Add Deliverable'),
+                              style: OutlinedButton.styleFrom(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 12, vertical: 8),
+                                textStyle: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w700),
                               ),
                             ),
                           ],
                         ),
-                      ),
-                      const SizedBox(height: 12),
-                      
-                      // Deliverables List - removed height constraint, using shrinkWrap
-                      deliverables.isEmpty
-                          ? Container(
-                              padding: const EdgeInsets.all(20),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF9FAFB),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(color: const Color(0xFFE5E7EB)),
-                              ),
-                              child: const Center(
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F9FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFBAE6FD)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline,
+                                  size: 16, color: Color(0xFF0369A1)),
+                              SizedBox(width: 8),
+                              Expanded(
                                 child: Text(
-                                  'No deliverables yet. Click "Add Deliverable" to create one.',
+                                  'Pre-Defense items gate endorsement. Vault items unlock after defense is approved.',
                                   style: TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 13,
+                                    color: Color(0xFF0369A1),
+                                    fontSize: 12,
                                   ),
                                 ),
                               ),
-                            )
-                          : Column(
-                              children: deliverables.asMap().entries.map((entry) {
-                                return _buildDeliverableRow(
-                                  entry.value,
-                                  entry.key,
-                                  deliverables,
-                                  setDialogState,
-                                );
-                              }).toList(),
-                            ),
-                      
-                      const SizedBox(height: 20),
-                      SwitchListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: const Text('Published stage'),
-                        value: isActive,
-                        onChanged: (value) {
-                          setDialogState(() {
-                            isActive = value;
-                          });
-                        },
-                      ),
-                    ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        deliverables.isEmpty
+                            ? Container(
+                                padding: const EdgeInsets.all(20),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF9FAFB),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                                ),
+                                child: const Center(
+                                  child: Text(
+                                    'No deliverables yet. Click "Add Deliverable" to create one.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ),
+                              )
+                            : Column(
+                                children: deliverables.asMap().entries.map((entry) {
+                                  return _buildDeliverableRow(
+                                    entry.value,
+                                    entry.key,
+                                    deliverables,
+                                    setDialogState,
+                                    label,
+                                  );
+                                }).toList(),
+                              ),
+                        const SizedBox(height: 20),
+                        SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: const Text('Published stage'),
+                          value: isActive,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              isActive = value;
+                            });
+                          },
+                        ),
+                      ],
+                    ),
                   ),
                 ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext, false),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton.icon(
-                  onPressed: label.text.trim().isEmpty
-                      ? null
-                      : () => Navigator.pop(dialogContext, true),
-                  icon: const Icon(Icons.save, size: 18),
-                  label: Text(editing ? 'Save Changes' : 'Add Stage'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: AppColors.gold,
+                actions: [
+                  TextButton(
+                    onPressed: () => Navigator.pop(dialogContext, false),
+                    child: const Text('Cancel'),
                   ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
+                  ElevatedButton.icon(
+                    onPressed: label.text.trim().isEmpty ||
+                            (!editing && (total != 100 || semesterId == null))
+                        ? null
+                        : () => Navigator.pop(dialogContext, true),
+                    icon: const Icon(Icons.save, size: 18),
+                    label: Text(editing ? 'Save Changes' : 'Add Stage'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.maroon,
+                      foregroundColor: AppColors.gold,
+                    ),
+                  ),
+                ],
+              );
+            },
+          );
+        },
+      );
+    } finally {
+      if (saved != true) {
+        label.dispose();
+        description.dispose();
+        order.dispose();
+        panelCtrl.dispose();
+        adviserCtrl.dispose();
+        peerCtrl.dispose();
+        for (final item in deliverables) {
+          (item['_labelController'] as TextEditingController?)?.dispose();
+          (item['_templateController'] as TextEditingController?)?.dispose();
+        }
+      }
+    }
 
     if (!mounted || saved != true) {
       return;
@@ -926,8 +1107,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     final payload = {
       'label': label.text.trim(),
-      'display_order':
-          int.tryParse(order.text.trim()) ??
+      'display_order': int.tryParse(order.text.trim()) ??
           _nextDisplayOrder(ref.read(defenseStagesProvider)),
       'description': description.text.trim(),
       'is_active': isActive,
@@ -939,12 +1119,31 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           .read(defenseStagesProvider.notifier)
           .updateStage(_asInt(stage['id'])!, payload);
     } else {
-      await ref.read(defenseStagesProvider.notifier).addStage(payload);
+      final newStageId =
+          await ref.read(defenseStagesProvider.notifier).addStage(payload);
+      if (newStageId != null && semesterId != null) {
+        await ref.read(defenseStagesProvider.notifier).updateGradingConfig(
+          newStageId,
+          semesterId!,
+          {
+            'panel_weight': int.tryParse(panelCtrl.text.trim()) ?? 50,
+            'adviser_weight': int.tryParse(adviserCtrl.text.trim()) ?? 30,
+            'peer_weight': int.tryParse(peerCtrl.text.trim()) ?? 20,
+          },
+        );
+      }
     }
 
     label.dispose();
     description.dispose();
     order.dispose();
+    panelCtrl.dispose();
+    adviserCtrl.dispose();
+    peerCtrl.dispose();
+    for (final item in deliverables) {
+      (item['_labelController'] as TextEditingController?)?.dispose();
+      (item['_templateController'] as TextEditingController?)?.dispose();
+    }
   }
 
   Widget _buildDeliverableRow(
@@ -952,9 +1151,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int index,
     List<Map<String, dynamic>> deliverables,
     void Function(void Function()) setDialogState,
+    TextEditingController stageLabelCtrl,
   ) {
-    final labelController = TextEditingController(text: item['label']?.toString() ?? '');
-    
+    final labelController = item['_labelController'] as TextEditingController? ??
+        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
+    final templateController = item['_templateController'] as TextEditingController? ??
+        (item['_templateController'] = TextEditingController(text: item['vault_file_template']?.toString() ?? ''));
+
+    final isVault = item['deliverable_type'] == 'vault';
+
     return Container(
       padding: const EdgeInsets.all(12),
       margin: const EdgeInsets.only(bottom: 8),
@@ -964,6 +1169,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
@@ -978,6 +1184,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   ),
                   onChanged: (value) {
                     item['label'] = value;
+                    if (isVault) {
+                      setDialogState(() {});
+                    }
                   },
                 ),
               ),
@@ -1042,15 +1251,169 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 constraints: const BoxConstraints(),
                 onPressed: () {
                   setDialogState(() {
-                    deliverables.removeAt(index);
+                    final removed = deliverables.removeAt(index);
+                    (removed['_labelController'] as TextEditingController?)?.dispose();
+                    (removed['_templateController'] as TextEditingController?)?.dispose();
                   });
                 },
               ),
             ],
           ),
+          if (isVault) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: templateController,
+              decoration: const InputDecoration(
+                labelText: 'Vault File Template',
+                isDense: true,
+                border: OutlineInputBorder(),
+                hintText: '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+              ),
+              onChanged: (value) {
+                setDialogState(() {
+                  item['vault_file_template'] = value;
+                });
+              },
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Click to insert: ',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+                _variableChip(item, templateController, '{year}', setDialogState),
+                _variableChip(item, templateController, '{course}', setDialogState),
+                _variableChip(item, templateController, '{project}', setDialogState),
+                _variableChip(item, templateController, '{stage}', setDialogState),
+                _variableChip(item, templateController, '{deliverable}', setDialogState),
+                _variableChip(item, templateController, '{semester}', setDialogState),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.insert_drive_file_outlined, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Preview: ${_resolvePreview(item['vault_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text)}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.maroon,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _resolvePreview(String template, String deliverableLabel, String stageLabel) {
+    final cleanTemplate = template.trim();
+    final finalTemplate = cleanTemplate.isEmpty 
+        ? '{year}.{course}.{project}.{semester}.pdf'
+        : cleanTemplate;
+
+    String slugify(String val) {
+      return val.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    }
+
+    String deliverableSlug(String val) {
+      if (val.trim().isEmpty) return 'DeliverableLabel';
+      final words = val.trim().split(RegExp(r'\s+'));
+      final capitalized = words.map((w) {
+        if (w.isEmpty) return '';
+        return w[0].toUpperCase() + w.substring(1).toLowerCase();
+      }).join('');
+      return slugify(capitalized);
+    }
+
+    final year = '3rdYear';
+    final course = 'CAP301';
+    final project = 'ProjectTitle';
+    final stage = slugify(stageLabel.trim().isEmpty ? 'StageLabel' : stageLabel.trim());
+    final deliverable = deliverableSlug(deliverableLabel);
+    final semester = '2ndSemester';
+
+    var resolved = finalTemplate
+        .replaceAll('{year}', year)
+        .replaceAll('{course}', course)
+        .replaceAll('{project}', project)
+        .replaceAll('{stage}', stage)
+        .replaceAll('{deliverable}', deliverable)
+        .replaceAll('{semester}', semester);
+
+    if (!resolved.toLowerCase().endsWith('.pdf')) {
+      resolved += '.pdf';
+    }
+
+    return resolved;
+  }
+
+  Widget _variableChip(
+    Map<String, dynamic> item,
+    TextEditingController controller,
+    String variable,
+    void Function(void Function()) setDialogState,
+  ) {
+    return InkWell(
+      onTap: () => _insertVariable(item, controller, variable, setDialogState),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          border: Border.all(color: const Color(0xFFD1D5DB)),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          variable,
+          style: const TextStyle(
+            fontSize: 11,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _insertVariable(
+    Map<String, dynamic> item,
+    TextEditingController controller,
+    String variable,
+    void Function(void Function()) setDialogState,
+  ) {
+    final text = controller.text;
+    final selection = controller.selection;
+    
+    String newText;
+    int newCursorPosition;
+
+    if (selection.isValid) {
+      final start = selection.start;
+      final end = selection.end;
+      newText = text.replaceRange(start, end, variable);
+      newCursorPosition = start + variable.length;
+    } else {
+      newText = text + variable;
+      newCursorPosition = newText.length;
+    }
+
+    setDialogState(() {
+      controller.text = newText;
+      controller.selection = TextSelection.collapsed(offset: newCursorPosition);
+      item['vault_file_template'] = newText;
+    });
   }
 
   Future<void> _confirmDelete(int stageId, String label) async {

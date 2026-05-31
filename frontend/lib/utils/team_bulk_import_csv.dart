@@ -123,11 +123,13 @@ void applyDerivedLevelToRow(
   if (isCapstoneAdmin) {
     return;
   }
-  if (pitLeadYear != null && pitLeadYear.isNotEmpty) {
-    row['year_level'] = pitLeadYear;
-    row['level'] = '$pitLeadYear PIT';
-    row.remove('adviser_id');
+  final existingYear = (row['year_level'] ?? '').toString().trim();
+  final targetYear = existingYear.isNotEmpty ? existingYear : (pitLeadYear ?? '');
+  if (targetYear.isNotEmpty) {
+    row['year_level'] = targetYear;
+    row['level'] = '$targetYear PIT';
   }
+  row.remove('adviser_id');
 }
 
 List<Map<String, dynamic>> parseTeamBulkCsvWithContext(

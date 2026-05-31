@@ -125,32 +125,53 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
         if explicit_level and 'PIT' in explicit_level.upper():
             raise ValueError('Admins can only manage capstone teams.')
         if explicit_level and 'CAPSTONE' in explicit_level.upper():
-            return explicit_level
-        if not year:
-            year, issues = infer_year_level_from_members(
-                member_ids,
-                semester,
-                leader_id=leader_id,
-            )
-            if issues:
-                raise ValueError(issues[0])
-        return f'{year} Capstone'
+            resolved = explicit_level
+        else:
+            if not year:
+                year, issues = infer_year_level_from_members(
+                    member_ids,
+                    semester,
+                    leader_id=leader_id,
+                )
+                if issues:
+                    raise ValueError(issues[0])
+            resolved = f'{year} Capstone'
 
-    if user_is_pit_lead_only(user):
+    elif user_is_pit_lead_only(user):
         if explicit_level and 'CAPSTONE' in explicit_level.upper():
             raise ValueError('PIT Leads can only manage PIT teams.')
+        pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
         if explicit_level and 'PIT' in explicit_level.upper():
-            return explicit_level
-        year = year or (getattr(user, 'pit_lead_year', None) or '').strip()
-        if not year:
-            raise ValueError('year_level or pit_lead_year is required for PIT teams.')
-        return f'{year} PIT'
+            level_year_val = level_year(explicit_level)
+            if pit_year and level_year_val and level_year_val != pit_year:
+                raise ValueError(
+                    f'Cannot create {explicit_level} team: '
+                    f'your PIT scope is {pit_year}.'
+                )
+            resolved = explicit_level
+        else:
+            year = year or pit_year
+            if not year:
+                raise ValueError('year_level or pit_lead_year is required for PIT teams.')
+            if pit_year and year != pit_year:
+                raise ValueError(
+                    f'Cannot create {year} PIT team: '
+                    f'your PIT scope is {pit_year}.'
+                )
+            resolved = f'{year} PIT'
 
-    if explicit_level:
-        return explicit_level
-    if year:
-        return f'{year} Capstone'
-    raise ValueError('level or year_level is required.')
+    else:
+        if explicit_level:
+            resolved = explicit_level
+        elif year:
+            resolved = f'{year} Capstone'
+        else:
+            raise ValueError('level or year_level is required.')
+
+    valid_levels = [choice[0] for choice in StudentTeam.LEVEL_CHOICES]
+    if resolved not in valid_levels:
+        raise ValueError(f"'{resolved}' is not a valid team program level.")
+    return resolved
 
 
 def prepare_bulk_row(row, user, *, member_user_ids=None, leader_user_id=None, semester=None):
@@ -172,6 +193,25 @@ def prepare_bulk_row(row, user, *, member_user_ids=None, leader_user_id=None, se
             data['year_level'] = explicit_year
         else:
             data['year_level'] = DEFAULT_CAPSTONE_YEAR
+    elif user_is_pit_lead_only(user):
+        if member_user_ids:
+            inferred, issues = infer_year_level_from_members(
+                member_user_ids,
+                semester,
+                leader_id=leader_user_id,
+            )
+            if issues:
+                return None, issues
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if pit_year and inferred != pit_year:
+                return None, [
+                    f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
+                ]
+            data['year_level'] = inferred
+        elif explicit_year:
+            data['year_level'] = explicit_year
+        else:
+            data['year_level'] = (getattr(user, 'pit_lead_year', None) or '').strip()
     elif explicit_year:
         data['year_level'] = explicit_year
 

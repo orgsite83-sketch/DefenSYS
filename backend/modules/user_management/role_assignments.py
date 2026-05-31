@@ -112,7 +112,16 @@ def compute_display_role(user):
     if user.role == 'admin':
         return {'key': 'admin', 'label': 'Administrator', 'tone': 'admin'}
     if user.role == 'student':
-        return {'key': 'student', 'label': 'Student', 'tone': 'student'}
+        semester = _active_semester()
+        label = 'Student'
+        record = None
+        if semester:
+            record = user.academic_records.filter(semester=semester).first()
+        if not record:
+            record = user.academic_records.order_by('-semester__school_year__label', '-semester__label').first()
+        if record:
+            label = record.year_level
+        return {'key': 'student', 'label': label, 'tone': 'student'}
 
     if user.is_pit_lead:
         label = 'PIT Lead'

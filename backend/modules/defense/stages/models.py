@@ -32,6 +32,12 @@ class StageDeliverable(models.Model):
     required = models.BooleanField(default=False)
     display_order = models.PositiveSmallIntegerField(default=1)
     vault_note = models.TextField(blank=True)
+    vault_file_template = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {stage}, {deliverable}, {semester}',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -814,7 +814,7 @@ class StudentTeamApiTests(APITestCase):
             password='pass12345',
             role='faculty',
             is_pit_lead=True,
-            pit_lead_year='2nd Year',
+            pit_lead_year='3rd Year',
         )
         self.client.force_authenticate(user=pit_lead)
 
@@ -1049,3 +1049,90 @@ class StudentTeamApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('capstone', response.data['detail'].lower())
+
+    def test_pit_lead_import_mismatched_student_year_level_is_rejected(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-1',
+            password='pass12345',
+            role='faculty',
+            first_name='Pat',
+            last_name='Lead',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team PIT Mismatch',
+                        'project_title': 'PIT Mismatch',
+                        'member_ids': ['Juan Dela Cruz'],
+                        'leader_id': 'Juan Dela Cruz',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created_count'], 0)
+        self.assertEqual(response.data['error_count'], 1)
+        self.assertTrue(
+            any('PIT scope is 1st Year' in issue for error in response.data['errors'] for issue in error['errors'])
+        )
+
+    def test_pit_lead_create_mismatched_student_year_level_is_rejected(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-mismatch-manual',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/teams/',
+            {
+                'name': 'Manual PIT Mismatch',
+                'project_title': 'Manual PIT Mismatch',
+                'leader_id': self.student_1.id,
+                'member_ids': [self.student_1.id],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('member_ids', response.data)
+        self.assertTrue(
+            any('PIT scope is 1st Year' in msg for msg in response.data['member_ids'])
+        )
+
+    def test_admin_cannot_create_invalid_program_level_combination(self):
+        self._activate_capstone_intake_semester()
+        record = StudentAcademicRecord.objects.get(
+            student=self.student_1,
+            semester=self.second_semester,
+        )
+        record.year_level = '1st Year'
+        record.save(update_fields=['year_level'])
+
+        response = self.client.post(
+            '/api/teams/',
+            {
+                'name': 'Invalid Capstone Level',
+                'project_title': 'Invalid Level',
+                'leader_id': self.student_1.id,
+                'member_ids': [self.student_1.id],
+                'adviser_id': self.adviser.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('level', response.data)
+        self.assertIn('not a valid team program level', response.data['level'][0])
+

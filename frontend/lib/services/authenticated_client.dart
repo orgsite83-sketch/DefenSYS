@@ -211,7 +211,7 @@ class AuthenticatedHttpClient {
     if (token == null) {
       await _onAuthFailure();
     }
-    request.headers['Authorization'] = 'Bearer $token!';
+    request.headers['Authorization'] = 'Bearer $token';
     streamed = await apiHttpClient.send(request);
     if (streamed.statusCode == 401) {
       await _onAuthFailure();

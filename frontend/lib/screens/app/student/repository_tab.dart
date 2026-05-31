@@ -11,6 +11,7 @@ import '../../../theme/defensys_tokens.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/error_banner.dart';
+import '../../../services/auth_provider.dart';
 
 
 // ── Data models ───────────────────────────────────────────────────────────────
@@ -481,20 +482,18 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     );
   }
 
-  void _showViewer(VaultEntry e) async {
-    // Get student info from SharedPreferences
-    final prefs = await SharedPreferences.getInstance();
-    final studentId = prefs.getString('student_id') ?? prefs.getString('username') ?? 'Unknown';
-    final firstName = prefs.getString('first_name') ?? '';
-    final lastName = prefs.getString('last_name') ?? '';
+  void _showViewer(VaultEntry e) {
+    final authState = ref.read(authProvider);
+    final user = authState.user;
+    final studentId = user?['username']?.toString() ?? 'Unknown';
+    final firstName = user?['first_name']?.toString() ?? '';
+    final lastName = user?['last_name']?.toString() ?? '';
     final studentName = '$firstName $lastName'.trim();
     final displayName = studentName.isNotEmpty ? studentName : studentId;
     
     final fileRef = e.fileUrl != null && e.fileUrl!.isNotEmpty
         ? e.fileUrl!
         : e.fileName;
-
-    if (!mounted) return;
 
     Navigator.of(context).push(
       MaterialPageRoute(
@@ -537,11 +536,34 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
   Uint8List? _pdfBytes;
   String? _loadError;
   bool _loading = true;
+  late final String _formattedDateTime;
 
   @override
   void initState() {
     super.initState();
+    _formattedDateTime = _formatCurrentDateTime();
     _loadPdf();
+  }
+
+  String _formatCurrentDateTime() {
+    final now = DateTime.now();
+    const months = [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+    ];
+    final month = months[now.month - 1];
+    final day = now.day;
+    final year = now.year;
+    
+    int hour = now.hour;
+    final amPm = hour >= 12 ? 'PM' : 'AM';
+    if (hour > 12) hour -= 12;
+    if (hour == 0) hour = 12;
+    
+    final minute = now.minute.toString().padLeft(2, '0');
+    final second = now.second.toString().padLeft(2, '0');
+    
+    return '$month $day, $year $hour:$minute:$second $amPm';
   }
 
   Future<void> _loadPdf() async {
@@ -673,40 +695,40 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                         color: DefensysTokens.maroon,
                       ),
                       const SizedBox(height: 8),
-                      Text(
-                        'DIGITAL VAULT',
+                      const Text(
+                        'PROPERTY OF USTP',
                         style: TextStyle(
-                          fontSize: 32,
+                          fontSize: 28,
                           fontWeight: FontWeight.w900,
-                          color: DefensysTokens.maroon,
-                          letterSpacing: 4,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'READ ONLY',
-                        style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w700,
                           color: DefensysTokens.maroon,
                           letterSpacing: 3,
                         ),
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        widget.studentId,
+                      const SizedBox(height: 4),
+                      const Text(
+                        'DIGITAL VAULT - READ ONLY',
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.w800,
+                          fontWeight: FontWeight.w700,
                           color: DefensysTokens.maroon,
                           letterSpacing: 2,
                         ),
                       ),
-                      const SizedBox(height: 4),
+                      const SizedBox(height: 12),
                       Text(
-                        widget.studentName,
+                        'ID: ${widget.studentId}',
                         style: TextStyle(
                           fontSize: 16,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.maroon,
+                          letterSpacing: 1.5,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _formattedDateTime,
+                        style: const TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                           color: DefensysTokens.maroon,
                         ),

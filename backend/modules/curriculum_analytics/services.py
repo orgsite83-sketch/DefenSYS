@@ -150,14 +150,9 @@ def text_for_entry(entry):
 
 
 def extract_tech(entry):
-    category = (entry.get('category') or '').strip()
-    confidence = entry.get('category_confidence')
-    if category and confidence is not None and confidence >= 35:
-        mapped = NB_CATEGORY_TO_STACK.get(category)
-        if mapped:
-            return mapped
-
     text = text_for_entry(entry)
+    
+    # Tier 1: Check document text and topics for matches with predefined stacks
     best = None
     best_score = 0
     for stack in TECH_STACKS:
@@ -165,8 +160,32 @@ def extract_tech(entry):
         if score > best_score:
             best = stack
             best_score = score
-    if best:
+    if best_score > 0 and best is not None:
         return best['label']
+
+    # Tier 2: Check for other known programming languages/frameworks
+    if 'java' in text or 'spring' in text or 'springboot' in text:
+        return 'Spring Boot / Java'
+    if 'c#' in text or 'aspnet' in text or '.net' in text or 'dotnet' in text:
+        return 'ASP.NET / C#'
+    if 'golang' in text or 'fiber' in text or 'gin' in text or 'go lang' in text:
+        return 'Go / Fiber'
+    if 'rust' in text or 'cargo' in text:
+        return 'Rust / Cargo'
+    if 'ruby' in text or 'rails' in text:
+        return 'Ruby on Rails'
+    if 'c++' in text or 'cpp' in text:
+        return 'C++ / Native'
+
+    # Tier 3: Fall back to Naive Bayes Category Mapping
+    category = (entry.get('category') or '').strip()
+    confidence = entry.get('category_confidence')
+    if category and confidence is not None and confidence >= 15:
+        mapped = NB_CATEGORY_TO_STACK.get(category)
+        if mapped:
+            return mapped
+
+    # Fallback to course codes for PIT if present
     if entry.get('type') == 'pit':
         course = (entry.get('stage') or '').upper()
         if course.startswith('PIT1'):
@@ -175,11 +194,62 @@ def extract_tech(entry):
             return 'React / Node.js'
         if course.startswith('PIT3'):
             return 'Flutter / Mobile'
+
+    # Ultimate fallback default
     return 'Django / Python'
 
 
 def stack_color(label):
-    return next((item['color'] for item in TECH_STACKS if item['label'] == label), '#6B7280')
+    # Predefined brand colors for primary stacks (including Java, C#, Go)
+    predefined = {
+        'Flutter / Mobile': '#0EA5E9',
+        'Django / Python': '#10B981',
+        'React / Node.js': '#F59E0B',
+        'Laravel / PHP': '#EF4444',
+        'IoT / Embedded': '#8B5CF6',
+        'AR / Unity': '#EC4899',
+        'GIS / Mapping': '#06B6D4',
+        'Cloud / AWS': '#6366F1',
+        'Spring Boot / Java': '#E76F51',
+        'ASP.NET / C#': '#512BD4',
+        'Go / Fiber': '#00ADD8',
+        'Rust / Cargo': '#DEA584',
+        'Ruby on Rails': '#A259FF',
+        'C++ / Native': '#00599C',
+    }
+    if label in predefined:
+        return predefined[label]
+
+    # Deterministic HSL hashing for custom dynamic stacks
+    import hashlib
+    hash_val = int(hashlib.md5(label.encode('utf-8')).hexdigest(), 16)
+    hue = hash_val % 360
+    
+    # HSL to RGB conversion (S=0.65, L=0.50)
+    s = 0.65
+    l = 0.50
+    c = (1 - abs(2 * l - 1)) * s
+    x = c * (1 - abs((hue / 60) % 2 - 1))
+    m = l - c / 2
+    
+    if 0 <= hue < 60:
+        r, g, b = c, x, 0
+    elif 60 <= hue < 120:
+        r, g, b = x, c, 0
+    elif 120 <= hue < 180:
+        r, g, b = 0, c, x
+    elif 180 <= hue < 240:
+        r, g, b = 0, x, c
+    elif 240 <= hue < 300:
+        r, g, b = x, 0, c
+    else:
+        r, g, b = c, 0, x
+        
+    r_hex = f"{int((r + m) * 255):02X}"
+    g_hex = f"{int((g + m) * 255):02X}"
+    b_hex = f"{int((b + m) * 255):02X}"
+    
+    return f"#{r_hex}{g_hex}{b_hex}"
 
 
 def enrich_entries(entries):
@@ -228,7 +298,7 @@ def year_breakdown(entries):
 def trend_series(entries):
     breakdown = year_breakdown(entries)
     years = [row['academic_year'] for row in reversed(breakdown)]
-    all_techs = [item['label'] for item in TECH_STACKS]
+    all_techs = sorted(list({entry['tech_stack'] for entry in entries}))
     series = []
     for tech in all_techs:
         points = []
@@ -246,7 +316,7 @@ def trend_series(entries):
             })
         if has_value:
             series.append({'tech': tech, 'color': stack_color(tech), 'points': points})
-    return series[:6]
+    return series
 
 
 def trends_payload(entries):
@@ -324,6 +394,7 @@ def analytics_payload(user, academic_year=None):
     filtered = [entry for entry in entries if not selected_year or entry['academic_year'] == selected_year]
     breakdown = year_breakdown(entries)
     trends = trends_payload(entries)
+    unique_techs = sorted(list({entry['tech_stack'] for entry in entries}))
     return {
         'entries_count': len(entries),
         'selected_academic_year': selected_year,
@@ -334,7 +405,7 @@ def analytics_payload(user, academic_year=None):
         'trend_series': trend_series(entries),
         'suggestions': suggestions_payload(entries, breakdown, trends),
         'recent_entries': entries[:8],
-        'taxonomy': [{'label': item['label'], 'color': item['color']} for item in TECH_STACKS],
+        'taxonomy': [{'label': tech, 'color': stack_color(tech)} for tech in unique_techs],
     }
 
 

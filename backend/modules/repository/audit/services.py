@@ -189,7 +189,7 @@ def _default_course_for_year(year_level):
     }.get(year_level, 'PIT301')
 
 
-def suggested_pit_file_name(team, year_level, semester_label='1st Semester'):
+def suggested_pit_file_name(team, year_level, semester_label='1st Semester', event_name=''):
     prefix = PIT_PREFIX_BY_YEAR.get(year_level, '3rdYear')
     course = _default_course_for_year(year_level)
     project = _project_slug(team.project_title if team else 'ProjectTitle')
@@ -198,6 +198,33 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester'):
         if label == semester_label:
             semester_key = key
             break
+
+    # Look up PIT event configuration for custom template
+    template = ''
+    if event_name:
+        from academic_period_management.models import Semester
+        from defense.scheduler.models import PitEventGradingConfig
+        semester_obj = team.semester if team else Semester.objects.filter(is_active=True).first()
+        if semester_obj:
+            config = PitEventGradingConfig.objects.filter(
+                semester=semester_obj,
+                event_name__iexact=event_name.strip(),
+            ).first()
+            if config:
+                template = config.vault_file_template.strip()
+
+    if template:
+        resolved = template.replace('{year}', prefix)
+        resolved = resolved.replace('{course}', course)
+        resolved = resolved.replace('{project}', project)
+        resolved = resolved.replace('{event}', _stage_slug(event_name))
+        resolved = resolved.replace('{stage}', _stage_slug(event_name))
+        resolved = resolved.replace('{semester}', semester_key)
+
+        if not resolved.lower().endswith('.pdf'):
+            resolved += '.pdf'
+        return resolved
+
     return f'{prefix}.{course}.{project}.{semester_key}.pdf'
 
 
@@ -267,7 +294,7 @@ def pit_vault_upload_queue(year_level, semester=None):
             'project_title': team.project_title or team.name,
             'pit_event_config_id': grade.pit_event_config_id,
             'event_name': event_name,
-            'suggested_file_name': suggested_pit_file_name(team, year_level, semester_label),
+            'suggested_file_name': suggested_pit_file_name(team, year_level, semester_label, event_name=event_name),
             'vault_status': 'uploaded' if uploaded else 'pending',
         })
     return queue
@@ -373,6 +400,62 @@ def suggested_capstone_file_name(team, stage_label, semester_label='1st Semester
             semester_key = key
             break
     return f'{CAPSTONE_YEAR_PREFIX}.{CAPSTONE_DEFAULT_COURSE}.{project}.{semester_key}.pdf'
+
+
+def _stage_slug(stage_label):
+    """Convert 'Concept Proposal' → 'ConceptProposal'."""
+    return re.sub(r'[^A-Za-z0-9]', '', (stage_label or ''))
+
+
+def _deliverable_slug(label):
+    """Convert 'concept paper' → 'ConceptPaper'."""
+    return re.sub(r'[^A-Za-z0-9]', '', (label or '').title())
+
+
+def _semester_key_from_label(semester_label):
+    """Convert '2nd Semester' → '2ndSemester'."""
+    for key, label in PIT_SEMESTER_LABELS.items():
+        if label == semester_label:
+            return key
+    return '1stSemester'
+
+
+def resolve_vault_file_template(
+    template, team, stage_label, semester_label='1st Semester',
+    deliverable_label='',
+):
+    """Resolve a vault filename template by substituting variables.
+
+    Supported variables:
+        {year}        - year prefix, e.g. '3rdYear'
+        {course}      - course code, e.g. 'CAP301'
+        {project}     - slugified project title
+        {stage}       - slugified stage label, e.g. 'ConceptProposal'
+        {deliverable} - slugified deliverable label, e.g. 'ConceptPaper'
+        {semester}    - semester key, e.g. '2ndSemester'
+
+    Returns the resolved filename.  Falls back to the default auto-generated
+    name when *template* is empty.
+    """
+    template = (template or '').strip()
+    if not template:
+        return suggested_capstone_file_name(team, stage_label, semester_label)
+
+    project = _project_slug(team.project_title if team else 'ProjectTitle')
+    semester_key = _semester_key_from_label(semester_label)
+
+    resolved = template.replace('{year}', CAPSTONE_YEAR_PREFIX)
+    resolved = resolved.replace('{course}', CAPSTONE_DEFAULT_COURSE)
+    resolved = resolved.replace('{project}', project)
+    resolved = resolved.replace('{stage}', _stage_slug(stage_label))
+    resolved = resolved.replace('{deliverable}', _deliverable_slug(deliverable_label))
+    resolved = resolved.replace('{semester}', semester_key)
+
+    # Ensure it ends with .pdf
+    if not resolved.lower().endswith('.pdf'):
+        resolved += '.pdf'
+
+    return resolved
 
 
 def capstone_vault_upload_queue(semester=None):
@@ -537,7 +620,7 @@ def repository_scope(user):
             'label': 'Admin repository audit',
             'pit_year_level': '',
             'can_upload_pit': False,
-            'can_upload_capstone': True,
+            'can_upload_capstone': capstone_open,
             'can_override': True,
             'can_export': True,
             'has_assigned_assistant': False,
@@ -888,6 +971,19 @@ def eligible_pit_teams(year_level, semester=None):
     )
 
 
+def match_pit_team_by_suggested_filename(file_name, year_level, semester=None):
+    queue = pit_vault_upload_queue(year_level, semester=semester)
+    file_name_clean = file_name.strip().lower()
+    for item in queue:
+        if item['suggested_file_name'].strip().lower() == file_name_clean:
+            try:
+                team = StudentTeam.objects.select_related('semester').get(pk=item['team_id'])
+                return team, item
+            except StudentTeam.DoesNotExist:
+                pass
+    return None, None
+
+
 def match_pit_team(file_name, year_level, semester=None):
     metadata = validate_pit_file_name(file_name)
     file_key = normalize(file_name)
@@ -960,14 +1056,29 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
             selected_year=selected_year,
         )
 
-    try:
-        metadata = validate_pit_file_name(file_name)
-        if metadata['year_level'] != selected_year:
-            raise ValidationError(f'{file_name} does not match {selected_year}.')
-    except ValidationError as exc:
-        return None, {'file_name': file_name, 'reason': '; '.join(exc.messages)}
+    team, queue_item = match_pit_team_by_suggested_filename(file_name, selected_year, semester=active_semester)
+    if team is not None:
+        prefix = PIT_PREFIX_BY_YEAR.get(selected_year, '3rdYear')
+        course = _default_course_for_year(selected_year)
+        project = _project_slug(team.project_title)
+        semester_label = team.semester.label if team.semester else '1st Semester'
+        metadata = {
+            'prefix': prefix,
+            'year_level': selected_year,
+            'course_code': course,
+            'project_slug': project,
+            'semester_label': semester_label,
+        }
+    else:
+        try:
+            metadata = validate_pit_file_name(file_name)
+            if metadata['year_level'] != selected_year:
+                raise ValidationError(f'{file_name} does not match {selected_year}.')
+        except ValidationError as exc:
+            return None, {'file_name': file_name, 'reason': '; '.join(exc.messages)}
 
-    team = match_pit_team(file_name, selected_year, semester=active_semester)
+        team = match_pit_team(file_name, selected_year, semester=active_semester)
+
     if team is None or team.id not in eligible_ids:
         return None, _pit_team_match_skip_reason(file_name, selected_year, active_semester)
     archive_grade = _pit_archive_grade_for_team(team, semester=active_semester)

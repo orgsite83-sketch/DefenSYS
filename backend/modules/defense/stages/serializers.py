@@ -14,6 +14,7 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'required',
             'display_order',
             'vault_note',
+            'vault_file_template',
         ]
 
 
@@ -130,6 +131,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 required=bool(required),
                 display_order=deliverable_data.get('display_order', 1),
                 vault_note=deliverable_data.get('vault_note', ''),
+                vault_file_template=deliverable_data.get('vault_file_template', ''),
             )
 
 

@@ -110,21 +110,19 @@ class DeliverableSubmission(models.Model):
                         self.file.name or self.file_name,
                         classify=True,
                     )
+                    if hasattr(stored, 'seek'):
+                        try:
+                            stored.seek(0)
+                        except Exception:
+                            pass
                 self.extracted_text = result.get('text', '')
                 self.topics = result.get('topics', [])
                 self.summary = result.get('summary', '')
                 self.category = result.get('category', '') or ''
                 classification = result.get('classification') or {}
                 self.category_confidence = classification.get('confidence_score')
-                if hasattr(self.file, 'seek'):
-                    self.file.seek(0)
             except Exception as e:
                 print(f'Warning: PDF extraction failed for {self.file_name}: {e}')
-                if hasattr(self.file, 'seek'):
-                    try:
-                        self.file.seek(0)
-                    except Exception:
-                        pass
         
         super().save(*args, **kwargs)
 

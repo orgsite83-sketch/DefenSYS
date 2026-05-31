@@ -194,6 +194,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     slot_duration = serializers.IntegerField(min_value=15, max_value=240, default=60)
     room = serializers.CharField(max_length=120)
     panelist_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    vault_file_template = serializers.CharField(required=False, allow_blank=True, max_length=255)
 
     def validate(self, attrs):
         request = self.context.get('request')
@@ -277,6 +278,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
             peer_rubric=peer_rubric,
             panel_weight=panel_weight,
             peer_weight=peer_weight,
+            vault_file_template=attrs.get('vault_file_template'),
         )
         return attrs
 
@@ -461,6 +463,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         validated_data.pop('peer_rubric_id', None)
         validated_data.pop('panel_weight', None)
         validated_data.pop('peer_weight', None)
+        validated_data.pop('vault_file_template', None)
         validated_data.pop('peer_rubric', None)
         validated_data.pop('pit_event_config', None)
         validated_data.pop('semester_id', None)

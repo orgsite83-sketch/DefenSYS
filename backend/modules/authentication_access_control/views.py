@@ -23,9 +23,14 @@ from .scopes import audit_logs_for, can_review_audit_logs
 User = get_user_model()
 
 
+class LoginRateThrottle(AnonRateThrottle):
+    scope = 'login'
+
+
 class CustomTokenObtainPairView(TokenObtainPairView):
     serializer_class = CustomTokenObtainPairSerializer
     permission_classes = [AllowAny]
+    throttle_classes = [LoginRateThrottle]
 
 
 class RefreshRateThrottle(AnonRateThrottle):

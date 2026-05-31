@@ -61,7 +61,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     AcademicPeriodState state,
     Map<String, dynamic>? selectedYear,
   ) {
-    return Padding(
+    return SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,

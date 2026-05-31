@@ -201,6 +201,22 @@ class RubricListCreateView(APIView):
         serializer.is_valid(raise_exception=True)
         rubric = serializer.save()
         rubric = rubric_queryset().get(pk=rubric.pk)
+
+        from authentication_access_control.audit import log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='rubric.create',
+            target=rubric,
+            new_values={
+                'name': rubric.name,
+                'scope': rubric.scope,
+                'evaluation_type': rubric.evaluation_type,
+                'semester': rubric.semester.display_name,
+            },
+            request=request,
+        )
+
         return Response(
             {
                 'rubric': RubricSerializer(rubric).data,
@@ -221,6 +237,12 @@ class RubricDetailView(APIView):
 
     def patch(self, request, rubric_id):
         rubric = self.get_object(request, rubric_id)
+        old_values = {
+            'name': rubric.name,
+            'scope': rubric.scope,
+            'evaluation_type': rubric.evaluation_type,
+            'semester': rubric.semester.display_name,
+        }
         serializer = RubricWriteSerializer(
             rubric,
             data=request.data,
@@ -229,6 +251,23 @@ class RubricDetailView(APIView):
         serializer.is_valid(raise_exception=True)
         rubric = serializer.save()
         rubric = rubric_queryset().get(pk=rubric.pk)
+
+        from authentication_access_control.audit import log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='rubric.update',
+            target=rubric,
+            old_values=old_values,
+            new_values={
+                'name': rubric.name,
+                'scope': rubric.scope,
+                'evaluation_type': rubric.evaluation_type,
+                'semester': rubric.semester.display_name,
+            },
+            request=request,
+        )
+
         return Response({
             'rubric': RubricSerializer(rubric).data,
             **list_payload_for_request(request),
@@ -236,7 +275,28 @@ class RubricDetailView(APIView):
 
     def delete(self, request, rubric_id):
         rubric = self.get_object(request, rubric_id)
+        old_values = {
+            'name': rubric.name,
+            'scope': rubric.scope,
+            'evaluation_type': rubric.evaluation_type,
+            'semester': rubric.semester.display_name,
+        }
+        rubric_pk = rubric.pk
         rubric.delete()
+
+        from authentication_access_control.audit import log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='rubric.delete',
+            target=rubric,
+            target_type='Rubric',
+            target_id=rubric_pk,
+            old_values=old_values,
+            new_values={'deleted': True},
+            request=request,
+        )
+
         return Response(list_payload_for_request(request), status=status.HTTP_200_OK)
 
 
@@ -253,10 +313,22 @@ class RubricPublishView(APIView):
                 {'criteria': 'At least one criterion is required before publishing.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        old_status = rubric.status
         rubric.status = Rubric.STATUS_PUBLISHED
         rubric.is_locked = True
         rubric.save()
         rubric = rubric_queryset().get(pk=rubric.pk)
+
+        from authentication_access_control.audit import log_high_impact_action
+        from authentication_access_control.models import SystemAuditLog
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='rubric.publish',
+            target=rubric,
+            old_values={'status': old_status, 'is_locked': False},
+            new_values={'status': rubric.status, 'is_locked': True},
+            request=request,
+        )
         return Response({
             'rubric': RubricSerializer(rubric).data,
             **list_payload_for_request(request),

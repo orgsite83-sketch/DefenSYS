@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from .groups import broadcast_groups_for_capstone_semester, broadcast_groups_for_pit_event
+
+logger = logging.getLogger(__name__)
 
 
 def _base_payload(
@@ -42,7 +45,13 @@ def _send_to_groups(groups: list[str], payload: dict[str, Any]) -> None:
         'payload': payload,
     }
     for group in groups:
-        async_to_sync(channel_layer.group_send)(group, message)
+        try:
+            async_to_sync(channel_layer.group_send)(group, message)
+        except Exception as e:
+            logger.warning(
+                f"Failed to broadcast real-time sync notification to group {group}: {e}",
+                exc_info=True,
+            )
 
 
 def notify_capstone_evaluation_flags(

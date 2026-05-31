@@ -197,6 +197,7 @@ USE_TZ = True
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = 'static/'
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media files (User uploaded files) — bytes on disk or S3; metadata in PostgreSQL.
 MEDIA_URL = '/media/'
@@ -254,6 +255,8 @@ REST_FRAMEWORK = {
     'EXCEPTION_HANDLER': 'defensys_backend.exception_handlers.defensys_exception_handler',
     'DEFAULT_THROTTLE_RATES': {
         'token_refresh': '10/min',
+        'login': '5/min',
+        'anon': '10/min',
     },
 }
 

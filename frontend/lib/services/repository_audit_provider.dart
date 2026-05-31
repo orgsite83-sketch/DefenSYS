@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../config/api_config.dart';
 import 'authenticated_client.dart';
+import '../utils/progress_upload.dart';
 
 final repositoryAuditProvider =
     NotifierProvider<RepositoryAuditNotifier, RepositoryAuditState>(
@@ -35,6 +36,7 @@ class RepositoryAuditState {
   final String? error;
   final String? message;
   final List<Map<String, dynamic>> lastUploadSkipped;
+  final double uploadProgress;
 
   const RepositoryAuditState({
     this.isLoading = false,
@@ -61,6 +63,7 @@ class RepositoryAuditState {
     this.error,
     this.message,
     this.lastUploadSkipped = const [],
+    this.uploadProgress = 0.0,
   });
 
   RepositoryAuditState copyWith({
@@ -88,6 +91,7 @@ class RepositoryAuditState {
     String? error,
     String? message,
     List<Map<String, dynamic>>? lastUploadSkipped,
+    double? uploadProgress,
     bool clearError = false,
     bool clearMessage = false,
     bool clearLastUploadSkipped = false,
@@ -119,6 +123,7 @@ class RepositoryAuditState {
       lastUploadSkipped: clearLastUploadSkipped
           ? const []
           : lastUploadSkipped ?? this.lastUploadSkipped,
+      uploadProgress: uploadProgress ?? this.uploadProgress,
     );
   }
 }
@@ -266,13 +271,19 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
   }) async {
     state = state.copyWith(
       isSaving: true,
+      uploadProgress: 0.0,
       clearError: true,
       clearMessage: true,
     );
     try {
-      final request = http.MultipartRequest(
+      final request = MultipartRequestWithProgress(
         'POST',
         Uri.parse('$baseUrl/upload-pit/'),
+        onProgress: (bytesSent, totalBytes) {
+          if (totalBytes > 0) {
+            state = state.copyWith(uploadProgress: bytesSent / totalBytes);
+          }
+        },
       );
       if ((yearLevel ?? '').isNotEmpty) {
         request.fields['year_level'] = yearLevel!;
@@ -580,13 +591,19 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
   }) async {
     state = state.copyWith(
       isSaving: true,
+      uploadProgress: 0.0,
       clearError: true,
       clearMessage: true,
     );
     try {
-      final request = http.MultipartRequest(
+      final request = MultipartRequestWithProgress(
         'POST',
         Uri.parse('$baseUrl/upload-capstone/'),
+        onProgress: (bytesSent, totalBytes) {
+          if (totalBytes > 0) {
+            state = state.copyWith(uploadProgress: bytesSent / totalBytes);
+          }
+        },
       );
       if ((academicYear ?? '').isNotEmpty) {
         request.fields['academic_year'] = academicYear!;

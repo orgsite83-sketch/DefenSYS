@@ -5,7 +5,7 @@ from academic_period_management.models import Semester
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
 from student_teams.models import StudentTeam
-from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready
+from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage_ready, was_stage_endorsed
 from .models import DeliverableSubmission
 
 
@@ -24,6 +24,7 @@ def get_deliverable_definitions(stage_label):
                 'required': d.required,
                 'type': d.deliverable_type,
                 'vault_note': d.vault_note,
+                'vault_file_template': d.vault_file_template,
             }
             for d in deliverables
             if (d.deliverable_id or '').strip()
@@ -157,7 +158,7 @@ def stage_payload(team, stage_label):
     unlocked = vault_unlocked(team, stage_label)
     rows = []
 
-    from repository.audit.services import suggested_capstone_file_name
+    from repository.audit.services import resolve_vault_file_template
     from academic_period_management.models import Semester
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
 
@@ -167,7 +168,13 @@ def stage_payload(team, stage_label):
         
         suggested = ''
         if is_vault:
-            suggested = suggested_capstone_file_name(team, stage_label, semester_label)
+            suggested = resolve_vault_file_template(
+                item.get('vault_file_template', ''),
+                team,
+                stage_label,
+                semester_label,
+                deliverable_label=item['label'],
+            )
 
         rows.append({
             'id': item['id'],
@@ -194,7 +201,7 @@ def stage_payload(team, stage_label):
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
-        'endorsed': is_stage_ready(team, defense_stage_for_label(stage_label)),
+        'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)),
         'vault_unlocked': unlocked,
         'required_complete': configured and all(item['uploaded'] for item in required_items),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),

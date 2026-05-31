@@ -157,13 +157,24 @@ class VaultEntry(models.Model):
         super().save(*args, **kwargs)
 
     def _hydrate_pit_metadata(self):
+        # 1. Try to hydrate from database relations first if available
+        if self.team:
+            self.year_level = self.year_level or self.team.year_level
+            if self.team.semester:
+                self.semester_label = self.semester_label or self.team.semester.label
+            from repository.audit.services import _default_course_for_year
+            self.course_code = self.course_code or _default_course_for_year(self.team.year_level)
+
+        if self.pit_event_config:
+            self.stage_label = self.stage_label or self.pit_event_config.event_name
+
+        # 2. Fall back to split file name parsing for backward compatibility (e.g. legacy/archived uploads)
         parts = (self.file_name or '').split('.')
-        if len(parts) < 4:
-            return
-        self.year_level = self.year_level or PIT_YEAR_PREFIX_LABELS.get(parts[0], parts[0])
-        self.course_code = self.course_code or parts[1]
-        self.semester_label = self.semester_label or PIT_SEMESTER_LABELS.get(parts[3], parts[3])
-        self.stage_label = self.stage_label or self.course_code
+        if len(parts) >= 4:
+            self.year_level = self.year_level or PIT_YEAR_PREFIX_LABELS.get(parts[0], parts[0])
+            self.course_code = self.course_code or parts[1]
+            self.semester_label = self.semester_label or PIT_SEMESTER_LABELS.get(parts[3], parts[3])
+            self.stage_label = self.stage_label or self.course_code
 
     def __str__(self):
         return self.file_name

@@ -216,14 +216,17 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.data['slots'][0]['team_id'], self.team.id)
         self.assertEqual(str(response.data['slots'][0]['start_time']), '08:00:00')
 
-    def test_generate_plan_requires_complete_stage_rubric_config(self):
+    def test_confirm_plan_requires_complete_stage_rubric_config(self):
         config = StageGradingConfig.objects.get(defense_stage=self.stage, semester=self.semester)
         config.adviser_rubric = None
         config.save(update_fields=['adviser_rubric', 'updated_at'])
 
         response = self.client.post(
-            '/api/defense/schedules/generate-plan/',
-            self.schedule_payload(),
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.schedule_payload(),
+                'slots': [{'team_id': self.team.id}],
+            },
             format='json',
         )
 
@@ -823,6 +826,44 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.data['config']['panel_weight'], 60)
         self.assertEqual(response.data['config']['peer_rubric_id'], self.peer_rubric.id)
 
+    def test_pit_event_config_save_creates_or_updates_config(self):
+        payload = {
+            'event_name': 'New PIT Expo',
+            'semester_id': self.semester.id,
+            'panel_rubric_id': self.panel_rubric.id,
+            'peer_rubric_id': self.peer_rubric.id,
+            'panel_weight': 70,
+            'peer_weight': 30,
+            'vault_file_template': 'test-template-{project}'
+        }
+        response = self.client.post(
+            '/api/defense/schedules/pit-event-config/',
+            payload,
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['config']['panel_weight'], 70)
+        self.assertEqual(response.data['config']['peer_weight'], 30)
+        self.assertEqual(response.data['config']['vault_file_template'], 'test-template-{project}')
+        
+        # Verify db
+        config = PitEventGradingConfig.objects.get(event_name='New PIT Expo', semester=self.semester)
+        self.assertEqual(config.panel_weight, 70)
+        self.assertEqual(config.vault_file_template, 'test-template-{project}')
+
+        # Update post (update)
+        payload['panel_weight'] = 80
+        payload['peer_weight'] = 20
+        payload['vault_file_template'] = 'updated-template-{project}'
+        response = self.client.post(
+            '/api/defense/schedules/pit-event-config/',
+            payload,
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['config']['panel_weight'], 80)
+        self.assertEqual(response.data['config']['vault_file_template'], 'updated-template-{project}')
+
     def test_panelist_assignments_returns_pit_grade_weights_without_adviser(self):
         self.client.post(
             '/api/defense/schedules/confirm-plan/',
@@ -1016,3 +1057,28 @@ class PitEventGradingConfigTests(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, 403)
+
+    def test_pit_suggested_filename_uses_config_template(self):
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+            vault_file_template='{year}-{course}-{project}-{event}-{semester}'
+        )
+
+        from repository.audit.services import suggested_pit_file_name
+        filename = suggested_pit_file_name(
+            team=self.team,
+            year_level='2nd Year',
+            semester_label='1st Semester',
+            event_name='2nd Year PIT Expo'
+        )
+
+        self.assertEqual(
+            filename,
+            '2ndYear-PIT201-IoTMonitor-2ndYearPITExpo-1stSemester.pdf'
+        )
+

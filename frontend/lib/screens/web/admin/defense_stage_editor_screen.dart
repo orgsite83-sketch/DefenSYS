@@ -87,6 +87,10 @@ class _DefenseStageEditorScreenState
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
+    for (final item in _deliverables) {
+      (item['_labelController'] as TextEditingController?)?.dispose();
+      (item['_templateController'] as TextEditingController?)?.dispose();
+    }
     super.dispose();
   }
 
@@ -434,6 +438,7 @@ class _DefenseStageEditorScreenState
                             'required': true,
                             'display_order': _deliverables.length + 1,
                             'vault_note': '',
+                            'vault_file_template': '',
                           });
                         });
                         _markDirty();
@@ -528,7 +533,13 @@ class _DefenseStageEditorScreenState
   }
 
   Widget _deliverableRow(Map<String, dynamic> item, int index) {
-    final labelController = TextEditingController(text: item['label']?.toString() ?? '');
+    final labelController = item['_labelController'] as TextEditingController? ??
+        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
+    final templateController = item['_templateController'] as TextEditingController? ??
+        (item['_templateController'] = TextEditingController(text: item['vault_file_template']?.toString() ?? ''));
+
+    final isVault = item['deliverable_type'] == 'vault';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
@@ -536,68 +547,224 @@ class _DefenseStageEditorScreenState
         border: Border.all(color: const Color(0xFFE5E7EB)),
         borderRadius: BorderRadius.circular(8),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(
-            flex: 3,
-            child: TextField(
-              controller: labelController,
-              decoration: const InputDecoration(
-                labelText: 'Label',
-                isDense: true,
-                border: OutlineInputBorder(),
+          Row(
+            children: [
+              Expanded(
+                flex: 3,
+                child: TextField(
+                  controller: labelController,
+                  decoration: const InputDecoration(
+                    labelText: 'Label',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  onChanged: (v) {
+                    item['label'] = v;
+                    _markDirty();
+                    if (isVault) {
+                      setState(() {});
+                    }
+                  },
+                ),
               ),
-              onChanged: (v) {
-                item['label'] = v;
-                _markDirty();
-              },
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: DropdownButtonFormField<String>(
+                  initialValue: item['deliverable_type']?.toString() ?? 'pre',
+                  decoration: const InputDecoration(
+                    labelText: 'Type',
+                    isDense: true,
+                    border: OutlineInputBorder(),
+                  ),
+                  items: const [
+                    DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
+                    DropdownMenuItem(value: 'vault', child: Text('Vault')),
+                  ],
+                  onChanged: (v) {
+                    setState(() {
+                      item['deliverable_type'] = v;
+                      if (v == 'vault') {
+                        item['required'] = false;
+                      } else if (v == 'pre') {
+                        item['required'] = true;
+                      }
+                    });
+                    _markDirty();
+                  },
+                ),
+              ),
+              Checkbox(
+                value: item['required'] == true,
+                onChanged: (v) {
+                  setState(() => item['required'] = v ?? false);
+                  _markDirty();
+                },
+              ),
+              const Text('Required', style: TextStyle(fontSize: 12)),
+              IconButton(
+                icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                onPressed: () {
+                  setState(() {
+                    final removed = _deliverables.removeAt(index);
+                    (removed['_labelController'] as TextEditingController?)?.dispose();
+                    (removed['_templateController'] as TextEditingController?)?.dispose();
+                  });
+                  _markDirty();
+                },
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            flex: 2,
-            child: DropdownButtonFormField<String>(
-              initialValue: item['deliverable_type']?.toString() ?? 'pre',
+          if (isVault) ...[
+            const SizedBox(height: 12),
+            TextField(
+              controller: templateController,
               decoration: const InputDecoration(
-                labelText: 'Type',
+                labelText: 'Vault File Template',
                 isDense: true,
                 border: OutlineInputBorder(),
+                hintText: '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
               ),
-              items: const [
-                DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
-                DropdownMenuItem(value: 'vault', child: Text('Vault')),
-              ],
               onChanged: (v) {
                 setState(() {
-                  item['deliverable_type'] = v;
-                  if (v == 'vault') {
-                    item['required'] = false;
-                  } else if (v == 'pre') {
-                    item['required'] = true;
-                  }
+                  item['vault_file_template'] = v;
                 });
                 _markDirty();
               },
             ),
-          ),
-          Checkbox(
-            value: item['required'] == true,
-            onChanged: (v) {
-              setState(() => item['required'] = v ?? false);
-              _markDirty();
-            },
-          ),
-          const Text('Required', style: TextStyle(fontSize: 12)),
-          IconButton(
-            icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-            onPressed: () {
-              setState(() => _deliverables.removeAt(index));
-              _markDirty();
-            },
-          ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Click to insert: ',
+                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
+                ),
+                _variableChip(item, templateController, '{year}'),
+                _variableChip(item, templateController, '{course}'),
+                _variableChip(item, templateController, '{project}'),
+                _variableChip(item, templateController, '{stage}'),
+                _variableChip(item, templateController, '{deliverable}'),
+                _variableChip(item, templateController, '{semester}'),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                const Icon(Icons.insert_drive_file_outlined, size: 14, color: AppColors.textSecondary),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Preview: ${_resolvePreview(item['vault_file_template']?.toString() ?? '', item['label']?.toString() ?? '')}',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.maroon,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );
+  }
+
+  String _resolvePreview(String template, String deliverableLabel) {
+    final cleanTemplate = template.trim();
+    final finalTemplate = cleanTemplate.isEmpty 
+        ? '{year}.{course}.{project}.{semester}.pdf'
+        : cleanTemplate;
+
+    String slugify(String val) {
+      return val.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    }
+
+    String deliverableSlug(String val) {
+      if (val.trim().isEmpty) return 'DeliverableLabel';
+      final words = val.trim().split(RegExp(r'\s+'));
+      final capitalized = words.map((w) {
+        if (w.isEmpty) return '';
+        return w[0].toUpperCase() + w.substring(1).toLowerCase();
+      }).join('');
+      return slugify(capitalized);
+    }
+
+    final year = '3rdYear';
+    final course = 'CAP301';
+    final project = 'ProjectTitle';
+    final stage = slugify(_label.text.trim().isEmpty ? 'StageLabel' : _label.text.trim());
+    final deliverable = deliverableSlug(deliverableLabel);
+    final semester = '2ndSemester';
+
+    var resolved = finalTemplate
+        .replaceAll('{year}', year)
+        .replaceAll('{course}', course)
+        .replaceAll('{project}', project)
+        .replaceAll('{stage}', stage)
+        .replaceAll('{deliverable}', deliverable)
+        .replaceAll('{semester}', semester);
+
+    if (!resolved.toLowerCase().endsWith('.pdf')) {
+      resolved += '.pdf';
+    }
+
+    return resolved;
+  }
+
+  Widget _variableChip(Map<String, dynamic> item, TextEditingController controller, String variable) {
+    return InkWell(
+      onTap: () => _insertVariable(item, controller, variable),
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF3F4F6),
+          border: Border.all(color: const Color(0xFFD1D5DB)),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          variable,
+          style: const TextStyle(
+            fontSize: 11,
+            fontFamily: 'monospace',
+            fontWeight: FontWeight.bold,
+            color: AppColors.textPrimary,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _insertVariable(Map<String, dynamic> item, TextEditingController controller, String variable) {
+    final text = controller.text;
+    final selection = controller.selection;
+    
+    String newText;
+    int newCursorPosition;
+
+    if (selection.isValid) {
+      final start = selection.start;
+      final end = selection.end;
+      newText = text.replaceRange(start, end, variable);
+      newCursorPosition = start + variable.length;
+    } else {
+      newText = text + variable;
+      newCursorPosition = newText.length;
+    }
+
+    setState(() {
+      controller.text = newText;
+      controller.selection = TextSelection.collapsed(offset: newCursorPosition);
+      item['vault_file_template'] = newText;
+    });
+    _markDirty();
   }
 
   Widget _notice(String message, {bool warning = false}) {

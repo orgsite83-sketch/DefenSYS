@@ -7,6 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from grading.grades.models import GradeBreakdown, TeamGrade
+from grading.rubrics.models import Rubric
 from grading.grades.services import (
     GradeContextService,
     guest_panelist_remark_key,
@@ -28,7 +29,7 @@ from user_management.permissions import IsPanelist
 from .models import DefenseSchedule, SchedulePanelist
 from academic_period_management.models import Semester
 
-from .pit_config import get_pit_event_config, pit_event_config_payload
+from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
 from .serializers import (
     ConfirmSchedulePlanSerializer,
     DefenseScheduleSerializer,
@@ -179,6 +180,60 @@ class PitEventConfigLookupView(APIView):
 
         config = get_pit_event_config(semester, event_name)
         return Response({'config': pit_event_config_payload(config)})
+
+    def post(self, request):
+        event_name = request.data.get('event_name', '').strip()
+        if not event_name:
+            return Response(
+                {'detail': 'event_name is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        semester_id = request.data.get('semester_id')
+        if semester_id:
+            semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
+        else:
+            semester = active_semester()
+            if semester is None:
+                return Response(
+                    {'detail': 'No active semester is configured.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        panel_rubric_id = request.data.get('panel_rubric_id')
+        peer_rubric_id = request.data.get('peer_rubric_id')
+        
+        try:
+            panel_weight = int(request.data.get('panel_weight'))
+            peer_weight = int(request.data.get('peer_weight'))
+        except (TypeError, ValueError):
+            return Response(
+                {'detail': 'panel_weight and peer_weight must be integers.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        vault_file_template = request.data.get('vault_file_template')
+
+        # Retrieve Rubrics
+        panel_rubric = get_object_or_404(Rubric, pk=panel_rubric_id)
+        peer_rubric = get_object_or_404(Rubric, pk=peer_rubric_id)
+
+        try:
+            config = upsert_pit_event_config(
+                semester=semester,
+                event_name=event_name,
+                panel_rubric=panel_rubric,
+                peer_rubric=peer_rubric,
+                panel_weight=panel_weight,
+                peer_weight=peer_weight,
+                vault_file_template=vault_file_template,
+            )
+            return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)
+        except ValidationError as e:
+            return Response(
+                {'detail': e.message if hasattr(e, 'message') else str(e)},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
 
 class DefenseScheduleGeneratePlanView(APIView):

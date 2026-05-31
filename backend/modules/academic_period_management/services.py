@@ -75,8 +75,10 @@ def switch_active_semester(target_semester, user, force=False, reason=''):
         if current and current.pk == target.pk:
             return preview, None
 
+        from .capstone_mode import normalize_capstone_flags
         target.is_active = True
-        target.save(update_fields=['is_active'])
+        capstone_fields = normalize_capstone_flags(target)
+        target.save(update_fields=['is_active'] + capstone_fields)
         log = SemesterTransitionLog.objects.create(
             from_semester=current,
             to_semester=target,

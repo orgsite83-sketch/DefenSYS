@@ -190,6 +190,12 @@ class PitEventGradingConfig(models.Model):
     peer_weight = models.PositiveSmallIntegerField(default=20)
     is_officially_complete = models.BooleanField(default=False)
     peer_grading_enabled = models.BooleanField(default=False)
+    vault_file_template = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {event}, {semester}',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

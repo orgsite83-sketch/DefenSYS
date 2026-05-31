@@ -754,4 +754,32 @@ class CapstoneDeliverablesApiTests(APITestCase):
         progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
         self.assertEqual(progress.status, TeamStageProgress.STATUS_LOCKED)
 
+    def test_suggested_file_name_uses_vault_file_template(self):
+        d = StageDeliverable.objects.get(defense_stage=self.stage, deliverable_id='D4.1')
+        d.vault_file_template = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}'
+        d.save()
+
+        response = self.client.get('/api/repository/deliverables/', {'stage_label': 'Concept Proposal'})
+        self.assertEqual(response.status_code, 200)
+
+        team_payload = None
+        for team in response.data['teams']:
+            if team['id'] == self.team.id:
+                team_payload = team['selected_stage']
+                break
+        self.assertIsNotNone(team_payload)
+
+        d41_payload = None
+        for row in team_payload['deliverables']:
+            if row['id'] == 'D4.1':
+                d41_payload = row
+                break
+        self.assertIsNotNone(d41_payload)
+
+        self.assertEqual(
+            d41_payload['suggested_file_name'],
+            '3rdYear.CAP301.CloudFileSync.ConceptProposal.D41ApprovedConceptPaper.2ndSemester.pdf'
+        )
+
+
 

@@ -322,6 +322,39 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
+  Future<bool> savePitEventConfig(Map<String, dynamic> payload) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/pit-event-config/'),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        state = state.copyWith(
+          isSaving: false,
+          message: 'PIT event configuration saved successfully.',
+          clearError: true,
+        );
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<bool> deleteSchedule(int scheduleId) async {
     state = state.copyWith(
       isSaving: true,

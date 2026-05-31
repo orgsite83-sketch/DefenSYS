@@ -82,7 +82,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryAuditProvider);
 
-    return SingleChildScrollView(
+    final mainContent = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -117,6 +117,73 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         ],
       ),
     );
+
+    if (state.isSaving) {
+      return Stack(
+        children: [
+          mainContent,
+          Positioned.fill(
+            child: Container(
+              color: Colors.black.withValues(alpha: 0.35),
+              child: Center(
+                child: Card(
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Container(
+                    width: 340,
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const SizedBox(
+                          width: 48,
+                          height: 48,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 4,
+                            valueColor: AlwaysStoppedAnimation<Color>(AppColors.maroon),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
+                        const Text(
+                          'Uploading files to vault...',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: state.uploadProgress,
+                            color: AppColors.success,
+                            backgroundColor: AppColors.success.withValues(alpha: 0.12),
+                            minHeight: 8,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          '${(state.uploadProgress * 100).toStringAsFixed(0)}% uploaded',
+                          style: const TextStyle(
+                            color: AppColors.success,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return mainContent;
   }
 
   String _scopeKey(RepositoryAuditState state) =>
@@ -136,14 +203,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       default:
         return 'Browse pre-defense uploads, digital vault items, and final archive PDFs by team or deliverable (e.g. D1 across all teams).';
     }
-  }
-
-  bool _showCapstoneUploadQueue(RepositoryAuditState state) {
-    if (_scopeKey(state) != 'admin') {
-      return false;
-    }
-    final queue = state.capstoneUploadWindow['queue'];
-    return queue is List && queue.isNotEmpty;
   }
 
   bool _showUploadQueue(RepositoryAuditState state) {
@@ -234,175 +293,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       Icons.info_outline_rounded,
       message,
       const Color(0xFF2563EB),
-    );
-  }
-
-  Widget _buildCapstoneEmptyQueueBanner(RepositoryAuditState state) {
-    final open = state.capstoneUploadWindow['open'] == true;
-    final queue = state.capstoneUploadWindow['queue'];
-    final hasQueue = queue is List && queue.isNotEmpty;
-    if (open || hasQueue) {
-      return const SizedBox.shrink();
-    }
-
-    final diagnostics = state.capstoneUploadWindow['diagnostics'];
-    if (diagnostics is! Map) {
-      return _notice(
-        Icons.info_outline_rounded,
-        'No Capstone teams are ready to archive yet. Mark a Capstone defense stage officially complete in Grade Center so passed teams become ready to archive.',
-        const Color(0xFFD97706),
-      );
-    }
-
-    final diag = Map<String, dynamic>.from(diagnostics);
-    final parts = <String>['No Capstone teams are ready to archive.'];
-    final stages = diag['completed_stages'];
-    if (stages is List && stages.isNotEmpty) {
-      parts.add('Officially complete stages: ${stages.join(', ')}.');
-    } else {
-      parts.add('No Capstone stage is officially complete yet.');
-    }
-    final unpublished = diag['unpublished_passed_count'];
-    if (unpublished is int && unpublished > 0) {
-      parts.add(
-        '$unpublished team(s) passed but are not ready for archive — mark the stage officially complete in Grade Center.',
-      );
-    }
-    return _notice(
-      Icons.warning_amber_rounded,
-      parts.join(' '),
-      const Color(0xFFD97706),
-    );
-  }
-
-  Widget _buildCapstoneUploadWindowBanner(RepositoryAuditState state) {
-    final open = state.capstoneUploadWindow['open'] == true;
-    final queue = state.capstoneUploadWindow['queue'];
-    final hasQueue = queue is List && queue.isNotEmpty;
-    if (open || hasQueue) {
-      return const SizedBox.shrink();
-    }
-    return _notice(
-      Icons.info_outline_rounded,
-      'Capstone archive uploads open after you mark a defense stage officially complete in Grade Center (passed teams at 75% or above become ready to archive).',
-      const Color(0xFF2563EB),
-    );
-  }
-
-  Widget _buildCapstoneUploadQueuePanel(RepositoryAuditState state) {
-    final queue = (state.capstoneUploadWindow['queue'] as List?) ?? [];
-    final stages =
-        (state.capstoneUploadWindow['completed_stages'] as List?)
-            ?.map((e) => e.toString())
-            .join(', ') ??
-        '';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Capstone ready to archive${stages.isNotEmpty ? ' · $stages' : ''}',
-            style: const TextStyle(
-              color: AppColors.maroon,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Awaiting PDF means the team passed and still needs a correctly named archive upload.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          ...queue.map((raw) {
-            final row = Map<String, dynamic>.from(raw as Map);
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          row['team_name']?.toString() ?? 'Team',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        Text(
-                          row['project_title']?.toString() ?? '',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        Text(
-                          row['stage_label']?.toString() ?? '',
-                          style: const TextStyle(
-                            color: Color(0xFF98A2B3),
-                            fontSize: 11,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        SelectableText(
-                          row['suggested_file_name']?.toString() ?? '',
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11.5,
-                            color: Color(0xFF374151),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 5,
-                    ),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF7ED),
-                      borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFFED7AA)),
-                    ),
-                    child: const Text(
-                      'Awaiting PDF',
-                      style: TextStyle(
-                        color: Color(0xFFD97706),
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                  if ((row['suggested_file_name']?.toString() ?? '')
-                      .isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Copy filename',
-                      icon: const Icon(Icons.copy_outlined, size: 18),
-                      onPressed: () => _copySuggestedFileName(
-                        row['suggested_file_name']?.toString(),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
     );
   }
 
@@ -846,6 +736,43 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               children: [
                 Expanded(
                   child: _filterFromStrings(
+                    value: state.academicYear,
+                    label: 'All Years',
+                    items: _stringList(state.options['academic_years']),
+                    onChanged: (value) => ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(academicYear: value ?? ''),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _filterFromStrings(
+                    value: state.semester,
+                    label: 'All Semesters',
+                    items: _stringList(state.options['semesters']),
+                    onChanged: (value) => ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(semester: value ?? ''),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: _filterFromMaps(
+                    value: state.status,
+                    label: 'All Statuses',
+                    items: _mapList(state.options['status_options']),
+                    onChanged: (value) => ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(status: value ?? ''),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _filterFromStrings(
                     value: state.stage,
                     label: 'All Stages',
                     items: _stringList(state.options['stage_options']),
@@ -868,17 +795,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                           clearDeliverable: (value ?? '').isEmpty,
                           clearTeam: (value ?? '').isNotEmpty,
                         ),
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _filterFromMaps(
-                    value: state.status,
-                    label: 'All Statuses',
-                    items: _mapList(state.options['status_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(status: value ?? ''),
                   ),
                 ),
               ],
@@ -2801,9 +2717,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       addSubsection(
         'Digital vault deliverables',
         const Color(0xFFF5F3FF),
-        vaultRows,
+        [...vaultRows, ...archiveRows],
       );
-      addSubsection('Final archive PDF', const Color(0xFFFFF7ED), archiveRows);
       dataChildren.add(const SizedBox(height: 12));
       actionChildren.add(_repositoryActionSpacer(height: 12));
     }
@@ -2851,7 +2766,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
       actionChildren.add(_repositoryActionSpacer(height: 32));
       dataChildren.add(
-        _subsectionHeader('PIT archive', const Color(0xFFFFF7ED)),
+        _subsectionHeader('Digital vault', const Color(0xFFFFF7ED)),
       );
       actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
       for (final row in rows) {
@@ -3094,7 +3009,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       'pre' => 'Pre-defense',
       'vault' => 'Vault',
       'archive' => 'Archive',
-      'pit' => 'PIT',
+      'pit' => 'Digital vault',
       _ => 'File',
     };
     final color = switch (kind) {
