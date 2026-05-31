@@ -94,10 +94,20 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     for (final t in widget.teammates) {
       final id = _teammateId(t);
       _posted.putIfAbsent(id, () => false);
-      _scores.putIfAbsent(id, () => {
-        for (final c in _effectiveCriteria)
-          (c['name'] as String): 0.0,
-      });
+      
+      final teammateScores = _scores[id] ?? <String, double>{};
+      
+      // Ensure all current effective criteria are present in the teammate's scores
+      for (final c in _effectiveCriteria) {
+        final name = c['name'] as String;
+        teammateScores.putIfAbsent(name, () => 0.0);
+      }
+      
+      // Remove any criteria that are no longer part of the current effective criteria
+      final allowedKeys = _effectiveCriteria.map((c) => c['name'] as String).toSet();
+      teammateScores.removeWhere((key, _) => !allowedKeys.contains(key));
+      
+      _scores[id] = teammateScores;
     }
     _hydrateFromSubmissions();
   }
