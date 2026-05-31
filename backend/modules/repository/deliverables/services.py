@@ -11,7 +11,38 @@ from student_teams.services import is_stage_ready, mark_stage_locked, mark_stage
 from .models import DeliverableSubmission
 
 
-STAGE_OPTIONS = ['Concept Proposal', 'Project Proposal', 'Final Defense']
+class DynamicStageOptionsList(list):
+    def _get_stages(self):
+        try:
+            stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label').values_list('label', flat=True))
+            if not stages:
+                return ['Concept Proposal', 'Project Proposal', 'Final Defense']
+            return stages
+        except Exception:
+            return ['Concept Proposal', 'Project Proposal', 'Final Defense']
+
+    def __iter__(self):
+        return iter(self._get_stages())
+
+    def __len__(self):
+        return len(self._get_stages())
+
+    def __getitem__(self, index):
+        return self._get_stages()[index]
+
+    def __add__(self, other):
+        return self._get_stages() + list(other)
+
+    def __radd__(self, other):
+        return list(other) + self._get_stages()
+
+    def __repr__(self):
+        return repr(self._get_stages())
+
+    def __contains__(self, item):
+        return item in self._get_stages()
+
+STAGE_OPTIONS = DynamicStageOptionsList()
 
 
 def get_deliverable_definitions(stage_label):

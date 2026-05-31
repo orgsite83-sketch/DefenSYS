@@ -5,10 +5,14 @@ from .services import STAGE_OPTIONS, definition_for
 
 class DeliverableUploadSerializer(serializers.Serializer):
     team_id = serializers.IntegerField()
-    stage_label = serializers.ChoiceField(choices=STAGE_OPTIONS)
+    stage_label = serializers.ChoiceField(choices=[])
     deliverable_id = serializers.CharField(max_length=20)
     file_name = serializers.CharField(max_length=255)
     file_size = serializers.CharField(max_length=40, required=False, allow_blank=True)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['stage_label'].choices = [(s, s) for s in STAGE_OPTIONS]
 
     def validate(self, attrs):
         attrs['deliverable_id'] = (attrs.get('deliverable_id') or '').strip()
@@ -22,8 +26,12 @@ class DeliverableUploadSerializer(serializers.Serializer):
 
 class DeliverableActionSerializer(serializers.Serializer):
     team_id = serializers.IntegerField()
-    stage_label = serializers.ChoiceField(choices=STAGE_OPTIONS)
+    stage_label = serializers.ChoiceField(choices=[])
     deliverable_id = serializers.CharField(max_length=20, required=False)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['stage_label'].choices = [(s, s) for s in STAGE_OPTIONS]
 
     def validate(self, attrs):
         deliverable_id = attrs.get('deliverable_id')
