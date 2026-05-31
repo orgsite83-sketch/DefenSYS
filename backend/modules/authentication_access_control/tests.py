@@ -404,3 +404,62 @@ class SystemAuditLogApiTests(APITestCase):
         response = self.client.get('/api/audit-logs/')
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_audit_log_api_filters_by_track_and_year_level(self):
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.pit_upload_3rd',
+            target_type='VaultEntry',
+            target_id='1',
+            new_values={'entry_type': 'pit', 'year_level': '3rd Year'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.pit_upload_2nd',
+            target_type='VaultEntry',
+            target_id='2',
+            new_values={'entry_type': 'pit', 'year_level': '2nd Year'},
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.capstone_upload',
+            target_type='VaultEntry',
+            target_id='3',
+            new_values={'entry_type': 'capstone', 'year_level': '3rd Year'},
+        )
+
+        # Filter by track='pit'
+        response = self.client.get('/api/audit-logs/', {'track': 'pit'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        actions = [log['action'] for log in response.data['audit_logs']]
+        self.assertIn('repository.pit_upload_3rd', actions)
+        self.assertIn('repository.pit_upload_2nd', actions)
+        self.assertNotIn('repository.capstone_upload', actions)
+
+        # Filter by track='capstone'
+        response = self.client.get('/api/audit-logs/', {'track': 'capstone'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        actions = [log['action'] for log in response.data['audit_logs']]
+        self.assertNotIn('repository.pit_upload_3rd', actions)
+        self.assertNotIn('repository.pit_upload_2nd', actions)
+        self.assertIn('repository.capstone_upload', actions)
+
+        # Filter by year_level='3rd Year'
+        response = self.client.get('/api/audit-logs/', {'year_level': '3rd Year'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        actions = [log['action'] for log in response.data['audit_logs']]
+        self.assertIn('repository.pit_upload_3rd', actions)
+        self.assertNotIn('repository.pit_upload_2nd', actions)
+        self.assertIn('repository.capstone_upload', actions)
+
+        # Filter by track='pit' and year_level='3rd Year'
+        response = self.client.get('/api/audit-logs/', {'track': 'pit', 'year_level': '3rd Year'})
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        actions = [log['action'] for log in response.data['audit_logs']]
+        self.assertIn('repository.pit_upload_3rd', actions)
+        self.assertNotIn('repository.pit_upload_2nd', actions)
+        self.assertNotIn('repository.capstone_upload', actions)
+

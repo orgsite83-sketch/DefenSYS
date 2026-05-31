@@ -33,6 +33,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   final _reportStartDateController = TextEditingController();
   final _reportEndDateController = TextEditingController();
   String _reportCategoryFilter = '';
+  String _selectedScope = '';
+  String _reportTrackFilter = '';
+  String _reportYearLevelFilter = '';
 
   @override
   void initState() {
@@ -133,8 +136,48 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     );
   }
 
+  void _onAcademicScopeChanged(String? value) {
+    if (value == null) return;
+    String track = '';
+    String yearLevel = '';
+    if (value == 'capstone') {
+      track = 'capstone';
+    } else if (value == 'pit_all') {
+      track = 'pit';
+    } else if (value == 'pit_1') {
+      track = 'pit';
+      yearLevel = '1st Year';
+    } else if (value == 'pit_2') {
+      track = 'pit';
+      yearLevel = '2nd Year';
+    } else if (value == 'pit_3') {
+      track = 'pit';
+      yearLevel = '3rd Year';
+    } else if (value == 'pit_4') {
+      track = 'pit';
+      yearLevel = '4th Year';
+    }
+    ref.read(systemAuditProvider.notifier).setTrack(track);
+    ref.read(systemAuditProvider.notifier).setYearLevel(yearLevel);
+  }
+
+  String _getCurrentAcademicScope(SystemAuditState state) {
+    if (state.track == 'capstone') return 'capstone';
+    if (state.track == 'pit') {
+      if (state.yearLevel == '1st Year') return 'pit_1';
+      if (state.yearLevel == '2nd Year') return 'pit_2';
+      if (state.yearLevel == '3rd Year') return 'pit_3';
+      if (state.yearLevel == '4th Year') return 'pit_4';
+      return 'pit_all';
+    }
+    return 'all';
+  }
+
   Widget _buildAuditRegisterTab(BuildContext context) {
     final state = ref.watch(systemAuditProvider);
+    final user = ref.watch(authProvider).user;
+    final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
     final selectedLog =
         state.selectedLog ?? (state.logs.isNotEmpty ? state.logs.first : null);
 
@@ -160,116 +203,170 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               children: [
                 Text('Audit Filters', style: DefensysUi.sectionTitle),
                 const SizedBox(height: 10),
-                Wrap(
-                  spacing: 10,
-                  runSpacing: 10,
-                  crossAxisAlignment: WrapCrossAlignment.center,
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _FilterDropdown(
-                      label: 'Category',
-                      value: state.category,
-                      options: _categoryOptions,
-                      onChanged: ref
-                          .read(systemAuditProvider.notifier)
-                          .setCategory,
-                    ),
-                    _FilterDropdown(
-                      label: 'Review Status',
-                      value: state.reviewStatus,
-                      options: state.options['review_statuses'],
-                      onChanged: ref
-                          .read(systemAuditProvider.notifier)
-                          .setReviewStatus,
-                    ),
-                    _FilterDropdown(
-                      label: 'Action',
-                      value: state.action,
-                      options: (state.options['actions'] as List?)
-                          ?.map(
-                            (item) => {'value': '$item', 'label': '$item'},
+                    // Row 1: Dropdown filters
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        if (isAdmin)
+                          SizedBox(
+                            width: 220,
+                            child: DropdownButtonFormField<String>(
+                              value: _getCurrentAcademicScope(state),
+                              isExpanded: true,
+                              decoration: const InputDecoration(
+                                labelText: 'Academic Scope',
+                                border: OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                              items: const [
+                                DropdownMenuItem(value: 'all', child: Text('All Academic Tracks')),
+                                DropdownMenuItem(value: 'capstone', child: Text('Capstone Project')),
+                                DropdownMenuItem(value: 'pit_all', child: Text('PIT (All Tracks)')),
+                                DropdownMenuItem(value: 'pit_1', child: Text('PIT (1st Year)')),
+                                DropdownMenuItem(value: 'pit_2', child: Text('PIT (2nd Year)')),
+                                DropdownMenuItem(value: 'pit_3', child: Text('PIT (3rd Year)')),
+                                DropdownMenuItem(value: 'pit_4', child: Text('PIT (4th Year)')),
+                              ],
+                              onChanged: _onAcademicScopeChanged,
+                            ),
                           )
-                          .toList(),
-                      onChanged: ref
-                          .read(systemAuditProvider.notifier)
-                          .setAction,
-                    ),
-                    SizedBox(
-                      width: 260,
-                      child: TextField(
-                        controller: _searchController,
-                        decoration: const InputDecoration(
-                          labelText: 'Search evidence',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                        else if (isPitLead)
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Text(
+                              'Scope: PIT (${user?['pit_lead_year'] ?? "N/A"})',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: DefensysUi.textDark,
+                              ),
+                            ),
+                          ),
+                        _FilterDropdown(
+                          label: 'Category',
+                          value: state.category,
+                          options: _categoryOptions,
+                          onChanged: ref
+                              .read(systemAuditProvider.notifier)
+                              .setCategory,
                         ),
-                        onChanged: ref
-                            .read(systemAuditProvider.notifier)
-                            .setSearch,
-                        onSubmitted: (_) =>
-                            ref.read(systemAuditProvider.notifier).fetch(),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _startDateController,
-                        decoration: const InputDecoration(
-                          labelText: 'Start date',
-                          hintText: 'YYYY-MM-DD',
-                          border: OutlineInputBorder(),
-                          isDense: true,
+                        _FilterDropdown(
+                          label: 'Review Status',
+                          value: state.reviewStatus,
+                          options: state.options['review_statuses'],
+                          onChanged: ref
+                              .read(systemAuditProvider.notifier)
+                              .setReviewStatus,
                         ),
-                        onChanged: ref
-                            .read(systemAuditProvider.notifier)
-                            .setStartDate,
-                        onSubmitted: (_) =>
-                            ref.read(systemAuditProvider.notifier).fetch(),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 160,
-                      child: TextField(
-                        controller: _endDateController,
-                        decoration: const InputDecoration(
-                          labelText: 'End date',
-                          hintText: 'YYYY-MM-DD',
-                          border: OutlineInputBorder(),
-                          isDense: true,
-                        ),
-                        onChanged: ref
-                            .read(systemAuditProvider.notifier)
-                            .setEndDate,
-                        onSubmitted: (_) =>
-                            ref.read(systemAuditProvider.notifier).fetch(),
-                      ),
-                    ),
-                    SizedBox(
-                      height: 44,
-                      child: FilledButton.icon(
-                        onPressed: () =>
-                            ref.read(systemAuditProvider.notifier).fetch(),
-                        icon: const Icon(Icons.search_rounded, size: 18),
-                        label: const Text('Apply'),
-                      ),
-                    ),
-                    // Quick-Export PDF button
-                    SizedBox(
-                      height: 44,
-                      child: OutlinedButton.icon(
-                        onPressed: state.isLoading ? null : () => _quickExportAuditPDF(state),
-                        icon: ref.watch(reportsProvider).isLoading
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                        _FilterDropdown(
+                          label: 'Action',
+                          value: state.action,
+                          options: (state.options['actions'] as List?)
+                              ?.map(
+                                (item) => {'value': '$item', 'label': '$item'},
                               )
-                            : const Icon(Icons.download_rounded, size: 18),
-                        label: const Text('Download PDF'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: DefensysUi.primaryMaroon,
-                          side: const BorderSide(color: DefensysUi.primaryMaroon),
+                              .toList(),
+                          onChanged: ref
+                              .read(systemAuditProvider.notifier)
+                              .setAction,
                         ),
-                      ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    // Row 2: Search, date fields and Action buttons
+                    Wrap(
+                      spacing: 10,
+                      runSpacing: 10,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        SizedBox(
+                          width: 260,
+                          child: TextField(
+                            controller: _searchController,
+                            decoration: const InputDecoration(
+                              labelText: 'Search evidence',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setSearch,
+                            onSubmitted: (_) =>
+                                ref.read(systemAuditProvider.notifier).fetch(),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 160,
+                          child: TextField(
+                            controller: _startDateController,
+                            decoration: const InputDecoration(
+                              labelText: 'Start date',
+                              hintText: 'YYYY-MM-DD',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setStartDate,
+                            onSubmitted: (_) =>
+                                ref.read(systemAuditProvider.notifier).fetch(),
+                          ),
+                        ),
+                        SizedBox(
+                          width: 160,
+                          child: TextField(
+                            controller: _endDateController,
+                            decoration: const InputDecoration(
+                              labelText: 'End date',
+                              hintText: 'YYYY-MM-DD',
+                              border: OutlineInputBorder(),
+                              isDense: true,
+                            ),
+                            onChanged: ref
+                                .read(systemAuditProvider.notifier)
+                                .setEndDate,
+                            onSubmitted: (_) =>
+                                ref.read(systemAuditProvider.notifier).fetch(),
+                          ),
+                        ),
+                        SizedBox(
+                          height: 44,
+                          child: FilledButton.icon(
+                            onPressed: () =>
+                                ref.read(systemAuditProvider.notifier).fetch(),
+                            icon: const Icon(Icons.search_rounded, size: 18),
+                            label: const Text('Apply'),
+                          ),
+                        ),
+                        // Quick-Export PDF button in the same row
+                        SizedBox(
+                          height: 44,
+                          child: OutlinedButton.icon(
+                            onPressed: state.isLoading ? null : () => _quickExportAuditPDF(state),
+                            icon: ref.watch(reportsProvider).isLoading
+                                ? const SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(strokeWidth: 2),
+                                  )
+                                : const Icon(Icons.download_rounded, size: 18),
+                            label: const Text('Download PDF'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: DefensysUi.primaryMaroon,
+                              side: const BorderSide(color: DefensysUi.primaryMaroon),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -312,6 +409,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       if (auditState.search.isNotEmpty) 'search': auditState.search,
       if (auditState.startDate.isNotEmpty) 'start_date': auditState.startDate,
       if (auditState.endDate.isNotEmpty) 'end_date': auditState.endDate,
+      if (auditState.track.isNotEmpty) 'track': auditState.track,
+      if (auditState.yearLevel.isNotEmpty) 'year_level': auditState.yearLevel,
     };
 
     final success = await ref.read(reportsProvider.notifier).downloadReport(
@@ -582,6 +681,23 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
             const SizedBox(height: 20),
           ],
 
+          if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') ...[
+            const Text('ACADEMIC SCOPE', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysUi.steelGrey)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _selectedScope,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Records (Capstone & PIT)')),
+                DropdownMenuItem(value: 'capstone', child: Text('Capstone Only')),
+                DropdownMenuItem(value: 'pit', child: Text('PIT Only')),
+              ],
+              onChanged: (val) => setState(() => _selectedScope = val ?? ''),
+            ),
+            const SizedBox(height: 20),
+          ],
+
           if (endpoint == 'team-roster') ...[
             const Text('ACADEMIC PROGRAM LEVEL', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysUi.steelGrey)),
             const SizedBox(height: 8),
@@ -632,6 +748,36 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           ],
 
           if (endpoint == 'audit-trail') ...[
+            const Text('ACADEMIC TRACK', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysUi.steelGrey)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _reportTrackFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Tracks')),
+                DropdownMenuItem(value: 'capstone', child: Text('Capstone')),
+                DropdownMenuItem(value: 'pit', child: Text('PIT')),
+              ],
+              onChanged: (val) => setState(() => _reportTrackFilter = val ?? ''),
+            ),
+            const SizedBox(height: 20),
+            const Text('YEAR LEVEL (FOR PIT)', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysUi.steelGrey)),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              value: _reportYearLevelFilter,
+              isExpanded: true,
+              decoration: const InputDecoration(border: OutlineInputBorder(), isDense: true),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Year Levels')),
+                DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
+                DropdownMenuItem(value: '2nd Year', child: Text('2nd Year')),
+                DropdownMenuItem(value: '3rd Year', child: Text('3rd Year')),
+                DropdownMenuItem(value: '4th Year', child: Text('4th Year')),
+              ],
+              onChanged: (val) => setState(() => _reportYearLevelFilter = val ?? ''),
+            ),
+            const SizedBox(height: 20),
             const Text('AUDIT PROCESS AREA', style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysUi.steelGrey)),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
@@ -751,6 +897,12 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       }
     }
 
+    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') {
+      if (_selectedScope.isNotEmpty) {
+        queryParams['scope'] = _selectedScope;
+      }
+    }
+
     if (endpoint == 'team-roster') {
       if (_selectedLevel.isNotEmpty) queryParams['level'] = _selectedLevel;
       if (_selectedYearLevel.isNotEmpty) queryParams['year_level'] = _selectedYearLevel;
@@ -762,6 +914,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
     if (endpoint == 'audit-trail') {
       if (_reportCategoryFilter.isNotEmpty) queryParams['category'] = _reportCategoryFilter;
+      if (_reportTrackFilter.isNotEmpty) queryParams['track'] = _reportTrackFilter;
+      if (_reportYearLevelFilter.isNotEmpty) queryParams['year_level'] = _reportYearLevelFilter;
       final start = _reportStartDateController.text.trim();
       final end = _reportEndDateController.text.trim();
       if (start.isNotEmpty) queryParams['start_date'] = start;

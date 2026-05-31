@@ -258,6 +258,8 @@ class AuditTrailReportView(APIView):
         search = request.query_params.get('search', '').strip()
         start_date = parse_date(request.query_params.get('start_date', '').strip())
         end_date = parse_date(request.query_params.get('end_date', '').strip())
+        track = request.query_params.get('track', '').strip().lower()
+        year_level = request.query_params.get('year_level', '').strip()
 
         filters_desc = {}
         if category:
@@ -280,6 +282,32 @@ class AuditTrailReportView(APIView):
         if end_date:
             queryset = queryset.filter(created_at__date__lte=end_date)
             filters_desc['End Date'] = end_date.strftime('%Y-%m-%d')
+        if track:
+            filters_desc['Academic Track'] = track.upper()
+            pit_marker = (
+                Q(old_values__entry_type='pit')
+                | Q(new_values__entry_type='pit')
+                | Q(old_values__scope='pit')
+                | Q(new_values__scope='pit')
+                | Q(old_values__track='pit')
+                | Q(new_values__track='pit')
+            )
+            if track == 'pit':
+                queryset = queryset.filter(pit_marker)
+            elif track == 'capstone':
+                pit_ids = queryset.filter(pit_marker).values_list('id', flat=True)
+                queryset = queryset.exclude(id__in=pit_ids)
+        if year_level:
+            filters_desc['Year Level'] = year_level
+            year_marker = (
+                Q(old_values__year_level=year_level)
+                | Q(new_values__year_level=year_level)
+                | Q(old_values__team_year_level=year_level)
+                | Q(new_values__team_year_level=year_level)
+                | Q(old_values__pit_year_level=year_level)
+                | Q(new_values__pit_year_level=year_level)
+            )
+            queryset = queryset.filter(year_marker)
         if search:
             queryset = queryset.filter(
                 Q(action__icontains=search)

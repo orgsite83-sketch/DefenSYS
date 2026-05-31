@@ -21,6 +21,8 @@ class SystemAuditState {
   final String search;
   final String startDate;
   final String endDate;
+  final String track;
+  final String yearLevel;
   final Map<String, dynamic>? selectedLog;
   final String? error;
 
@@ -35,6 +37,8 @@ class SystemAuditState {
     this.search = '',
     this.startDate = '',
     this.endDate = '',
+    this.track = '',
+    this.yearLevel = '',
     this.selectedLog,
     this.error,
   });
@@ -50,6 +54,8 @@ class SystemAuditState {
     String? search,
     String? startDate,
     String? endDate,
+    String? track,
+    String? yearLevel,
     Map<String, dynamic>? selectedLog,
     bool clearSelectedLog = false,
     String? error,
@@ -66,6 +72,8 @@ class SystemAuditState {
       search: search ?? this.search,
       startDate: startDate ?? this.startDate,
       endDate: endDate ?? this.endDate,
+      track: track ?? this.track,
+      yearLevel: yearLevel ?? this.yearLevel,
       selectedLog: clearSelectedLog ? null : selectedLog ?? this.selectedLog,
       error: clearError ? null : error ?? this.error,
     );
@@ -85,6 +93,8 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
       if (state.search.isNotEmpty) 'search': state.search,
       if (state.startDate.isNotEmpty) 'start_date': state.startDate,
       if (state.endDate.isNotEmpty) 'end_date': state.endDate,
+      if (state.track.isNotEmpty) 'track': state.track,
+      if (state.yearLevel.isNotEmpty) 'year_level': state.yearLevel,
     };
     final uri = Uri.parse('${ApiConfig.baseUrl}/audit-logs/').replace(
       queryParameters: params.isEmpty ? null : params,
@@ -119,6 +129,16 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
 
   void setAction(String value) {
     state = state.copyWith(action: value);
+    fetch();
+  }
+
+  void setTrack(String value) {
+    state = state.copyWith(track: value);
+    fetch();
+  }
+
+  void setYearLevel(String value) {
+    state = state.copyWith(yearLevel: value);
     fetch();
   }
 
