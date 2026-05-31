@@ -178,9 +178,27 @@ Flutter service workers cache aggressively. After deploying, tell users to **har
 
 ### Build APK
 
+#### For Production (connects to the online server `dev.defensys.site` over HTTPS):
+
+To specify or bump the version and build number at compile-time (e.g., bumping to version `1.0.1` and build `2`):
+
 ```powershell
 cd C:\Users\Admin\Desktop\DefenSYS\frontend
-flutter build apk --release
+flutter build apk --release `
+  --build-name=1.0.1 `
+  --build-number=2 `
+  --dart-define=DEFENSYS_API_HOST=dev.defensys.site `
+  --dart-define=DEFENSYS_API_PORT= `
+  --dart-define=DEFENSYS_API_SCHEME=https
+```
+
+*Note: Alternatively, you can edit the default version line `version: 1.0.0+1` in [pubspec.yaml](file:///c:/Users/Admin/Desktop/DefenSYS/frontend/pubspec.yaml) directly.*
+
+#### For Local Testing (connects to your local machine's Wi-Fi IP):
+
+```powershell
+cd C:\Users\Admin\Desktop\DefenSYS\frontend
+flutter build apk --release --dart-define=DEFENSYS_API_HOST=<YOUR_LOCAL_IP>
 ```
 
 Output: `build\app\outputs\flutter-apk\app-release.apk`
@@ -188,7 +206,11 @@ Output: `build\app\outputs\flutter-apk\app-release.apk`
 ### Build App Bundle (for Play Store)
 
 ```powershell
-flutter build appbundle --release
+cd C:\Users\Admin\Desktop\DefenSYS\frontend
+flutter build appbundle --release `
+  --dart-define=DEFENSYS_API_HOST=dev.defensys.site `
+  --dart-define=DEFENSYS_API_PORT= `
+  --dart-define=DEFENSYS_API_SCHEME=https
 ```
 
 Output: `build\app\outputs\bundle\release\app-release.aab`
