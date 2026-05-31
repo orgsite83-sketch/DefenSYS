@@ -1,4 +1,6 @@
+from django.core.exceptions import ValidationError
 from django.db import transaction
+
 from django.db.models import Q
 
 from academic_period_management.models import Semester
@@ -284,8 +286,24 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     definition = definition_for(stage_label, deliverable_id)
     if definition is None:
         raise ValueError('Deliverable does not exist for this stage.')
-    if definition['type'] == DeliverableSubmission.TYPE_VAULT and not vault_unlocked(team, stage_label):
-        raise PermissionError('Vault submissions are locked until this defense is done.')
+    if definition['type'] == DeliverableSubmission.TYPE_VAULT:
+        if not vault_unlocked(team, stage_label):
+            raise PermissionError('Vault submissions are locked until this defense is done.')
+        
+        # Check naming convention
+        from repository.audit.services import resolve_vault_file_template
+        from academic_period_management.models import Semester
+        semester_label = team.semester.label if team.semester_id else Semester.FIRST
+        suggested = resolve_vault_file_template(
+            definition.get('vault_file_template', ''),
+            team,
+            stage_label,
+            semester_label,
+            deliverable_label=definition['label'],
+        )
+        if suggested and file_name.strip().lower() != suggested.strip().lower():
+            raise ValidationError({'file_name': f"Filename must match the naming convention exactly. Expected: '{suggested}'"})
+
 
     defaults = {
         'label': definition['label'],

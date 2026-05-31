@@ -28,11 +28,14 @@ def capstone_visible_queryset():
         )
         .filter(
             deliverable_type=DeliverableSubmission.TYPE_VAULT,
-            deliverable_id__in=CAPSTONE_VISIBLE_IDS,
             team__level__icontains='Capstone',
+        )
+        .exclude(
+            deliverable_id__in=CAPSTONE_RESTRICTED_IDS,
         )
         .order_by('-uploaded_at', 'file_name')
     )
+
 
 
 def capstone_restricted_queryset():

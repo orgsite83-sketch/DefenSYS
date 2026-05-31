@@ -536,7 +536,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='approved_concept.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
 
             format='json',
 
@@ -570,7 +570,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='approved_concept.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
 
             format='json',
 
@@ -583,6 +583,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertEqual(unlocked.status_code, 200)
 
         self.assertEqual(DeliverableSubmission.objects.filter(deliverable_type='vault').count(), 1)
+
 
 
 
@@ -662,7 +663,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='approved_concept.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
 
             format='json',
 
@@ -780,6 +781,38 @@ class CapstoneDeliverablesApiTests(APITestCase):
             d41_payload['suggested_file_name'],
             '3rdYear.CAP301.CloudFileSync.ConceptProposal.D41ApprovedConceptPaper.2ndSemester.pdf'
         )
+
+    def test_vault_submission_enforces_naming_convention(self):
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date='2026-05-20',
+            start_time='09:00',
+            slot_duration=60,
+            room='Room 301',
+            status=DefenseSchedule.STATUS_DONE,
+            created_by=self.admin,
+        )
+        
+        # Test 1: Uploading a file with incorrect name should fail
+        response_fail = self.client.post(
+            '/api/repository/deliverables/upload/',
+            self.upload_payload(deliverable_id='D4.1', file_name='IncorrectFileName.pdf'),
+            format='json',
+        )
+        self.assertEqual(response_fail.status_code, 400)
+        self.assertIn('naming convention', response_fail.data['file_name'][0])
+
+        # Test 2: Uploading with correct suggested name (case-insensitive) should succeed
+        response_success = self.client.post(
+            '/api/repository/deliverables/upload/',
+            self.upload_payload(deliverable_id='D4.1', file_name='3RDYEAR.CAP301.CLOUDFILESYNC.2NDSEMESTER.pdf'),
+            format='json',
+        )
+        self.assertEqual(response_success.status_code, 200)
+
 
 
 

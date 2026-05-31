@@ -1113,11 +1113,22 @@ class _CapstoneDeliverablesScreenState
             ElevatedButton(
               onPressed: (selectedFileName != null && !isUploading)
                   ? () async {
+                      final suggestedName = item['suggested_file_name']?.toString() ?? '';
+                      if (item['type'] == 'vault' && suggestedName.isNotEmpty) {
+                        if (selectedFileName!.trim().toLowerCase() != suggestedName.trim().toLowerCase()) {
+                          setState(() {
+                            uploadError = "File name must match the naming convention exactly.\nExpected: '$suggestedName'";
+                          });
+                          return;
+                        }
+                      }
+
                       setState(() {
                         isUploading = true;
                         uploadProgress = 0.0;
                         uploadError = null;
                       });
+
 
                       try {
                         final client = ref.read(authenticatedHttpClientProvider);
