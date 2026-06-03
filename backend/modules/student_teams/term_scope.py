@@ -83,6 +83,17 @@ def team_is_editable(user, team, active=None):
             return False
         return normalize_year_level(team.year_level) == pit_year
 
+    if getattr(user, 'role', None) == 'faculty' and 'PIT' in (team.level or ''):
+        from user_management.models import PitInstructorAssignment
+
+        return PitInstructorAssignment.objects.filter(
+            faculty=user,
+            semester=team.semester,
+            year_level=normalize_year_level(team.year_level),
+            section=team.section,
+            is_active=True,
+        ).exists()
+
     return False
 
 

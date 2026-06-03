@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from defense.scheduler.models import DefenseSchedule
-from .models import FacultyRoleAssignment, GuestPanelistCode
+from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
 from .role_assignments import (
     ROLE_LABELS,
     compute_display_role,
@@ -56,6 +56,43 @@ class FacultyRoleAssignmentSerializer(serializers.ModelSerializer):
             return None
         full_name = f'{obj.changed_by.first_name} {obj.changed_by.last_name}'.strip()
         return full_name or obj.changed_by.username
+
+
+def user_display_name(user):
+    full_name = f'{user.first_name} {user.last_name}'.strip()
+    return full_name or user.username
+
+
+class PitInstructorAssignmentSerializer(serializers.ModelSerializer):
+    faculty_name = serializers.SerializerMethodField()
+    faculty_username = serializers.CharField(source='faculty.username', read_only=True)
+    assigned_by_name = serializers.SerializerMethodField()
+    semester_label = serializers.CharField(source='semester.display_name', read_only=True)
+
+    class Meta:
+        model = PitInstructorAssignment
+        fields = [
+            'id',
+            'faculty',
+            'faculty_username',
+            'faculty_name',
+            'semester',
+            'semester_label',
+            'year_level',
+            'section',
+            'assigned_by',
+            'assigned_by_name',
+            'is_active',
+            'created_at',
+            'updated_at',
+        ]
+        read_only_fields = ['assigned_by']
+
+    def get_faculty_name(self, obj):
+        return user_display_name(obj.faculty)
+
+    def get_assigned_by_name(self, obj):
+        return user_display_name(obj.assigned_by) if obj.assigned_by_id else None
 
 
 class ManagedUserSerializer(serializers.ModelSerializer):
@@ -176,6 +213,25 @@ class BulkUserRowSerializer(serializers.Serializer):
     email = serializers.EmailField(required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=[choice[0] for choice in User.ROLE_CHOICES], default='student')
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    section = serializers.CharField(required=False, allow_blank=True, max_length=80)
+
+
+class OfficialClassListStudentSerializer(serializers.Serializer):
+    id_number = serializers.CharField(max_length=150)
+    full_name = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    email = serializers.EmailField(required=False, allow_blank=True)
+    program = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    section = serializers.CharField(required=False, allow_blank=True, max_length=80)
+
+    def validate(self, attrs):
+        if not attrs.get('full_name') and not (attrs.get('first_name') or attrs.get('last_name')):
+            raise serializers.ValidationError({
+                'full_name': 'Full name or first/last name is required.',
+            })
+        return attrs
 
 
 class DefenseScheduleOptionSerializer(serializers.ModelSerializer):

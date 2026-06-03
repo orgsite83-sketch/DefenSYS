@@ -9,6 +9,7 @@ from user_management.academic_records.serializers import StudentOptionSerializer
 from .adviser_assignments import record_team_adviser_change
 from .team_levels import (
     infer_year_level_from_members,
+    infer_section_from_members,
     level_year as team_level_year,
     resolve_team_level,
     user_is_admin,
@@ -100,6 +101,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'project_title',
             'level',
             'year_level',
+            'section',
             'semester_id',
             'semester',
             'school_year',
@@ -191,6 +193,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         allow_blank=True,
     )
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    section = serializers.CharField(required=False, allow_blank=True, max_length=80)
     semester_id = serializers.IntegerField(required=False)
     leader_id = serializers.IntegerField()
     member_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1, max_length=4)
@@ -299,6 +302,15 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                     'member_ids': f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
                 })
             attrs['year_level'] = inferred
+            section, section_issues = infer_section_from_members(
+                member_ids,
+                semester,
+                required=False,
+            )
+            if section_issues:
+                raise serializers.ValidationError({'member_ids': section_issues})
+            if section:
+                attrs['section'] = section
 
         if user and (user_is_admin(user) or user_is_pit_lead_only(user)):
             try:
@@ -316,6 +328,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError({'level': 'This field is required.'})
 
         attrs['year_level'] = attrs.get('year_level') or team_level_year(attrs['level'])
+        attrs['section'] = ' '.join((attrs.get('section') or '').strip().split())
 
         if user_is_admin(user) and 'PIT' in attrs['level']:
             raise serializers.ValidationError({'level': 'Admins can only manage capstone teams.'})
@@ -340,6 +353,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             project_title=validated_data.get('project_title') or validated_data['name'],
             level=validated_data['level'],
             year_level=validated_data['year_level'],
+            section=validated_data.get('section', ''),
             semester=validated_data['semester'],
             leader=validated_data['leader'],
             adviser=validated_data.get('adviser'),
@@ -367,6 +381,7 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         instance.project_title = validated_data.get('project_title') or validated_data['name']
         instance.level = validated_data['level']
         instance.year_level = validated_data['year_level']
+        instance.section = validated_data.get('section', '')
         instance.semester = validated_data['semester']
         instance.leader = validated_data['leader']
         instance.adviser = validated_data.get('adviser')
@@ -427,6 +442,7 @@ class BulkTeamRowSerializer(serializers.Serializer):
     project_title = serializers.CharField(required=False, allow_blank=True, max_length=255)
     level = serializers.CharField(required=False, allow_blank=True, max_length=30)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
+    section = serializers.CharField(required=False, allow_blank=True, max_length=80)
     member_ids = serializers.ListField(child=serializers.CharField(), min_length=1, max_length=4)
     leader_id = serializers.CharField()
     adviser_id = serializers.CharField(required=False, allow_blank=True)

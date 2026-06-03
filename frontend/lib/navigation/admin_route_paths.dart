@@ -20,7 +20,8 @@ abstract final class AdminRoutes {
 
   static String teamDetail(int teamId) => '/admin/student-teams/$teamId';
 
-  static String gradeDetail(int gradeId) => '/admin/grade-center/grades/$gradeId';
+  static String gradeDetail(int gradeId) =>
+      '/admin/grade-center/grades/$gradeId';
 
   static String gradeEventTeams(
     String groupKey, {
@@ -28,11 +29,13 @@ abstract final class AdminRoutes {
     required String stageLabel,
     required String title,
   }) {
-    final params = Uri(queryParameters: {
-      'scope': scope,
-      'stageLabel': stageLabel,
-      'title': title,
-    });
+    final params = Uri(
+      queryParameters: {
+        'scope': scope,
+        'stageLabel': stageLabel,
+        'title': title,
+      },
+    );
     return '/admin/grade-center/events/$groupKey?${params.query}';
   }
 
@@ -109,7 +112,9 @@ abstract final class AdminRoutes {
 abstract final class FacultyRoutes {
   static const dashboard = '/faculty/dashboard';
   static const cohort = '/faculty/cohort';
+  static const pitStudentImport = '/faculty/pit-student-import';
   static const studentTeams = '/faculty/student-teams';
+  static const pitInstructors = '/faculty/pit-instructors';
   static const defenseScheduler = '/faculty/defense-scheduler';
   static const defenseBoard = '/faculty/defense-board';
   static const gradeCenter = '/faculty/grade-center';
@@ -126,7 +131,13 @@ abstract final class FacultyRoutes {
   static String? sectionForLocation(String location) {
     if (location.startsWith('/faculty/dashboard')) return 'dashboard';
     if (location.startsWith('/faculty/cohort')) return 'cohort';
+    if (location.startsWith('/faculty/pit-student-import')) {
+      return 'pit_student_import';
+    }
     if (location.startsWith('/faculty/student-teams')) return 'student_teams';
+    if (location.startsWith('/faculty/pit-instructors')) {
+      return 'pit_instructors';
+    }
     if (location.startsWith('/faculty/defense-scheduler')) {
       return 'defense_scheduler';
     }
@@ -154,7 +165,9 @@ abstract final class FacultyRoutes {
     return switch (section) {
       'dashboard' => dashboard,
       'cohort' => cohort,
+      'pit_student_import' => pitStudentImport,
       'student_teams' => studentTeams,
+      'pit_instructors' => pitInstructors,
       'defense_scheduler' => defenseScheduler,
       'defense_board' => defenseBoard,
       'grade_center' => gradeCenter,

@@ -42,6 +42,23 @@ class LoginApiTests(APITestCase):
             'http://localhost:5173',
         )
 
+    @override_settings(
+        DEBUG=False,
+        CORS_ALLOWED_ORIGINS=['https://dev.defensys.site'],
+    )
+    def test_configured_cors_origin_is_allowed_when_debug_false(self):
+        response = self.client.options(
+            '/api/login/',
+            HTTP_ORIGIN='https://dev.defensys.site',
+            HTTP_ACCESS_CONTROL_REQUEST_METHOD='POST',
+        )
+
+        self.assertEqual(response.status_code, 204)
+        self.assertEqual(
+            response.headers['Access-Control-Allow-Origin'],
+            'https://dev.defensys.site',
+        )
+
     def test_login_returns_user_profile_with_phase_one_role_flags(self):
         User.objects.create_user(
             username='faculty-1',

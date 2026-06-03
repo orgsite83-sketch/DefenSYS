@@ -42,6 +42,7 @@ class StudentTeam(models.Model):
     project_title = models.CharField(max_length=255)
     level = models.CharField(max_length=30, choices=LEVEL_CHOICES)
     year_level = models.CharField(max_length=20)
+    section = models.CharField(max_length=80, blank=True, default='')
     semester = models.ForeignKey(
         'academic_period_management.Semester',
         related_name='teams',

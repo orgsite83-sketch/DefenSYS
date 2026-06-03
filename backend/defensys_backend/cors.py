@@ -13,7 +13,7 @@ class LocalCorsMiddleware:
             response = self.get_response(request)
 
         origin = request.headers.get('Origin')
-        if settings.DEBUG and origin and _is_local_origin(origin):
+        if origin and _is_allowed_origin(origin):
             response['Access-Control-Allow-Origin'] = origin
             response['Access-Control-Allow-Credentials'] = 'true'
             response['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
@@ -28,6 +28,13 @@ class LocalCorsMiddleware:
                 response['Cache-Control'] = 'public, max-age=3600'
 
         return response
+
+
+def _is_allowed_origin(origin):
+    allowed_origins = set(getattr(settings, 'CORS_ALLOWED_ORIGINS', []))
+    if origin in allowed_origins:
+        return True
+    return bool(settings.DEBUG and _is_local_origin(origin))
 
 
 def _is_local_origin(origin):

@@ -1,3 +1,20 @@
+class PickedTabularFile {
+  final String name;
+  final String extension;
+  final String? text;
+  final List<int> bytes;
+
+  const PickedTabularFile({
+    required this.name,
+    required this.extension,
+    required this.bytes,
+    this.text,
+  });
+
+  bool get isCsv => extension == 'csv';
+  bool get isXlsx => extension == 'xlsx';
+}
+
 Future<void> downloadTextFile({
   required String filename,
   required String content,
@@ -5,6 +22,10 @@ Future<void> downloadTextFile({
 }) async {}
 
 Future<String?> pickCsvTextFile() async {
+  return null;
+}
+
+Future<PickedTabularFile?> pickTabularDataFile() async {
   return null;
 }
 

@@ -37,6 +37,11 @@ def _env_bool(name: str, default: bool = False) -> bool:
     return raw.strip().lower() in ('1', 'true', 'yes', 'on')
 
 
+def _env_list(name: str, default: str = '') -> list[str]:
+    raw = os.environ.get(name, default)
+    return [item.strip() for item in raw.split(',') if item.strip()]
+
+
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
@@ -50,11 +55,14 @@ if not SECRET_KEY:
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = _env_bool('DJANGO_DEBUG', default=True)
 
-_allowed = os.environ.get(
+ALLOWED_HOSTS = _env_list(
     'DJANGO_ALLOWED_HOSTS',
     'localhost,127.0.0.1',
 )
-ALLOWED_HOSTS = [h.strip() for h in _allowed.split(',') if h.strip()]
+
+# Optional production CORS allowlist for deployments where Flutter and API are
+# served from different origins. Same-origin nginx deployments do not need this.
+CORS_ALLOWED_ORIGINS = _env_list('DJANGO_CORS_ALLOWED_ORIGINS')
 
 # Application definition
 

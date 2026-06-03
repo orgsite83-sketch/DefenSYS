@@ -8,7 +8,7 @@ from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
 from user_management.academic_records.models import StudentAcademicRecord
 from student_teams.models import StudentTeam, TeamAdviserAssignment
-from .models import FacultyRoleAssignment, GuestPanelistCode
+from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
 
 
 User = get_user_model()
@@ -434,6 +434,239 @@ class UserManagementApiTests(APITestCase):
                 year_level=StudentAcademicRecord.FIRST_YEAR,
             ).exists()
         )
+
+    def test_pit_lead_student_import_is_scoped_to_assigned_year(self):
+        school_year = SchoolYear.objects.create(label='2027-2028')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-import',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.SECOND_YEAR,
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-lead/student-import/',
+            {
+                'student_context': {'section': 'BSIT 2A'},
+                'users': [
+                    {
+                        'id_number': '2027-0001',
+                        'first_name': 'Scoped',
+                        'last_name': 'Student',
+                        'email': 'scoped@example.com',
+                        'role': 'student',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        record = StudentAcademicRecord.objects.get(student__username='2027-0001')
+        self.assertEqual(record.semester, semester)
+        self.assertEqual(record.year_level, StudentAcademicRecord.SECOND_YEAR)
+        self.assertEqual(record.section, 'BSIT 2A')
+
+    def test_pit_lead_student_import_rejects_faculty_rows(self):
+        school_year = SchoolYear.objects.create(label='2028-2029')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-no-faculty',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.THIRD_YEAR,
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-lead/student-import/',
+            {
+                'users': [
+                    {
+                        'id_number': 'FAC-7777',
+                        'first_name': 'Faculty',
+                        'last_name': 'Blocked',
+                        'email': 'blocked@example.com',
+                        'role': 'faculty',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created_count'], 0)
+        self.assertEqual(response.data['error_count'], 1)
+        self.assertFalse(User.objects.filter(username='FAC-7777').exists())
+
+    def test_pit_lead_official_class_list_import_updates_records_and_assigns_instructor(self):
+        school_year = SchoolYear.objects.create(label='2030-2031')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-official',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.FIRST_YEAR,
+        )
+        instructor = User.objects.create_user(
+            username='jubilee-dagaang',
+            password='pass12345',
+            role='faculty',
+            first_name='Jubilee',
+            last_name='Daga-ang',
+        )
+        existing = User.objects.create_user(
+            username='2030-0002',
+            password='pass12345',
+            role='student',
+            first_name='Old',
+            last_name='Name',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-lead/official-class-list-import/',
+            {
+                'metadata': {
+                    'section': 'BSIT-1A',
+                    'year_level': StudentAcademicRecord.FIRST_YEAR,
+                    'faculty': 'Daga-ang, Jubilee S.',
+                },
+                'students': [
+                    {
+                        'id_number': '2030-0001',
+                        'full_name': 'ABAJAR, Mae Ann P',
+                        'email': 'mae@example.com',
+                    },
+                    {
+                        'id_number': existing.username,
+                        'full_name': 'ABAO, Mary Vhel Y',
+                        'email': 'mary@example.com',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(response.data['updated_count'], 1)
+        self.assertEqual(response.data['records_created_count'], 2)
+        self.assertEqual(response.data['warning_count'], 0)
+
+        first = User.objects.get(username='2030-0001')
+        self.assertTrue(first.check_password('2030-0001'))
+        self.assertEqual(first.first_name, 'Mae Ann')
+        self.assertEqual(first.last_name, 'ABAJAR')
+        existing.refresh_from_db()
+        self.assertEqual(existing.first_name, 'Mary Vhel')
+        self.assertEqual(existing.last_name, 'ABAO')
+        self.assertEqual(existing.email, 'mary@example.com')
+
+        self.assertEqual(
+            StudentAcademicRecord.objects.filter(
+                semester=semester,
+                year_level=StudentAcademicRecord.FIRST_YEAR,
+                section='BSIT-1A',
+            ).count(),
+            2,
+        )
+        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        self.assertEqual(assignment.semester, semester)
+        self.assertEqual(assignment.year_level, StudentAcademicRecord.FIRST_YEAR)
+        self.assertEqual(assignment.section, 'BSIT-1A')
+
+    def test_pit_lead_official_class_list_import_rejects_other_year(self):
+        school_year = SchoolYear.objects.create(label='2031-2032')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-official-scope',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.SECOND_YEAR,
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-lead/official-class-list-import/',
+            {
+                'metadata': {
+                    'section': 'BSIT-3A',
+                    'year_level': StudentAcademicRecord.THIRD_YEAR,
+                    'faculty': 'No Match',
+                },
+                'students': [
+                    {
+                        'id_number': '2031-0001',
+                        'full_name': 'Scoped Student',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertFalse(User.objects.filter(username='2031-0001').exists())
+
+    def test_pit_lead_can_assign_pit_instructor_for_own_year(self):
+        school_year = SchoolYear.objects.create(label='2029-2030')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-instructors',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.THIRD_YEAR,
+        )
+        instructor = User.objects.create_user(
+            username='pit-instructor',
+            password='pass12345',
+            role='faculty',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-instructors/',
+            {
+                'faculty_id': instructor.id,
+                'year_level': StudentAcademicRecord.FOURTH_YEAR,
+                'section': 'BSIT 3A',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        self.assertEqual(assignment.semester, semester)
+        self.assertEqual(assignment.year_level, StudentAcademicRecord.THIRD_YEAR)
+        self.assertEqual(assignment.section, 'BSIT 3A')
 
     def test_admin_cannot_delete_self(self):
         response = self.client.delete(f'/api/users/{self.admin.id}/')

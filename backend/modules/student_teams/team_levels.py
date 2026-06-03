@@ -84,6 +84,28 @@ def _year_levels_for_students(member_ids, semester):
     return years
 
 
+def _sections_for_students(member_ids, semester):
+    if not member_ids:
+        return []
+
+    active = _active_semester(semester)
+    if active is None:
+        return []
+
+    sections = []
+    for student_id in member_ids:
+        record = (
+            StudentAcademicRecord.objects.filter(student_id=student_id, semester=active)
+            .order_by('-created_at', '-id')
+            .first()
+        )
+        if record and record.section:
+            section = ' '.join(record.section.strip().split())
+            if section:
+                sections.append(section)
+    return sections
+
+
 def infer_year_level_from_members(member_ids, semester=None, *, leader_id=None):
     """
     Infer capstone cohort year from member academic records on the active semester.
@@ -109,6 +131,27 @@ def infer_year_level_from_members(member_ids, semester=None, *, leader_id=None):
         leader_years = _year_levels_for_students([leader_id], semester)
         if leader_years:
             return leader_years[0], []
+
+    return unique[0], []
+
+
+def infer_section_from_members(member_ids, semester=None, *, required=False):
+    member_ids = [int(item) for item in (member_ids or []) if item]
+    if not member_ids:
+        return '', []
+
+    sections = _sections_for_students(member_ids, semester)
+    if not sections:
+        if required:
+            return '', ['Team members do not have a section in their academic records.']
+        return '', []
+
+    unique = sorted(set(sections))
+    if len(unique) > 1:
+        return '', [
+            'Team members belong to different sections '
+            f'({", ".join(unique)}). Use students from the same section.'
+        ]
 
     return unique[0], []
 
@@ -208,6 +251,15 @@ def prepare_bulk_row(row, user, *, member_user_ids=None, leader_user_id=None, se
                     f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
                 ]
             data['year_level'] = inferred
+            section, section_issues = infer_section_from_members(
+                member_user_ids,
+                semester,
+                required=False,
+            )
+            if section_issues:
+                return None, section_issues
+            if section:
+                data['section'] = section
         elif explicit_year:
             data['year_level'] = explicit_year
         else:

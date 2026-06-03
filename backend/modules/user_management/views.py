@@ -1,4 +1,7 @@
+import re
+
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -18,8 +21,8 @@ from authentication_access_control.guest_tokens import (
     guest_user_payload,
 )
 from authentication_access_control.models import SystemAuditLog
-from .models import FacultyRoleAssignment, GuestPanelistCode
-from .permissions import IsSystemAdmin
+from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
+from .permissions import IsPitLead, IsPitLeadOrAdmin, IsSystemAdmin
 from student_teams.models import TeamAdviserAssignment
 from student_teams.serializers import TeamAdviserAssignmentSerializer
 
@@ -30,6 +33,8 @@ from .serializers import (
     GuestPanelistCodeCreateSerializer,
     GuestPanelistCodeSerializer,
     ManagedUserSerializer,
+    OfficialClassListStudentSerializer,
+    PitInstructorAssignmentSerializer,
 )
 
 
@@ -204,8 +209,184 @@ class UserRoleAssignmentHistoryView(APIView):
         })
 
 
-class BulkImportUsersView(APIView):
-    permission_classes = [IsSystemAdmin]
+def _active_semester():
+    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+
+
+def _is_admin(user):
+    return bool(user and (getattr(user, 'role', None) == 'admin' or user.is_superuser))
+
+
+def _pit_instructor_scope_for(user, requested_year=''):
+    if _is_admin(user):
+        return (requested_year or '').strip()
+    return (getattr(user, 'pit_lead_year', None) or '').strip()
+
+
+def _clean_spaces(value):
+    return ' '.join((value or '').strip().split())
+
+
+def _split_official_full_name(full_name):
+    full_name = _clean_spaces(full_name)
+    if not full_name:
+        return '', ''
+
+    if ',' in full_name:
+        last, rest = full_name.split(',', 1)
+        parts = [part for part in _clean_spaces(rest).split(' ') if part]
+        first = ' '.join(part for part in parts if len(part.rstrip('.')) > 1)
+        return first or _clean_spaces(rest), _clean_spaces(last)
+
+    parts = full_name.split(' ')
+    if len(parts) == 1:
+        return parts[0], ''
+    return ' '.join(parts[:-1]), parts[-1]
+
+
+def _normalize_person_name(value):
+    value = (value or '').lower()
+    value = re.sub(r'\b(prof|professor|engr|eng|dr|mr|mrs|ms)\.?\b', ' ', value)
+    value = re.sub(r'[^a-z0-9]+', ' ', value)
+    return _clean_spaces(value)
+
+
+def _normalize_year_level(value):
+    value = _clean_spaces(value)
+    normalized = value.lower()
+    if '1' in normalized:
+        return StudentAcademicRecord.FIRST_YEAR
+    if '2' in normalized:
+        return StudentAcademicRecord.SECOND_YEAR
+    if '3' in normalized:
+        return StudentAcademicRecord.THIRD_YEAR
+    if '4' in normalized:
+        return StudentAcademicRecord.FOURTH_YEAR
+    return value
+
+
+def _faculty_match_keys(user):
+    first = _normalize_person_name(user.first_name)
+    last = _normalize_person_name(user.last_name)
+    username = _normalize_person_name(user.username)
+    email = _normalize_person_name(user.email.split('@')[0] if user.email else '')
+    keys = {key for key in [username, email] if key}
+    if first and last:
+        keys.add(f'{first} {last}')
+        keys.add(f'{last} {first}')
+    elif first or last:
+        keys.add(first or last)
+    return keys
+
+
+def _match_faculty_by_name(faculty_name):
+    normalized = _normalize_person_name(faculty_name)
+    if not normalized:
+        return None, 'missing'
+
+    matches = []
+    for faculty in User.objects.filter(role__in=['faculty', 'admin'], is_active=True):
+        for key in _faculty_match_keys(faculty):
+            if normalized == key or normalized.startswith(f'{key} ') or key.startswith(f'{normalized} '):
+                matches.append(faculty)
+                break
+
+    unique = {faculty.pk: faculty for faculty in matches}
+    if len(unique) == 1:
+        return next(iter(unique.values())), 'matched'
+    if len(unique) > 1:
+        return None, 'ambiguous'
+    return None, 'not_found'
+
+
+class PitInstructorAssignmentView(APIView):
+    permission_classes = [IsPitLeadOrAdmin]
+
+    def get(self, request):
+        active = _active_semester()
+        year_level = _pit_instructor_scope_for(
+            request.user,
+            request.query_params.get('year_level', ''),
+        )
+        assignments = PitInstructorAssignment.objects.select_related(
+            'faculty',
+            'semester',
+            'semester__school_year',
+            'assigned_by',
+        )
+        if active:
+            assignments = assignments.filter(semester=active)
+        if year_level:
+            assignments = assignments.filter(year_level=year_level)
+
+        faculty = (
+            User.objects.filter(role__in=['faculty', 'admin'], is_active=True)
+            .order_by('last_name', 'first_name', 'username')
+        )
+
+        return Response({
+            'assignments': PitInstructorAssignmentSerializer(assignments, many=True).data,
+            'faculty': ManagedUserSerializer(faculty, many=True, context={'request': request}).data,
+            'active_semester': active.display_name if active else None,
+            'year_level': year_level,
+        })
+
+    def post(self, request):
+        active = _active_semester()
+        if active is None:
+            return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        year_level = _pit_instructor_scope_for(request.user, request.data.get('year_level', ''))
+        section = ' '.join((request.data.get('section') or '').strip().split())
+        faculty_id = request.data.get('faculty_id') or request.data.get('faculty')
+
+        if not year_level:
+            return Response({'year_level': ['PIT Lead year level is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not section:
+            return Response({'section': ['Section is required.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        faculty = User.objects.filter(pk=faculty_id, role__in=['faculty', 'admin'], is_active=True).first()
+        if faculty is None:
+            return Response({'faculty_id': ['Select an active faculty user.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        assignment, _created = PitInstructorAssignment.objects.update_or_create(
+            faculty=faculty,
+            semester=active,
+            year_level=year_level,
+            section=section,
+            defaults={
+                'assigned_by': request.user,
+                'is_active': True,
+            },
+        )
+        return Response(
+            {'assignment': PitInstructorAssignmentSerializer(assignment).data},
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class PitInstructorAssignmentDetailView(APIView):
+    permission_classes = [IsPitLeadOrAdmin]
+
+    def patch(self, request, assignment_id):
+        assignment = get_object_or_404(PitInstructorAssignment, pk=assignment_id)
+        if not _is_admin(request.user):
+            pit_year = (getattr(request.user, 'pit_lead_year', None) or '').strip()
+            if assignment.year_level != pit_year:
+                return Response({'detail': 'This assignment is outside your PIT scope.'}, status=status.HTTP_403_FORBIDDEN)
+
+        if 'is_active' in request.data:
+            assignment.is_active = request.data.get('is_active') is True
+        if _is_admin(request.user) and request.data.get('section') is not None:
+            assignment.section = request.data.get('section')
+        assignment.assigned_by = request.user
+        assignment.save()
+        return Response({'assignment': PitInstructorAssignmentSerializer(assignment).data})
+
+
+class BulkImportUsersMixin:
+    force_student_only = False
+    force_pit_lead_context = False
 
     def post(self, request):
         rows = request.data.get('users', [])
@@ -213,8 +394,17 @@ class BulkImportUsersView(APIView):
             return Response({'detail': 'users must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
         student_context = request.data.get('student_context') or {}
-        context_semester = self._resolve_context_semester(student_context)
-        context_year_level = (student_context.get('year_level') or '').strip()
+        if self.force_pit_lead_context:
+            context_semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
+            context_year_level = (getattr(request.user, 'pit_lead_year', None) or '').strip()
+            if context_semester is None:
+                return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+            if not context_year_level:
+                return Response({'detail': 'Your PIT Lead account has no assigned year level.'}, status=status.HTTP_400_BAD_REQUEST)
+        else:
+            context_semester = self._resolve_context_semester(student_context)
+            context_year_level = (student_context.get('year_level') or '').strip()
+        context_section = ' '.join((student_context.get('section') or '').strip().split())
 
         created = []
         records_created = []
@@ -229,6 +419,14 @@ class BulkImportUsersView(APIView):
 
             data = serializer.validated_data
             username = data['id_number'].strip()
+            role = data.get('role', 'student')
+            if self.force_student_only and role != 'student':
+                errors.append({
+                    'row': index,
+                    'id_number': username,
+                    'errors': {'role': ['PIT Leads can import student users only.']},
+                })
+                continue
             if User.objects.filter(username=username).exists():
                 skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                 continue
@@ -239,15 +437,29 @@ class BulkImportUsersView(APIView):
                 first_name=data.get('first_name', ''),
                 last_name=data.get('last_name', ''),
                 email=data.get('email', ''),
-                role=data.get('role', 'student'),
+                role='student' if self.force_student_only else role,
             )
             created.append(user)
             year_level = (data.get('year_level') or context_year_level or '').strip()
+            if self.force_pit_lead_context:
+                row_year = (data.get('year_level') or '').strip()
+                if row_year and row_year != context_year_level:
+                    errors.append({
+                        'row': index,
+                        'id_number': username,
+                        'errors': {'year_level': [f'PIT Lead import is limited to {context_year_level}.']},
+                    })
+                    user.delete()
+                    created.pop()
+                    continue
+                year_level = context_year_level
+            section = ' '.join((data.get('section') or context_section or '').strip().split())
             if user.role == 'student' and context_semester is not None and year_level:
                 records_created.append(StudentAcademicRecord.objects.create(
                     student=user,
                     semester=context_semester,
                     year_level=year_level,
+                    section=section,
                 ))
 
         return Response({
@@ -273,6 +485,176 @@ class BulkImportUsersView(APIView):
             return Semester.objects.select_related('school_year').filter(is_active=True).first()
 
         return None
+
+
+class BulkImportUsersView(BulkImportUsersMixin, APIView):
+    permission_classes = [IsSystemAdmin]
+
+
+class PitLeadStudentImportView(BulkImportUsersMixin, APIView):
+    permission_classes = [IsPitLead]
+    force_student_only = True
+    force_pit_lead_context = True
+
+
+class PitLeadOfficialClassListImportView(APIView):
+    permission_classes = [IsPitLead]
+
+    def post(self, request):
+        active = _active_semester()
+        if active is None:
+            return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pit_year = _normalize_year_level(getattr(request.user, 'pit_lead_year', None))
+        if not pit_year:
+            return Response({'detail': 'Your PIT Lead account has no assigned year level.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        metadata = request.data.get('metadata') or {}
+        if not isinstance(metadata, dict):
+            return Response({'metadata': ['metadata must be an object.']}, status=status.HTTP_400_BAD_REQUEST)
+
+        section = _clean_spaces(
+            metadata.get('section')
+            or metadata.get('class_section')
+            or request.data.get('section')
+        )
+        imported_year = _normalize_year_level(metadata.get('year_level') or request.data.get('year_level') or pit_year)
+        faculty_name = _clean_spaces(metadata.get('faculty') or metadata.get('faculty_name'))
+        rows = request.data.get('students') or request.data.get('users') or []
+
+        if not isinstance(rows, list):
+            return Response({'students': ['students must be a list.']}, status=status.HTTP_400_BAD_REQUEST)
+        if not section:
+            return Response({'section': ['Class section is required.']}, status=status.HTTP_400_BAD_REQUEST)
+        if imported_year and imported_year != pit_year:
+            return Response(
+                {'year_level': [f'PIT Lead import is limited to {pit_year}.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        created = []
+        updated = []
+        records_created = 0
+        records_updated = 0
+        errors = []
+
+        with transaction.atomic():
+            for index, row in enumerate(rows, start=1):
+                serializer = OfficialClassListStudentSerializer(data=row)
+                if not serializer.is_valid():
+                    errors.append({'row': index, 'errors': serializer.errors})
+                    continue
+
+                data = serializer.validated_data
+                username = _clean_spaces(data['id_number'])
+                first_name = _clean_spaces(data.get('first_name'))
+                last_name = _clean_spaces(data.get('last_name'))
+                if not (first_name or last_name):
+                    first_name, last_name = _split_official_full_name(data.get('full_name'))
+                row_section = _clean_spaces(data.get('section') or section)
+                row_year = _normalize_year_level(data.get('year_level') or pit_year)
+
+                if row_year != pit_year:
+                    errors.append({
+                        'row': index,
+                        'id_number': username,
+                        'errors': {'year_level': [f'PIT Lead import is limited to {pit_year}.']},
+                    })
+                    continue
+
+                user, was_created = User.objects.get_or_create(
+                    username=username,
+                    defaults={
+                        'first_name': first_name,
+                        'last_name': last_name,
+                        'email': data.get('email', ''),
+                        'role': 'student',
+                    },
+                )
+                if not was_created and user.role != 'student':
+                    errors.append({
+                        'row': index,
+                        'id_number': username,
+                        'errors': {'id_number': ['Existing account is not a student.']},
+                    })
+                    continue
+                if was_created:
+                    user.set_password(username)
+                    user.save(update_fields=['password'])
+
+                changed_fields = []
+                for field, value in {
+                    'first_name': first_name,
+                    'last_name': last_name,
+                    'email': data.get('email', ''),
+                }.items():
+                    if value and getattr(user, field) != value:
+                        setattr(user, field, value)
+                        changed_fields.append(field)
+                if changed_fields:
+                    user.save(update_fields=changed_fields)
+
+                record, record_created = StudentAcademicRecord.objects.update_or_create(
+                    student=user,
+                    semester=active,
+                    defaults={
+                        'year_level': pit_year,
+                        'section': row_section,
+                    },
+                )
+                if was_created:
+                    created.append(user)
+                else:
+                    updated.append(user)
+                if record_created:
+                    records_created += 1
+                else:
+                    records_updated += 1
+
+        warnings = []
+        instructor_assignment = None
+        faculty_match_status = None
+        if faculty_name:
+            faculty, faculty_match_status = _match_faculty_by_name(faculty_name)
+            if faculty is not None:
+                instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
+                    faculty=faculty,
+                    semester=active,
+                    year_level=pit_year,
+                    section=section,
+                    defaults={
+                        'assigned_by': request.user,
+                        'is_active': True,
+                    },
+                )
+            elif faculty_match_status == 'ambiguous':
+                warnings.append('Faculty name matched multiple accounts. Assign PIT Instructor manually.')
+            else:
+                warnings.append('Faculty could not be matched. Assign PIT Instructor manually.')
+        else:
+            warnings.append('No faculty name found. Assign PIT Instructor manually if needed.')
+
+        return Response({
+            'created': ManagedUserSerializer(created, many=True).data,
+            'created_count': len(created),
+            'updated_count': len(updated),
+            'records_created_count': records_created,
+            'records_updated_count': records_updated,
+            'errors': errors,
+            'error_count': len(errors),
+            'warnings': warnings,
+            'warning_count': len(warnings),
+            'faculty_match_status': faculty_match_status,
+            'instructor_assignment': (
+                PitInstructorAssignmentSerializer(instructor_assignment).data
+                if instructor_assignment is not None
+                else None
+            ),
+            'section': section,
+            'year_level': pit_year,
+            'active_semester': active.display_name,
+            'counts': user_counts(),
+        }, status=status.HTTP_201_CREATED if created or records_created else status.HTTP_200_OK)
 
 
 class GuestPanelistCodeListCreateView(APIView):

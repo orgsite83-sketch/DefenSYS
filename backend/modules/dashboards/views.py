@@ -32,6 +32,7 @@ from repository.audit.services import (
     repository_pending_count,
 )
 from grading.rubrics.models import Rubric
+from user_management.models import PitInstructorAssignment
 from user_management.academic_records.models import StudentAcademicRecord
 from student_teams.models import StudentTeam, TeamMembership
 from student_teams.term_scope import (
@@ -64,10 +65,15 @@ def _user_payload(user):
 
 
 def _faculty_roles(user):
+    is_pit_instructor = PitInstructorAssignment.objects.filter(
+        faculty=user,
+        is_active=True,
+    ).exists()
     return {
         'panelist': user.is_panelist,
         'pit_lead': user.is_pit_lead,
         'pit_lead_year': user.pit_lead_year,
+        'pit_instructor': is_pit_instructor,
         'adviser': user.is_adviser,
         'repo_assistant': user.is_repo_assistant,
         'repo_assistant_year': getattr(user, 'repo_assistant_year', '') or '',
@@ -84,6 +90,8 @@ def _active_role_labels(user):
         if user.pit_lead_year:
             label = f'{label}: {user.pit_lead_year}'
         labels.append(label)
+    if PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
+        labels.append('PIT Instructor')
     if user.is_adviser:
         labels.append('Project Adviser')
     if user.is_repo_assistant:
@@ -115,6 +123,7 @@ def _team_payload(team):
         'projectTitle': team.project_title,
         'level': team.level,
         'yearLevel': team.year_level,
+        'section': team.section,
         'semester': team.semester.label,
         'schoolYear': team.semester.school_year.label,
         'status': team.status,
@@ -180,13 +189,14 @@ def _pit_team_membership_by_student(pit_year, active_semester, *, historical=Fal
     return by_student
 
 
-def _pit_cohort_student_payload(student, membership, *, is_historical=False):
+def _pit_cohort_student_payload(student, membership, *, section='', is_historical=False):
     on_team = membership is not None
     return {
         'id': student.id,
         'username': student.username,
         'name': _display_name(student),
         'email': student.email,
+        'section': section,
         'team_status': 'on_team' if on_team else 'unassigned',
         'team_id': membership['team_id'] if on_team else None,
         'team_name': membership['team_name'] if on_team else None,
@@ -205,6 +215,18 @@ def _cohort_rows_for_scope(user, pit_year, active_semester, *, historical=False,
         pit_lead_year=pit_year,
         historical=historical,
     )
+    records = StudentAcademicRecord.objects.filter(
+        student_id__in=student_ids,
+        year_level=pit_year,
+    )
+    if historical:
+        records = records.exclude(semester_id=active_semester.id)
+    else:
+        records = records.filter(semester_id=active_semester.id)
+    section_by_student = {
+        record['student_id']: record['section']
+        for record in records.order_by('-semester_id', '-id').values('student_id', 'section')
+    }
     students = User.objects.filter(
         pk__in=student_ids,
         role='student',
@@ -228,7 +250,12 @@ def _cohort_rows_for_scope(user, pit_year, active_semester, *, historical=False,
     rows = []
     for student in students:
         membership = membership_by_student.get(student.id)
-        rows.append(_pit_cohort_student_payload(student, membership, is_historical=historical))
+        rows.append(_pit_cohort_student_payload(
+            student,
+            membership,
+            section=section_by_student.get(student.id, ''),
+            is_historical=historical,
+        ))
 
     counts = {
         'all': len(rows),

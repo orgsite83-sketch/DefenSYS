@@ -4,6 +4,7 @@ from rest_framework.test import APITestCase
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage
 from user_management.academic_records.models import StudentAcademicRecord
+from user_management.models import PitInstructorAssignment
 from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, TeamStageProgress
 from .services import mark_stage_ready
 from .weekly_progress.models import WeeklyProgressReport
@@ -807,6 +808,46 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(team.level, StudentTeam.LEVEL_3_PIT)
         self.assertEqual(team.year_level, '3rd Year')
         self.assertIsNone(team.adviser_id)
+
+    def test_pit_instructor_sees_only_assigned_section_pit_teams(self):
+        instructor = User.objects.create_user(
+            username='pit-instructor-3a',
+            password='pass12345',
+            role='faculty',
+            first_name='Ivy',
+            last_name='Instructor',
+        )
+        PitInstructorAssignment.objects.create(
+            faculty=instructor,
+            semester=self.first_semester,
+            year_level='3rd Year',
+            section='BSIT 3A',
+            assigned_by=self.admin,
+        )
+        team_a = StudentTeam.objects.create(
+            name='Team Section A',
+            project_title='Section A',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            section='BSIT 3A',
+            semester=self.first_semester,
+            leader=self.student_1,
+        )
+        StudentTeam.objects.create(
+            name='Team Section B',
+            project_title='Section B',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            section='BSIT 3B',
+            semester=self.first_semester,
+            leader=self.student_2,
+        )
+        self.client.force_authenticate(user=instructor)
+
+        response = self.client.get('/api/teams/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([team['id'] for team in response.data['teams']], [team_a.id])
 
     def test_pit_bulk_import_ignores_adviser_column(self):
         pit_lead = User.objects.create_user(

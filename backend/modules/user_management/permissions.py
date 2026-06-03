@@ -77,6 +77,24 @@ class IsPitLead(BasePermission):
         )
 
 
+class IsPitLeadOrAdmin(BasePermission):
+    message = 'Only administrators and PIT Leads can access this resource.'
+
+    def has_permission(self, request, view):
+        user = _authenticated_user(request)
+        return bool(
+            user
+            and (
+                getattr(user, 'role', None) == 'admin'
+                or user.is_superuser
+                or (
+                    getattr(user, 'is_pit_lead', False)
+                    and bool((getattr(user, 'pit_lead_year', None) or '').strip())
+                )
+            )
+        )
+
+
 class CanManageTeams(BasePermission):
     """
     Permission class that allows system administrators, PIT Leads, and Uploaders
@@ -84,7 +102,7 @@ class CanManageTeams(BasePermission):
     - Admins and PIT Leads: Full access (read/write)
     - Uploaders: Read-only access (for document uploads)
     """
-    message = 'Only administrators, PIT Leads, and uploaders can access teams.'
+    message = 'Only administrators, PIT Leads, PIT Instructors, and uploaders can access teams.'
 
     def has_permission(self, request, view):
         user = request.user
@@ -98,6 +116,13 @@ class CanManageTeams(BasePermission):
         # Allow PIT Leads (full access)
         if getattr(user, 'is_pit_lead', False):
             return True
+
+        # Allow PIT Instructors to read/update assigned-section teams.
+        if request.method in ('GET', 'PATCH', 'DELETE'):
+            from user_management.models import PitInstructorAssignment
+
+            if PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
+                return True
         
         # Allow uploaders (read-only access for GET requests)
         if getattr(user, 'is_uploader', False) and request.method == 'GET':

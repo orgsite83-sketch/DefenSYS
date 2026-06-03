@@ -27,6 +27,30 @@ def _pit_year(user):
     return (getattr(user, 'pit_lead_year', None) or '').strip()
 
 
+def pit_instructor_section_filters(user):
+    from user_management.models import PitInstructorAssignment
+
+    if not user or not getattr(user, 'is_authenticated', False):
+        return Q(pk__in=[])
+
+    assignments = PitInstructorAssignment.objects.filter(
+        faculty=user,
+        is_active=True,
+    ).values_list('semester_id', 'year_level', 'section')
+
+    query = Q(pk__in=[])
+    for semester_id, year_level, section in assignments:
+        if not section:
+            continue
+        query |= Q(
+            semester_id=semester_id,
+            level__icontains='PIT',
+            year_level=year_level,
+            section=section,
+        )
+    return query
+
+
 def can_review_audit_logs(user):
     return is_admin_user(user) or (is_pit_lead_only(user) and bool(_pit_year(user)))
 
@@ -51,7 +75,7 @@ def visible_teams_for(user):
     if getattr(user, 'is_uploader', False):
         return base
     if getattr(user, 'role', None) == 'faculty':
-        return base.filter(adviser=user)
+        return base.filter(Q(adviser=user) | pit_instructor_section_filters(user)).distinct()
     if getattr(user, 'role', None) == 'student':
         return base.filter(Q(leader=user) | Q(memberships__student=user)).distinct()
     return base.none()
@@ -101,7 +125,9 @@ def visible_schedules_for(user):
         return base
     if getattr(user, 'role', None) == 'faculty':
         return base.filter(
-            Q(team__adviser=user) | Q(panel_assignments__panelist=user)
+            Q(team__adviser=user)
+            | Q(panel_assignments__panelist=user)
+            | Q(team__in=visible_teams_for(user))
         ).distinct()
     if getattr(user, 'role', None) == 'student':
         return base.filter(
@@ -158,7 +184,9 @@ def grade_records_for(user):
         )
     if getattr(user, 'role', None) == 'faculty':
         return base.filter(
-            Q(team__adviser=user) | Q(schedule__panel_assignments__panelist=user)
+            Q(team__adviser=user)
+            | Q(schedule__panel_assignments__panelist=user)
+            | Q(team__in=visible_teams_for(user))
         ).distinct()
     if getattr(user, 'role', None) == 'student':
         return base.filter(

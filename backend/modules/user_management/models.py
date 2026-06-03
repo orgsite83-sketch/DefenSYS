@@ -100,4 +100,59 @@ class FacultyRoleAssignment(models.Model):
         return f'{self.user_id} {self.role_key} {self.action}'
 
 
+class PitInstructorAssignment(models.Model):
+    faculty = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='pit_instructor_assignments',
+        on_delete=models.CASCADE,
+    )
+    semester = models.ForeignKey(
+        'academic_period_management.Semester',
+        related_name='pit_instructor_assignments',
+        on_delete=models.CASCADE,
+    )
+    year_level = models.CharField(max_length=50)
+    section = models.CharField(max_length=80)
+    assigned_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='pit_instructor_assignments_made',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['year_level', 'section', 'faculty__last_name', 'faculty__first_name']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['faculty', 'semester', 'year_level', 'section'],
+                name='unique_pit_instructor_assignment',
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=['semester', 'year_level', 'section', 'is_active'],
+                name='pit_instr_scope_idx',
+            ),
+        ]
+
+    def clean(self):
+        if self.faculty_id and getattr(self.faculty, 'role', None) not in ('faculty', 'admin'):
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError({'faculty': 'PIT instructor must be a faculty or admin user.'})
+
+    def save(self, *args, **kwargs):
+        self.year_level = (self.year_level or '').strip()
+        self.section = ' '.join((self.section or '').strip().split())
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.faculty_id} PIT Instructor {self.year_level} {self.section}'
+
+
 from user_management.academic_records.models import StudentAcademicRecord  # noqa: E402,F401

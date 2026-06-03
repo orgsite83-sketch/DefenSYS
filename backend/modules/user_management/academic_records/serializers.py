@@ -53,6 +53,7 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
             'school_year',
             'display_semester',
             'year_level',
+            'section',
             'action',
             'rolled_from_id',
             'rolled_from_label',
@@ -70,6 +71,7 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
     student_username = serializers.CharField(required=False, allow_blank=False)
     semester_id = serializers.IntegerField()
     year_level = serializers.ChoiceField(choices=[choice[0] for choice in StudentAcademicRecord.YEAR_LEVEL_CHOICES])
+    section = serializers.CharField(required=False, allow_blank=True, max_length=80)
 
     def validate(self, attrs):
         student = self._student_from_attrs(attrs)
@@ -97,12 +99,14 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
             student=validated_data['student'],
             semester=validated_data['semester'],
             year_level=validated_data['year_level'],
+            section=' '.join((validated_data.get('section') or '').strip().split()),
         )
 
     def update(self, instance, validated_data):
         instance.student = validated_data['student']
         instance.semester = validated_data['semester']
         instance.year_level = validated_data['year_level']
+        instance.section = ' '.join((validated_data.get('section') or '').strip().split())
         instance.save()
         return instance
 

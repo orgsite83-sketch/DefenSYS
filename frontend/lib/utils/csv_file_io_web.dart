@@ -3,6 +3,24 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:html' as html;
+import 'dart:typed_data';
+
+class PickedTabularFile {
+  final String name;
+  final String extension;
+  final String? text;
+  final List<int> bytes;
+
+  const PickedTabularFile({
+    required this.name,
+    required this.extension,
+    required this.bytes,
+    this.text,
+  });
+
+  bool get isCsv => extension == 'csv';
+  bool get isXlsx => extension == 'xlsx';
+}
 
 Future<void> downloadTextFile({
   required String filename,
@@ -64,6 +82,59 @@ Future<String?> pickCsvTextFile() {
       }
     });
     reader.readAsText(files.first);
+  });
+
+  input.click();
+  return completer.future;
+}
+
+Future<PickedTabularFile?> pickTabularDataFile() {
+  final completer = Completer<PickedTabularFile?>();
+  final input = html.FileUploadInputElement()
+    ..accept =
+        '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ..multiple = false;
+
+  input.onChange.first.then((_) {
+    final files = input.files;
+    if (files == null || files.isEmpty) {
+      completer.complete(null);
+      return;
+    }
+
+    final file = files.first;
+    final extension = file.name.toLowerCase().split('.').last;
+    if (extension != 'csv' && extension != 'xlsx') {
+      completer.completeError('Select a CSV or XLSX file.');
+      return;
+    }
+
+    final reader = html.FileReader();
+    reader.onError.first.then((_) {
+      if (!completer.isCompleted) {
+        completer.completeError('Unable to read the selected class list file.');
+      }
+    });
+    reader.onLoadEnd.first.then((_) {
+      if (completer.isCompleted) return;
+      final result = reader.result;
+      if (result is! ByteBuffer) {
+        completer.completeError('Unable to read the selected class list file.');
+        return;
+      }
+      final bytes = result.asUint8List().toList();
+      completer.complete(
+        PickedTabularFile(
+          name: file.name,
+          extension: extension,
+          bytes: bytes,
+          text: extension == 'csv'
+              ? utf8.decode(bytes, allowMalformed: true)
+              : null,
+        ),
+      );
+    });
+    reader.readAsArrayBuffer(file);
   });
 
   input.click();

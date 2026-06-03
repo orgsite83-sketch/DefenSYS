@@ -84,6 +84,10 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     state = state.copyWith(clearError: true);
   }
 
+  void showError(String message) {
+    state = state.copyWith(isSaving: false, error: message, clearMessage: true);
+  }
+
   Future<void> fetchUsers({
     String? search,
     String? role,
@@ -140,7 +144,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -170,7 +174,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$userId/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -196,7 +200,6 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.get(
         Uri.parse('$baseUrl/$userId/adviser-assignments/'),
-        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -216,7 +219,6 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.get(
         Uri.parse('$baseUrl/$userId/role-assignments/'),
-        
       );
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -238,10 +240,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     );
 
     try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/$userId/'),
-        
-      );
+      final response = await _client.delete(Uri.parse('$baseUrl/$userId/'));
 
       if (response.statusCode == 200) {
         await fetchUsers(successMessage: 'User deleted.');
@@ -277,7 +276,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/bulk-import/'),
-        
+
         body: jsonEncode({
           'users': rows,
           if (studentContext != null) 'student_context': studentContext,
@@ -311,14 +310,118 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
+  Future<bool> pitLeadStudentImport(
+    List<Map<String, dynamic>> rows, {
+    Map<String, dynamic>? studentContext,
+  }) async {
+    if (rows.isEmpty) {
+      state = state.copyWith(error: 'CSV has no valid student rows.');
+      return false;
+    }
+
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/pit-lead/student-import/'),
+        body: jsonEncode({
+          'users': rows,
+          if (studentContext != null) 'student_context': studentContext,
+        }),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final created = payload['created_count'] ?? 0;
+        final records = payload['records_created_count'] ?? 0;
+        final skipped = payload['skipped_count'] ?? 0;
+        final errors = payload['error_count'] ?? 0;
+        final recordsMessage = records == 0
+            ? ''
+            : ' $records academic records created.';
+        state = state.copyWith(
+          isSaving: false,
+          message:
+              '$created students imported.$recordsMessage $skipped skipped. $errors errors.',
+          clearError: true,
+        );
+        return errors == 0;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> pitLeadOfficialClassListImport({
+    required Map<String, dynamic> metadata,
+    required List<Map<String, dynamic>> students,
+  }) async {
+    if (students.isEmpty) {
+      state = state.copyWith(error: 'Class list has no valid student rows.');
+      return false;
+    }
+
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/pit-lead/official-class-list-import/'),
+        body: jsonEncode({'metadata': metadata, 'students': students}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        final created = payload['created_count'] ?? 0;
+        final updated = payload['updated_count'] ?? 0;
+        final recordsCreated = payload['records_created_count'] ?? 0;
+        final recordsUpdated = payload['records_updated_count'] ?? 0;
+        final errors = payload['error_count'] ?? 0;
+        final warnings = payload['warning_count'] ?? 0;
+        final assignment = payload['instructor_assignment'] != null
+            ? ' PIT Instructor assigned.'
+            : '';
+        state = state.copyWith(
+          isSaving: false,
+          message:
+              '$created students created. $updated updated. '
+              '$recordsCreated records created. $recordsUpdated records updated. '
+              '$warnings warnings. $errors errors.$assignment',
+          clearError: true,
+        );
+        return errors == 0;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<void> fetchGuestCodes({String? successMessage}) async {
     state = state.copyWith(clearError: true);
 
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/guest-codes/'),
-        
-      );
+      final response = await _client.get(Uri.parse('$baseUrl/guest-codes/'));
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
@@ -347,7 +450,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/guest-codes/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -387,7 +490,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/guest-codes/$codeId/'),
-        
+
         body: jsonEncode({'is_active': false}),
       );
 
@@ -408,8 +511,8 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(

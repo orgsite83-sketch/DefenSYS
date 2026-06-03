@@ -39,6 +39,7 @@ dependencies:
   shared_preferences: ^2.5.5
   flutter_secure_storage: ^9.2.4
   file_picker: ^8.1.6
+  excel: ^4.0.6
   intl: ^0.20.2
   url_launcher: ^6.3.1
   syncfusion_flutter_pdfviewer: ^33.2.5

@@ -21,6 +21,7 @@ import 'adviser_grading_screen.dart';
 import 'weekly_progress_reports_screen.dart';
 import 'pit_lead_dashboard_content.dart';
 import 'pit_lead_cohort_screen.dart';
+import 'pit_instructor_assignment_screen.dart';
 import 'adviser_dashboard_content.dart';
 
 enum FacultyWorkspace { pitLead, adviser, repoAssistant }
@@ -38,6 +39,7 @@ class FacultyDashboard extends ConsumerStatefulWidget {
 class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   String _activeSection = 'dashboard';
   bool _schedulingExpanded = false;
+  bool _userManagementExpanded = true;
   FacultyWorkspace? _activeWorkspace;
 
   @override
@@ -51,7 +53,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   @override
   Widget build(BuildContext context) {
     final routerState = GoRouterState.of(context);
-    final sectionFromRoute = FacultyRoutes.sectionForLocation(routerState.uri.path);
+    final sectionFromRoute = FacultyRoutes.sectionForLocation(
+      routerState.uri.path,
+    );
     if (sectionFromRoute != null && sectionFromRoute != _activeSection) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) setState(() => _activeSection = sectionFromRoute);
@@ -62,16 +66,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     final roles =
         (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
     // Check if user is ONLY an uploader (no other roles)
-    final isOnlyUploader = roles['uploader'] == true &&
-                           roles['adviser'] != true &&
-                           roles['pit_lead'] != true &&
-                           roles['repo_assistant'] != true;
+    final isOnlyUploader =
+        roles['uploader'] == true &&
+        roles['adviser'] != true &&
+        roles['pit_lead'] != true &&
+        roles['repo_assistant'] != true;
 
     // Show sidebar if user has any faculty role
-    final showSidebar = roles['adviser'] == true || 
-                        roles['pit_lead'] == true || 
-                        roles['repo_assistant'] == true ||
-                        roles['uploader'] == true;
+    final showSidebar =
+        roles['adviser'] == true ||
+        roles['pit_lead'] == true ||
+        roles['repo_assistant'] == true ||
+        roles['uploader'] == true;
 
     // If user is only uploader, show uploader dashboard directly
     if (isOnlyUploader) {
@@ -96,13 +102,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 child: dashState.isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : dashState.error != null
-                        ? Center(
-                            child: Text(
-                              dashState.error!,
-                              style: const TextStyle(color: Colors.red),
-                            ),
-                          )
-                        : _buildActiveContent(dashState, roles),
+                    ? Center(
+                        child: Text(
+                          dashState.error!,
+                          style: const TextStyle(color: Colors.red),
+                        ),
+                      )
+                    : _buildActiveContent(dashState, roles),
               ),
             ),
           ],
@@ -123,10 +129,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return Scaffold(
           backgroundColor: AppColors.background,
           drawer: sidebar != null
-              ? Drawer(
-                  width: DefensysTokens.sidebarWidth,
-                  child: sidebar,
-                )
+              ? Drawer(width: DefensysTokens.sidebarWidth, child: sidebar)
               : null,
           body: mainColumn,
         );
@@ -159,7 +162,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     return available.first;
   }
 
-  String _workspaceLabel(FacultyWorkspace workspace, Map<String, dynamic> roles) {
+  String _workspaceLabel(
+    FacultyWorkspace workspace,
+    Map<String, dynamic> roles,
+  ) {
     switch (workspace) {
       case FacultyWorkspace.pitLead:
         final year = roles['pit_lead_year'] ?? 'Unscoped';
@@ -176,6 +182,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       _activeWorkspace = workspace;
       _activeSection = 'dashboard';
       _schedulingExpanded = false;
+      _userManagementExpanded = true;
     });
     context.go(FacultyRoutes.dashboard);
   }
@@ -286,7 +293,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.12),
+                  ),
                 ),
                 child: DropdownButtonHideUnderline(
                   child: DropdownButton<FacultyWorkspace>(
@@ -349,7 +358,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ],
             ),
           ),
-          
+
           // Footer
           Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
           Material(
@@ -402,24 +411,38 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     switch (workspace) {
       case FacultyWorkspace.pitLead:
         return [
-          _buildSidebarItem(
-            icon: Icons.school_outlined,
-            label: 'Cohort',
+          _buildExpandableSidebarItem(
+            icon: Icons.manage_accounts_outlined,
+            label: 'User Management',
+            isExpanded: _userManagementExpanded,
             onTap: () => _afterSidebarAction(
               isWide,
-              () => _goToSection('cohort'),
+              () => setState(
+                () => _userManagementExpanded = !_userManagementExpanded,
+              ),
             ),
-            isActive: _activeSection == 'cohort',
           ),
-          _buildSidebarItem(
-            icon: Icons.groups_outlined,
-            label: 'Student Teams',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('student_teams'),
+          if (_userManagementExpanded) ...[
+            _buildSubSidebarItem(
+              icon: Icons.school_outlined,
+              label: 'Cohort',
+              onTap: () =>
+                  _afterSidebarAction(isWide, () => _goToSection('cohort')),
+              isActive:
+                  _activeSection == 'cohort' ||
+                  _activeSection == 'pit_student_import' ||
+                  _activeSection == 'pit_instructors',
             ),
-            isActive: _activeSection == 'student_teams',
-          ),
+            _buildSubSidebarItem(
+              icon: Icons.groups_outlined,
+              label: 'Student Teams',
+              onTap: () => _afterSidebarAction(
+                isWide,
+                () => _goToSection('student_teams'),
+              ),
+              isActive: _activeSection == 'student_teams',
+            ),
+          ],
           _buildExpandableSidebarItem(
             icon: Icons.calendar_month_outlined,
             label: 'Scheduling',
@@ -452,10 +475,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _buildSidebarItem(
             icon: Icons.grading_outlined,
             label: 'Grade Center',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('grade_center'),
-            ),
+            onTap: () =>
+                _afterSidebarAction(isWide, () => _goToSection('grade_center')),
             isActive: _activeSection == 'grade_center',
           ),
           _buildSidebarItem(
@@ -491,10 +512,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _buildSidebarItem(
             icon: Icons.folder_open_outlined,
             label: 'Capstone Deliverables',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('deliverables'),
-            ),
+            onTap: () =>
+                _afterSidebarAction(isWide, () => _goToSection('deliverables')),
             isActive: _activeSection == 'deliverables',
           ),
           _buildSidebarItem(
@@ -547,7 +566,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     bool isActive = false,
   }) {
     final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
-    
+
     return Material(
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
       child: InkWell(
@@ -591,7 +610,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required VoidCallback onTap,
   }) {
     final color = const Color(0xFFD1D5DB);
-    
+
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -633,7 +652,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     bool isActive = false,
   }) {
     final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
-    
+
     return Material(
       color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
       child: InkWell(
@@ -670,18 +689,19 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     );
   }
 
-  Widget _buildActiveContent(DashboardState dashState, Map<String, dynamic> roles) {
+  Widget _buildActiveContent(
+    DashboardState dashState,
+    Map<String, dynamic> roles,
+  ) {
     final routerState = GoRouterState.of(context);
     if (routerState.pathParameters.containsKey('teamId') &&
         widget.routeChild != null) {
-      return Container(
-        color: Colors.white,
-        child: widget.routeChild!,
-      );
+      return Container(color: Colors.white, child: widget.routeChild!);
     }
 
-    final sectionFromRoute =
-        FacultyRoutes.sectionForLocation(routerState.uri.path);
+    final sectionFromRoute = FacultyRoutes.sectionForLocation(
+      routerState.uri.path,
+    );
     final activeSection = sectionFromRoute ?? _activeSection;
 
     final workspace = _resolvedWorkspace(roles);
@@ -710,10 +730,24 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             onCreateTeam: () => _goToSection('student_teams'),
           ),
         );
+      case 'pit_student_import':
+        return Container(
+          color: Colors.white,
+          child: PitLeadCohortScreen(
+            onCreateTeam: () => _goToSection('student_teams'),
+          ),
+        );
       case 'student_teams':
         return Container(
           color: Colors.white,
           child: const StudentTeamsScreen(mode: TeamListMode.pitLead),
+        );
+      case 'pit_instructors':
+        return Container(
+          color: Colors.white,
+          child: PitInstructorAssignmentScreen(
+            initialSection: routerState.uri.queryParameters['section'],
+          ),
         );
       case 'repository_audit':
         return Container(
@@ -736,10 +770,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const AuditComplianceScreen(),
         );
       case 'uploader':
-        return Container(
-          color: Colors.white,
-          child: const UploaderDashboard(),
-        );
+        return Container(color: Colors.white, child: const UploaderDashboard());
       case 'defense_scheduler':
         return Container(
           color: Colors.white,
@@ -751,10 +782,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const DefenseBoardScreen(),
         );
       case 'grade_center':
-        return Container(
-          color: Colors.white,
-          child: const GradeCenterScreen(),
-        );
+        return Container(color: Colors.white, child: const GradeCenterScreen());
       case 'rubric_engine':
         return Container(
           color: Colors.white,
@@ -805,17 +833,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case FacultyWorkspace.repoAssistant:
         final repoYear =
             dashState.data?['repo_assistant_year']?.toString() ??
-            (dashState.data?['roles'] as Map?)?['repo_assistant_year']?.toString() ??
+            (dashState.data?['roles'] as Map?)?['repo_assistant_year']
+                ?.toString() ??
             '';
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
               'Welcome, $facultyName',
-              style: const TextStyle(
-                fontSize: 21,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 12),
             Text(

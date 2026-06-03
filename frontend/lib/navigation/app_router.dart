@@ -220,18 +220,12 @@ List<RouteBase> _adminRoutes() {
       path: '/admin',
       redirect: (_, state) => _redirectAdminParentOnly(state),
       routes: [
-        GoRoute(
-          path: 'overview',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
+        GoRoute(path: 'overview', builder: (_, __) => const SizedBox.shrink()),
         GoRoute(
           path: 'academic-periods',
           builder: (_, __) => const SizedBox.shrink(),
         ),
-        GoRoute(
-          path: 'users',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
+        GoRoute(path: 'users', builder: (_, __) => const SizedBox.shrink()),
         GoRoute(
           path: 'student-teams',
           builder: (_, __) => const SizedBox.shrink(),
@@ -326,12 +320,10 @@ List<RouteBase> _facultyRoutes() {
       path: '/faculty',
       redirect: (_, state) => _redirectFacultyParentOnly(state),
       routes: [
+        GoRoute(path: 'dashboard', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(path: 'cohort', builder: (_, __) => const SizedBox.shrink()),
         GoRoute(
-          path: 'dashboard',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
-        GoRoute(
-          path: 'cohort',
+          path: 'pit-student-import',
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(
@@ -348,6 +340,10 @@ List<RouteBase> _facultyRoutes() {
           ],
         ),
         GoRoute(
+          path: 'pit-instructors',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
+        GoRoute(
           path: 'defense-scheduler',
           builder: (_, __) => const SizedBox.shrink(),
         ),
@@ -359,10 +355,7 @@ List<RouteBase> _facultyRoutes() {
           path: 'grade-center',
           builder: (_, __) => const SizedBox.shrink(),
         ),
-        GoRoute(
-          path: 'rubrics',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
+        GoRoute(path: 'rubrics', builder: (_, __) => const SizedBox.shrink()),
         GoRoute(
           path: 'repository-audit',
           builder: (_, __) => const SizedBox.shrink(),
@@ -383,10 +376,7 @@ List<RouteBase> _facultyRoutes() {
           path: 'adviser-grading',
           builder: (_, __) => const SizedBox.shrink(),
         ),
-        GoRoute(
-          path: 'uploader',
-          builder: (_, __) => const SizedBox.shrink(),
-        ),
+        GoRoute(path: 'uploader', builder: (_, __) => const SizedBox.shrink()),
       ],
     ),
   ];

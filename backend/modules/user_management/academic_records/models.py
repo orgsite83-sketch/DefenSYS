@@ -37,6 +37,7 @@ class StudentAcademicRecord(models.Model):
         on_delete=models.CASCADE,
     )
     year_level = models.CharField(max_length=20, choices=YEAR_LEVEL_CHOICES)
+    section = models.CharField(max_length=80, blank=True, default='')
     action = models.CharField(max_length=20, choices=ACTION_CHOICES, default=ACTION_MANUAL)
     rolled_from = models.ForeignKey(
         'self',
@@ -76,4 +77,5 @@ class StudentAcademicRecord(models.Model):
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f'{self.student_name} - {self.year_level} - {self.semester.display_name}'
+        section = f' - {self.section}' if self.section else ''
+        return f'{self.student_name} - {self.year_level}{section} - {self.semester.display_name}'

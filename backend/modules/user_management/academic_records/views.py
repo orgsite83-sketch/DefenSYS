@@ -209,6 +209,7 @@ class RolloverConfirmView(APIView):
                 student=record.student,
                 semester=target_semester,
                 year_level=year_level,
+                section=record.section,
                 action=action,
                 rolled_from=record,
             ))
