@@ -531,6 +531,117 @@ class GradeCenterApiTests(APITestCase):
                 adviser_weight=0,
             )
 
+    def test_pit_peer_submit_rejects_ambiguous_event_context(self):
+        second_pit = User.objects.create_user(
+            username='2025-0002-ambiguous',
+            password='pass12345',
+            role='student',
+            first_name='Ana',
+            last_name='Lopez',
+        )
+        TeamMembership.objects.create(team=self.pit_team, student=second_pit, order=1)
+        config = self._ensure_pit_event_config('PIT Identity', semester=self.first_semester)
+        other_config = self._ensure_pit_event_config('PIT Identity 2', semester=self.first_semester)
+        for event_config in (config, other_config):
+            event_config.peer_grading_enabled = True
+            event_config.save(update_fields=['peer_grading_enabled', 'updated_at'])
+            RubricCriterion.objects.create(
+                rubric=event_config.peer_rubric,
+                name=f'Teamwork {event_config.event_name}',
+                scale=Rubric.SCALE_5,
+                max_score=5,
+                display_order=0,
+            )
+            TeamGrade.objects.create(
+                team=self.pit_team,
+                semester=self.first_semester,
+                scope=TeamGrade.SCOPE_PIT,
+                pit_event_config=event_config,
+                panel_weight=80,
+                peer_weight=20,
+                adviser_weight=0,
+            )
+
+        self.client.force_authenticate(user=self.pit_student)
+        response = self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            {
+                'teamId': self.pit_team.id,
+                'evaluateeId': second_pit.id,
+                'breakdown': [{'criteriaName': 'Teamwork', 'score': 4, 'max': 5}],
+                'total': '4.00',
+                'max': '5.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('pit_event_config_id', response.data)
+        self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade__team=self.pit_team).exists())
+
+    def test_pit_peer_submit_uses_only_open_event_when_multiple_grades_exist(self):
+        second_pit = User.objects.create_user(
+            username='2025-0002-open',
+            password='pass12345',
+            role='student',
+            first_name='Ana',
+            last_name='Lopez',
+        )
+        TeamMembership.objects.create(team=self.pit_team, student=second_pit, order=1)
+        config = self._ensure_pit_event_config('PIT Identity', semester=self.first_semester)
+        other_config = self._ensure_pit_event_config('PIT Identity 2', semester=self.first_semester)
+        config.peer_grading_enabled = True
+        config.save(update_fields=['peer_grading_enabled', 'updated_at'])
+        RubricCriterion.objects.create(
+            rubric=config.peer_rubric,
+            name='Teamwork',
+            scale=Rubric.SCALE_5,
+            max_score=5,
+            display_order=0,
+        )
+        open_grade = TeamGrade.objects.create(
+            team=self.pit_team,
+            semester=self.first_semester,
+            scope=TeamGrade.SCOPE_PIT,
+            pit_event_config=config,
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+        )
+        closed_grade = TeamGrade.objects.create(
+            team=self.pit_team,
+            semester=self.first_semester,
+            scope=TeamGrade.SCOPE_PIT,
+            pit_event_config=other_config,
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+        )
+
+        self.client.force_authenticate(user=self.pit_student)
+        response = self.client.post(
+            '/api/grading/grades/peer-evaluations/',
+            {
+                'teamId': self.pit_team.id,
+                'evaluateeId': second_pit.id,
+                'breakdown': [{'criteriaName': 'Teamwork', 'score': 4, 'max': 5}],
+                'total': '4.00',
+                'max': '5.00',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            PeerEvaluationSubmission.objects.filter(
+                team_grade=open_grade,
+                evaluator=self.pit_student,
+                evaluatee=second_pit,
+            ).count(),
+            1,
+        )
+        self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=closed_grade).exists())
+
     def test_update_scores_calculates_status_and_final_grade(self):
         grade = self._capstone_grade()
 

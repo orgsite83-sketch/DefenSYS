@@ -205,6 +205,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
         attrs['room'] = attrs['room'].strip()
         attrs['event_name'] = (attrs.get('event_name') or '').strip()
         attrs['semester'] = self._resolve_semester(attrs)
+        self._validate_scheduler_scope_open(attrs)
         attrs['defense_stage'] = self._resolve_defense_stage(attrs)
         attrs['panelists'] = self._resolve_panelists(attrs['panelist_ids'])
         attrs['rubric'] = self._resolve_rubric(attrs)
@@ -281,6 +282,45 @@ class ScheduleBaseSerializer(serializers.Serializer):
             vault_file_template=attrs.get('vault_file_template'),
         )
         return attrs
+
+    def _pit_lead_year_scope(self):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if not user or getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+            return None
+        if not getattr(user, 'is_pit_lead', False):
+            return None
+        pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+        if not pit_year:
+            raise serializers.ValidationError({'team_id': 'PIT lead year level is not configured.'})
+        return pit_year
+
+    def _validate_scheduler_scope_open(self, attrs):
+        from authentication_access_control.scopes import is_pit_lead_only
+        from student_teams.term_scope import (
+            PIT_MODE_AUDIT,
+            pit_lead_operating_message,
+            pit_lead_operating_mode,
+        )
+
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+        if (
+            attrs['scope'] == DefenseSchedule.SCOPE_PIT
+            and is_pit_lead_only(user)
+            and pit_lead_operating_mode(user, active=attrs['semester']) == PIT_MODE_AUDIT
+        ):
+            message = pit_lead_operating_message(user, active=attrs['semester'])
+            raise serializers.ValidationError({
+                'scope': message or 'PIT scheduling is closed for this term.',
+            })
+
+    def _validate_pit_team_scope(self, team):
+        pit_year = self._pit_lead_year_scope()
+        if pit_year is None:
+            return
+        if not team.is_pit or team.year_level != pit_year:
+            raise serializers.ValidationError({'team_id': 'Team is outside your PIT year scope.'})
 
     def _resolve_peer_rubric(self, attrs):
         peer_rubric_id = attrs.get('peer_rubric_id')
@@ -496,6 +536,8 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             raise serializers.ValidationError({'team_id': 'Team is not endorsed for this stage.'})
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT and not team.is_pit:
             raise serializers.ValidationError({'team_id': 'PIT schedules require a PIT team.'})
+        if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
+            self._validate_pit_team_scope(team)
         return team
 
     def _validate_duplicate(self, attrs):
@@ -562,6 +604,9 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
             queryset = queryset.filter(level__icontains='Capstone', id__in=ready_ids)
         else:
             queryset = queryset.filter(level__icontains='PIT')
+            pit_year = self._pit_lead_year_scope()
+            if pit_year is not None:
+                queryset = queryset.filter(year_level=pit_year)
             queryset = queryset.exclude(year_level='3rd Year', semester__label=Semester.SECOND)
 
         return list(queryset.exclude(pk__in=scheduled_team_ids).order_by('name'))
@@ -595,6 +640,8 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                     raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for this stage.'})
             elif not team.is_pit:
                 raise serializers.ValidationError({'slots': 'PIT plans can only include PIT teams.'})
+            else:
+                self._validate_pit_team_scope(team)
 
             existing = DefenseSchedule.objects.filter(
                 scope=attrs['scope'],
@@ -703,9 +750,36 @@ def minutes_to_time(minutes):
 
 
 def schedule_options_payload(user=None):
-    from authentication_access_control.scopes import is_pit_lead_only, visible_teams_for
+    from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, visible_teams_for
+    from student_teams.term_scope import (
+        PIT_MODE_AUDIT,
+        pit_lead_operating_message,
+        pit_lead_operating_mode,
+    )
 
     semester = active_semester()
+    pit_lead_only = is_pit_lead_only(user)
+    admin_user = is_admin_user(user)
+    pit_operating_mode = (
+        pit_lead_operating_mode(user, active=semester)
+        if pit_lead_only
+        else 'active'
+    )
+    operating_message = (
+        pit_lead_operating_message(user, active=semester)
+        if pit_lead_only
+        else ''
+    )
+    can_schedule_capstone = admin_user
+    can_schedule_pit = admin_user or (
+        pit_lead_only and pit_operating_mode != PIT_MODE_AUDIT
+    )
+    allowed_scopes = []
+    if can_schedule_capstone:
+        allowed_scopes.append(DefenseSchedule.SCOPE_CAPSTONE)
+    if can_schedule_pit:
+        allowed_scopes.append(DefenseSchedule.SCOPE_PIT)
+
     stages = DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
     rubrics = (
         Rubric.objects.select_related('semester', 'semester__school_year', 'defense_stage', 'created_by')
@@ -721,7 +795,7 @@ def schedule_options_payload(user=None):
         .filter(status=Rubric.STATUS_PUBLISHED, scope=Rubric.SCOPE_PIT, evaluation_type=Rubric.EVAL_PEER)
         .order_by('name')
     )
-    if is_pit_lead_only(user):
+    if pit_lead_only:
         stages = stages.none()
         rubrics = rubrics.filter(scope=Rubric.SCOPE_PIT)
         peer_rubrics = peer_rubrics.filter(scope=Rubric.SCOPE_PIT)
@@ -733,6 +807,12 @@ def schedule_options_payload(user=None):
         teams = teams.none()
 
     return {
+        'scheduler_mode': DefenseSchedule.SCOPE_PIT if pit_lead_only else DefenseSchedule.SCOPE_CAPSTONE,
+        'pit_operating_mode': pit_operating_mode,
+        'operating_message': operating_message,
+        'can_schedule_pit': can_schedule_pit,
+        'can_schedule_capstone': can_schedule_capstone,
+        'allowed_scopes': allowed_scopes,
         'active_semester': SemesterSerializer(semester).data if semester else None,
         'defense_stages': DefenseStageSerializer(stages, many=True).data,
         'rubrics': RubricSerializer(rubrics, many=True).data,

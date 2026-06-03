@@ -893,13 +893,24 @@ class GradeContextService:
                 return resolve_canonical_capstone_grade(grade)
             return resolve_canonical_capstone_grade(grade)
 
-        grade = (
+        grades = list(
             TeamGrade.objects.filter(team=team, scope=scope)
+            .select_related('semester', 'pit_event_config')
             .order_by('-updated_at', '-id')
-            .first()
         )
-        if grade:
-            return grade
+        if len(grades) == 1:
+            return grades[0]
+        if len(grades) > 1:
+            open_grades = [
+                grade
+                for grade in grades
+                if group_settings_for_grade(grade).get('peer_grading_enabled')
+            ]
+            if len(open_grades) == 1:
+                return open_grades[0]
+            raise ValidationError({
+                'pit_event_config_id': 'PIT peer evaluation requires a single open event context.'
+            })
         grade, _created = GradeContextService.get_or_create_unscheduled_team(team)
         return grade
 

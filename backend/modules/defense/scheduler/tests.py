@@ -963,6 +963,161 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertIn(pit_schedule.id, visible_ids)
         self.assertNotIn(capstone_schedule.id, visible_ids)
 
+    def test_pit_lead_generate_plan_is_limited_to_assigned_year(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-generate',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+        other_student = User.objects.create_user(
+            username='pit-first-year-student',
+            password='pass12345',
+            role='student',
+        )
+        other_team = StudentTeam.objects.create(
+            name='PIT Team First Year',
+            project_title='First Year Project',
+            level=StudentTeam.LEVEL_1_PIT,
+            year_level='1st Year',
+            semester=self.semester,
+            leader=other_student,
+        )
+        TeamMembership.objects.create(team=other_team, student=other_student, is_leader=True)
+
+        self.client.force_authenticate(user=pit_lead)
+        response = self.client.post(
+            '/api/defense/schedules/generate-plan/',
+            self.pit_payload(),
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual({slot['team_id'] for slot in response.data['slots']}, {self.team.id})
+
+    def test_pit_lead_cannot_schedule_team_outside_assigned_year(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-write',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+        other_student = User.objects.create_user(
+            username='pit-first-year-write-student',
+            password='pass12345',
+            role='student',
+        )
+        other_team = StudentTeam.objects.create(
+            name='PIT Team First Year Write',
+            project_title='First Year Write Project',
+            level=StudentTeam.LEVEL_1_PIT,
+            year_level='1st Year',
+            semester=self.semester,
+            leader=other_student,
+        )
+        TeamMembership.objects.create(team=other_team, student=other_student, is_leader=True)
+
+        self.client.force_authenticate(user=pit_lead)
+        manual = self.client.post(
+            '/api/defense/schedules/',
+            {**self.pit_payload(), 'team_id': other_team.id},
+            format='json',
+        )
+        confirm = self.client.post(
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.pit_payload(start_time='10:30', room='Room 202'),
+                'slots': [{'team_id': other_team.id}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(manual.status_code, 400)
+        self.assertIn('team_id', manual.data)
+        self.assertEqual(confirm.status_code, 400)
+        self.assertIn('team_id', confirm.data)
+
+    def _make_capstone_intake_for_third_year_pit(self):
+        self.semester.label = Semester.SECOND
+        self.semester.capstone_program_phase = Semester.PHASE_CAPSTONE_1
+        self.semester.save(update_fields=['label', 'capstone_program_phase'])
+        pit_lead = User.objects.create_user(
+            username='pit-lead-third-year',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        student = User.objects.create_user(
+            username='pit-third-year-student',
+            password='pass12345',
+            role='student',
+        )
+        team = StudentTeam.objects.create(
+            name='PIT Team Third Year',
+            project_title='Third Year Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=student,
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        return pit_lead, team
+
+    def test_pit_lead_scheduler_options_are_audit_mode_in_capstone_intake(self):
+        pit_lead, _team = self._make_capstone_intake_for_third_year_pit()
+
+        self.client.force_authenticate(user=pit_lead)
+        response = self.client.get('/api/defense/schedules/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['scheduler_mode'], DefenseSchedule.SCOPE_PIT)
+        self.assertEqual(response.data['pit_operating_mode'], 'audit')
+        self.assertFalse(response.data['can_schedule_pit'])
+        self.assertFalse(response.data['can_schedule_capstone'])
+        self.assertEqual(response.data['allowed_scopes'], [])
+        self.assertEqual(response.data['defense_stages'], [])
+        self.assertIn('Capstone intake term', response.data['operating_message'])
+
+    def test_pit_lead_audit_mode_rejects_schedule_writes(self):
+        pit_lead, team = self._make_capstone_intake_for_third_year_pit()
+
+        self.client.force_authenticate(user=pit_lead)
+        manual = self.client.post(
+            '/api/defense/schedules/',
+            {
+                **self.pit_payload(event_name='3rd Year PIT Expo'),
+                'team_id': team.id,
+            },
+            format='json',
+        )
+        generate = self.client.post(
+            '/api/defense/schedules/generate-plan/',
+            self.pit_payload(event_name='3rd Year PIT Expo', room='Room 202'),
+            format='json',
+        )
+        confirm = self.client.post(
+            '/api/defense/schedules/confirm-plan/',
+            {
+                **self.pit_payload(
+                    event_name='3rd Year PIT Expo',
+                    room='Room 203',
+                    start_time='10:00',
+                ),
+                'slots': [{'team_id': team.id}],
+            },
+            format='json',
+        )
+
+        self.assertEqual(manual.status_code, 400)
+        self.assertIn('scope', manual.data)
+        self.assertEqual(generate.status_code, 400)
+        self.assertIn('scope', generate.data)
+        self.assertEqual(confirm.status_code, 400)
+        self.assertIn('scope', confirm.data)
+
     def test_guest_panelist_token_remains_bound_to_single_schedule(self):
         schedule = DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_PIT,

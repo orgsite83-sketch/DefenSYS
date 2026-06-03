@@ -241,7 +241,10 @@ def peer_criteria_payload(team):
     if not team:
         return []
 
-    grade = _grade_for_team(team)
+    try:
+        grade = _grade_for_team(team)
+    except ValidationError:
+        return []
     if not peer_grading_allowed_for_grade(grade):
         return []
 
@@ -263,7 +266,10 @@ def peer_submissions_for_evaluator(team, evaluator):
     if not team:
         return []
 
-    grade = _grade_for_team(team)
+    try:
+        grade = _grade_for_team(team)
+    except ValidationError:
+        return []
     rows = PeerEvaluationSubmission.objects.filter(
         team_grade=grade,
         evaluator=evaluator,

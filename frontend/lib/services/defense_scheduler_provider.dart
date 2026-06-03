@@ -23,6 +23,12 @@ class DefenseSchedulerState {
   final List<String> statuses;
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
+  final String schedulerMode;
+  final String pitOperatingMode;
+  final String? operatingMessage;
+  final bool canSchedulePit;
+  final bool canScheduleCapstone;
+  final List<String> allowedScopes;
   final String search;
   final String scope;
   final String status;
@@ -42,6 +48,12 @@ class DefenseSchedulerState {
     this.statuses = const [],
     this.counts = const {},
     this.activeSemester,
+    this.schedulerMode = '',
+    this.pitOperatingMode = 'active',
+    this.operatingMessage,
+    this.canSchedulePit = false,
+    this.canScheduleCapstone = false,
+    this.allowedScopes = const [],
     this.search = '',
     this.scope = '',
     this.status = '',
@@ -62,12 +74,19 @@ class DefenseSchedulerState {
     List<String>? statuses,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
+    String? schedulerMode,
+    String? pitOperatingMode,
+    String? operatingMessage,
+    bool? canSchedulePit,
+    bool? canScheduleCapstone,
+    List<String>? allowedScopes,
     String? search,
     String? scope,
     String? status,
     String? error,
     String? message,
     bool clearActiveSemester = false,
+    bool clearOperatingMessage = false,
     bool clearError = false,
     bool clearMessage = false,
   }) {
@@ -86,6 +105,14 @@ class DefenseSchedulerState {
       activeSemester: clearActiveSemester
           ? null
           : activeSemester ?? this.activeSemester,
+      schedulerMode: schedulerMode ?? this.schedulerMode,
+      pitOperatingMode: pitOperatingMode ?? this.pitOperatingMode,
+      operatingMessage: clearOperatingMessage
+          ? null
+          : operatingMessage ?? this.operatingMessage,
+      canSchedulePit: canSchedulePit ?? this.canSchedulePit,
+      canScheduleCapstone: canScheduleCapstone ?? this.canScheduleCapstone,
+      allowedScopes: allowedScopes ?? this.allowedScopes,
       search: search ?? this.search,
       scope: scope ?? this.scope,
       status: status ?? this.status,
@@ -96,7 +123,7 @@ class DefenseSchedulerState {
 }
 
 class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
-    static String get baseUrl => ApiConfig.defenseSchedulesUrl;
+  static String get baseUrl => ApiConfig.defenseSchedulesUrl;
 
   @override
   DefenseSchedulerState build() {
@@ -164,7 +191,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/generate-plan/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -181,6 +208,15 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           activeSemester: data['active_semester'] is Map
               ? Map<String, dynamic>.from(data['active_semester'])
               : state.activeSemester,
+          schedulerMode:
+              data['scheduler_mode']?.toString() ?? state.schedulerMode,
+          pitOperatingMode:
+              data['pit_operating_mode']?.toString() ?? state.pitOperatingMode,
+          operatingMessage: data['operating_message']?.toString(),
+          clearOperatingMessage: data['operating_message'] == null,
+          canSchedulePit: data['can_schedule_pit'] == true,
+          canScheduleCapstone: data['can_schedule_capstone'] == true,
+          allowedScopes: _readStringList(data['allowed_scopes']),
           message: '${data['slot_count'] ?? 0} schedule slots generated.',
           clearError: true,
         );
@@ -208,7 +244,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/confirm-plan/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -241,7 +277,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -271,7 +307,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     try {
       final response = await _client.patch(
         Uri.parse('$baseUrl/$scheduleId/'),
-        
+
         body: jsonEncode({'status': status}),
       );
 
@@ -363,10 +399,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     );
 
     try {
-      final response = await _client.delete(
-        Uri.parse('$baseUrl/$scheduleId/'),
-        
-      );
+      final response = await _client.delete(Uri.parse('$baseUrl/$scheduleId/'));
 
       if (response.statusCode == 200) {
         await fetchSchedules(successMessage: 'Schedule deleted.');
@@ -384,8 +417,8 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -405,6 +438,15 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
           ? Map<String, dynamic>.from(payload['active_semester'])
           : null,
       clearActiveSemester: payload['active_semester'] == null,
+      schedulerMode:
+          payload['scheduler_mode']?.toString() ?? state.schedulerMode,
+      pitOperatingMode:
+          payload['pit_operating_mode']?.toString() ?? state.pitOperatingMode,
+      operatingMessage: payload['operating_message']?.toString(),
+      clearOperatingMessage: payload['operating_message'] == null,
+      canSchedulePit: payload['can_schedule_pit'] == true,
+      canScheduleCapstone: payload['can_schedule_capstone'] == true,
+      allowedScopes: _readStringList(payload['allowed_scopes']),
       message: successMessage,
       clearError: true,
     );

@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/defense_scheduler_provider.dart';
 import '../../../services/defense_stages_provider.dart';
-import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback_toast.dart';
@@ -30,7 +29,7 @@ class _DefenseSchedulerScreenState
 
   final Set<int> _selectedPanelistIds = {};
 
-  String _scope = 'capstone';
+  String _scope = '';
   int? _stageId;
   int? _rubricId;
   int? _adviserRubricId;
@@ -57,18 +56,6 @@ class _DefenseSchedulerScreenState
     super.initState();
     _dateController.text = DateTime.now().toIso8601String().substring(0, 10);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Check if user is PIT Lead and set scope accordingly
-      final dashState = ref.read(dashboardProvider('faculty'));
-      final roles =
-          (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
-
-      if (roles['pit_lead'] == true && roles['adviser'] != true) {
-        // PIT Lead only (not also an adviser) - default to PIT scope
-        setState(() {
-          _scope = 'pit';
-        });
-      }
-
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
     });
   }
@@ -79,6 +66,8 @@ class _DefenseSchedulerScreenState
     final currentStep = _planSlots.isEmpty ? 1 : (_showFinalPreview ? 3 : 2);
 
     ref.listen(defenseSchedulerProvider, (previous, next) {
+      _applySchedulerMode(next, previous: previous);
+
       final error = next.error;
       if (error != null && error.isNotEmpty && error != previous?.error) {
         showErrorToast(context, error);
@@ -110,7 +99,10 @@ class _DefenseSchedulerScreenState
               const SizedBox(height: 26),
               _buildStepProgress(currentStep),
               const SizedBox(height: 12),
-
+              if (_scheduleNoticeMessage(state).isNotEmpty) ...[
+                _buildScheduleNotice(state),
+                const SizedBox(height: 12),
+              ],
               const SizedBox(height: 12),
               if (state.isLoading &&
                   state.schedules.isEmpty &&
@@ -126,6 +118,114 @@ class _DefenseSchedulerScreenState
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  void _applySchedulerMode(
+    DefenseSchedulerState next, {
+    DefenseSchedulerState? previous,
+  }) {
+    final targetScope = _scopeFromSchedulerState(next);
+    if (targetScope.isEmpty) {
+      return;
+    }
+    final modeChanged =
+        previous?.schedulerMode != next.schedulerMode ||
+        previous?.canSchedulePit != next.canSchedulePit ||
+        previous?.canScheduleCapstone != next.canScheduleCapstone;
+    if (!modeChanged || targetScope == _scope) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || targetScope == _scope) {
+        return;
+      }
+      setState(() {
+        _scope = targetScope;
+        _stageId = null;
+        _rubricId = null;
+        _adviserRubricId = null;
+        _capstonePeerRubricId = null;
+        _peerRubricId = null;
+        _planSlots = [];
+        _showFinalPreview = false;
+      });
+    });
+  }
+
+  String _scopeFromSchedulerState(DefenseSchedulerState state) {
+    if (state.schedulerMode == 'pit' || state.schedulerMode == 'capstone') {
+      return state.schedulerMode;
+    }
+    if (state.canScheduleCapstone) {
+      return 'capstone';
+    }
+    if (state.canSchedulePit) {
+      return 'pit';
+    }
+    return _scope;
+  }
+
+  bool _canScheduleScope(DefenseSchedulerState state, String scope) {
+    if (scope == 'pit') {
+      return state.canSchedulePit;
+    }
+    if (scope == 'capstone') {
+      return state.canScheduleCapstone;
+    }
+    return false;
+  }
+
+  bool _canScheduleCurrentScope(DefenseSchedulerState state) {
+    return _canScheduleScope(state, _scope);
+  }
+
+  String _scheduleNoticeMessage(DefenseSchedulerState state) {
+    final message = state.operatingMessage?.trim() ?? '';
+    if (message.isNotEmpty) {
+      return message;
+    }
+    if (!_canScheduleCurrentScope(state) &&
+        (state.schedulerMode == 'pit' || _scope == 'pit')) {
+      return 'PIT scheduling is closed for this term.';
+    }
+    if (!_canScheduleCurrentScope(state) &&
+        (state.schedulerMode == 'capstone' || _scope == 'capstone')) {
+      return 'Scheduling is not available for this workspace.';
+    }
+    return '';
+  }
+
+  Widget _buildScheduleNotice(DefenseSchedulerState state) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            color: Color(0xFF92400E),
+            size: 18,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              _scheduleNoticeMessage(state),
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -180,7 +280,7 @@ class _DefenseSchedulerScreenState
             SizedBox(
               height: 42,
               child: OutlinedButton.icon(
-                onPressed: state.isSaving
+                onPressed: state.isSaving || !_canScheduleCurrentScope(state)
                     ? null
                     : () => _showManualDialog(state),
                 icon: const Icon(Icons.open_in_new_rounded, size: 18),
@@ -205,7 +305,9 @@ class _DefenseSchedulerScreenState
             SizedBox(
               height: 42,
               child: ElevatedButton.icon(
-                onPressed: state.isSaving ? null : _generatePlan,
+                onPressed: state.isSaving || !_canScheduleCurrentScope(state)
+                    ? null
+                    : _generatePlan,
                 icon: const Icon(Icons.bolt_rounded, size: 18),
                 label: const Text('Generate Schedule Plan'),
                 style: ElevatedButton.styleFrom(
@@ -446,9 +548,11 @@ class _DefenseSchedulerScreenState
               const SizedBox(height: 10),
               const Divider(height: 1),
               const SizedBox(height: 20),
-              const Text(
-                'Choose the shared stage, rubric, date, room, start time, and slot duration for this run. Then generate the plan to prepare consecutive slots.',
-                style: TextStyle(
+              Text(
+                _scope == 'pit'
+                    ? 'Choose the PIT event, rubrics, date, room, start time, and slot duration for this run. Then generate the plan to prepare consecutive slots.'
+                    : 'Choose the shared stage, rubric, date, room, start time, and slot duration for this run. Then generate the plan to prepare consecutive slots.',
+                style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -614,16 +718,24 @@ class _DefenseSchedulerScreenState
                                   color: _eventController.text.trim().isNotEmpty
                                       ? AppColors.maroon
                                       : Colors.grey,
-                                  onPressed: _eventController.text.trim().isNotEmpty
+                                  onPressed:
+                                      _eventController.text.trim().isNotEmpty
                                       ? () => _showPitConfigDialog(state)
                                       : null,
                                   style: IconButton.styleFrom(
                                     shape: RoundedRectangleBorder(
                                       borderRadius: BorderRadius.circular(8),
                                       side: BorderSide(
-                                        color: _eventController.text.trim().isNotEmpty
-                                            ? AppColors.maroon.withValues(alpha: 0.2)
-                                            : Colors.grey.withValues(alpha: 0.2),
+                                        color:
+                                            _eventController.text
+                                                .trim()
+                                                .isNotEmpty
+                                            ? AppColors.maroon.withValues(
+                                                alpha: 0.2,
+                                              )
+                                            : Colors.grey.withValues(
+                                                alpha: 0.2,
+                                              ),
                                       ),
                                     ),
                                   ),
@@ -827,7 +939,10 @@ class _DefenseSchedulerScreenState
                   ),
                   const SizedBox(width: 16),
                   ElevatedButton.icon(
-                    onPressed: state.isSaving ? null : _generatePlan,
+                    onPressed:
+                        state.isSaving || !_canScheduleCurrentScope(state)
+                        ? null
+                        : _generatePlan,
                     icon: const Icon(Icons.bolt_rounded, size: 18),
                     label: const Text('Generate Schedule Plan'),
                     style: ElevatedButton.styleFrom(
@@ -1645,6 +1760,12 @@ class _DefenseSchedulerScreenState
   }
 
   Future<void> _generatePlan() async {
+    final schedulerState = ref.read(defenseSchedulerProvider);
+    if (!_canScheduleCurrentScope(schedulerState)) {
+      _showSnack(_scheduleNoticeMessage(schedulerState));
+      return;
+    }
+
     final payload = _basePayload();
     if (payload == null) {
       return;
@@ -1699,6 +1820,12 @@ class _DefenseSchedulerScreenState
   }
 
   Map<String, dynamic>? _basePayload() {
+    final schedulerState = ref.read(defenseSchedulerProvider);
+    if (!_canScheduleCurrentScope(schedulerState)) {
+      _showSnack(_scheduleNoticeMessage(schedulerState));
+      return null;
+    }
+
     final date = _dateController.text.trim();
     final time = _timeController.text.trim();
     final room = _roomController.text.trim();
@@ -1709,7 +1836,6 @@ class _DefenseSchedulerScreenState
     }
 
     if (_scope == 'capstone') {
-      final schedulerState = ref.read(defenseSchedulerProvider);
       if (_validCapstoneRubricId(schedulerState, _rubricId, 'panel') == null) {
         _showSnack('Select a panel rubric.');
         return null;
@@ -1812,7 +1938,8 @@ class _DefenseSchedulerScreenState
       _peerRubricId = _asInt(config['peer_rubric_id']) ?? _peerRubricId;
       _panelWeightController.text = config['panel_weight']?.toString() ?? '80';
       _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
-      _pitTemplateController.text = config['vault_file_template']?.toString() ?? '';
+      _pitTemplateController.text =
+          config['vault_file_template']?.toString() ?? '';
     });
   }
 
@@ -1822,11 +1949,11 @@ class _DefenseSchedulerScreenState
       builder: (dialogContext) {
         return StatefulBuilder(
           builder: (context, setDialogState) {
-            final total = (int.tryParse(_panelWeightController.text.trim()) ?? 0) +
+            final total =
+                (int.tryParse(_panelWeightController.text.trim()) ?? 0) +
                 (int.tryParse(_peerWeightController.text.trim()) ?? 0);
-            final isValid = total == 100 &&
-                _rubricId != null &&
-                _peerRubricId != null;
+            final isValid =
+                total == 100 && _rubricId != null && _peerRubricId != null;
 
             return AlertDialog(
               shape: RoundedRectangleBorder(
@@ -1877,43 +2004,49 @@ class _DefenseSchedulerScreenState
                             Wrap(
                               spacing: 8,
                               runSpacing: 8,
-                              children: [
-                                '{year}',
-                                '{course}',
-                                '{project}',
-                                '{event}',
-                                '{semester}',
-                              ].map((variable) {
-                                return InkWell(
-                                  onTap: () {
-                                    _insertVariable(_pitTemplateController, variable);
-                                    setDialogState(() {});
-                                  },
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF3F4F6),
+                              children:
+                                  [
+                                    '{year}',
+                                    '{course}',
+                                    '{project}',
+                                    '{event}',
+                                    '{semester}',
+                                  ].map((variable) {
+                                    return InkWell(
+                                      onTap: () {
+                                        _insertVariable(
+                                          _pitTemplateController,
+                                          variable,
+                                        );
+                                        setDialogState(() {});
+                                      },
                                       borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: const Color(0xFFE5E7EB),
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 10,
+                                          vertical: 6,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFF3F4F6),
+                                          borderRadius: BorderRadius.circular(
+                                            6,
+                                          ),
+                                          border: Border.all(
+                                            color: const Color(0xFFE5E7EB),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          variable,
+                                          style: const TextStyle(
+                                            fontFamily: 'monospace',
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w600,
+                                            color: AppColors.maroon,
+                                          ),
+                                        ),
                                       ),
-                                    ),
-                                    child: Text(
-                                      variable,
-                                      style: const TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.maroon,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
+                                    );
+                                  }).toList(),
                             ),
                             const SizedBox(height: 10),
                             Container(
@@ -2016,7 +2149,11 @@ class _DefenseSchedulerScreenState
                           ),
                           child: const Row(
                             children: [
-                              Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 16),
+                              Icon(
+                                Icons.warning_amber_rounded,
+                                color: Color(0xFFD97706),
+                                size: 16,
+                              ),
                               SizedBox(width: 8),
                               Expanded(
                                 child: Text(
@@ -2048,8 +2185,14 @@ class _DefenseSchedulerScreenState
                   onPressed: isValid && !state.isSaving
                       ? () async {
                           final eventName = _eventController.text.trim();
-                          final panelWeight = int.tryParse(_panelWeightController.text.trim()) ?? 80;
-                          final peerWeight = int.tryParse(_peerWeightController.text.trim()) ?? 20;
+                          final panelWeight =
+                              int.tryParse(
+                                _panelWeightController.text.trim(),
+                              ) ??
+                              80;
+                          final peerWeight =
+                              int.tryParse(_peerWeightController.text.trim()) ??
+                              20;
                           final activeSemesterId = state.activeSemester?['id'];
 
                           final payload = {
@@ -2058,8 +2201,10 @@ class _DefenseSchedulerScreenState
                             'peer_rubric_id': _peerRubricId,
                             'panel_weight': panelWeight,
                             'peer_weight': peerWeight,
-                            'vault_file_template': _pitTemplateController.text.trim(),
-                            if (activeSemesterId != null) 'semester_id': activeSemesterId,
+                            'vault_file_template': _pitTemplateController.text
+                                .trim(),
+                            if (activeSemesterId != null)
+                              'semester_id': activeSemesterId,
                           };
 
                           final success = await ref
@@ -2091,6 +2236,11 @@ class _DefenseSchedulerScreenState
   }
 
   Future<void> _showManualDialog(DefenseSchedulerState state) async {
+    if (!_canScheduleCurrentScope(state)) {
+      _showSnack(_scheduleNoticeMessage(state));
+      return;
+    }
+
     String scope = _scope;
     int? stageId = _stageId;
     int? teamId;
@@ -2104,7 +2254,9 @@ class _DefenseSchedulerScreenState
     final peerWeight = TextEditingController(text: _peerWeightController.text);
 
     final event = TextEditingController(text: _eventController.text);
-    final vaultFileTemplate = TextEditingController(text: _pitTemplateController.text);
+    final vaultFileTemplate = TextEditingController(
+      text: _pitTemplateController.text,
+    );
     final date = TextEditingController(text: _dateController.text);
     final time = TextEditingController(text: _timeController.text);
     final duration = TextEditingController(text: _durationController.text);
@@ -2181,16 +2333,7 @@ class _DefenseSchedulerScreenState
                               decoration: const InputDecoration(
                                 labelText: 'Scope',
                               ),
-                              items: const [
-                                DropdownMenuItem(
-                                  value: 'capstone',
-                                  child: Text('Capstone'),
-                                ),
-                                DropdownMenuItem(
-                                  value: 'pit',
-                                  child: Text('PIT'),
-                                ),
-                              ],
+                              items: _allowedScopeItems(state),
                               onChanged: (value) {
                                 setDialogState(() {
                                   scope = value ?? scope;
@@ -2264,18 +2407,33 @@ class _DefenseSchedulerScreenState
                             final eventName = val.trim();
                             if (eventName.length >= 3) {
                               final semesterId = _asInt(
-                                ref.read(defenseSchedulerProvider).activeSemester?['id'],
+                                ref
+                                    .read(defenseSchedulerProvider)
+                                    .activeSemester?['id'],
                               );
                               final config = await ref
                                   .read(defenseSchedulerProvider.notifier)
-                                  .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+                                  .fetchPitEventConfig(
+                                    eventName: eventName,
+                                    semesterId: semesterId,
+                                  );
                               if (config != null) {
                                 setDialogState(() {
-                                  rubricId = _asInt(config['panel_rubric_id']) ?? rubricId;
-                                  peerRubricId = _asInt(config['peer_rubric_id']) ?? peerRubricId;
-                                  panelWeight.text = config['panel_weight']?.toString() ?? '80';
-                                  peerWeight.text = config['peer_weight']?.toString() ?? '20';
-                                  vaultFileTemplate.text = config['vault_file_template']?.toString() ?? '';
+                                  rubricId =
+                                      _asInt(config['panel_rubric_id']) ??
+                                      rubricId;
+                                  peerRubricId =
+                                      _asInt(config['peer_rubric_id']) ??
+                                      peerRubricId;
+                                  panelWeight.text =
+                                      config['panel_weight']?.toString() ??
+                                      '80';
+                                  peerWeight.text =
+                                      config['peer_weight']?.toString() ?? '20';
+                                  vaultFileTemplate.text =
+                                      config['vault_file_template']
+                                          ?.toString() ??
+                                      '';
                                 });
                               }
                             } else {
@@ -2296,43 +2454,47 @@ class _DefenseSchedulerScreenState
                         Wrap(
                           spacing: 8,
                           runSpacing: 8,
-                          children: [
-                            '{year}',
-                            '{course}',
-                            '{project}',
-                            '{event}',
-                            '{semester}',
-                          ].map((variable) {
-                            return InkWell(
-                              onTap: () {
-                                _insertVariable(vaultFileTemplate, variable);
-                                setDialogState(() {});
-                              },
-                              borderRadius: BorderRadius.circular(6),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 6,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF3F4F6),
+                          children:
+                              [
+                                '{year}',
+                                '{course}',
+                                '{project}',
+                                '{event}',
+                                '{semester}',
+                              ].map((variable) {
+                                return InkWell(
+                                  onTap: () {
+                                    _insertVariable(
+                                      vaultFileTemplate,
+                                      variable,
+                                    );
+                                    setDialogState(() {});
+                                  },
                                   borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(
-                                    color: const Color(0xFFE5E7EB),
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 10,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF3F4F6),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5E7EB),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      variable,
+                                      style: const TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.maroon,
+                                      ),
+                                    ),
                                   ),
-                                ),
-                                child: Text(
-                                  variable,
-                                  style: const TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                              ),
-                            );
-                          }).toList(),
+                                );
+                              }).toList(),
                         ),
                         const SizedBox(height: 10),
                         Container(
@@ -2341,9 +2503,7 @@ class _DefenseSchedulerScreenState
                           decoration: BoxDecoration(
                             color: const Color(0xFFF9FAFB),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(
-                              color: const Color(0xFFE5E7EB),
-                            ),
+                            border: Border.all(color: const Color(0xFFE5E7EB)),
                           ),
                           child: Row(
                             children: [
@@ -2829,6 +2989,25 @@ class _DefenseSchedulerScreenState
     }).toList();
   }
 
+  List<DropdownMenuItem<String>> _allowedScopeItems(
+    DefenseSchedulerState state,
+  ) {
+    final scopes = <String>[
+      if (state.canScheduleCapstone) 'capstone',
+      if (state.canSchedulePit) 'pit',
+    ];
+    final values = scopes.isNotEmpty ? scopes : state.allowedScopes;
+    return values
+        .where((scope) => scope == 'capstone' || scope == 'pit')
+        .map(
+          (scope) => DropdownMenuItem<String>(
+            value: scope,
+            child: Text(scope == 'pit' ? 'PIT' : 'Capstone'),
+          ),
+        )
+        .toList();
+  }
+
   int? _validRubricId(DefenseSchedulerState state) {
     final rubrics = _rubricsForContext(state);
     return rubrics.any((rubric) => _asInt(rubric['id']) == _rubricId)
@@ -3009,7 +3188,6 @@ class _DefenseSchedulerScreenState
     final text = value?.toString() ?? '';
     return text.length >= 5 ? text.substring(0, 5) : text;
   }
-
 
   void _showSnack(String message) {
     showValidationToast(context, message);
@@ -3235,8 +3413,8 @@ class _DefenseSchedulerScreenState
       return '3rdYear.PIT301.Project-Alpha.1stSemester.pdf';
     }
 
-    final slugifiedEvent = eventName.trim().isEmpty 
-        ? 'PIT-Event' 
+    final slugifiedEvent = eventName.trim().isEmpty
+        ? 'PIT-Event'
         : _slugify(eventName);
 
     String result = template
