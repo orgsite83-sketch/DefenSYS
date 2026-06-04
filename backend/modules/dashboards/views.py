@@ -13,7 +13,8 @@ from user_management.permissions import (
     IsStudentRole,
 )
 
-from academic_period_management.models import Semester
+from academic_period_management.models import SchoolYear, Semester
+from academic_period_management.serializers import SemesterSerializer
 from repository.deliverables.models import DeliverableSubmission
 from curriculum_analytics.services import (
     analytics_academic_year_count,
@@ -34,6 +35,8 @@ from repository.audit.services import (
 from grading.rubrics.models import Rubric
 from user_management.models import PitInstructorAssignment
 from user_management.academic_records.models import StudentAcademicRecord
+from user_management.academic_records.rollover import next_academic_step
+from user_management.academic_records.serializers import StudentAcademicRecordSerializer
 from student_teams.models import StudentTeam, TeamMembership
 from student_teams.term_scope import (
     apply_team_scope,
@@ -46,6 +49,14 @@ from .pit_repository_assistant import current_repo_assistant_for_year
 
 
 User = get_user_model()
+
+
+def _next_school_year_label(label):
+    try:
+        start, end = [int(part) for part in (label or '').split('-')]
+    except (TypeError, ValueError):
+        return ''
+    return f'{start + 1}-{end + 1}'
 
 
 def _display_name(user):
@@ -355,6 +366,107 @@ def _pit_lead_cohort_payload(user, *, search='', team_status='all', limit=None, 
     }
 
 
+def _pit_rollover_source_semester(user, pit_year, active_semester):
+    if not pit_year:
+        return None
+
+    active_records = StudentAcademicRecord.objects.filter(
+        year_level=pit_year,
+        semester=active_semester,
+    ) if active_semester else StudentAcademicRecord.objects.none()
+    if active_semester and active_records.exists():
+        return active_semester
+
+    latest_record = (
+        StudentAcademicRecord.objects.select_related('semester', 'semester__school_year')
+        .filter(year_level=pit_year)
+        .exclude(semester=active_semester)
+        .order_by('-semester__school_year__label', '-semester_id', '-created_at', '-id')
+        .first()
+    )
+    return latest_record.semester if latest_record else None
+
+
+def _pit_rollover_target_semester(source_semester, pit_year):
+    if source_semester is None or not pit_year:
+        return pit_year, None, None
+
+    target_year_level, target_label = next_academic_step(pit_year, source_semester.label)
+    if source_semester.label == Semester.FIRST:
+        target_school_year = source_semester.school_year
+    else:
+        target_school_year = SchoolYear.objects.filter(
+            label=_next_school_year_label(source_semester.school_year.label),
+        ).first()
+
+    target_semester = (
+        Semester.objects.select_related('school_year')
+        .filter(school_year=target_school_year, label=target_label)
+        .first()
+        if target_school_year
+        else None
+    )
+    return target_year_level, target_label, target_semester
+
+
+def _pit_rollover_preview_payload(user):
+    pit_year, active_semester = _pit_lead_scope(user)
+    source_semester = _pit_rollover_source_semester(user, pit_year, active_semester)
+    target_year_level, target_label, target_semester = _pit_rollover_target_semester(
+        source_semester,
+        pit_year,
+    )
+
+    rows = []
+    records = StudentAcademicRecord.objects.none()
+    if source_semester and pit_year:
+        records = (
+            StudentAcademicRecord.objects.select_related('student', 'semester', 'semester__school_year')
+            .filter(semester=source_semester, year_level=pit_year)
+            .order_by('student__last_name', 'student__first_name', 'student__username')
+        )
+
+    for record in records:
+        status_value = 'create'
+        reason = ''
+        if target_semester is None:
+            status_value = 'blocked'
+            reason = f'{target_label or "Target semester"} is not configured.'
+        elif StudentAcademicRecord.objects.filter(student=record.student, semester=target_semester).exists():
+            status_value = 'exists'
+            reason = 'Student already has a target-period record.'
+
+        rows.append({
+            'record': StudentAcademicRecordSerializer(record).data,
+            'target_year_level': target_year_level,
+            'target_semester_id': target_semester.id if target_semester else None,
+            'target_semester': target_semester.label if target_semester else target_label,
+            'target_display_semester': target_semester.display_name if target_semester else None,
+            'status': status_value,
+            'reason': reason,
+        })
+
+    return {
+        'pit_lead_year': pit_year,
+        'active_semester': SemesterSerializer(active_semester).data if active_semester else None,
+        'source_semester': SemesterSerializer(source_semester).data if source_semester else None,
+        'target_semester': SemesterSerializer(target_semester).data if target_semester else None,
+        'target_semester_label': target_label,
+        'target_year_level': target_year_level,
+        'is_capstone_intake': bool(
+            target_semester
+            and target_semester.capstone_program_phase == Semester.PHASE_CAPSTONE_1
+        ),
+        'rows': rows,
+        'counts': {
+            'all': len(rows),
+            'will_create': sum(1 for row in rows if row['status'] == 'create'),
+            'already_exists': sum(1 for row in rows if row['status'] == 'exists'),
+            'blocked': sum(1 for row in rows if row['status'] == 'blocked'),
+        },
+    }
+
+
 def _pit_lead_overview_payload(user):
     pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
     if not getattr(user, 'is_pit_lead', False) or not pit_year:
@@ -557,6 +669,76 @@ class PitLeadCohortView(APIView):
                 cohort_scope=cohort_scope,
             )
         )
+
+
+class PitLeadCohortRolloverPreviewView(APIView):
+    permission_classes = [IsAuthenticated, IsPitLead]
+
+    def get(self, request):
+        return Response(_pit_rollover_preview_payload(request.user))
+
+
+class PitLeadCohortRolloverConfirmView(APIView):
+    permission_classes = [IsAuthenticated, IsPitLead]
+
+    def post(self, request):
+        payload = _pit_rollover_preview_payload(request.user)
+        if payload['source_semester'] is None:
+            return Response(
+                {'detail': 'No source PIT cohort records are available for rollover.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if payload['target_semester'] is None:
+            return Response(
+                {'detail': 'No valid target academic period is configured.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        target_semester = Semester.objects.get(pk=payload['target_semester']['id'])
+        target_year_level = payload['target_year_level']
+        created = []
+        skipped = []
+
+        source_record_ids = [
+            row['record']['id']
+            for row in payload['rows']
+            if row['status'] in {'create', 'exists'}
+        ]
+        records = (
+            StudentAcademicRecord.objects.select_related('student', 'semester', 'semester__school_year')
+            .filter(pk__in=source_record_ids)
+            .order_by('student__last_name', 'student__first_name', 'student__username')
+        )
+
+        for record in records:
+            if StudentAcademicRecord.objects.filter(
+                student=record.student,
+                semester=target_semester,
+            ).exists():
+                skipped.append({
+                    'record_id': record.id,
+                    'reason': 'duplicate',
+                })
+                continue
+
+            created.append(StudentAcademicRecord.objects.create(
+                student=record.student,
+                semester=target_semester,
+                year_level=target_year_level,
+                section=record.section,
+                action=StudentAcademicRecord.ACTION_PROMOTE,
+                rolled_from=record,
+            ))
+
+        return Response({
+            'created': StudentAcademicRecordSerializer(created, many=True).data,
+            'created_count': len(created),
+            'skipped': skipped,
+            'skipped_count': len(skipped),
+            'target_semester': SemesterSerializer(target_semester).data,
+            'target_year_level': target_year_level,
+            'is_capstone_intake': payload['is_capstone_intake'],
+        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
 
 class FacultyDashboardView(APIView):

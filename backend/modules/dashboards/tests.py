@@ -247,6 +247,152 @@ class DashboardApiTests(APITestCase):
         response = self.client.get('/api/dashboards/pit-lead/cohort/')
         self.assertEqual(response.status_code, 403)
 
+    def test_pit_lead_rollover_creates_scoped_capstone_intake_records_only(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-rollover',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        student = User.objects.create_user(
+            username='third-year-rollover',
+            password='pass12345',
+            role='student',
+            first_name='Rhea',
+            last_name='Rollover',
+        )
+        other_year = User.objects.create_user(
+            username='second-year-nope',
+            password='pass12345',
+            role='student',
+        )
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        first_semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        second_semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            capstone_team_creation_enabled=True,
+            capstone_program_phase=Semester.PHASE_CAPSTONE_1,
+        )
+        source_record = StudentAcademicRecord.objects.create(
+            student=student,
+            semester=first_semester,
+            year_level='3rd Year',
+            section='BSIT-3A',
+        )
+        StudentAcademicRecord.objects.create(
+            student=other_year,
+            semester=first_semester,
+            year_level='2nd Year',
+            section='BSIT-2A',
+        )
+        pit_team = StudentTeam.objects.create(
+            name='PIT Rollover Team',
+            project_title='Scoped Records',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=first_semester,
+            leader=student,
+        )
+        TeamMembership.objects.create(team=pit_team, student=student, is_leader=True)
+
+        self.client.force_authenticate(user=pit_lead)
+        preview = self.client.get('/api/dashboards/pit-lead/cohort/rollover-preview/')
+        response = self.client.post('/api/dashboards/pit-lead/cohort/rollover/', {}, format='json')
+        repeat = self.client.post('/api/dashboards/pit-lead/cohort/rollover/', {}, format='json')
+
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data['source_semester']['id'], first_semester.id)
+        self.assertEqual(preview.data['target_semester']['id'], second_semester.id)
+        self.assertTrue(preview.data['is_capstone_intake'])
+        self.assertEqual(preview.data['counts']['will_create'], 1)
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        target_record = StudentAcademicRecord.objects.get(
+            student=student,
+            semester=second_semester,
+        )
+        self.assertEqual(target_record.year_level, '3rd Year')
+        self.assertEqual(target_record.section, 'BSIT-3A')
+        self.assertEqual(target_record.rolled_from, source_record)
+        self.assertFalse(
+            StudentAcademicRecord.objects.filter(
+                student=other_year,
+                semester=second_semester,
+            ).exists(),
+        )
+        self.assertTrue(
+            TeamMembership.objects.filter(student=student, team=pit_team).exists(),
+        )
+        self.assertEqual(repeat.status_code, 200)
+        self.assertEqual(repeat.data['created_count'], 0)
+        self.assertEqual(repeat.data['skipped_count'], 1)
+
+    def test_pit_lead_rollover_forbidden_for_non_pit_lead(self):
+        adviser = User.objects.create_user(
+            username='adviser-rollover',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+        self.client.force_authenticate(user=adviser)
+        response = self.client.get('/api/dashboards/pit-lead/cohort/rollover-preview/')
+        self.assertEqual(response.status_code, 403)
+
+    def test_pit_lead_rollover_promotes_to_next_year_level_across_school_year(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-year-boundary',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+        student = User.objects.create_user(
+            username='second-year-rollover',
+            password='pass12345',
+            role='student',
+        )
+        source_year = SchoolYear.objects.create(label='2026-2027')
+        target_year = SchoolYear.objects.create(label='2027-2028')
+        source_semester = Semester.objects.create(
+            school_year=source_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+        target_semester = Semester.objects.create(
+            school_year=target_year,
+            label=Semester.FIRST,
+        )
+        StudentAcademicRecord.objects.create(
+            student=student,
+            semester=source_semester,
+            year_level='2nd Year',
+            section='BSIT-2A',
+        )
+
+        self.client.force_authenticate(user=pit_lead)
+        preview = self.client.get('/api/dashboards/pit-lead/cohort/rollover-preview/')
+        response = self.client.post('/api/dashboards/pit-lead/cohort/rollover/', {}, format='json')
+
+        self.assertEqual(preview.status_code, 200)
+        self.assertEqual(preview.data['target_semester']['id'], target_semester.id)
+        self.assertEqual(preview.data['target_year_level'], '3rd Year')
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(
+            StudentAcademicRecord.objects.filter(
+                student=student,
+                semester=target_semester,
+                year_level='3rd Year',
+                section='BSIT-2A',
+            ).exists(),
+        )
+
     def test_student_dashboard_returns_phase_two_empty_team_contract(self):
         student = User.objects.create_user(
             username='student-1',

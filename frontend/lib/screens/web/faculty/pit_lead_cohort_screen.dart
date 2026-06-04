@@ -78,7 +78,12 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
             icon: Icons.school_outlined,
             title: 'Cohort roster',
             subtitle: '$pitYear · $semester',
-            actions: _isAuditMode ? null : _headerActions(importState, pitYear),
+            actions: _headerActions(
+              state,
+              importState,
+              pitYear,
+              auditMode: _isAuditMode,
+            ),
           ),
           const SizedBox(height: 20),
           if (importState.error != null) ...[
@@ -119,33 +124,50 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     );
   }
 
-  Widget _headerActions(UserManagementState importState, String pitYear) {
+  Widget _headerActions(
+    PitLeadCohortState state,
+    UserManagementState importState,
+    String pitYear, {
+    required bool auditMode,
+  }) {
+    final busy = importState.isSaving || state.isSaving;
     return Wrap(
       spacing: 10,
       runSpacing: 10,
       alignment: WrapAlignment.end,
       children: [
+        if (!auditMode)
+          OutlinedButton.icon(
+            icon: const Icon(Icons.download_outlined, size: 18),
+            label: const Text('CSV Template'),
+            onPressed: busy ? null : () => _downloadOfficialTemplate(pitYear),
+          ),
+        if (!auditMode)
+          OutlinedButton.icon(
+            icon: importState.isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.upload_file_outlined, size: 18),
+            label: const Text('Import Official Class List'),
+            onPressed: busy ? null : _pickOfficialClassList,
+          ),
         OutlinedButton.icon(
-          icon: const Icon(Icons.download_outlined, size: 18),
-          label: const Text('CSV Template'),
-          onPressed: importState.isSaving
-              ? null
-              : () => _downloadOfficialTemplate(pitYear),
-        ),
-        OutlinedButton.icon(
-          icon: importState.isSaving
+          icon: state.isSaving
               ? const SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
-              : const Icon(Icons.upload_file_outlined, size: 18),
-          label: const Text('Import Official Class List'),
-          onPressed: importState.isSaving ? null : _pickOfficialClassList,
+              : const Icon(Icons.rotate_right_outlined, size: 18),
+          label: const Text('Rollover Preview'),
+          onPressed: busy ? null : _openRolloverPreview,
         ),
-        if (widget.onCreateTeam != null)
+        if (!auditMode && widget.onCreateTeam != null)
           FilledButton.icon(
-            onPressed: widget.onCreateTeam,
+            onPressed: busy ? null : widget.onCreateTeam,
             style: FilledButton.styleFrom(
               backgroundColor: _maroon,
               foregroundColor: Colors.white,
@@ -847,6 +869,45 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     _applyFilters();
   }
 
+  Future<void> _openRolloverPreview() async {
+    final notifier = ref.read(pitLeadCohortProvider.notifier);
+    final preview = await notifier.fetchRolloverPreview();
+    if (!mounted || preview == null) return;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _PitRolloverPreviewDialog(
+        preview: preview,
+        onCancel: () => Navigator.of(dialogContext).pop(false),
+        onConfirm: () async {
+          final result = await notifier.confirmRollover();
+          if (!dialogContext.mounted || result == null) return;
+          Navigator.of(dialogContext).pop(true);
+          final created = result['created_count'] ?? 0;
+          final skipped = result['skipped_count'] ?? 0;
+          final target = result['target_semester'] is Map
+              ? Map<String, dynamic>.from(result['target_semester'] as Map)
+              : <String, dynamic>{};
+          final targetLabel =
+              target['display_name']?.toString() ?? 'the target term';
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(
+                  'Rollover complete. $created created, $skipped skipped for $targetLabel.',
+                ),
+              ),
+            );
+          }
+        },
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+    _applyFilters();
+  }
+
   _OfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
     final rows = csv
         .split(RegExp(r'\r?\n'))
@@ -1051,6 +1112,407 @@ class _OfficialClassListParseResult {
     required this.metadata,
     required this.students,
   });
+}
+
+class _PitRolloverPreviewDialog extends StatefulWidget {
+  final Map<String, dynamic> preview;
+  final VoidCallback onCancel;
+  final Future<void> Function() onConfirm;
+
+  const _PitRolloverPreviewDialog({
+    required this.preview,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  @override
+  State<_PitRolloverPreviewDialog> createState() =>
+      _PitRolloverPreviewDialogState();
+}
+
+class _PitRolloverPreviewDialogState extends State<_PitRolloverPreviewDialog> {
+  var _isConfirming = false;
+
+  static const _maroon = DefensysUi.primaryMaroon;
+  static const _ink = DefensysUi.textDark;
+  static const _muted = Color(0xFF6B7280);
+  static const _line = Color(0xFFE5E7EB);
+
+  @override
+  Widget build(BuildContext context) {
+    final counts = _map(widget.preview['counts']);
+    final rows = _list(widget.preview['rows']);
+    final source = _map(widget.preview['source_semester']);
+    final target = _map(widget.preview['target_semester']);
+    final pitYear = widget.preview['pit_lead_year']?.toString() ?? 'PIT year';
+    final targetYear =
+        widget.preview['target_year_level']?.toString() ?? pitYear;
+    final sourceLabel =
+        source['display_name']?.toString() ?? 'No source term found';
+    final targetLabel =
+        target['display_name']?.toString() ??
+        widget.preview['target_semester_label']?.toString() ??
+        'No target term configured';
+    final willCreate = _asInt(counts['will_create']);
+    final alreadyExists = _asInt(counts['already_exists']);
+    final blocked = _asInt(counts['blocked']);
+    final total = _asInt(counts['all']);
+    final isCapstoneIntake = widget.preview['is_capstone_intake'] == true;
+    final canConfirm =
+        !_isConfirming && willCreate > 0 && blocked == 0 && target.isNotEmpty;
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 18, 12, 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PIT Rollover Preview',
+                          style: TextStyle(
+                            color: _ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          '$pitYear cohort -> $targetYear',
+                          style: const TextStyle(
+                            color: _muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: _isConfirming ? null : widget.onCancel,
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _line),
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _summaryTile('Source', sourceLabel),
+                      _summaryTile('Target', targetLabel),
+                      _summaryTile('Students', '$total total'),
+                    ],
+                  ),
+                  if (isCapstoneIntake) ...[
+                    const SizedBox(height: 12),
+                    _notice(
+                      'This target term is marked as Capstone intake. Rollover will create academic records only; Capstone teams, advisers, panels, schedules, and grades stay under admin setup.',
+                    ),
+                  ],
+                  if (blocked > 0) ...[
+                    const SizedBox(height: 12),
+                    _notice(
+                      '$blocked student record${blocked == 1 ? '' : 's'} cannot roll over because the target academic period is missing.',
+                      warning: true,
+                    ),
+                  ],
+                  const SizedBox(height: 14),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _countPill(
+                        'Will create',
+                        willCreate,
+                        const Color(0xFF047857),
+                      ),
+                      _countPill(
+                        'Already exists',
+                        alreadyExists,
+                        const Color(0xFF2563EB),
+                      ),
+                      _countPill('Blocked', blocked, const Color(0xFFB91C1C)),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _line),
+            Flexible(
+              child: rows.isEmpty
+                  ? const Center(
+                      child: Padding(
+                        padding: EdgeInsets.all(28),
+                        child: Text(
+                          'No source PIT cohort records are available for rollover.',
+                          style: TextStyle(color: _muted, fontSize: 13),
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      shrinkWrap: true,
+                      itemCount: rows.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, color: _line),
+                      itemBuilder: (context, index) {
+                        final row = rows[index];
+                        final record = _map(row['record']);
+                        final status = row['status']?.toString() ?? 'blocked';
+                        final reason = row['reason']?.toString() ?? '';
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 18,
+                            vertical: 12,
+                          ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 3,
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      record['student_name']?.toString() ?? '-',
+                                      style: const TextStyle(
+                                        color: _ink,
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Text(
+                                      record['student_username']?.toString() ??
+                                          '-',
+                                      style: const TextStyle(
+                                        color: _muted,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  record['section']
+                                              ?.toString()
+                                              .trim()
+                                              .isNotEmpty ==
+                                          true
+                                      ? record['section'].toString()
+                                      : 'No section',
+                                  style: const TextStyle(
+                                    color: _ink,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ),
+                              Expanded(
+                                flex: 2,
+                                child: _statusPill(status, reason),
+                              ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+            ),
+            const Divider(height: 1, color: _line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  TextButton(
+                    onPressed: _isConfirming ? null : widget.onCancel,
+                    child: const Text('Cancel'),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton.icon(
+                    onPressed: canConfirm
+                        ? () async {
+                            setState(() => _isConfirming = true);
+                            await widget.onConfirm();
+                            if (mounted) {
+                              setState(() => _isConfirming = false);
+                            }
+                          }
+                        : null,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _maroon,
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: _isConfirming
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_circle_outline, size: 18),
+                    label: Text('Create Rollover Records ($willCreate)'),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryTile(String label, String value) {
+    return Container(
+      width: 240,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label,
+            style: const TextStyle(
+              color: _muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _notice(String message, {bool warning = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: warning ? const Color(0xFFFFFBEB) : const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: warning ? const Color(0xFFF59E0B) : const Color(0xFF93C5FD),
+        ),
+      ),
+      child: Text(
+        message,
+        style: const TextStyle(
+          color: Color(0xFF374151),
+          fontSize: 12.5,
+          height: 1.35,
+        ),
+      ),
+    );
+  }
+
+  Widget _countPill(String label, int count, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.09),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.24)),
+      ),
+      child: Text(
+        '$label: $count',
+        style: TextStyle(
+          color: color,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _statusPill(String status, String reason) {
+    final color = switch (status) {
+      'create' => const Color(0xFF047857),
+      'exists' => const Color(0xFF2563EB),
+      _ => const Color(0xFFB91C1C),
+    };
+    final label = switch (status) {
+      'create' => 'Will create',
+      'exists' => 'Already exists',
+      _ => 'Blocked',
+    };
+    return Tooltip(
+      message: reason.isEmpty ? label : reason,
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.09),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(color: color.withValues(alpha: 0.22)),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  static Map<String, dynamic> _map(dynamic value) {
+    if (value is Map) {
+      return Map<String, dynamic>.from(value);
+    }
+    return <String, dynamic>{};
+  }
+
+  static List<Map<String, dynamic>> _list(dynamic value) {
+    if (value is! List) return const [];
+    return value
+        .whereType<Map>()
+        .map((item) => Map<String, dynamic>.from(item))
+        .toList();
+  }
+
+  static int _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
 }
 
 class _SectionDraft {

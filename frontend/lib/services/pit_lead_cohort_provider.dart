@@ -7,11 +7,12 @@ import 'authenticated_client.dart';
 
 final pitLeadCohortProvider =
     NotifierProvider<PitLeadCohortNotifier, PitLeadCohortState>(
-  PitLeadCohortNotifier.new,
-);
+      PitLeadCohortNotifier.new,
+    );
 
 class PitLeadCohortState {
   final bool isLoading;
+  final bool isSaving;
   final List<Map<String, dynamic>> students;
   final Map<String, dynamic> counts;
   final String? pitLeadYear;
@@ -26,6 +27,7 @@ class PitLeadCohortState {
 
   PitLeadCohortState({
     this.isLoading = false,
+    this.isSaving = false,
     this.students = const [],
     this.counts = const {},
     this.pitLeadYear,
@@ -41,6 +43,7 @@ class PitLeadCohortState {
 
   PitLeadCohortState copyWith({
     bool? isLoading,
+    bool? isSaving,
     List<Map<String, dynamic>>? students,
     Map<String, dynamic>? counts,
     String? pitLeadYear,
@@ -56,6 +59,7 @@ class PitLeadCohortState {
   }) {
     return PitLeadCohortState(
       isLoading: isLoading ?? this.isLoading,
+      isSaving: isSaving ?? this.isSaving,
       students: students ?? this.students,
       counts: counts ?? this.counts,
       pitLeadYear: pitLeadYear ?? this.pitLeadYear,
@@ -72,7 +76,8 @@ class PitLeadCohortState {
 }
 
 class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   @override
   PitLeadCohortState build() => PitLeadCohortState();
@@ -104,8 +109,9 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
         query['scope'] = scope;
       }
 
-      final uri = Uri.parse('${ApiConfig.dashboardsUrl}/pit-lead/cohort/')
-          .replace(queryParameters: query.isEmpty ? null : query);
+      final uri = Uri.parse(
+        '${ApiConfig.dashboardsUrl}/pit-lead/cohort/',
+      ).replace(queryParameters: query.isEmpty ? null : query);
 
       final response = await _client.get(uri);
 
@@ -118,15 +124,17 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
             ? Map<String, dynamic>.from(payload['counts'] as Map)
             : <String, dynamic>{};
 
-        final historyStudents = (payload['history_students'] as List? ?? const [])
-            .map((item) => Map<String, dynamic>.from(item as Map))
-            .toList();
+        final historyStudents =
+            (payload['history_students'] as List? ?? const [])
+                .map((item) => Map<String, dynamic>.from(item as Map))
+                .toList();
         final historyCounts = payload['history_counts'] is Map
             ? Map<String, dynamic>.from(payload['history_counts'] as Map)
             : <String, dynamic>{};
 
         state = state.copyWith(
           isLoading: false,
+          isSaving: false,
           students: students,
           counts: counts,
           pitLeadYear: payload['pit_lead_year']?.toString(),
@@ -140,19 +148,95 @@ class PitLeadCohortNotifier extends Notifier<PitLeadCohortState> {
       } else if (response.statusCode == 403) {
         state = state.copyWith(
           isLoading: false,
+          isSaving: false,
           error: 'You do not have permission to view this cohort roster.',
         );
       } else {
         state = state.copyWith(
           isLoading: false,
+          isSaving: false,
           error: 'Failed to load cohort roster (${response.statusCode}).',
         );
       }
     } catch (e) {
       state = state.copyWith(
         isLoading: false,
+        isSaving: false,
         error: 'Connection error: $e',
       );
     }
+  }
+
+  Future<Map<String, dynamic>?> fetchRolloverPreview() async {
+    state = state.copyWith(isSaving: true, clearError: true);
+
+    try {
+      final response = await _client.get(
+        Uri.parse(
+          '${ApiConfig.dashboardsUrl}/pit-lead/cohort/rollover-preview/',
+        ),
+      );
+
+      if (response.statusCode == 200) {
+        state = state.copyWith(isSaving: false, clearError: true);
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return null;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> confirmRollover() async {
+    state = state.copyWith(isSaving: true, clearError: true);
+
+    try {
+      final response = await _client.post(
+        Uri.parse('${ApiConfig.dashboardsUrl}/pit-lead/cohort/rollover/'),
+        body: jsonEncode(const {}),
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        state = state.copyWith(isSaving: false, clearError: true);
+        return Map<String, dynamic>.from(jsonDecode(response.body));
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return null;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return null;
+    }
+  }
+
+  String _errorFromResponse(dynamic response) {
+    try {
+      final data = jsonDecode(response.body);
+      if (data is Map) {
+        if (data['detail'] != null) {
+          return data['detail'].toString();
+        }
+        if (data.isNotEmpty) {
+          final firstValue = data.values.first;
+          if (firstValue is List && firstValue.isNotEmpty) {
+            return firstValue.first.toString();
+          }
+          return firstValue.toString();
+        }
+      }
+    } catch (_) {
+      return 'Request failed. Status: ${response.statusCode}';
+    }
+
+    return 'Request failed. Status: ${response.statusCode}';
   }
 }

@@ -4,6 +4,8 @@ from .views import (
     FacultyDashboardView,
     PanelistDashboardView,
     PitLeadCohortView,
+    PitLeadCohortRolloverConfirmView,
+    PitLeadCohortRolloverPreviewView,
     PitLeadRepositoryAssistantView,
     StudentDashboardView,
 )
@@ -11,6 +13,16 @@ from .views import (
 urlpatterns = [
     path('admin/', AdminDashboardView.as_view(), name='dashboard_admin'),
     path('pit-lead/cohort/', PitLeadCohortView.as_view(), name='dashboard_pit_lead_cohort'),
+    path(
+        'pit-lead/cohort/rollover-preview/',
+        PitLeadCohortRolloverPreviewView.as_view(),
+        name='dashboard_pit_lead_cohort_rollover_preview',
+    ),
+    path(
+        'pit-lead/cohort/rollover/',
+        PitLeadCohortRolloverConfirmView.as_view(),
+        name='dashboard_pit_lead_cohort_rollover',
+    ),
     path(
         'pit-lead/repository-assistant/',
         PitLeadRepositoryAssistantView.as_view(),
