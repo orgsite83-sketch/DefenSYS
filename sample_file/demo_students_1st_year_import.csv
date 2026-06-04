@@ -1,5 +1,18 @@
-id_number,first_name,last_name,email,role
-4011,James,Rivera,4011@ustp.edu.ph,student
-4012,Sofia,Lim,4012@ustp.edu.ph,student
-4013,Miguel,Torres,4013@ustp.edu.ph,student
-4014,Chloe,Nguyen,4014@ustp.edu.ph,student
+OFFICIAL LIST OF ENROLLED STUDENTS
+2026-2027 1st Semester
+
+Subject Code,IT111
+Subject Title,Introduction to Computing
+Academic Units,3,Lab Units,1
+Credit Units,3,Lab Hours,3
+Mode,Lecture and Laboratory
+Instructor,Maricel Suarez
+Class Section,BSIT-1A
+Year Level,1st Year
+Schedule(s),M 1:00 PM - 3:00 PM
+
+#,Student Number,Full Name,Program,Gender,Level,OR No.,Validation Date,Email,Contact
+1,4011,"RIVERA, James",BSIT,M,1st Yr.,OR-4011,7/28/25 11:47 AM,4011@ustp.edu.ph,09170004011
+2,4012,"LIM, Sofia",BSIT,F,1st Yr.,OR-4012,7/28/25 11:50 AM,4012@ustp.edu.ph,09170004012
+3,4013,"TORRES, Miguel",BSIT,M,1st Yr.,OR-4013,7/28/25 11:55 AM,4013@ustp.edu.ph,09170004013
+4,4014,"NGUYEN, Chloe",BSIT,F,1st Yr.,OR-4014,7/28/25 12:01 PM,4014@ustp.edu.ph,09170004014

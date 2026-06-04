@@ -292,9 +292,12 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
         final recordsMessage = records == 0
             ? ''
             : ' $records academic records created.';
+        final assignmentMessage = payload['instructor_assignment'] != null
+            ? ' PIT Instructor assigned.'
+            : '';
         await fetchUsers(
           successMessage:
-              '$created users imported.$recordsMessage $skipped skipped. $errors errors.',
+              '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage',
         );
         return true;
       }

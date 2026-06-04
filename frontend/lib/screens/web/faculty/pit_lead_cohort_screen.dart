@@ -815,7 +815,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
           '\n'
           'Subject Code,IT111\n'
           'Subject Title,Introduction to Computing\n'
-          'Faculty,"Daga-ang, Jubilee S."\n'
+          'Instructor,"Daga-ang, Jubilee S."\n'
           'Class Section,BSIT-1A\n'
           'Year Level,$year\n'
           '\n'

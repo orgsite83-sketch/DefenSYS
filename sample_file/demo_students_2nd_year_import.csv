@@ -1,5 +1,18 @@
-id_number,first_name,last_name,email,role
-4021,Darren,Kim,4021@ustp.edu.ph,student
-4022,Isabel,Cruz,4022@ustp.edu.ph,student
-4023,Noah,Ramos,4023@ustp.edu.ph,student
-4024,Leah,Fernandez,4024@ustp.edu.ph,student
+OFFICIAL LIST OF ENROLLED STUDENTS
+2026-2027 1st Semester
+
+Subject Code,IT211
+Subject Title,Data Structures and Algorithms
+Academic Units,3,Lab Units,1
+Credit Units,3,Lab Hours,3
+Mode,Lecture and Laboratory
+Instructor,Jonathan Beltran
+Class Section,BSIT-2A
+Year Level,2nd Year
+Schedule(s),T 9:00 AM - 12:00 PM
+
+#,Student Number,Full Name,Program,Gender,Level,OR No.,Validation Date,Email,Contact
+1,4021,"KIM, Darren",BSIT,M,2nd Yr.,OR-4021,7/28/25 11:47 AM,4021@ustp.edu.ph,09170004021
+2,4022,"CRUZ, Isabel",BSIT,F,2nd Yr.,OR-4022,7/28/25 11:50 AM,4022@ustp.edu.ph,09170004022
+3,4023,"RAMOS, Noah",BSIT,M,2nd Yr.,OR-4023,7/28/25 11:55 AM,4023@ustp.edu.ph,09170004023
+4,4024,"FERNANDEZ, Leah",BSIT,F,2nd Yr.,OR-4024,7/28/25 12:01 PM,4024@ustp.edu.ph,09170004024

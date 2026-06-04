@@ -405,6 +405,34 @@ class BulkImportUsersMixin:
             context_semester = self._resolve_context_semester(student_context)
             context_year_level = (student_context.get('year_level') or '').strip()
         context_section = ' '.join((student_context.get('section') or '').strip().split())
+        faculty_name = _clean_spaces(
+            student_context.get('instructor_name')
+            or student_context.get('instructor')
+            or student_context.get('faculty_name')
+            or student_context.get('faculty')
+        )
+        require_faculty_match = student_context.get('require_faculty_match') is True
+
+        instructor_assignment = None
+        faculty_match_status = None
+        if require_faculty_match:
+            if context_semester is None:
+                return Response({'semester_id': ['A target semester is required before assigning a PIT Instructor.']}, status=status.HTTP_400_BAD_REQUEST)
+            if not context_year_level:
+                return Response({'year_level': ['Year level is required before assigning a PIT Instructor.']}, status=status.HTTP_400_BAD_REQUEST)
+            if not context_section:
+                return Response({'section': ['Class section is required before assigning a PIT Instructor.']}, status=status.HTTP_400_BAD_REQUEST)
+            if not faculty_name:
+                return Response({'instructor_name': ['Instructor is required in the official class list before importing students.']}, status=status.HTTP_400_BAD_REQUEST)
+
+            faculty, faculty_match_status = _match_faculty_by_name(faculty_name)
+            if faculty is None:
+                detail = (
+                    'Instructor name matched multiple accounts. Resolve the faculty account before importing students.'
+                    if faculty_match_status == 'ambiguous'
+                    else 'Instructor could not be matched to an active faculty account. Import faculty first or correct the class list instructor name.'
+                )
+                return Response({'instructor_name': [detail]}, status=status.HTTP_400_BAD_REQUEST)
 
         created = []
         records_created = []
@@ -462,6 +490,18 @@ class BulkImportUsersMixin:
                     section=section,
                 ))
 
+        if require_faculty_match:
+            instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
+                faculty=faculty,
+                semester=context_semester,
+                year_level=context_year_level,
+                section=context_section,
+                defaults={
+                    'assigned_by': request.user,
+                    'is_active': True,
+                },
+            )
+
         return Response({
             'created': ManagedUserSerializer(created, many=True).data,
             'created_count': len(created),
@@ -470,6 +510,12 @@ class BulkImportUsersMixin:
             'skipped_count': len(skipped),
             'errors': errors,
             'error_count': len(errors),
+            'faculty_match_status': faculty_match_status,
+            'instructor_assignment': (
+                PitInstructorAssignmentSerializer(instructor_assignment).data
+                if instructor_assignment is not None
+                else None
+            ),
             'counts': user_counts(),
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 
@@ -519,7 +565,12 @@ class PitLeadOfficialClassListImportView(APIView):
             or request.data.get('section')
         )
         imported_year = _normalize_year_level(metadata.get('year_level') or request.data.get('year_level') or pit_year)
-        faculty_name = _clean_spaces(metadata.get('faculty') or metadata.get('faculty_name'))
+        faculty_name = _clean_spaces(
+            metadata.get('instructor')
+            or metadata.get('instructor_name')
+            or metadata.get('faculty')
+            or metadata.get('faculty_name')
+        )
         rows = request.data.get('students') or request.data.get('users') or []
 
         if not isinstance(rows, list):
@@ -531,6 +582,20 @@ class PitLeadOfficialClassListImportView(APIView):
                 {'year_level': [f'PIT Lead import is limited to {pit_year}.']},
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        if not faculty_name:
+            return Response(
+                {'instructor_name': ['Instructor is required in the official class list before importing students.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        faculty, faculty_match_status = _match_faculty_by_name(faculty_name)
+        if faculty is None:
+            detail = (
+                'Instructor name matched multiple accounts. Resolve the faculty account before importing students.'
+                if faculty_match_status == 'ambiguous'
+                else 'Instructor could not be matched to an active faculty account. Import faculty first or correct the class list instructor name.'
+            )
+            return Response({'instructor_name': [detail]}, status=status.HTTP_400_BAD_REQUEST)
 
         created = []
         updated = []
@@ -613,26 +678,16 @@ class PitLeadOfficialClassListImportView(APIView):
 
         warnings = []
         instructor_assignment = None
-        faculty_match_status = None
-        if faculty_name:
-            faculty, faculty_match_status = _match_faculty_by_name(faculty_name)
-            if faculty is not None:
-                instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
-                    faculty=faculty,
-                    semester=active,
-                    year_level=pit_year,
-                    section=section,
-                    defaults={
-                        'assigned_by': request.user,
-                        'is_active': True,
-                    },
-                )
-            elif faculty_match_status == 'ambiguous':
-                warnings.append('Faculty name matched multiple accounts. Assign PIT Instructor manually.')
-            else:
-                warnings.append('Faculty could not be matched. Assign PIT Instructor manually.')
-        else:
-            warnings.append('No faculty name found. Assign PIT Instructor manually if needed.')
+        instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
+            faculty=faculty,
+            semester=active,
+            year_level=pit_year,
+            section=section,
+            defaults={
+                'assigned_by': request.user,
+                'is_active': True,
+            },
+        )
 
         return Response({
             'created': ManagedUserSerializer(created, many=True).data,

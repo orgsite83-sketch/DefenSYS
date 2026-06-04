@@ -1,62 +1,98 @@
 # DefenSYS sample import files
 
-Demo CSV files for bulk import. Default password for imported users is the same as **id_number** (e.g. student `4081`, faculty `206`).
+Demo CSV files for bulk import. Default password for imported users is the same as **id_number** (for example student `4081`, faculty `206`).
 
 ## Files
 
 | File | Purpose |
 |------|---------|
 | `demo_faculty_import.csv` | 10 faculty accounts |
-| `demo_students_1st_year_import.csv` | 4 first-year students (one team cohort) |
-| `demo_students_2nd_year_import.csv` | 4 second-year students |
-| `demo_students_3rd_year_import.csv` | 4 third-year students |
-| `demo_students_4th_year_import.csv` | 4 fourth-year students |
-| `demo_teams_1st_year_import.csv` | 1 PIT team (4 members) — **1st Year** PIT Lead |
-| `demo_teams_2nd_year_import.csv` | 1 PIT team (4 members) — **2nd Year** PIT Lead |
-| `demo_teams_3rd_year_import.csv` | 1 PIT team (4 members) — **3rd Year** PIT Lead |
-| `demo_teams_4th_year_import.csv` | 1 capstone team (4 members) — **Admin** (4th Year) |
-| `demo_teams_capstone_import.csv` | Same 3rd-year cohort as capstone — **Admin** in 2nd semester |
+| `demo_students_1st_year_import.csv` | 1st-year official class list for admin Student Batch import |
+| `demo_students_2nd_year_import.csv` | 2nd-year official class list for admin Student Batch import |
+| `demo_students_3rd_year_import.csv` | 3rd-year official class list for admin Student Batch import |
+| `demo_students_4th_year_import.csv` | 4th-year official class list for admin Student Batch import |
+| `demo_pit_lead_official_class_list_import.csv` | PIT Lead Cohort import sample using the official class list template |
+| `demo_teams_1st_year_import.csv` | 1 PIT team, 4 members, for 1st Year PIT Lead |
+| `demo_teams_2nd_year_import.csv` | 1 PIT team, 4 members, for 2nd Year PIT Lead |
+| `demo_teams_3rd_year_import.csv` | 1 PIT team, 4 members, for 3rd Year PIT Lead |
+| `demo_teams_4th_year_import.csv` | 1 capstone team, 4 members, for Admin 4th Year |
+| `demo_teams_capstone_import.csv` | Same 3rd-year cohort as capstone, for Admin in 2nd semester |
 
-## Student id_number ranges
+## Student Id Number Ranges
 
-| Year | IDs | Leader (first in team CSV) |
-|------|-----|----------------------------|
-| 1st Year | 4011–4014 | James Rivera |
-| 2nd Year | 4021–4024 | Darren Kim |
-| 3rd Year | 4081–4084 | Carlos Reyes |
-| 4th Year | 4091–4094 | Marcus Villar |
+| Year | IDs | Leader in team CSV |
+|------|-----|--------------------|
+| 1st Year | 4011-4014 | James Rivera |
+| 2nd Year | 4021-4024 | Darren Kim |
+| 3rd Year | 4081-4084 | Carlos Reyes |
+| 4th Year | 4091-4094 | Marcus Villar |
 
-## If you already imported 12 students
+## PIT Lead Official Class List
+
+Use `demo_pit_lead_official_class_list_import.csv` from:
+
+```text
+PIT Lead -> User Management -> Cohort -> Import Official Class List
+```
+
+This file follows the current Cohort template:
+
+```text
+OFFICIAL LIST OF ENROLLED STUDENTS
+Subject Code
+Subject Title
+Instructor
+Class Section
+Year Level
+#, Student Number, Full Name, Program, Gender, Level, OR No., Validation Date, Email, Contact
+```
+
+The sample uses:
+
+```text
+Instructor: Maricel Suarez
+Section: BSIT-3A
+Year Level: 3rd Year
+Students: 4081-4084
+```
+
+Import `demo_faculty_import.csv` first so the official class list instructor can match `Maricel Suarez` to an existing faculty account and create the PIT Instructor assignment automatically.
+
+## If You Already Imported 12 Students
 
 Trim the database to the 4-student demo cohort:
 
 ```bash
 cd backend
-python manage.py remove_extra_demo_students --dry-run   # preview
-python manage.py remove_extra_demo_students             # delete 4085-4092
+python manage.py remove_extra_demo_students --dry-run
+python manage.py remove_extra_demo_students
 ```
 
 Keeps: **4081** Carlos Reyes, **4082** Maria Santos, **4083** Juan Dela Cruz, **4084** Ana Mendoza.
 
-## Recommended import order
+## Recommended Import Order
 
-1. **Academic Periods** — active school year and semester (e.g. 1st Semester ON).
-2. **Users** → Bulk import `demo_faculty_import.csv` (Faculty / General Users).
-3. **Role Assignment** — assign **Project Adviser** and **PIT Lead** per year (e.g. **Ricardo Fontanilla** for 3rd Year PIT Lead).
-4. **Users** → Bulk import the student file for each year you need as **Student Batch** with the matching year level (fresh install only; skips duplicates if already imported).
-5. **1st semester (PIT)** — log in as the **PIT Lead** for that year → **Student Teams** → bulk import the matching `demo_teams_*_year_import.csv` (or use **CSV Template** in the app to download a sample for that year).
-6. **2nd semester (Capstone)** — log in as **admin** → **Student Teams** → bulk import `demo_teams_capstone_import.csv` or the 4th-year capstone file as appropriate.
+1. **Academic Periods** - create or activate the school year and semester, for example 1st Semester ON.
+2. **Users** - bulk import `demo_faculty_import.csv` as Faculty / General Users.
+3. **Role Assignment** - assign **Project Adviser** and **PIT Lead** per year, for example Ricardo Fontanilla for 3rd Year PIT Lead.
+4. **Admin student setup** - if admin is seeding students directly, bulk import the matching `demo_students_*_year_import.csv` as **Student Batch**. These files use the official class list shape and include section/year metadata.
+5. **PIT Lead student setup** - log in as the PIT Lead, open **Cohort**, then import `demo_pit_lead_official_class_list_import.csv` with **Import Official Class List**.
+6. **1st semester PIT teams** - log in as the PIT Lead for that year, open **Student Teams**, then bulk import the matching `demo_teams_*_year_import.csv`.
+7. **2nd semester Capstone teams** - log in as admin, open **Student Teams**, then bulk import `demo_teams_capstone_import.csv` or the 4th-year capstone file as appropriate.
 
-## Team import notes
+## Team Import Notes
 
-- CSV columns: `team_name`, `project_title`, `member_ids`, `leader_id`, `adviser_id` (optional: `year_level` for power users).
-- No `level` column — the app derives **PIT vs Capstone** from your role.
-- **PIT Lead:** program year comes from your PIT Lead assignment (e.g. 3rd Year PIT).
-- **Admin capstone:** `year_level` is inferred from members’ academic records on the active semester (defaults to 3rd Year if members are not resolved yet). After rollover, a 4th-year cohort becomes **4th Year Capstone** automatically.
-- Members, leader, and adviser use **First Last** names matching User Management (or numeric **id_number** / username, e.g. `4083`, to avoid duplicate-name errors).
-- If team import fails with “multiple users match that name”, delete leftover test accounts: `python manage.py dev_remove_leftover_test_users --dry-run` then run without `--dry-run` in `backend/`.
-- Adviser in capstone team files: **Ricardo Fontanilla** (faculty id `206`). PIT year samples leave `adviser_id` blank.
+- CSV columns: `team_name`, `project_title`, `member_ids`, `leader_id`, `adviser_id`.
+- Optional column for power users: `year_level`.
+- No `level` column. The app derives PIT vs Capstone from your role.
+- PIT Lead program year comes from the PIT Lead assignment.
+- Admin capstone `year_level` is inferred from members' academic records on the active semester.
+- Members, leader, and adviser can use First Last names matching User Management, or numeric id numbers like `4083`.
+- If team import fails with multiple matching users, delete leftover test accounts with `python manage.py dev_remove_leftover_test_users --dry-run`, then run without `--dry-run` in `backend/`.
+- Adviser in capstone team files is Ricardo Fontanilla, faculty id `206`. PIT year samples leave `adviser_id` blank.
 
-## In-app download
+## In-App Download
 
-On **Student Teams**, **CSV Template** opens a year-level picker (admin) or downloads the sample for your PIT Lead year. Files match the `demo_teams_*` samples in this folder.
+On **Cohort**, **CSV Template** downloads the PIT Lead official class list shape. Use `demo_pit_lead_official_class_list_import.csv` as the matching sample file.
+
+On **Student Teams**, **CSV Template** opens a year-level picker for admin or downloads the sample for the PIT Lead year. Files match the `demo_teams_*` samples in this folder.

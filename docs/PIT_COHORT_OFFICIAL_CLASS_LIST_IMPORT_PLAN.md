@@ -95,7 +95,7 @@ Academic Units
 Class Section
 Year Level
 Schedule(s)
-Faculty
+Instructor
 Semester / School Year
 ```
 
@@ -121,7 +121,7 @@ Full Name
 Program
 Class Section
 Year Level
-Faculty
+Instructor
 Semester
 ```
 
@@ -143,14 +143,14 @@ When an official class list is imported, the system should:
 
 If the import is being used for PIT:
 
-8. Detect the faculty name from the file and try to match it to an existing faculty account.
+8. Detect the instructor name from the file and try to match it to an existing faculty account.
 9. If matched, create or update the `PIT Instructor` assignment for that faculty, year level, semester, and section.
 10. If not matched, import the students anyway and mark the section as needing instructor assignment.
 11. If a PIT team is created later from those students, team section should follow the students' academic section.
 
 If the import is being used for Capstone:
 
-8. Do not assign adviser automatically from the class-list faculty field.
+8. Do not assign adviser automatically from the class-list instructor field.
 9. Keep adviser assignment in the existing Capstone team/adviser workflow.
 10. If a Capstone team is created later from those students, the team can retain section context for filtering/reporting, but access should still follow adviser/team assignment.
 
@@ -167,7 +167,7 @@ Official class list import
 -> creates/imports students
 -> creates/updates student academic records
 -> assigns section
--> detects class-list faculty
+-> detects class-list instructor
 -> creates PIT Instructor assignment when faculty match is confident
 -> PIT teams are created/managed inside that section context
 ```
@@ -208,7 +208,7 @@ For PIT, the official class list can be the primary way to assign PIT Instructor
 Example:
 
 ```text
-Faculty: Daga-ang, Jubilee S.
+Instructor: Daga-ang, Jubilee S.
 Class Section: BSIT-1A
 Year Level: 1st Year
 ```
@@ -224,7 +224,7 @@ Section: BSIT-1A
 
 This should not automatically create a new faculty account unless the system has a deliberate, admin-approved faculty import flow. Automatic faculty creation from class-list text is risky because names may be formatted inconsistently.
 
-For Capstone, the class-list faculty should not become the project adviser automatically. Capstone adviser assignment remains team-based and should follow the current system behavior.
+For Capstone, the class-list instructor should not become the project adviser automatically. Capstone adviser assignment remains team-based and should follow the current system behavior.
 
 ## Manual Fallback
 
@@ -329,7 +329,7 @@ The import should reject or require confirmation when:
 
 The import should warn but still continue when:
 
-- Faculty name cannot be matched to an existing faculty.
+- Instructor name cannot be matched to an existing faculty account.
 - Email/contact is missing.
 - Some optional row fields are blank.
 - Student already exists and will be updated.
@@ -346,8 +346,8 @@ Suggested backend pieces:
 - Reuse existing student creation/update helpers where possible.
 - Reuse `StudentAcademicRecord.section`.
 - Reuse `PitInstructorAssignment`.
-- Add import result warnings for unmatched faculty and skipped/updated rows.
-- Keep Capstone adviser/team assignment separate from class-list faculty import.
+- Add import result warnings for unmatched instructors and skipped/updated rows.
+- Keep Capstone adviser/team assignment separate from class-list instructor import.
 
 Suggested frontend pieces:
 
@@ -364,8 +364,8 @@ Suggested frontend pieces:
 
 - Should the PIT Lead be allowed to choose a semester manually if the file semester is missing?
 - Should section names be normalized, for example `BSIT 1A` to `BSIT-1A`?
-- Should the system store subject/schedule metadata now, or only use section/year/faculty/student data for this phase?
-- Should unmatched faculty warnings appear on the cohort screen until resolved?
+- Should the system store subject/schedule metadata now, or only use section/year/instructor/student data for this phase?
+- Should unmatched instructor warnings appear on the cohort screen until resolved?
 - Should Admin and PIT Lead use the same preview UI with different available controls?
 - Should Capstone screens display imported section context even though adviser access remains team-based?
 
@@ -377,8 +377,8 @@ Build the smallest useful version first:
 2. Treat official class list import as student academic-record import.
 3. Parse/import students with year level and section.
 4. Lock PIT Lead import to PIT Lead's assigned year.
-5. Match faculty only if an existing faculty account is confidently found.
+5. Match instructor only if an existing faculty account is confidently found.
 6. Auto-create `PIT Instructor` assignment only for PIT and only on confident match.
-7. Do not auto-assign Capstone adviser from class-list faculty.
+7. Do not auto-assign Capstone adviser from class-list instructor.
 8. Show warning and manual assignment path if PIT faculty is unmatched.
 9. Keep admin and Capstone flows unchanged except for using imported student academic records.

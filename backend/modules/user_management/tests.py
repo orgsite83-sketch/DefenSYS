@@ -548,7 +548,7 @@ class UserManagementApiTests(APITestCase):
                 'metadata': {
                     'section': 'BSIT-1A',
                     'year_level': StudentAcademicRecord.FIRST_YEAR,
-                    'faculty': 'Daga-ang, Jubilee S.',
+                    'instructor': 'Daga-ang, Jubilee S.',
                 },
                 'students': [
                     {
@@ -593,6 +593,119 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(assignment.semester, semester)
         self.assertEqual(assignment.year_level, StudentAcademicRecord.FIRST_YEAR)
         self.assertEqual(assignment.section, 'BSIT-1A')
+
+    def test_pit_lead_official_class_list_import_rejects_unmatched_faculty(self):
+        school_year = SchoolYear.objects.create(label='2030-2032')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        pit_lead = User.objects.create_user(
+            username='pit-lead-official-no-faculty',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=StudentAcademicRecord.FIRST_YEAR,
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/users/pit-lead/official-class-list-import/',
+            {
+                'metadata': {
+                    'section': 'BSIT-1B',
+                    'year_level': StudentAcademicRecord.FIRST_YEAR,
+                    'instructor': 'Missing Faculty',
+                },
+                'students': [
+                    {
+                        'id_number': '2030-0101',
+                        'full_name': 'Blocked Student',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('instructor_name', response.data)
+        self.assertFalse(User.objects.filter(username='2030-0101').exists())
+
+    def test_admin_student_batch_official_list_requires_and_assigns_faculty(self):
+        school_year = SchoolYear.objects.create(label='2030-2033')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        instructor = User.objects.create_user(
+            username='maricel-suarez',
+            password='pass12345',
+            role='faculty',
+            first_name='Maricel',
+            last_name='Suarez',
+        )
+
+        blocked = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.THIRD_YEAR,
+                    'section': 'BSIT-3A',
+                    'instructor_name': 'Unknown Faculty',
+                    'require_faculty_match': True,
+                },
+                'users': [
+                    {
+                        'id_number': '2030-0201',
+                        'first_name': 'Blocked',
+                        'last_name': 'Student',
+                        'email': 'blocked@example.com',
+                        'role': 'student',
+                        'year_level': StudentAcademicRecord.THIRD_YEAR,
+                        'section': 'BSIT-3A',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(blocked.status_code, 400)
+        self.assertFalse(User.objects.filter(username='2030-0201').exists())
+
+        allowed = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.THIRD_YEAR,
+                    'section': 'BSIT-3A',
+                    'instructor_name': 'Maricel Suarez',
+                    'require_faculty_match': True,
+                },
+                'users': [
+                    {
+                        'id_number': '2030-0201',
+                        'first_name': 'Allowed',
+                        'last_name': 'Student',
+                        'email': 'allowed@example.com',
+                        'role': 'student',
+                        'year_level': StudentAcademicRecord.THIRD_YEAR,
+                        'section': 'BSIT-3A',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(allowed.status_code, 201)
+        self.assertEqual(allowed.data['created_count'], 1)
+        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        self.assertEqual(assignment.semester, semester)
+        self.assertEqual(assignment.year_level, StudentAcademicRecord.THIRD_YEAR)
+        self.assertEqual(assignment.section, 'BSIT-3A')
 
     def test_pit_lead_official_class_list_import_rejects_other_year(self):
         school_year = SchoolYear.objects.create(label='2031-2032')

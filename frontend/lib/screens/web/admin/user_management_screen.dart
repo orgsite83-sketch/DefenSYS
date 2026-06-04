@@ -13,10 +13,7 @@ import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
-  const UserManagementScreen({
-    super.key,
-    this.initialBulkImport = false,
-  });
+  const UserManagementScreen({super.key, this.initialBulkImport = false});
 
   final bool initialBulkImport;
 
@@ -149,27 +146,27 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<String?>(
-      userManagementProvider.select((s) => s.message),
-      (previous, next) {
-        if (next != null && next.isNotEmpty) {
-          _scheduleSuccessNoticeAutoDismiss(next);
-          if (next != previous) {
-            showSuccessToast(context, next);
-          }
-        } else {
-          _successNoticeTimer?.cancel();
+    ref.listen<String?>(userManagementProvider.select((s) => s.message), (
+      previous,
+      next,
+    ) {
+      if (next != null && next.isNotEmpty) {
+        _scheduleSuccessNoticeAutoDismiss(next);
+        if (next != previous) {
+          showSuccessToast(context, next);
         }
-      },
-    );
-    ref.listen<String?>(
-      userManagementProvider.select((s) => s.error),
-      (previous, next) {
-        if (next != null && next.isNotEmpty && next != previous) {
-          showErrorToast(context, next);
-        }
-      },
-    );
+      } else {
+        _successNoticeTimer?.cancel();
+      }
+    });
+    ref.listen<String?>(userManagementProvider.select((s) => s.error), (
+      previous,
+      next,
+    ) {
+      if (next != null && next.isNotEmpty && next != previous) {
+        showErrorToast(context, next);
+      }
+    });
 
     final state = ref.watch(userManagementProvider);
     _ensurePageInRange(state.users.length);
@@ -218,12 +215,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _secondaryButton(
-          icon: Icons.description_rounded,
-          label: 'CSV Template',
-          onTap: _showCsvTemplateDialog,
-        ),
-        const SizedBox(width: 14),
         _secondaryButton(
           icon: Icons.file_upload_outlined,
           label: 'Bulk Import CSV',
@@ -304,9 +295,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       decoration: BoxDecoration(
         color: selected ? const Color(0xFFFFF4F4) : Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: selected ? _maroon : const Color(0xFFE5E7EB),
-        ),
+        border: Border.all(color: selected ? _maroon : const Color(0xFFE5E7EB)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.05),
@@ -632,9 +621,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   Widget _roleBadge(Map<String, dynamic> user) {
     final displayRole = user['displayRole'];
-    final tone = displayRole is Map
-        ? displayRole['tone']?.toString()
-        : null;
+    final tone = displayRole is Map ? displayRole['tone']?.toString() : null;
     final role = user['role']?.toString() ?? 'student';
     final label = displayRole is Map && displayRole['label'] != null
         ? displayRole['label'].toString()
@@ -823,10 +810,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
               items: _rowsPerPageOptions
                   .map(
-                    (n) => DropdownMenuItem<int>(
-                      value: n,
-                      child: Text('$n'),
-                    ),
+                    (n) => DropdownMenuItem<int>(value: n, child: Text('$n')),
                   )
                   .toList(),
               onChanged: (value) {
@@ -1126,16 +1110,17 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Widget _csvFormatCard() {
+    final studentBatch = _selectedBulkImportType == 'student';
     return DefensysCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(24, 20, 24, 16),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'CSV Format',
                   style: TextStyle(
                     color: _ink,
@@ -1143,10 +1128,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
-                  'Your CSV must follow this column structure exactly. Column order matters.',
-                  style: TextStyle(
+                  studentBatch
+                      ? 'Student Batch uses the official class list template, including section and year-level metadata.'
+                      : 'Faculty / General Users uses the account-import template. Column order matters.',
+                  style: const TextStyle(
                     color: Color(0xFF536079),
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -1165,8 +1152,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 const SizedBox(height: 14),
                 _infoBanner(
                   icon: Icons.info_rounded,
-                  message:
-                      'The CSV template stays the same. Use Student Batch when importing a student cohort with one shared academic context. Use Faculty / General Users for non-student imports so student-only academic setup does not interfere.',
+                  message: studentBatch
+                      ? 'Use the official class list template for student cohorts. The importer detects Class Section and Year Level from the file, while semester remains controlled by the Student Batch settings.'
+                      : 'Use Faculty / General Users for non-student imports so student-only academic setup does not interfere.',
                 ),
                 const SizedBox(height: 16),
                 _secondaryButton(
@@ -1183,14 +1171,22 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   Widget _sampleCsvTable() {
-    const columns = ['id_number', 'first_name', 'last_name', 'email', 'role'];
-    const values = [
-      '2024-0001',
-      'Juan',
-      'Dela Cruz',
-      'juan@ustp.edu.ph',
-      'student',
-    ];
+    final studentBatch = _selectedBulkImportType == 'student';
+    final columns = studentBatch
+        ? const ['Template area', 'Example value']
+        : const ['id_number', 'first_name', 'last_name', 'email', 'role'];
+    final values = studentBatch
+        ? const [
+            'Class Section / Year Level / Student Number',
+            'BSIT-3A / 3rd Year / 4081',
+          ]
+        : const [
+            '2024-0001',
+            'Juan',
+            'Dela Cruz',
+            'juan@ustp.edu.ph',
+            'student',
+          ];
 
     return Container(
       decoration: BoxDecoration(
@@ -1336,20 +1332,30 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 const SizedBox(height: 8),
                 _uploadDropZone(state),
                 const SizedBox(height: 8),
-                const Text(
-                  'Columns: id_number, first_name, last_name, email, role',
-                  style: TextStyle(
+                Text(
+                  _selectedBulkImportType == 'student'
+                      ? 'Student Batch accepts the official class list CSV template.'
+                      : 'Columns: id_number, first_name, last_name, email, role',
+                  style: const TextStyle(
                     color: Color(0xFF98A2B3),
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
+                if (_csvDraft.trim().isNotEmpty) ...[
+                  const SizedBox(height: 20),
+                  _bulkImportReview(),
+                ],
                 const SizedBox(height: 22),
                 Row(
                   children: [
                     _primaryButton(
                       icon: Icons.system_update_alt_rounded,
-                      label: state.isSaving ? 'Importing...' : 'Import Users',
+                      label: state.isSaving
+                          ? 'Importing...'
+                          : _csvDraft.trim().isEmpty
+                          ? 'Import Users'
+                          : 'Confirm Import',
                       onTap: state.isSaving
                           ? null
                           : () => _importBulkUsers(academicState),
@@ -1502,7 +1508,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ),
           const SizedBox(height: 6),
           _helper(
-            'Required for Student Batch imports. Must belong to the resolved target semester.',
+            'Optional when the official class list includes Year Level. If selected, it must match the file.',
           ),
         ],
       ),
@@ -1513,6 +1519,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     AcademicPeriodState academicState,
     List<_SemesterOption> semesterOptions,
   ) {
+    final officialContext = _parseOfficialClassListCsv(_csvDraft).metadata;
+    final detectedYear = officialContext['year_level']?.toString() ?? '';
+    final detectedSection = officialContext['section']?.toString() ?? '';
+    final resolvedYear = _selectedBatchYearLevel.isNotEmpty
+        ? _selectedBatchYearLevel
+        : detectedYear;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
@@ -1567,12 +1580,27 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             ],
           ),
           const SizedBox(height: 20),
-          _preflightMetric(
-            'BATCH YEAR LEVEL',
-            _selectedBulkImportType == 'student' &&
-                    _selectedBatchYearLevel.isNotEmpty
-                ? _selectedBatchYearLevel
-                : '-',
+          Row(
+            children: [
+              Expanded(
+                child: _preflightMetric(
+                  'BATCH YEAR LEVEL',
+                  _selectedBulkImportType == 'student' &&
+                          resolvedYear.isNotEmpty
+                      ? resolvedYear
+                      : '-',
+                ),
+              ),
+              Expanded(
+                child: _preflightMetric(
+                  'CLASS SECTION',
+                  _selectedBulkImportType == 'student' &&
+                          detectedSection.isNotEmpty
+                      ? detectedSection
+                      : '-',
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 18),
           Container(
@@ -1585,7 +1613,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             ),
             child: Text(
               _selectedBulkImportType == 'student'
-                  ? 'Imported Student rows will create Initial Student Academic Records using the selected batch context. Keep one upload to one student year-level batch. Split mixed student cohorts into separate imports so the shared academic context stays correct.'
+                  ? 'Imported Student rows will create Initial Student Academic Records using the selected semester plus the official class list section/year. Split mixed student cohorts into separate imports so the shared academic context stays correct.'
                   : 'Faculty / General imports create accounts only. Student academic records are skipped for this import mode.',
               style: const TextStyle(
                 color: Color(0xFF1D4ED8),
@@ -1666,6 +1694,372 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         ),
       ),
     );
+  }
+
+  Widget _bulkImportReview() {
+    final rows = _parseCsv(_csvDraft);
+    final official = _selectedBulkImportType == 'student'
+        ? _parseOfficialClassListCsv(_csvDraft)
+        : const _AdminOfficialClassListParseResult(metadata: {}, students: []);
+    final warnings = _bulkImportWarnings(rows, official);
+    final previewRows = rows.take(8).toList();
+    final detectedYear = official.metadata['year_level']?.toString() ?? '';
+    final detectedSection = official.metadata['section']?.toString() ?? '';
+    final detectedFaculty = official.metadata['faculty']?.toString() ?? '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFDDE2EA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.fact_check_outlined, color: _maroon, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Review Import',
+                  style: DefensysUi.sectionTitle.copyWith(fontSize: 15),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          const Text(
+            'Check the detected context and parsed rows before committing this import.',
+            style: TextStyle(
+              color: Color(0xFF536079),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              _reviewMetric('Rows', rows.length.toString()),
+              _reviewMetric(
+                'Mode',
+                _selectedBulkImportType == 'student'
+                    ? 'Student Batch'
+                    : 'Faculty / General',
+              ),
+              if (_selectedBulkImportType == 'student')
+                _reviewMetric(
+                  'Year Level',
+                  _selectedBatchYearLevel.isNotEmpty
+                      ? _selectedBatchYearLevel
+                      : (detectedYear.isEmpty ? '-' : detectedYear),
+                ),
+              if (_selectedBulkImportType == 'student')
+                _reviewMetric(
+                  'Section',
+                  detectedSection.isEmpty ? '-' : detectedSection,
+                ),
+              if (_selectedBulkImportType == 'student')
+                _reviewMetric(
+                  'Instructor',
+                  detectedFaculty.isEmpty ? '-' : detectedFaculty,
+                ),
+            ],
+          ),
+          if (warnings.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _reviewWarnings(warnings),
+          ],
+          const SizedBox(height: 16),
+          _reviewRowsTable(previewRows),
+          if (rows.length > previewRows.length) ...[
+            const SizedBox(height: 10),
+            Text(
+              '${rows.length - previewRows.length} more row${rows.length - previewRows.length == 1 ? '' : 's'} will be imported.',
+              style: const TextStyle(
+                color: Color(0xFF667085),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewMetric(String label, String value) {
+    return Container(
+      width: 170,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: const TextStyle(
+              color: Color(0xFF667085),
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewWarnings(List<String> warnings) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: DefensysUi.warningBg,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: DefensysUi.warningBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: warnings
+            .map(
+              (warning) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: DefensysUi.warningText,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        warning,
+                        style: const TextStyle(
+                          color: DefensysUi.warningText,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _reviewRowsTable(List<Map<String, dynamic>> rows) {
+    final studentBatch = _selectedBulkImportType == 'student';
+    final columns = studentBatch
+        ? const ['Student ID', 'Full Name', 'Email', 'Year Level', 'Section']
+        : const ['User ID', 'Full Name', 'Email', 'Role'];
+
+    if (rows.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: const Text(
+          'No rows could be parsed for review.',
+          style: TextStyle(color: Color(0xFF667085)),
+        ),
+      );
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Container(
+        constraints: const BoxConstraints(minWidth: 920),
+        decoration: BoxDecoration(
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+          borderRadius: BorderRadius.circular(7),
+        ),
+        child: Column(
+          children: [
+            Container(
+              height: 40,
+              decoration: const BoxDecoration(
+                color: Color(0xFFF0F1F4),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
+              ),
+              child: Row(
+                children: columns
+                    .map((column) => _reviewCell(column, header: true))
+                    .toList(),
+              ),
+            ),
+            ...rows.map((row) {
+              final values = studentBatch
+                  ? [
+                      _rowText(row, 'id_number'),
+                      _rowName(row),
+                      _rowText(row, 'email'),
+                      _rowText(row, 'year_level'),
+                      _rowText(row, 'section'),
+                    ]
+                  : [
+                      _rowText(row, 'id_number'),
+                      _rowName(row),
+                      _rowText(row, 'email'),
+                      _rowText(row, 'role'),
+                    ];
+              return Container(
+                height: 42,
+                decoration: const BoxDecoration(
+                  border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+                ),
+                child: Row(
+                  children: values.map((value) => _reviewCell(value)).toList(),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _reviewCell(String value, {bool header = false}) {
+    return SizedBox(
+      width: 184,
+      child: Container(
+        height: double.infinity,
+        alignment: Alignment.centerLeft,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: const BoxDecoration(
+          border: Border(right: BorderSide(color: Color(0xFFE5E7EB))),
+        ),
+        child: Text(
+          value.isEmpty ? '-' : value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: header ? _ink : const Color(0xFF536079),
+            fontSize: 12.5,
+            fontWeight: header ? FontWeight.w900 : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<String> _bulkImportWarnings(
+    List<Map<String, dynamic>> rows,
+    _AdminOfficialClassListParseResult official,
+  ) {
+    final warnings = <String>[];
+    if (rows.isEmpty) {
+      return ['No valid rows were detected in the selected CSV.'];
+    }
+
+    final seen = <String>{};
+    final duplicates = <String>{};
+    for (final row in rows) {
+      final id = _rowText(row, 'id_number');
+      if (id.isEmpty) continue;
+      if (!seen.add(id)) duplicates.add(id);
+    }
+    if (duplicates.isNotEmpty) {
+      warnings.add(
+        'Duplicate ID numbers in this file: ${duplicates.take(5).join(', ')}.',
+      );
+    }
+
+    final missingEmailCount = rows
+        .where((row) => _rowText(row, 'email').isEmpty)
+        .length;
+    if (missingEmailCount > 0) {
+      warnings.add(
+        '$missingEmailCount row${missingEmailCount == 1 ? '' : 's'} have no email address.',
+      );
+    }
+
+    if (_selectedBulkImportType == 'student') {
+      final detectedYear = official.metadata['year_level']?.toString() ?? '';
+      final detectedSection = official.metadata['section']?.toString() ?? '';
+      final detectedFaculty = official.metadata['faculty']?.toString() ?? '';
+      if (_selectedBatchYearLevel.isNotEmpty &&
+          detectedYear.isNotEmpty &&
+          _normalizeYearLevel(_selectedBatchYearLevel) !=
+              _normalizeYearLevel(detectedYear)) {
+        warnings.add(
+          'Selected year level does not match the official class list year.',
+        );
+      }
+      if (detectedSection.isEmpty) {
+        warnings.add(
+          'No class section was detected. Academic records may be created without section context.',
+        );
+      }
+      if (official.students.isNotEmpty && detectedFaculty.isEmpty) {
+        warnings.add(
+          'No instructor was detected. Official class list imports require a matching active faculty account before students can be imported.',
+        );
+      }
+
+      final rowYears = rows
+          .map((row) => _rowText(row, 'year_level'))
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      if (rowYears.length > 1) {
+        warnings.add(
+          'Multiple year levels were detected in student rows. Split mixed cohorts into separate imports.',
+        );
+      }
+
+      final rowSections = rows
+          .map((row) => _rowText(row, 'section'))
+          .where((value) => value.isNotEmpty)
+          .toSet();
+      if (rowSections.length > 1) {
+        warnings.add(
+          'Multiple sections were detected. Import one class section per file when possible.',
+        );
+      }
+    }
+
+    return warnings;
+  }
+
+  String _rowText(Map<String, dynamic> row, String key) =>
+      row[key]?.toString().trim() ?? '';
+
+  String _rowName(Map<String, dynamic> row) {
+    final first = _rowText(row, 'first_name');
+    final last = _rowText(row, 'last_name');
+    final full = _rowText(row, 'full_name');
+    if (first.isNotEmpty || last.isNotEmpty) {
+      return '$first $last'.trim();
+    }
+    return full;
   }
 
   Widget _dropdownBox({
@@ -1873,44 +2267,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     return users.sublist(start, end);
   }
 
-  Future<void> _showCsvTemplateDialog() async {
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('CSV Template'),
-        content: SizedBox(
-          width: 540,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const SelectableText(sampleFacultyCsvTemplate),
-              const SizedBox(height: 16),
-              const Text(
-                'Student batch samples (4 students each) are available via '
-                'Download Sample Template on the bulk import screen, or from '
-                'sample_file/demo_students_*_year_import.csv in the repo.',
-                style: TextStyle(fontSize: 12.5, height: 1.45),
-              ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-
   Future<String?> _pickStudentSampleYear() async {
     return showDialog<String>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         surfaceTintColor: Colors.transparent,
-        title: const Text('Download student sample CSV'),
+        title: const Text('Download official class list sample'),
         content: SizedBox(
           width: 360,
           child: Column(
@@ -1918,8 +2280,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Text(
-                'Each file has four students for one year level. Set the same '
-                'year level in Student Batch settings before importing.',
+                'Each file follows the official class list shape and includes '
+                'one section plus four students for the chosen year level.',
                 style: TextStyle(fontSize: 13.5, height: 1.45),
               ),
               const SizedBox(height: 16),
@@ -2327,7 +2689,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     if (!mounted) {
       return;
     }
-    _snack(copied ? 'Guest code copied.' : 'Copy failed — select the code and copy manually.');
+    _snack(
+      copied
+          ? 'Guest code copied.'
+          : 'Copy failed — select the code and copy manually.',
+    );
   }
 
   Future<void> _confirmRevokeGuestCode(int codeId) async {
@@ -2362,8 +2728,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     _acPanelist = user['is_panelist'] == true;
     _acPitLead = user['is_pit_lead'] == true;
     _acAdviser = user['is_adviser'] == true;
-    _acRepoAssistant = (user['is_repo_assistant'] == true) ||
-        (user['is_uploader'] == true);
+    _acRepoAssistant =
+        (user['is_repo_assistant'] == true) || (user['is_uploader'] == true);
     _acPitLeadYear = _normalizePitLeadYear(user['pit_lead_year']?.toString());
   }
 
@@ -2415,8 +2781,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'is_active': _acActive,
       'is_panelist': isFaculty && _acPanelist,
       'is_pit_lead': isFaculty && _acPitLead,
-      'pit_lead_year':
-          isFaculty && _acPitLead ? _acPitLeadYear : null,
+      'pit_lead_year': isFaculty && _acPitLead ? _acPitLeadYear : null,
       'is_adviser': isFaculty && _acAdviser,
       'is_repo_assistant': isFaculty && _acRepoAssistant,
       'is_uploader': isFaculty && _acRepoAssistant,
@@ -2483,8 +2848,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             actions: _greyBorderMaroonTextButton(
               icon: Icons.arrow_back_rounded,
               label: 'Back to Users',
-              onPressed:
-                  state.isSaving ? null : () => _closeAccessControlPage(),
+              onPressed: state.isSaving
+                  ? null
+                  : () => _closeAccessControlPage(),
             ),
           ),
           if (_errorNotice(state.error) != null) ...[
@@ -2582,11 +2948,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Icon(
-                            Icons.shield_outlined,
-                            color: _maroon,
-                            size: 22,
-                          ),
+                          Icon(Icons.shield_outlined, color: _maroon, size: 22),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -2664,9 +3026,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                     ),
                                     Text(
                                       'ASSIGNED',
-                                      style: _histHead.copyWith(
-                                        fontSize: 10.5,
-                                      ),
+                                      style: _histHead.copyWith(fontSize: 10.5),
                                     ),
                                   ],
                                 ),
@@ -2738,7 +3098,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                                 dropdownColor: Colors.white,
                                                 items: [
                                                   const DropdownMenuItem<
-                                                      String?>(
+                                                    String?
+                                                  >(
                                                     value: null,
                                                     child: Text(
                                                       '— Select year level —',
@@ -2747,18 +3108,19 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                                   ..._pitLeadYearOptions.map(
                                                     (y) =>
                                                         DropdownMenuItem<
-                                                            String?>(
-                                                      value: y,
-                                                      child: Text(y),
-                                                    ),
+                                                          String?
+                                                        >(
+                                                          value: y,
+                                                          child: Text(y),
+                                                        ),
                                                   ),
                                                 ],
                                                 onChanged: state.isSaving
                                                     ? null
                                                     : (v) => setState(
-                                                          () => _acPitLeadYear =
-                                                              v,
-                                                        ),
+                                                        () =>
+                                                            _acPitLeadYear = v,
+                                                      ),
                                               ),
                                             ]
                                           : null,
@@ -2794,12 +3156,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                           'Assists with PIT repository tasks and '
                                           'file uploads. Requires PIT Lead.',
                                       value: _acRepoAssistant,
-                                      enabled:
-                                          !state.isSaving && _acPitLead,
+                                      enabled: !state.isSaving && _acPitLead,
                                       onChanged: _acPitLead
                                           ? (v) => setState(
-                                                () => _acRepoAssistant = v,
-                                              )
+                                              () => _acRepoAssistant = v,
+                                            )
                                           : null,
                                       flatInTable: true,
                                     ),
@@ -2895,7 +3256,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(
               height: 72,
               child: Center(
-                child: CircularProgressIndicator(color: DefensysUi.primaryMaroon),
+                child: CircularProgressIndicator(
+                  color: DefensysUi.primaryMaroon,
+                ),
               ),
             )
           else if (_roleAssignments.isEmpty)
@@ -2956,11 +3319,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         maxLines: maxLines,
         overflow: TextOverflow.ellipsis,
         softWrap: false,
-        style: TextStyle(
-          color: _ink,
-          fontSize: 12.5,
-          fontWeight: fontWeight,
-        ),
+        style: TextStyle(color: _ink, fontSize: 12.5, fontWeight: fontWeight),
       ),
     );
   }
@@ -3189,9 +3548,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         style: OutlinedButton.styleFrom(
           foregroundColor: _maroon,
           side: const BorderSide(color: Color(0xFFD1D5DB)),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
           padding: const EdgeInsets.symmetric(horizontal: 20),
         ),
       ),
@@ -3204,10 +3561,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       filled: true,
       fillColor: Colors.white,
       contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      hintStyle: TextStyle(
-        color: _muted.withValues(alpha: 0.75),
-        fontSize: 13,
-      ),
+      hintStyle: TextStyle(color: _muted.withValues(alpha: 0.75), fontSize: 13),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
@@ -3290,10 +3644,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ? _normalizePitLeadYear(user['pit_lead_year']?.toString())
           : null,
       'is_adviser': user['is_adviser'] == true,
-      'is_repo_assistant': (user['is_repo_assistant'] == true) ||
-          (user['is_uploader'] == true),
-      'is_uploader': (user['is_repo_assistant'] == true) ||
-          (user['is_uploader'] == true),
+      'is_repo_assistant':
+          (user['is_repo_assistant'] == true) || (user['is_uploader'] == true),
+      'is_uploader':
+          (user['is_repo_assistant'] == true) || (user['is_uploader'] == true),
       if (password != null && password.isNotEmpty) 'password': password,
     };
   }
@@ -3303,35 +3657,33 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     if (u == null) {
       return;
     }
-    final onAccessPage = _accessControlUser != null &&
+    final onAccessPage =
+        _accessControlUser != null &&
         _asInt(_accessControlUser!['id']) == _asInt(u['id']);
     final first = TextEditingController(
       text: u['first_name']?.toString() ?? '',
     );
-    final last = TextEditingController(
-      text: u['last_name']?.toString() ?? '',
-    );
+    final last = TextEditingController(text: u['last_name']?.toString() ?? '');
     final email = TextEditingController(text: u['email']?.toString() ?? '');
     final password = TextEditingController();
 
-    final displayName =
-        (u['name']?.toString().trim().isNotEmpty == true)
-            ? u['name']!.toString().trim()
-            : '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
+    final displayName = (u['name']?.toString().trim().isNotEmpty == true)
+        ? u['name']!.toString().trim()
+        : '${u['first_name'] ?? ''} ${u['last_name'] ?? ''}'.trim();
     final usernameStr = u['username']?.toString() ?? '—';
 
     Widget capsLabel(String text) => Padding(
-          padding: const EdgeInsets.only(bottom: 6),
-          child: Text(
-            text.toUpperCase(),
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 0.85,
-              color: Color(0xFF4B5563),
-            ),
-          ),
-        );
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Text(
+        text.toUpperCase(),
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.85,
+          color: Color(0xFF4B5563),
+        ),
+      ),
+    );
 
     final roleChoice = <String>[
       onAccessPage ? _acRole : (u['role']?.toString() ?? 'student'),
@@ -3385,11 +3737,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                         Row(
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            Icon(
-                              Icons.edit_outlined,
-                              size: 18,
-                              color: _maroon,
-                            ),
+                            Icon(Icons.edit_outlined, size: 18, color: _maroon),
                             const SizedBox(width: 8),
                             const Text(
                               'Edit Account Details',
@@ -3517,16 +3865,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                   color: _maroon,
                                   width: 1.5,
                                 ),
-                                fillColor: WidgetStateProperty.resolveWith(
-                                  (states) {
-                                    if (states.contains(
-                                      WidgetState.selected,
-                                    )) {
-                                      return _maroon;
-                                    }
-                                    return Colors.white;
-                                  },
-                                ),
+                                fillColor: WidgetStateProperty.resolveWith((
+                                  states,
+                                ) {
+                                  if (states.contains(WidgetState.selected)) {
+                                    return _maroon;
+                                  }
+                                  return Colors.white;
+                                }),
                                 checkColor: Colors.white,
                                 onChanged: (v) {
                                   setDialogState(() {
@@ -3579,7 +3925,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: _ink,
                                 backgroundColor: Colors.white,
-                                side: const BorderSide(color: Color(0xFFD1D5DB)),
+                                side: const BorderSide(
+                                  color: Color(0xFFD1D5DB),
+                                ),
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 22,
                                   vertical: 12,
@@ -3651,7 +3999,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           } else {
             payload['is_panelist'] = _acPanelist;
             payload['is_pit_lead'] = _acPitLead;
-            payload['pit_lead_year'] = _acPitLead &&
+            payload['pit_lead_year'] =
+                _acPitLead &&
                     (_acPitLeadYear != null && _acPitLeadYear!.isNotEmpty)
                 ? _acPitLeadYear
                 : null;
@@ -3715,11 +4064,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     var isPanelist = user?['is_panelist'] == true;
     var isPitLead = user?['is_pit_lead'] == true;
     var isAdviser = user?['is_adviser'] == true;
-    var isRepoAssistant = (user?['is_repo_assistant'] == true) ||
-        (user?['is_uploader'] == true);
+    var isRepoAssistant =
+        (user?['is_repo_assistant'] == true) || (user?['is_uploader'] == true);
     var isActive = user?['is_active'] != false;
-    String? pitLeadYear =
-        _normalizePitLeadYear(user?['pit_lead_year']?.toString());
+    String? pitLeadYear = _normalizePitLeadYear(
+      user?['pit_lead_year']?.toString(),
+    );
 
     final saved = await showDialog<bool>(
       context: context,
@@ -3991,6 +4341,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       _snack('CSV has no valid rows.');
       return;
     }
+    if (_selectedBulkImportType == 'student') {
+      final official = _parseOfficialClassListCsv(csv);
+      final detectedFaculty = official.metadata['faculty']?.toString() ?? '';
+      if (official.students.isNotEmpty && detectedFaculty.trim().isEmpty) {
+        _snack('Official class list imports require a Faculty value.');
+        return;
+      }
+    }
 
     final studentContext = _studentContext(academicState);
     if (_selectedBulkImportType == 'student' && studentContext == null) {
@@ -4018,7 +4376,28 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       return null;
     }
 
-    if (_selectedBatchYearLevel.isEmpty) {
+    final officialContext = _parseOfficialClassListCsv(_csvDraft).metadata;
+    final detectedYear = officialContext['year_level']?.toString() ?? '';
+    final detectedSection = officialContext['section']?.toString() ?? '';
+    final detectedFaculty = officialContext['faculty']?.toString() ?? '';
+    final isOfficialClassList = _parseOfficialClassListCsv(
+      _csvDraft,
+    ).students.isNotEmpty;
+    final selectedYear = _selectedBatchYearLevel.isNotEmpty
+        ? _selectedBatchYearLevel
+        : detectedYear;
+
+    if (_selectedBatchYearLevel.isNotEmpty &&
+        detectedYear.isNotEmpty &&
+        _normalizeYearLevel(_selectedBatchYearLevel) !=
+            _normalizeYearLevel(detectedYear)) {
+      _snack(
+        'The selected year level does not match the official class list year.',
+      );
+      return null;
+    }
+
+    if (selectedYear.isEmpty) {
       _snack('Select the student batch year level first.');
       return null;
     }
@@ -4031,7 +4410,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
       return {
         'use_active_semester': true,
-        'year_level': _selectedBatchYearLevel,
+        'year_level': _normalizeYearLevel(selectedYear),
+        if (detectedSection.isNotEmpty) 'section': detectedSection,
+        if (detectedFaculty.isNotEmpty) 'instructor_name': detectedFaculty,
+        if (isOfficialClassList) 'require_faculty_match': true,
       };
     }
 
@@ -4041,10 +4423,23 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       return null;
     }
 
-    return {'semester_id': semesterId, 'year_level': _selectedBatchYearLevel};
+    return {
+      'semester_id': semesterId,
+      'year_level': _normalizeYearLevel(selectedYear),
+      if (detectedSection.isNotEmpty) 'section': detectedSection,
+      if (detectedFaculty.isNotEmpty) 'instructor_name': detectedFaculty,
+      if (isOfficialClassList) 'require_faculty_match': true,
+    };
   }
 
   List<Map<String, dynamic>> _parseCsv(String csv) {
+    if (_selectedBulkImportType == 'student') {
+      final official = _parseOfficialClassListCsv(csv);
+      if (official.students.isNotEmpty) {
+        return official.students;
+      }
+    }
+
     final lines = csv
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
@@ -4089,6 +4484,176 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         })
         .where((row) => row['id_number']!.isNotEmpty)
         .toList();
+  }
+
+  _AdminOfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
+    final rows = csv
+        .split(RegExp(r'\r?\n'))
+        .map(_splitCsvLine)
+        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+        .toList();
+    if (rows.isEmpty) {
+      return const _AdminOfficialClassListParseResult(
+        metadata: {},
+        students: [],
+      );
+    }
+
+    final metadata = <String, dynamic>{};
+    var headerIndex = -1;
+
+    for (var i = 0; i < rows.length; i++) {
+      final normalized = rows[i].map(_normalizeHeader).toList();
+
+      void readMeta(String key, List<String> labels) {
+        if (metadata[key]?.toString().trim().isNotEmpty == true) return;
+        for (final label in labels) {
+          final index = normalized.indexWhere((cell) => cell == label);
+          if (index == -1) continue;
+          final value = _nextCell(rows[i], index);
+          if (value.isNotEmpty) metadata[key] = value;
+          return;
+        }
+      }
+
+      readMeta('faculty', ['faculty', 'instructor']);
+      readMeta('section', ['class section', 'section']);
+      readMeta('year_level', ['year level', 'level']);
+
+      final hasStudentNumber = normalized.any(
+        (cell) =>
+            cell.contains('student') &&
+            (cell.contains('number') ||
+                cell.contains('no') ||
+                cell == 'student n'),
+      );
+      final hasFullName = normalized.contains('full name');
+      if (hasStudentNumber && hasFullName) {
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (metadata['year_level'] != null) {
+      metadata['year_level'] = _normalizeYearLevel(
+        metadata['year_level'].toString(),
+      );
+    }
+    if (headerIndex == -1) {
+      return _AdminOfficialClassListParseResult(
+        metadata: metadata,
+        students: const [],
+      );
+    }
+
+    final headers = rows[headerIndex].map(_normalizeHeader).toList();
+    int findHeader(bool Function(String value) matches) =>
+        headers.indexWhere(matches);
+    final idIndex = findHeader(
+      (value) =>
+          value.contains('student') &&
+          (value.contains('number') ||
+              value.contains('no') ||
+              value == 'student n'),
+    );
+    final nameIndex = findHeader((value) => value == 'full name');
+    final levelIndex = findHeader((value) => value == 'level');
+    final emailIndex = findHeader((value) => value == 'email');
+    final section = metadata['section']?.toString() ?? '';
+    final yearLevel = metadata['year_level']?.toString() ?? '';
+    final students = <Map<String, dynamic>>[];
+
+    for (final row in rows.skip(headerIndex + 1)) {
+      String read(int index) =>
+          index >= 0 && index < row.length ? row[index].trim() : '';
+      final id = read(idIndex);
+      final name = read(nameIndex);
+      if (id.isEmpty || name.isEmpty) continue;
+      final splitName = _splitOfficialFullName(name);
+      final rowYear = levelIndex != -1
+          ? _normalizeYearLevel(read(levelIndex))
+          : yearLevel;
+      students.add({
+        'id_number': id,
+        'first_name': splitName.firstName,
+        'last_name': splitName.lastName,
+        'email': emailIndex == -1 ? '' : read(emailIndex),
+        'role': 'student',
+        if (rowYear.isNotEmpty) 'year_level': rowYear,
+        if (section.isNotEmpty) 'section': section,
+      });
+    }
+
+    return _AdminOfficialClassListParseResult(
+      metadata: metadata,
+      students: students,
+    );
+  }
+
+  List<String> _splitCsvLine(String line) {
+    final values = <String>[];
+    final buffer = StringBuffer();
+    var quoted = false;
+    for (var i = 0; i < line.length; i++) {
+      final char = line[i];
+      if (char == '"') {
+        if (quoted && i + 1 < line.length && line[i + 1] == '"') {
+          buffer.write('"');
+          i++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (char == ',' && !quoted) {
+        values.add(buffer.toString().trim());
+        buffer.clear();
+      } else {
+        buffer.write(char);
+      }
+    }
+    values.add(buffer.toString().trim());
+    return values;
+  }
+
+  String _nextCell(List<String> row, int index) {
+    for (var i = index + 1; i < row.length; i++) {
+      final value = row[i].trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _normalizeHeader(String value) => value
+      .trim()
+      .replaceFirst('\ufeff', '')
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+
+  String _normalizeYearLevel(String value) {
+    final lower = value.toLowerCase();
+    if (lower.contains('1')) return '1st Year';
+    if (lower.contains('2')) return '2nd Year';
+    if (lower.contains('3')) return '3rd Year';
+    if (lower.contains('4')) return '4th Year';
+    return value.trim();
+  }
+
+  _OfficialNameParts _splitOfficialFullName(String value) {
+    final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (clean.contains(',')) {
+      final parts = clean.split(',');
+      final lastName = parts.first.trim();
+      final firstName = parts.skip(1).join(',').trim();
+      return _OfficialNameParts(firstName: firstName, lastName: lastName);
+    }
+    final parts = clean.split(' ');
+    if (parts.length == 1) {
+      return _OfficialNameParts(firstName: clean, lastName: '');
+    }
+    return _OfficialNameParts(
+      firstName: parts.first,
+      lastName: parts.skip(1).join(' '),
+    );
   }
 
   List<_SemesterOption> _semesterOptions(AcademicPeriodState state) {
@@ -4235,7 +4800,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
     return int.tryParse(value?.toString() ?? '');
   }
-
 }
 
 class _ColumnSpec {
@@ -4250,6 +4814,23 @@ class _SemesterOption {
   final String label;
 
   const _SemesterOption(this.id, this.label);
+}
+
+class _AdminOfficialClassListParseResult {
+  final Map<String, dynamic> metadata;
+  final List<Map<String, dynamic>> students;
+
+  const _AdminOfficialClassListParseResult({
+    required this.metadata,
+    required this.students,
+  });
+}
+
+class _OfficialNameParts {
+  final String firstName;
+  final String lastName;
+
+  const _OfficialNameParts({required this.firstName, required this.lastName});
 }
 
 class _DashedBorder extends StatelessWidget {
