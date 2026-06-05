@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,8 +9,11 @@ import '../../../services/user_management_provider.dart';
 import '../../../utils/clipboard_copy.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../utils/student_bulk_import_csv.dart';
+import '../../../utils/user_bulk_import_draft.dart';
+import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../widgets/confirm_dialog.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class UserManagementScreen extends ConsumerStatefulWidget {
@@ -22,6 +26,8 @@ class UserManagementScreen extends ConsumerStatefulWidget {
       _UserManagementScreenState();
 }
 
+enum _BulkImportExitChoice { save, discard, stay }
+
 class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
@@ -30,6 +36,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   static const _blue = DefensysUi.techBlue;
   static const _line = Color(0xFFE5E7EB);
   static const List<int> _rowsPerPageOptions = [10, 25, 50, 100, 200, 500];
+  static const List<int> _bulkReviewRowsPerPageOptions = [10, 25, 50];
 
   /// Canonical labels stored in `pit_lead_year` (matches team year_level usage).
   static const List<String> _pitLeadYearOptions = [
@@ -49,8 +56,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   }
 
   final _searchController = TextEditingController();
+  final _bulkReviewSearchController = TextEditingController();
   int _rowsPerPage = 10;
   int _page = 0;
+  int _bulkReviewRowsPerPage = 10;
+  int _bulkReviewPage = 0;
   bool? _showBulkImport = false;
   String? _bulkImportType = 'student';
   String? _studentPeriodSource = 'explicit';
@@ -76,16 +86,21 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   List<Map<String, dynamic>> _roleAssignments = [];
   bool _roleAssignmentsLoading = false;
   Timer? _successNoticeTimer;
+  Timer? _bulkDraftSaveTimer;
+  UserBulkImportDraft? _savedBulkDraft;
+  String? _bulkImportSessionBaseline;
+  String? _bulkImportPersistedSnapshot;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _loadBulkDraft();
       ref.read(userManagementProvider.notifier).fetchUsers();
       ref.read(userManagementProvider.notifier).fetchGuestCodes();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
       if (widget.initialBulkImport && mounted) {
-        setState(() => _showBulkImport = true);
+        _openBulkImport();
       }
     });
   }
@@ -93,7 +108,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   @override
   void dispose() {
     _successNoticeTimer?.cancel();
+    _bulkDraftSaveTimer?.cancel();
     _searchController.dispose();
+    _bulkReviewSearchController.dispose();
     super.dispose();
   }
 
@@ -117,6 +134,248 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         ref.read(userManagementProvider.notifier).clearNotice();
       }
     });
+  }
+
+  Future<void> _loadBulkDraft() async {
+    final draft = await loadUserBulkImportDraft();
+    if (!mounted || draft == null) {
+      return;
+    }
+    setState(() => _savedBulkDraft = draft);
+  }
+
+  int _bulkImportWarningCount() {
+    if (_csvDraft.trim().isEmpty) {
+      return 0;
+    }
+    final rows = _parseCsv(_csvDraft);
+    final official = _selectedBulkImportType == 'student'
+        ? _parseOfficialClassListCsv(_csvDraft)
+        : const _AdminOfficialClassListParseResult(metadata: {}, students: []);
+    return _bulkImportBlockingIssues(rows).length +
+        _bulkImportWarnings(rows, official).length;
+  }
+
+  Future<void> _persistBulkDraft() async {
+    final csv = _csvDraft;
+    if (csv.trim().isEmpty) {
+      await clearUserBulkImportDraft();
+      if (mounted) {
+        setState(() => _savedBulkDraft = null);
+      }
+      return;
+    }
+
+    final draft = UserBulkImportDraft(
+      csv: csv,
+      importType: _selectedBulkImportType,
+      studentPeriodSource: _selectedStudentPeriodSource,
+      targetSemesterId: _selectedTargetSemesterId,
+      batchYearLevel: _selectedBatchYearLevel,
+      savedAt: DateTime.now(),
+      rowCount: _parseCsv(csv).length,
+      warningCount: _bulkImportWarningCount(),
+    );
+    await saveUserBulkImportDraft(draft);
+    if (mounted) {
+      setState(() => _savedBulkDraft = draft);
+      _bulkImportPersistedSnapshot = _bulkImportSnapshot();
+    }
+  }
+
+  void _scheduleBulkDraftSave() {
+    if (_csvDraft.trim().isEmpty) {
+      return;
+    }
+    _bulkDraftSaveTimer?.cancel();
+    _bulkDraftSaveTimer = Timer(const Duration(milliseconds: 500), () {
+      _persistBulkDraft();
+    });
+  }
+
+  String _bulkImportSnapshot() {
+    return jsonEncode({
+      'csv': _csvDraft,
+      'import_type': _selectedBulkImportType,
+      'student_period_source': _selectedStudentPeriodSource,
+      'target_semester_id': _selectedTargetSemesterId,
+      'batch_year_level': _selectedBatchYearLevel,
+    });
+  }
+
+  void _captureBulkImportBaseline({bool persisted = false}) {
+    final snap = _bulkImportSnapshot();
+    _bulkImportSessionBaseline ??= snap;
+    if (persisted) {
+      _bulkImportPersistedSnapshot = snap;
+    }
+  }
+
+  bool get _isBulkImportDirty {
+    if (!_isBulkImportVisible || _csvDraft.trim().isEmpty) return false;
+    if (_bulkDraftSaveTimer?.isActive ?? false) return true;
+    final current = _bulkImportSnapshot();
+    final baseline = _bulkImportPersistedSnapshot ?? _bulkImportSessionBaseline;
+    return baseline != null && current != baseline;
+  }
+
+  Future<_BulkImportExitChoice> _confirmBulkImportExit() async {
+    final choice = await showDialog<_BulkImportExitChoice>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: Text(context.l10n.leaveBulkImportTitle),
+        content: Text(context.l10n.leaveBulkImportMessage),
+        actions: [
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _BulkImportExitChoice.discard),
+            child: const Text('Discard'),
+          ),
+          TextButton(
+            onPressed: () =>
+                Navigator.pop(dialogContext, _BulkImportExitChoice.stay),
+            child: Text(context.l10n.stay),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: _maroon,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () =>
+                Navigator.pop(dialogContext, _BulkImportExitChoice.save),
+            child: Text(context.l10n.saveAndLeave),
+          ),
+        ],
+      ),
+    );
+    return choice ?? _BulkImportExitChoice.stay;
+  }
+
+  Future<void> _requestCloseBulkImport() async {
+    if (_isBulkImportDirty) {
+      final choice = await _confirmBulkImportExit();
+      if (!mounted || choice == _BulkImportExitChoice.stay) {
+        return;
+      }
+      _bulkDraftSaveTimer?.cancel();
+      if (choice == _BulkImportExitChoice.save) {
+        await _persistBulkDraft();
+        _bulkImportPersistedSnapshot = _bulkImportSnapshot();
+      } else {
+        await _discardBulkDraftConfirmed(clearCurrent: true);
+      }
+    } else {
+      if (_csvDraft.trim().isNotEmpty) {
+        _scheduleBulkDraftSave();
+      }
+    }
+    if (!mounted) return;
+    setState(() => _showBulkImport = false);
+  }
+
+  Future<void> _discardBulkDraftConfirmed({bool clearCurrent = false}) async {
+    await clearUserBulkImportDraft();
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _savedBulkDraft = null;
+      if (clearCurrent) {
+        _bulkCsv = '';
+        _bulkImportType = 'student';
+        _studentPeriodSource = 'explicit';
+        _targetSemesterId = '';
+        _batchYearLevel = '';
+        _bulkReviewSearchController.clear();
+        _resetBulkReviewPaging();
+      }
+    });
+  }
+
+  Future<void> _discardBulkDraft() async {
+    final confirmed = await confirmDestructive(
+      context,
+      title: 'Discard draft?',
+      message: 'Your saved user import draft will be permanently deleted.',
+      confirmLabel: 'Discard',
+    );
+    if (!confirmed || !mounted) return;
+    await _discardBulkDraftConfirmed();
+  }
+
+  void _openBulkImport({bool resumeDraft = false}) {
+    _bulkImportSessionBaseline = null;
+    _bulkImportPersistedSnapshot = null;
+    if (resumeDraft && _savedBulkDraft != null) {
+      final draft = _savedBulkDraft!;
+      setState(() {
+        _showBulkImport = true;
+        _bulkCsv = draft.csv;
+        _bulkImportType = draft.importType;
+        _studentPeriodSource = draft.studentPeriodSource;
+        _targetSemesterId = draft.targetSemesterId;
+        _batchYearLevel = draft.batchYearLevel;
+        _bulkReviewSearchController.clear();
+        _resetBulkReviewPaging();
+      });
+      _captureBulkImportBaseline(persisted: true);
+      return;
+    }
+
+    setState(() {
+      _showBulkImport = true;
+      _resetBulkReviewPaging();
+    });
+    _captureBulkImportBaseline();
+  }
+
+  Widget _draftResumeBanner() {
+    final draft = _savedBulkDraft!;
+    final savedLabel = MaterialLocalizations.of(
+      context,
+    ).formatShortDate(draft.savedAt);
+    final rowCount = draft.rowCount;
+    final warningText = draft.warningCount > 0
+        ? ' - ${draft.warningCount} warning${draft.warningCount == 1 ? '' : 's'}'
+        : '';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.pending_actions_rounded, color: _blue, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Unfinished user import draft - $rowCount row${rowCount == 1 ? '' : 's'}$warningText - Saved $savedLabel',
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _secondaryButton(
+            icon: Icons.play_arrow_rounded,
+            label: 'Resume',
+            onTap: () => _openBulkImport(resumeDraft: true),
+          ),
+          const SizedBox(width: 8),
+          _secondaryButton(
+            icon: Icons.delete_outline_rounded,
+            label: 'Discard',
+            onTap: _discardBulkDraft,
+          ),
+        ],
+      ),
+    );
   }
 
   Widget? _errorNotice(String? error) {
@@ -202,6 +461,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             const SizedBox(height: 14),
             _successNotice(state.message)!,
           ],
+          if (_savedBulkDraft != null) ...[
+            const SizedBox(height: 14),
+            _draftResumeBanner(),
+          ],
           const SizedBox(height: 30),
           _usersTableCard(state, visibleUsers),
           const SizedBox(height: 62),
@@ -218,9 +481,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         _secondaryButton(
           icon: Icons.file_upload_outlined,
           label: 'Bulk Import CSV',
-          onTap: state.isSaving
-              ? null
-              : () => setState(() => _showBulkImport = true),
+          onTap: state.isSaving ? null : () => _openBulkImport(),
         ),
         const SizedBox(width: 14),
         _goldButton(
@@ -1074,37 +1335,42 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     UserManagementState state,
     AcademicPeriodState academicState,
   ) {
-    return SingleChildScrollView(
-      padding: DefensysUi.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          DefensysPageHeader(
-            icon: Icons.output_rounded,
-            title: 'Bulk Import Users',
-            subtitle:
-                'Upload a CSV file to create multiple users at once. Default password is set to their ID number.',
-            actions: _secondaryButton(
-              icon: Icons.arrow_back_rounded,
-              label: 'Back to Users',
-              onTap: state.isSaving
-                  ? null
-                  : () => setState(() => _showBulkImport = false),
+    return PopScope(
+      canPop: !_isBulkImportDirty,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _requestCloseBulkImport();
+      },
+      child: SingleChildScrollView(
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            DefensysPageHeader(
+              icon: Icons.output_rounded,
+              title: 'Bulk Import Users',
+              subtitle:
+                  'Upload a CSV file to create multiple users at once. Default password is set to their ID number.',
+              actions: _secondaryButton(
+                icon: Icons.arrow_back_rounded,
+                label: 'Back to Users',
+                onTap: state.isSaving ? null : _requestCloseBulkImport,
+              ),
             ),
-          ),
-          if (_errorNotice(state.error) != null) ...[
-            const SizedBox(height: 14),
-            _errorNotice(state.error)!,
+            if (_errorNotice(state.error) != null) ...[
+              const SizedBox(height: 14),
+              _errorNotice(state.error)!,
+            ],
+            if (_successNotice(state.message) != null) ...[
+              const SizedBox(height: 14),
+              _successNotice(state.message)!,
+            ],
+            const SizedBox(height: 28),
+            _csvFormatCard(),
+            const SizedBox(height: 20),
+            _uploadCsvCard(state, academicState),
           ],
-          if (_successNotice(state.message) != null) ...[
-            const SizedBox(height: 14),
-            _successNotice(state.message)!,
-          ],
-          const SizedBox(height: 28),
-          _csvFormatCard(),
-          const SizedBox(height: 20),
-          _uploadCsvCard(state, academicState),
-        ],
+        ),
       ),
     );
   }
@@ -1245,6 +1511,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final safeSemesterValue = semesterValues.contains(_selectedTargetSemesterId)
         ? _selectedTargetSemesterId
         : null;
+    final reviewRows = _parseCsv(_csvDraft);
+    final importBlockers = _bulkImportBlockingIssues(reviewRows);
+    final canConfirmImport =
+        _csvDraft.trim().isNotEmpty &&
+        reviewRows.isNotEmpty &&
+        importBlockers.isEmpty;
 
     return DefensysCard(
       child: Column(
@@ -1298,7 +1570,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               _targetSemesterId = '';
                               _batchYearLevel = '';
                             }
+                            _resetBulkReviewPaging();
                           });
+                          _scheduleBulkDraftSave();
                         },
                   items: const [
                     DropdownMenuItem(
@@ -1358,15 +1632,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                           : 'Confirm Import',
                       onTap: state.isSaving
                           ? null
-                          : () => _importBulkUsers(academicState),
+                          : canConfirmImport
+                          ? () => _importBulkUsers(academicState)
+                          : null,
                     ),
                     const SizedBox(width: 12),
                     _secondaryButton(
                       icon: Icons.close_rounded,
                       label: 'Cancel',
-                      onTap: state.isSaving
-                          ? null
-                          : () => setState(() => _showBulkImport = false),
+                      onTap: state.isSaving ? null : _requestCloseBulkImport,
                     ),
                   ],
                 ),
@@ -1435,7 +1709,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                 if (value == 'active') {
                                   _targetSemesterId = '';
                                 }
+                                _resetBulkReviewPaging();
                               });
+                              _scheduleBulkDraftSave();
                             },
                       items: const [
                         DropdownMenuItem(
@@ -1468,7 +1744,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                               _selectedStudentPeriodSource == 'active'
                           ? null
                           : (value) {
-                              setState(() => _targetSemesterId = value ?? '');
+                              setState(() {
+                                _targetSemesterId = value ?? '';
+                                _resetBulkReviewPaging();
+                              });
+                              _scheduleBulkDraftSave();
                             },
                       items: semesterOptions
                           .map(
@@ -1498,7 +1778,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             hint: '- Select year level -',
             onChanged: state.isSaving
                 ? null
-                : (value) => setState(() => _batchYearLevel = value ?? ''),
+                : (value) {
+                    setState(() {
+                      _batchYearLevel = value ?? '';
+                      _resetBulkReviewPaging();
+                    });
+                    _scheduleBulkDraftSave();
+                  },
             items: const [
               DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
               DropdownMenuItem(value: '2nd Year', child: Text('2nd Year')),
@@ -1701,8 +1987,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final official = _selectedBulkImportType == 'student'
         ? _parseOfficialClassListCsv(_csvDraft)
         : const _AdminOfficialClassListParseResult(metadata: {}, students: []);
+    final blockers = _bulkImportBlockingIssues(rows);
     final warnings = _bulkImportWarnings(rows, official);
-    final previewRows = rows.take(8).toList();
+    final filteredRows = _filteredBulkReviewRows(rows);
+    final previewRows = _pageBulkReviewRows(filteredRows);
     final detectedYear = official.metadata['year_level']?.toString() ?? '';
     final detectedSection = official.metadata['section']?.toString() ?? '';
     final detectedFaculty = official.metadata['faculty']?.toString() ?? '';
@@ -1768,25 +2056,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   'Instructor',
                   detectedFaculty.isEmpty ? '-' : detectedFaculty,
                 ),
+              if (blockers.isNotEmpty)
+                _reviewMetric('Blocked', blockers.length.toString()),
             ],
           ),
+          if (blockers.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _reviewBlockingIssues(blockers),
+          ],
           if (warnings.isNotEmpty) ...[
             const SizedBox(height: 16),
             _reviewWarnings(warnings),
           ],
           const SizedBox(height: 16),
+          _bulkReviewControls(rows.length, filteredRows.length),
+          const SizedBox(height: 12),
           _reviewRowsTable(previewRows),
-          if (rows.length > previewRows.length) ...[
-            const SizedBox(height: 10),
-            Text(
-              '${rows.length - previewRows.length} more row${rows.length - previewRows.length == 1 ? '' : 's'} will be imported.',
-              style: const TextStyle(
-                color: Color(0xFF667085),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ],
+          const SizedBox(height: 12),
+          _bulkReviewPagination(filteredRows.length),
         ],
       ),
     );
@@ -1872,11 +2159,253 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
+  Widget _reviewBlockingIssues(List<String> issues) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEE2E2),
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: issues
+            .map(
+              (issue) => Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
+                      color: Color(0xFFDC2626),
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        issue,
+                        style: const TextStyle(
+                          color: Color(0xFF991B1B),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _bulkReviewControls(int totalRows, int filteredRows) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 40,
+            child: TextField(
+              controller: _bulkReviewSearchController,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  color: _muted,
+                  size: 19,
+                ),
+                hintText: 'Search parsed rows...',
+                hintStyle: const TextStyle(color: _muted, fontSize: 13),
+                filled: true,
+                fillColor: const Color(0xFFF8FAFC),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 9,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFDDE2EA)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFDDE2EA)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: _maroon),
+                ),
+                suffixIcon: _bulkReviewSearchController.text.isNotEmpty
+                    ? IconButton(
+                        tooltip: 'Clear search',
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () {
+                          setState(() {
+                            _bulkReviewSearchController.clear();
+                            _resetBulkReviewPaging();
+                          });
+                        },
+                      )
+                    : null,
+              ),
+              onChanged: (_) {
+                setState(_resetBulkReviewPaging);
+              },
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Text(
+          filteredRows == totalRows
+              ? '$totalRows row${totalRows == 1 ? '' : 's'}'
+              : '$filteredRows of $totalRows rows',
+          style: const TextStyle(
+            color: Color(0xFF667085),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _bulkReviewPagination(int filteredRows) {
+    final total = filteredRows;
+    final pages = total == 0 ? 1 : (total / _bulkReviewRowsPerPage).ceil();
+    final safePage = _bulkReviewPage.clamp(0, pages - 1);
+    final start = total == 0 ? 0 : safePage * _bulkReviewRowsPerPage + 1;
+    final end = total == 0
+        ? 0
+        : ((safePage + 1) * _bulkReviewRowsPerPage).clamp(0, total);
+
+    return Row(
+      children: [
+        Text(
+          'Showing $start-$end of $total rows',
+          style: const TextStyle(
+            color: Color(0xFF667085),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 16),
+        const Text(
+          'Rows per page',
+          style: TextStyle(
+            color: Color(0xFF667085),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: const Color(0xFFDDE2EA)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<int>(
+              value: _bulkReviewRowsPerPage,
+              isDense: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              style: const TextStyle(
+                color: _ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                fontFamily: DefensysUi.fontFamily,
+              ),
+              items: _bulkReviewRowsPerPageOptions
+                  .map(
+                    (value) => DropdownMenuItem<int>(
+                      value: value,
+                      child: Text('$value'),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) {
+                if (value == null) return;
+                setState(() {
+                  _bulkReviewRowsPerPage = value;
+                  _resetBulkReviewPaging();
+                });
+              },
+            ),
+          ),
+        ),
+        const Spacer(),
+        _bulkReviewPageButton(
+          Icons.chevron_left_rounded,
+          safePage > 0,
+          () => setState(() => _bulkReviewPage = safePage - 1),
+        ),
+        const SizedBox(width: 8),
+        Container(
+          height: 36,
+          constraints: const BoxConstraints(minWidth: 36),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: _maroon),
+          ),
+          child: Text(
+            '${safePage + 1}',
+            style: const TextStyle(
+              color: _maroon,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        _bulkReviewPageButton(
+          Icons.chevron_right_rounded,
+          safePage < pages - 1,
+          () => setState(() => _bulkReviewPage = safePage + 1),
+        ),
+      ],
+    );
+  }
+
+  Widget _bulkReviewPageButton(
+    IconData icon,
+    bool enabled,
+    VoidCallback onTap,
+  ) {
+    return SizedBox(
+      width: 36,
+      height: 36,
+      child: OutlinedButton(
+        onPressed: enabled ? onTap : null,
+        style: OutlinedButton.styleFrom(
+          padding: EdgeInsets.zero,
+          foregroundColor: _ink,
+          side: const BorderSide(color: Color(0xFFDDE2EA)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+        ),
+        child: Icon(icon, size: 18),
+      ),
+    );
+  }
+
   Widget _reviewRowsTable(List<Map<String, dynamic>> rows) {
     final studentBatch = _selectedBulkImportType == 'student';
     final columns = studentBatch
-        ? const ['Student ID', 'Full Name', 'Email', 'Year Level', 'Section']
-        : const ['User ID', 'Full Name', 'Email', 'Role'];
+        ? const [
+            'Student ID',
+            'Full Name',
+            'Email',
+            'Year Level',
+            'Section',
+            'Status',
+          ]
+        : const ['User ID', 'Full Name', 'Email', 'Role', 'Status'];
 
     if (rows.isEmpty) {
       return Container(
@@ -1917,6 +2446,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
               ),
             ),
             ...rows.map((row) {
+              final blocked = _bulkImportRowBlockingIssues(row).isNotEmpty;
               final values = studentBatch
                   ? [
                       _rowText(row, 'id_number'),
@@ -1924,12 +2454,14 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                       _rowText(row, 'email'),
                       _rowText(row, 'year_level'),
                       _rowText(row, 'section'),
+                      blocked ? 'Blocked' : 'Ready',
                     ]
                   : [
                       _rowText(row, 'id_number'),
                       _rowName(row),
                       _rowText(row, 'email'),
                       _rowText(row, 'role'),
+                      blocked ? 'Blocked' : 'Ready',
                     ];
               return Container(
                 height: 42,
@@ -1971,13 +2503,56 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
+  List<String> _bulkImportBlockingIssues(List<Map<String, dynamic>> rows) {
+    if (rows.isEmpty) {
+      return const ['No valid rows were detected in the selected CSV.'];
+    }
+
+    final issues = <String>[];
+    if (_selectedBulkImportType == 'student') {
+      final wrongModeRows = rows
+          .where((row) => _bulkImportRowBlockingIssues(row).isNotEmpty)
+          .length;
+      if (wrongModeRows > 0) {
+        issues.add(
+          '$wrongModeRows row${wrongModeRows == 1 ? '' : 's'} look like Faculty / General users. Switch the import mode to Faculty / General Users or fix the role column to student before importing.',
+        );
+      }
+      if (_selectedStudentPeriodSource == 'explicit' &&
+          _selectedTargetSemesterId.isEmpty) {
+        issues.add('Select the target semester for this student batch.');
+      }
+      final hasDetectedYear = rows.any(
+        (row) => _rowText(row, 'year_level').isNotEmpty,
+      );
+      if (_selectedBatchYearLevel.isEmpty && !hasDetectedYear) {
+        issues.add('Select the student batch year level before importing.');
+      }
+    }
+
+    return issues;
+  }
+
+  List<String> _bulkImportRowBlockingIssues(Map<String, dynamic> row) {
+    if (_selectedBulkImportType != 'student') {
+      return const [];
+    }
+
+    final role = _rowText(row, 'role').trim().toLowerCase();
+    if (role.isEmpty || role == 'student') {
+      return const [];
+    }
+
+    return const ['Wrong import mode'];
+  }
+
   List<String> _bulkImportWarnings(
     List<Map<String, dynamic>> rows,
     _AdminOfficialClassListParseResult official,
   ) {
     final warnings = <String>[];
     if (rows.isEmpty) {
-      return ['No valid rows were detected in the selected CSV.'];
+      return const [];
     }
 
     final seen = <String>{};
@@ -4323,7 +4898,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         return;
       }
 
-      setState(() => _bulkCsv = csv);
+      setState(() {
+        _bulkCsv = csv;
+        _bulkReviewSearchController.clear();
+        _resetBulkReviewPaging();
+      });
+      _scheduleBulkDraftSave();
     } catch (e) {
       _snack('Could not read CSV file: $e');
     }
@@ -4339,6 +4919,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final rows = _parseCsv(csv);
     if (rows.isEmpty) {
       _snack('CSV has no valid rows.');
+      return;
+    }
+    final blockers = _bulkImportBlockingIssues(rows);
+    if (blockers.isNotEmpty) {
+      _snack(blockers.first);
       return;
     }
     if (_selectedBulkImportType == 'student') {
@@ -4364,11 +4949,60 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (imported) {
+      await clearUserBulkImportDraft();
+      if (!mounted) {
+        return;
+      }
       setState(() {
         _showBulkImport = false;
         _bulkCsv = '';
+        _savedBulkDraft = null;
+        _bulkReviewSearchController.clear();
+        _resetBulkReviewPaging();
       });
     }
+  }
+
+  void _resetBulkReviewPaging() {
+    _bulkReviewPage = 0;
+  }
+
+  List<Map<String, dynamic>> _filteredBulkReviewRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final query = _bulkReviewSearchController.text.trim().toLowerCase();
+    if (query.isEmpty) {
+      return rows;
+    }
+    return rows.where((row) {
+      final haystack = [
+        _rowText(row, 'id_number'),
+        _rowName(row),
+        _rowText(row, 'email'),
+        _rowText(row, 'role'),
+        _rowText(row, 'year_level'),
+        _rowText(row, 'section'),
+      ].join(' ').toLowerCase();
+      return haystack.contains(query);
+    }).toList();
+  }
+
+  List<Map<String, dynamic>> _pageBulkReviewRows(
+    List<Map<String, dynamic>> rows,
+  ) {
+    final pages = rows.isEmpty
+        ? 1
+        : (rows.length / _bulkReviewRowsPerPage).ceil();
+    final safePage = _bulkReviewPage.clamp(0, pages - 1);
+    if (safePage != _bulkReviewPage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() => _bulkReviewPage = safePage);
+      });
+    }
+    final start = safePage * _bulkReviewRowsPerPage;
+    final end = (start + _bulkReviewRowsPerPage).clamp(0, rows.length);
+    return rows.sublist(start, end);
   }
 
   Map<String, dynamic>? _studentContext(AcademicPeriodState academicState) {

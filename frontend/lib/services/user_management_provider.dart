@@ -295,6 +295,18 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
         final assignmentMessage = payload['instructor_assignment'] != null
             ? ' PIT Instructor assigned.'
             : '';
+        if (created == 0) {
+          final reason = skipped > 0 && errors == 0
+              ? '$skipped row${skipped == 1 ? '' : 's'} skipped. They likely already exist or do not match the selected import mode.'
+              : errors > 0
+              ? '$errors row error${errors == 1 ? '' : 's'}.'
+              : 'The server did not create any users.';
+          state = state.copyWith(
+            isSaving: false,
+            error: 'No users imported. $reason',
+          );
+          return false;
+        }
         await fetchUsers(
           successMessage:
               '$created users imported.$recordsMessage $skipped skipped. $errors errors.$assignmentMessage',
