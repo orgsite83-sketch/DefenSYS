@@ -43,12 +43,18 @@ class CanManageDeliverables(BasePermission):
 def deliverables_payload(request, queryset=None, selected_stage=None):
     base = team_queryset_for_user(request.user)
     current = queryset if queryset is not None else base
-    stage = selected_stage or request.query_params.get('stage_label') or STAGE_OPTIONS[0]
+    stage_options = list(STAGE_OPTIONS)
+    requested_stage = selected_stage or request.query_params.get('stage_label') or ''
+    stage = (
+        requested_stage
+        if requested_stage in stage_options
+        else (stage_options[0] if stage_options else '')
+    )
     semester = active_semester()
     return {
         'teams': [team_payload(team, selected_stage=stage) for team in current],
         'counts': counts_payload(current),
-        'stage_options': STAGE_OPTIONS,
+        'stage_options': stage_options,
         'selected_stage': stage,
         'statuses': [
             {'value': '', 'label': 'All Teams'},

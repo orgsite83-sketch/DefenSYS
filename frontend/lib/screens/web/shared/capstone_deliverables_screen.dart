@@ -41,7 +41,8 @@ String _formatUploadFailureMessage(int statusCode, String responseBody) {
   } catch (_) {
     // Not JSON (e.g. legacy HTML error page).
   }
-  if (responseBody.contains('<!DOCTYPE html>') || responseBody.contains('<html')) {
+  if (responseBody.contains('<!DOCTYPE html>') ||
+      responseBody.contains('<html')) {
     return 'Upload failed (server error $statusCode). Check backend logs or try again.';
   }
   final trimmed = responseBody.trim();
@@ -262,9 +263,10 @@ class _CapstoneDeliverablesScreenState
   }
 
   Widget _buildToolbar(CapstoneDeliverablesState state) {
-    final List<String> stageOptions = state.stageOptions.isEmpty
-        ? const ['Concept Proposal', 'Project Proposal', 'Final Defense']
-        : state.stageOptions;
+    final List<String> stageOptions = _uniqueStrings(state.stageOptions);
+    final selectedStage = stageOptions.contains(state.selectedStage)
+        ? state.selectedStage
+        : null;
     final List<Map<String, dynamic>> statuses = state.statuses.isEmpty
         ? const <Map<String, dynamic>>[
             {'value': '', 'label': 'All Teams'},
@@ -297,19 +299,26 @@ class _CapstoneDeliverablesScreenState
             SizedBox(
               width: 220,
               child: DropdownButtonFormField<String>(
-                initialValue: state.selectedStage,
+                initialValue: selectedStage,
                 decoration: const InputDecoration(labelText: 'Stage View'),
+                hint: Text(
+                  stageOptions.isEmpty
+                      ? 'No stages configured'
+                      : 'Select stage',
+                ),
                 items: stageOptions
                     .map(
                       (stage) =>
                           DropdownMenuItem(value: stage, child: Text(stage)),
                     )
                     .toList(),
-                onChanged: (value) => ref
-                    .read(capstoneDeliverablesProvider.notifier)
-                    .fetchDeliverables(
-                      selectedStage: value ?? state.selectedStage,
-                    ),
+                onChanged: stageOptions.isEmpty
+                    ? null
+                    : (value) => ref
+                          .read(capstoneDeliverablesProvider.notifier)
+                          .fetchDeliverables(
+                            selectedStage: value ?? selectedStage ?? '',
+                          ),
               ),
             ),
             SizedBox(
@@ -348,6 +357,17 @@ class _CapstoneDeliverablesScreenState
         ),
       ),
     );
+  }
+
+  List<String> _uniqueStrings(List<String> values) {
+    final seen = <String>{};
+    final result = <String>[];
+    for (final value in values) {
+      if (seen.add(value)) {
+        result.add(value);
+      }
+    }
+    return result;
   }
 
   Widget _buildTeamList(CapstoneDeliverablesState state) {
@@ -457,9 +477,7 @@ class _CapstoneDeliverablesScreenState
                   ),
                 ),
                 const SizedBox(width: 12),
-                Expanded(
-                  child: _vaultProgressBlock(selectedStage),
-                ),
+                Expanded(child: _vaultProgressBlock(selectedStage)),
                 const SizedBox(width: 12),
                 if (canEndorse)
                   ElevatedButton.icon(
@@ -680,7 +698,8 @@ class _CapstoneDeliverablesScreenState
                             spacing: 8,
                             runSpacing: 8,
                             children: stages.map((item) {
-                              final label = item['stage_label']?.toString() ?? '';
+                              final label =
+                                  item['stage_label']?.toString() ?? '';
                               final active = label == selectedStage;
                               return ChoiceChip(
                                 label: Text(label),
@@ -730,7 +749,10 @@ class _CapstoneDeliverablesScreenState
                           ? () async {
                               await ref
                                   .read(capstoneDeliverablesProvider.notifier)
-                                  .endorseTeam(_asInt(currentTeam['id']), selectedStage);
+                                  .endorseTeam(
+                                    _asInt(currentTeam['id']),
+                                    selectedStage,
+                                  );
                               // We don't pop the dialogContext here, but wait, the plan says we can pop here because it's the "endorse" action which is complete.
                               // Actually, if we pop, that's fine or we don't have to pop. Wait, line 725 in original popped. So keeping pop on endorse is okay.
                               if (context.mounted) {
@@ -742,7 +764,9 @@ class _CapstoneDeliverablesScreenState
                       label: Text(
                         endorsed
                             ? 'Already Endorsed'
-                            : (configured ? 'Endorse' : 'Configure Stage First'),
+                            : (configured
+                                  ? 'Endorse'
+                                  : 'Configure Stage First'),
                       ),
                     ),
                   ],
@@ -766,7 +790,8 @@ class _CapstoneDeliverablesScreenState
     final submission = Map<String, dynamic>.from(
       item['submission'] as Map? ?? const {},
     );
-    final isWPR = item['id'] == 'WPR';  // Check if this is Weekly Progress Report
+    final isWPR =
+        item['id'] == 'WPR'; // Check if this is Weekly Progress Report
 
     final suggestedFile = item['suggested_file_name']?.toString() ?? '';
 
@@ -779,150 +804,180 @@ class _CapstoneDeliverablesScreenState
             border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
           ),
           child: Row(
-        children: [
-          Icon(
-            uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
-            color: uploaded ? AppColors.success : AppColors.textSecondary,
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  item['label']?.toString() ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.w700),
-                ),
-                if (uploaded)
-                  Text(
-                    isWPR 
-                        ? 'All weekly reports approved - ${submission['uploaded_by_name'] ?? ''}'
-                        : '${submission['file_name'] ?? ''} - ${submission['uploaded_by_name'] ?? ''}',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  )
-                else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
-                  Text(
-                    item['vault_note'].toString(),
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                    ),
-                  )
-                else if (isWPR)
-                  Text(
-                    'Click "View & Approve" to review all weekly reports',
-                    style: const TextStyle(
-                      color: AppColors.textSecondary,
-                      fontSize: 12,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (item['required'] == true) _chip('Required', AppColors.danger),
-          const SizedBox(width: 8),
-          if (uploaded && !isWPR)
-            IconButton(
-              tooltip: 'Remove',
-              onPressed: () => _removeFile(team, stageLabel, item),
-              icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-            ),
-          // Show "View & Approve" button for WPR, "Upload" for others
-          if (isWPR)
-            OutlinedButton.icon(
-              onPressed: () => _showApproveWPRDialog(team, stageLabel, uploaded, setDialogState),
-              icon: Icon(uploaded ? Icons.visibility : Icons.check_circle_outline),
-              label: Text(uploaded ? 'View Reports' : 'View & Approve'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: uploaded ? Colors.blue : AppColors.success,
-                side: BorderSide(color: uploaded ? Colors.blue : AppColors.success),
+            children: [
+              Icon(
+                uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
+                color: uploaded ? AppColors.success : AppColors.textSecondary,
               ),
-            )
-          else
-            OutlinedButton.icon(
-              onPressed: locked
-                  ? null
-                  : () => _promptUploadOrReplace(team, stageLabel, item),
-              icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
-              label: Text(uploaded ? 'Replace' : 'Upload'),
-            ),
-        ],
-      ),
-    ),
-    if (suggestedFile.isNotEmpty && !uploaded)
-      Container(
-        margin: const EdgeInsets.only(bottom: 12, top: 4),
-        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-        decoration: BoxDecoration(
-          color: AppColors.gold.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
-        ),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(top: 2),
-              child: Icon(Icons.info_outline, color: AppColors.gold, size: 20),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Awaiting PDF: Please use this exact filename to automatically satisfy the archive requirement.',
-                    style: TextStyle(
-                      color: AppColors.gold,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      item['label']?.toString() ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(4),
-                          border: Border.all(color: AppColors.gold.withValues(alpha: 0.2)),
+                    if (uploaded)
+                      Text(
+                        isWPR
+                            ? 'All weekly reports approved - ${submission['uploaded_by_name'] ?? ''}'
+                            : '${submission['file_name'] ?? ''} - ${submission['uploaded_by_name'] ?? ''}',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
                         ),
-                        child: SelectableText(
-                          suggestedFile,
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
+                      )
+                    else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
+                      Text(
+                        item['vault_note'].toString(),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                        ),
+                      )
+                    else if (isWPR)
+                      Text(
+                        'Click "View & Approve" to review all weekly reports',
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      InkWell(
-                        onTap: () {
-                          Clipboard.setData(ClipboardData(text: suggestedFile));
-                          showSuccessToast(context, 'Filename copied to clipboard!');
-                        },
-                        borderRadius: BorderRadius.circular(4),
-                        child: const Padding(
-                          padding: EdgeInsets.all(4.0),
-                          child: Icon(Icons.copy, size: 16, color: AppColors.textSecondary),
+                  ],
+                ),
+              ),
+              if (item['required'] == true) _chip('Required', AppColors.danger),
+              const SizedBox(width: 8),
+              if (uploaded && !isWPR)
+                IconButton(
+                  tooltip: 'Remove',
+                  onPressed: () => _removeFile(team, stageLabel, item),
+                  icon: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.danger,
+                  ),
+                ),
+              // Show "View & Approve" button for WPR, "Upload" for others
+              if (isWPR)
+                OutlinedButton.icon(
+                  onPressed: () => _showApproveWPRDialog(
+                    team,
+                    stageLabel,
+                    uploaded,
+                    setDialogState,
+                  ),
+                  icon: Icon(
+                    uploaded ? Icons.visibility : Icons.check_circle_outline,
+                  ),
+                  label: Text(uploaded ? 'View Reports' : 'View & Approve'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: uploaded ? Colors.blue : AppColors.success,
+                    side: BorderSide(
+                      color: uploaded ? Colors.blue : AppColors.success,
+                    ),
+                  ),
+                )
+              else
+                OutlinedButton.icon(
+                  onPressed: locked
+                      ? null
+                      : () => _promptUploadOrReplace(team, stageLabel, item),
+                  icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
+                  label: Text(uploaded ? 'Replace' : 'Upload'),
+                ),
+            ],
+          ),
+        ),
+        if (suggestedFile.isNotEmpty && !uploaded)
+          Container(
+            margin: const EdgeInsets.only(bottom: 12, top: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            decoration: BoxDecoration(
+              color: AppColors.gold.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.info_outline,
+                    color: AppColors.gold,
+                    size: 20,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Awaiting PDF: Please use this exact filename to automatically satisfy the archive requirement.',
+                        style: TextStyle(
+                          color: AppColors.gold,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
                         ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(
+                                color: AppColors.gold.withValues(alpha: 0.2),
+                              ),
+                            ),
+                            child: SelectableText(
+                              suggestedFile,
+                              style: const TextStyle(
+                                fontFamily: 'monospace',
+                                fontWeight: FontWeight.w700,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          InkWell(
+                            onTap: () {
+                              Clipboard.setData(
+                                ClipboardData(text: suggestedFile),
+                              );
+                              showSuccessToast(
+                                context,
+                                'Filename copied to clipboard!',
+                              );
+                            },
+                            borderRadius: BorderRadius.circular(4),
+                            child: const Padding(
+                              padding: EdgeInsets.all(4.0),
+                              child: Icon(
+                                Icons.copy,
+                                size: 16,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
-    ],
-  );
+          ),
+      ],
+    );
   }
 
   Future<void> _promptUploadOrReplace(
@@ -971,19 +1026,23 @@ class _CapstoneDeliverablesScreenState
                 if (!isUploading)
                   OutlinedButton.icon(
                     onPressed: () async {
-                      FilePickerResult? result = await FilePicker.platform.pickFiles(
-                        type: FileType.custom,
-                        allowedExtensions: ['pdf'],
-                        withData: true, // Load file bytes
-                      );
+                      FilePickerResult? result = await FilePicker.platform
+                          .pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['pdf'],
+                            withData: true, // Load file bytes
+                          );
 
-                      if (result != null && result.files.single.name.isNotEmpty) {
+                      if (result != null &&
+                          result.files.single.name.isNotEmpty) {
                         setState(() {
                           selectedFileName = result.files.single.name;
-                          selectedFileBytes = result.files.single.bytes; // Store file bytes
+                          selectedFileBytes =
+                              result.files.single.bytes; // Store file bytes
                           // Convert bytes to KB
                           final bytes = result.files.single.size;
-                          selectedFileSize = '${(bytes / 1024).toStringAsFixed(2)} KB';
+                          selectedFileSize =
+                              '${(bytes / 1024).toStringAsFixed(2)} KB';
                           uploadError = null;
                         });
                       }
@@ -1001,11 +1060,17 @@ class _CapstoneDeliverablesScreenState
                     decoration: BoxDecoration(
                       color: Colors.green.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                      border: Border.all(
+                        color: Colors.green.withValues(alpha: 0.3),
+                      ),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                        const Icon(
+                          Icons.check_circle,
+                          color: Colors.green,
+                          size: 20,
+                        ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Column(
@@ -1044,7 +1109,11 @@ class _CapstoneDeliverablesScreenState
                     ),
                     child: const Row(
                       children: [
-                        Icon(Icons.info_outline, color: AppColors.textSecondary, size: 20),
+                        Icon(
+                          Icons.info_outline,
+                          color: AppColors.textSecondary,
+                          size: 20,
+                        ),
                         SizedBox(width: 10),
                         Expanded(
                           child: Text(
@@ -1068,7 +1137,9 @@ class _CapstoneDeliverablesScreenState
                           child: LinearProgressIndicator(
                             value: uploadProgress,
                             color: AppColors.success,
-                            backgroundColor: AppColors.success.withValues(alpha: 0.12),
+                            backgroundColor: AppColors.success.withValues(
+                              alpha: 0.12,
+                            ),
                             minHeight: 8,
                           ),
                         ),
@@ -1107,17 +1178,22 @@ class _CapstoneDeliverablesScreenState
           ),
           actions: [
             TextButton(
-              onPressed: isUploading ? null : () => Navigator.pop(dialogContext, false),
+              onPressed: isUploading
+                  ? null
+                  : () => Navigator.pop(dialogContext, false),
               child: const Text('Cancel'),
             ),
             ElevatedButton(
               onPressed: (selectedFileName != null && !isUploading)
                   ? () async {
-                      final suggestedName = item['suggested_file_name']?.toString() ?? '';
+                      final suggestedName =
+                          item['suggested_file_name']?.toString() ?? '';
                       if (item['type'] == 'vault' && suggestedName.isNotEmpty) {
-                        if (selectedFileName!.trim().toLowerCase() != suggestedName.trim().toLowerCase()) {
+                        if (selectedFileName!.trim().toLowerCase() !=
+                            suggestedName.trim().toLowerCase()) {
                           setState(() {
-                            uploadError = "File name must match the naming convention exactly.\nExpected: '$suggestedName'";
+                            uploadError =
+                                "File name must match the naming convention exactly.\nExpected: '$suggestedName'";
                           });
                           return;
                         }
@@ -1129,11 +1205,14 @@ class _CapstoneDeliverablesScreenState
                         uploadError = null;
                       });
 
-
                       try {
-                        final client = ref.read(authenticatedHttpClientProvider);
-                        final uri = Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/upload/');
-                        
+                        final client = ref.read(
+                          authenticatedHttpClientProvider,
+                        );
+                        final uri = Uri.parse(
+                          '${ApiConfig.capstoneDeliverablesUrl}/upload/',
+                        );
+
                         final request = MultipartRequestWithProgress(
                           'POST',
                           uri,
@@ -1149,32 +1228,44 @@ class _CapstoneDeliverablesScreenState
                         // Add form fields
                         request.fields['team_id'] = team['id'].toString();
                         request.fields['stage_label'] = stageLabel;
-                        request.fields['deliverable_id'] = item['id'].toString();
+                        request.fields['deliverable_id'] = item['id']
+                            .toString();
                         request.fields['file_name'] = selectedFileName!;
                         request.fields['file_size'] = selectedFileSize ?? '';
-                        
+
                         // Add file
-                        request.files.add(http.MultipartFile.fromBytes(
-                          'file',
-                          selectedFileBytes!,
-                          filename: selectedFileName!,
-                        ));
-                        
-                        final response = await client.sendAuthenticated(request);
+                        request.files.add(
+                          http.MultipartFile.fromBytes(
+                            'file',
+                            selectedFileBytes!,
+                            filename: selectedFileName!,
+                          ),
+                        );
+
+                        final response = await client.sendAuthenticated(
+                          request,
+                        );
 
                         if (response.statusCode == 200) {
                           // Refresh deliverables list
-                          await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-                            successMessage: 'Deliverable file uploaded successfully.',
-                          );
+                          await ref
+                              .read(capstoneDeliverablesProvider.notifier)
+                              .fetchDeliverables(
+                                successMessage:
+                                    'Deliverable file uploaded successfully.',
+                              );
                           if (context.mounted) {
                             Navigator.pop(dialogContext, true);
                           }
                         } else {
-                          final responseBody = await response.stream.bytesToString();
+                          final responseBody = await response.stream
+                              .bytesToString();
                           setState(() {
                             isUploading = false;
-                            uploadError = _formatUploadFailureMessage(response.statusCode, responseBody);
+                            uploadError = _formatUploadFailureMessage(
+                              response.statusCode,
+                              responseBody,
+                            );
                           });
                         }
                       } catch (e) {
@@ -1198,7 +1289,8 @@ class _CapstoneDeliverablesScreenState
     String stageLabel,
     Map<String, dynamic> item,
   ) async {
-    final label = item['label']?.toString() ?? item['id']?.toString() ?? 'this file';
+    final label =
+        item['label']?.toString() ?? item['id']?.toString() ?? 'this file';
     final teamName = team['name']?.toString();
     final message = teamName != null && teamName.isNotEmpty
         ? 'Remove $label for $teamName? This cannot be undone.'
@@ -1400,7 +1492,6 @@ class _CapstoneDeliverablesScreenState
     return _asInt(state.counts[key]);
   }
 
-
   Future<void> _showApproveWPRDialog(
     Map<String, dynamic> team,
     String stageLabel,
@@ -1408,7 +1499,7 @@ class _CapstoneDeliverablesScreenState
     void Function(void Function()) setDialogState,
   ) async {
     final teamId = team['id']?.toString() ?? '';
-    
+
     if (teamId.isEmpty) {
       showValidationToast(context, 'Invalid team ID.');
       return;
@@ -1418,18 +1509,16 @@ class _CapstoneDeliverablesScreenState
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
       // Fetch fresh weekly progress reports from database for this team
       await ref.read(weeklyProgressProvider.notifier).fetchReports();
-      
+
       // Get the updated state
       final progressState = ref.read(weeklyProgressProvider);
-      
+
       // Filter reports for this specific team
       final teamReports = progressState.reports
           .where((r) => r['team'].toString() == teamId)
@@ -1456,13 +1545,15 @@ class _CapstoneDeliverablesScreenState
             title: Row(
               children: [
                 Icon(
-                  alreadyApproved ? Icons.visibility : Icons.check_circle_outline,
+                  alreadyApproved
+                      ? Icons.visibility
+                      : Icons.check_circle_outline,
                   color: alreadyApproved ? Colors.blue : AppColors.success,
                 ),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    alreadyApproved 
+                    alreadyApproved
                         ? 'Weekly Reports - ${team['name']}'
                         : 'Approve Weekly Reports - ${team['name']}',
                     style: const TextStyle(fontSize: 16),
@@ -1495,12 +1586,12 @@ class _CapstoneDeliverablesScreenState
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: alreadyApproved 
+                      color: alreadyApproved
                           ? const Color(0xFFDCFCE7)
                           : const Color(0xFFF0F9FF),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
-                        color: alreadyApproved 
+                        color: alreadyApproved
                             ? const Color(0xFF86EFAC)
                             : const Color(0xFFBAE6FD),
                       ),
@@ -1508,8 +1599,10 @@ class _CapstoneDeliverablesScreenState
                     child: Row(
                       children: [
                         Icon(
-                          alreadyApproved ? Icons.check_circle : Icons.info_outline,
-                          color: alreadyApproved 
+                          alreadyApproved
+                              ? Icons.check_circle
+                              : Icons.info_outline,
+                          color: alreadyApproved
                               ? const Color(0xFF166534)
                               : const Color(0xFF0369A1),
                           size: 20,
@@ -1521,7 +1614,7 @@ class _CapstoneDeliverablesScreenState
                                 ? 'PDF compilation of all weekly reports has been generated and submitted. You can view the reports below or download them again.'
                                 : 'Review the ${teamReports.length} weekly progress reports submitted by this team. Click "Generate & Submit PDF" to compile all reports into a single PDF document and submit it as the WPR deliverable.',
                             style: TextStyle(
-                              color: alreadyApproved 
+                              color: alreadyApproved
                                   ? const Color(0xFF166534)
                                   : const Color(0xFF0369A1),
                               fontSize: 13,
@@ -1578,7 +1671,8 @@ class _CapstoneDeliverablesScreenState
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle,
+                              const Icon(
+                                Icons.check_circle,
                                 color: AppColors.success,
                                 size: 18,
                               ),
@@ -1641,7 +1735,9 @@ class _CapstoneDeliverablesScreenState
                 ElevatedButton.icon(
                   onPressed: () => Navigator.pop(dialogContext, true),
                   icon: const Icon(Icons.picture_as_pdf),
-                  label: Text('Generate & Submit PDF (${teamReports.length} reports)'),
+                  label: Text(
+                    'Generate & Submit PDF (${teamReports.length} reports)',
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.success,
                     foregroundColor: Colors.white,
@@ -1657,9 +1753,8 @@ class _CapstoneDeliverablesScreenState
           showDialog(
             context: context,
             barrierDismissible: false,
-            builder: (context) => const Center(
-              child: CircularProgressIndicator(),
-            ),
+            builder: (context) =>
+                const Center(child: CircularProgressIndicator()),
           );
 
           try {
@@ -1675,7 +1770,7 @@ class _CapstoneDeliverablesScreenState
             if (success && mounted) {
               // Refresh the dialog to show updated status
               setDialogState(() {});
-              
+
               showSuccessToast(
                 context,
                 'Weekly Progress Reports PDF generated and submitted for ${team['name']}!',
@@ -1684,7 +1779,7 @@ class _CapstoneDeliverablesScreenState
           } catch (e) {
             // Close loading indicator
             if (mounted) Navigator.pop(context);
-            
+
             if (mounted) {
               showErrorToast(context, 'Error generating PDF: $e');
             }
@@ -1694,7 +1789,7 @@ class _CapstoneDeliverablesScreenState
     } catch (e) {
       // Close loading indicator if still open
       if (mounted) Navigator.pop(context);
-      
+
       // Show error message
       if (mounted) {
         showErrorToast(context, 'Error fetching weekly reports: $e');
@@ -1704,7 +1799,7 @@ class _CapstoneDeliverablesScreenState
 
   Future<void> _showCompileWPRDialog(Map<String, dynamic> team) async {
     final teamId = team['id']?.toString() ?? '';
-    
+
     if (teamId.isEmpty) {
       showValidationToast(context, 'Invalid team ID.');
       return;
@@ -1714,18 +1809,16 @@ class _CapstoneDeliverablesScreenState
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
+      builder: (context) => const Center(child: CircularProgressIndicator()),
     );
 
     try {
       // Fetch fresh weekly progress reports from database for this team
       await ref.read(weeklyProgressProvider.notifier).fetchReports();
-      
+
       // Get the updated state
       final progressState = ref.read(weeklyProgressProvider);
-      
+
       // Filter reports for this specific team
       final teamReports = progressState.reports
           .where((r) => r['team'].toString() == teamId)
@@ -1784,7 +1877,8 @@ class _CapstoneDeliverablesScreenState
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.info_outline,
+                        const Icon(
+                          Icons.info_outline,
                           color: Color(0xFF0369A1),
                           size: 20,
                         ),
@@ -1804,10 +1898,7 @@ class _CapstoneDeliverablesScreenState
                   const SizedBox(height: 16),
                   const Text(
                     'Weekly reports to compile:',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
+                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
                   ),
                   const SizedBox(height: 8),
                   Container(
@@ -1827,7 +1918,8 @@ class _CapstoneDeliverablesScreenState
                           ),
                           child: Row(
                             children: [
-                              const Icon(Icons.check_circle,
+                              const Icon(
+                                Icons.check_circle,
                                 color: AppColors.success,
                                 size: 18,
                               ),
@@ -1905,7 +1997,7 @@ class _CapstoneDeliverablesScreenState
     } catch (e) {
       // Close loading indicator if still open
       if (mounted) Navigator.pop(context);
-      
+
       // Show error message
       if (mounted) {
         showErrorToast(context, 'Error fetching weekly reports: $e');
@@ -1919,18 +2011,18 @@ class _CapstoneDeliverablesScreenState
   ) {
     // Generate a simple text report
     final buffer = StringBuffer();
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
     buffer.writeln('WEEKLY PROGRESS REPORTS COMPILATION');
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
     buffer.writeln();
     buffer.writeln('Team: ${team['name']}');
     buffer.writeln('Project: ${team['project_title'] ?? 'N/A'}');
     buffer.writeln('Section: ${team['year_level'] ?? 'N/A'}');
     buffer.writeln('Generated: ${DateTime.now().toString().substring(0, 19)}');
     buffer.writeln();
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
     buffer.writeln('WEEKLY REPORTS (${reports.length})');
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
     buffer.writeln();
 
     for (var i = 0; i < reports.length; i++) {
@@ -1947,7 +2039,9 @@ class _CapstoneDeliverablesScreenState
       buffer.writeln();
 
       // Accomplishments
-      final accomplishments = (report['accomplishments'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final accomplishments =
+          (report['accomplishments'] as List?)?.cast<Map<String, dynamic>>() ??
+          [];
       if (accomplishments.isNotEmpty) {
         buffer.writeln('   Accomplishments:');
         for (var acc in accomplishments) {
@@ -1958,17 +2052,22 @@ class _CapstoneDeliverablesScreenState
       }
 
       // Contributions
-      final contributions = (report['contributions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final contributions =
+          (report['contributions'] as List?)?.cast<Map<String, dynamic>>() ??
+          [];
       if (contributions.isNotEmpty) {
         buffer.writeln('   Individual Contributions:');
         for (var contrib in contributions) {
-          buffer.writeln('   - ${contrib['member'] ?? 'N/A'}: ${contrib['contribution'] ?? 'N/A'}');
+          buffer.writeln(
+            '   - ${contrib['member'] ?? 'N/A'}: ${contrib['contribution'] ?? 'N/A'}',
+          );
         }
         buffer.writeln();
       }
 
       // Issues
-      final issues = (report['issues'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final issues =
+          (report['issues'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       if (issues.isNotEmpty) {
         buffer.writeln('   Issues & Actions:');
         for (var issue in issues) {
@@ -1979,7 +2078,8 @@ class _CapstoneDeliverablesScreenState
       }
 
       // Plans
-      final plans = (report['plans'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      final plans =
+          (report['plans'] as List?)?.cast<Map<String, dynamic>>() ?? [];
       if (plans.isNotEmpty) {
         buffer.writeln('   Plans for Next Week:');
         for (var plan in plans) {
@@ -1993,9 +2093,9 @@ class _CapstoneDeliverablesScreenState
       buffer.writeln();
     }
 
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
     buffer.writeln('END OF COMPILATION');
-    buffer.writeln('='*60);
+    buffer.writeln('=' * 60);
 
     // Show success message with view action
     showSuccessToast(
@@ -2018,21 +2118,21 @@ class _CapstoneDeliverablesScreenState
                 child: SingleChildScrollView(
                   child: SelectableText(
                     buffer.toString(),
-                      style: const TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                      ),
+                    style: const TextStyle(
+                      fontFamily: 'monospace',
+                      fontSize: 12,
                     ),
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(ctx),
-                    child: const Text('Close'),
-                  ),
-                ],
               ),
-            );
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: const Text('Close'),
+                ),
+              ],
+            ),
+          );
         },
       ),
     );
@@ -2042,19 +2142,20 @@ class _CapstoneDeliverablesScreenState
     try {
       final client = ref.read(authenticatedHttpClientProvider);
       final response = await client.post(
-        Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/compile-weekly-reports/'),
-        body: jsonEncode({
-          'team_id': teamId,
-          'stage_label': stageLabel,
-        }),
+        Uri.parse(
+          '${ApiConfig.capstoneDeliverablesUrl}/compile-weekly-reports/',
+        ),
+        body: jsonEncode({'team_id': teamId, 'stage_label': stageLabel}),
       );
 
       if (response.statusCode == 200) {
         jsonDecode(response.body);
 
         // Refresh deliverables to show the new PDF submission
-        await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
-        
+        await ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .fetchDeliverables();
+
         return true;
       } else {
         final error = jsonDecode(response.body);

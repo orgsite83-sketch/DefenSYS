@@ -408,6 +408,35 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['members'], [])
         self.assertFalse(response.data['peerEvalEnabled'])
 
+    def test_student_dashboard_does_not_invent_capstone_stage(self):
+        student = User.objects.create_user(
+            username='student-no-stage',
+            password='pass12345',
+            role='student',
+        )
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+        )
+        team = StudentTeam.objects.create(
+            name='Capstone No Stage Team',
+            project_title='No Stage Yet',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student,
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/student/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['team']['currentStage'])
+        self.assertIsNone(response.data['team']['readyForStage'])
+
     def test_student_dashboard_does_not_show_previous_stage_grade_for_current_schedule(self):
         student = User.objects.create_user(
             username='student-current-stage',

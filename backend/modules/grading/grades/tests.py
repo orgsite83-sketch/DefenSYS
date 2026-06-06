@@ -330,7 +330,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(grade.stage_label, '2nd Year PIT Expo')
         self.assertIsNotNone(grade.schedule_id)
 
-    def test_grade_center_get_does_not_delete_stale_placeholder(self):
+    def test_grade_center_get_hides_but_does_not_delete_stale_placeholder(self):
         sync_missing_grade_rows(user=self.admin, repair_placeholders=False)
         canonical = TeamGrade.objects.get(team=self.capstone_team, schedule=self.capstone_schedule)
         stale = TeamGrade.objects.create(
@@ -348,6 +348,10 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(TeamGrade.objects.filter(pk=canonical.pk).exists())
         self.assertTrue(TeamGrade.objects.filter(pk=stale.pk).exists())
+        grade_ids = {row['id'] for row in response.data['grades']}
+        self.assertIn(canonical.pk, grade_ids)
+        self.assertNotIn(stale.pk, grade_ids)
+        self.assertEqual(response.data['counts']['filtered'], 1)
 
     def test_explicit_sync_still_repairs_stale_placeholder(self):
         sync_missing_grade_rows(user=self.admin, repair_placeholders=False)

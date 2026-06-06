@@ -76,6 +76,16 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.data['rubric']['criteria_count'], 2)
         self.assertEqual(Rubric.objects.get().criteria.count(), 2)
 
+    def test_create_rubric_requires_scope(self):
+        payload = self.rubric_payload()
+        payload.pop('scope')
+
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('scope', response.data)
+        self.assertEqual(Rubric.objects.count(), 0)
+
     def test_pit_adviser_rubric_is_rejected(self):
         self.client.force_authenticate(user=self._pit_lead_user('pit-lead-adviser'))
         response = self.client.post(

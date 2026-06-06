@@ -1,6 +1,7 @@
 from academic_period_management.models import SchoolYear
+from defense.stages.models import DefenseStage
 from repository.deliverables.models import DeliverableSubmission
-from repository.deliverables.services import STAGE_OPTIONS, display_name
+from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
 
 from .ml_search import filter_and_rank_entries
@@ -16,6 +17,14 @@ TYPE_OPTIONS = [
     {'value': VaultEntry.TYPE_CAPSTONE, 'label': 'Capstone'},
     {'value': VaultEntry.TYPE_PIT, 'label': 'PIT'},
 ]
+
+
+def active_defense_stage_options():
+    return list(
+        DefenseStage.objects.filter(is_active=True)
+        .order_by('display_order', 'label')
+        .values_list('label', flat=True)
+    )
 
 
 def capstone_visible_queryset():
@@ -162,7 +171,7 @@ def options_payload(entries):
     return {
         'type_options': TYPE_OPTIONS,
         'year_levels': sorted(set(DEFAULT_YEAR_LEVELS + year_levels)),
-        'stage_options': sorted(set(STAGE_OPTIONS + stages)),
+        'stage_options': sorted(set(active_defense_stage_options() + stages)),
         'academic_years': sorted(academic_years, reverse=True),
     }
 

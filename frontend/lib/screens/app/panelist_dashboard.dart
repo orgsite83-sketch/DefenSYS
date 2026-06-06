@@ -55,8 +55,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
 
     try {
       final httpClient = ref.read(authenticatedHttpClientProvider);
-      final path =
-          _isGuest ? 'guest-panelist-results/' : 'panelist-results/';
+      final path = _isGuest ? 'guest-panelist-results/' : 'panelist-results/';
       final url = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path');
       final response = await httpClient.get(url);
 
@@ -103,7 +102,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
     try {
       final httpClient = ref.read(authenticatedHttpClientProvider);
       final path = _isGuest ? 'guest-assignments/' : 'panelist-assignments/';
-      final assignmentsUrl = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$path');
+      final assignmentsUrl = Uri.parse(
+        '${ApiConfig.defenseSchedulesUrl}/$path',
+      );
       final response = await httpClient.get(assignmentsUrl);
 
       if (!mounted) return;
@@ -114,15 +115,20 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
         final teams = data['teams'] as List? ?? [];
 
         _teams = teams.map((team) {
-          final weights = (team['grade_weights'] as Map?)?.cast<String, dynamic>() ?? {};
-          final isCapstone = team['is_capstone'] == true ||
-              team['scope']?.toString() == 'capstone';
+          final weights =
+              (team['grade_weights'] as Map?)?.cast<String, dynamic>() ?? {};
+          final rawScope = team['scope']?.toString().trim() ?? '';
+          final scope = rawScope == 'capstone' || rawScope == 'pit'
+              ? rawScope
+              : 'unknown';
+          final isCapstone = scope == 'capstone';
           return TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
-            defenseDate: '${team['defense_stage'] ?? 'No stage'} - ${team['scheduled_date'] ?? ''} ${team['start_time'] ?? ''}',
+            defenseDate:
+                '${team['defense_stage'] ?? 'No stage'} - ${team['scheduled_date'] ?? ''} ${team['start_time'] ?? ''}',
             isCapstone: isCapstone,
-            scope: (team['scope'] ?? (isCapstone ? 'capstone' : 'pit')).toString(),
+            scope: scope,
             teamId: (team['id'] ?? 0).toString(),
             scheduleId: (team['schedule_id'] ?? '').toString(),
             members: (team['members'] as List? ?? [])
@@ -130,8 +136,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 .toList(),
             criteria: [],
             isPosted: false,
-            panelWeight: (weights['panel'] as num?)?.toInt() ?? (isCapstone ? 50 : 80),
-            peerWeight: (weights['peer'] as num?)?.toInt() ?? (isCapstone ? 20 : 20),
+            panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
+            peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,
             panelRubric: team['panel_rubric'] is Map
                 ? Map<String, dynamic>.from(team['panel_rubric'] as Map)
@@ -214,69 +220,71 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: PopScope(
-      canPop: false,
-      child: Scaffold(
-      appBar: AppBar(
-        automaticallyImplyLeading: false,
-        backgroundColor: DefensysTokens.maroon,
-        foregroundColor: Colors.white,
-        title: Text(
-          context.l10n.panelistDashboardTitle,
-          style: const TextStyle(fontWeight: FontWeight.bold),
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.account_circle_outlined),
-            tooltip: 'Profile',
-            onPressed: () => _showProfileSheet(context),
+        canPop: false,
+        child: Scaffold(
+          appBar: AppBar(
+            automaticallyImplyLeading: false,
+            backgroundColor: DefensysTokens.maroon,
+            foregroundColor: Colors.white,
+            title: Text(
+              context.l10n.panelistDashboardTitle,
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.account_circle_outlined),
+                tooltip: 'Profile',
+                onPressed: () => _showProfileSheet(context),
+              ),
+            ],
           ),
-        ],
-      ),
-      body: OfflineBanner(
-        child: _loading
-            ? Column(
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
-                    child: Text(
-                      context.l10n.loadingAssignments,
-                      style: const TextStyle(
-                        color: DefensysTokens.textSecondary,
-                        fontSize: 13,
+          body: OfflineBanner(
+            child: _loading
+                ? Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+                        child: Text(
+                          context.l10n.loadingAssignments,
+                          style: const TextStyle(
+                            color: DefensysTokens.textSecondary,
+                            fontSize: 13,
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  Expanded(child: DefensysSkeleton.list(count: 6, rowHeight: 64)),
-                ],
-              )
-            : _buildBody(),
+                      Expanded(
+                        child: DefensysSkeleton.list(count: 6, rowHeight: 64),
+                      ),
+                    ],
+                  )
+                : _buildBody(),
+          ),
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _selectedIndex,
+            onDestinationSelected: (i) {
+              setState(() => _selectedIndex = i);
+              if (i == 2) {
+                _loadResults();
+              }
+            },
+            indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+            destinations: [
+              NavigationDestination(
+                icon: const Icon(Icons.assignment),
+                label: context.l10n.navAssignments,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.rate_review),
+                label: context.l10n.navGradeSheet,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.bar_chart),
+                label: context.l10n.navResults,
+              ),
+            ],
+          ),
+        ),
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _selectedIndex,
-        onDestinationSelected: (i) {
-          setState(() => _selectedIndex = i);
-          if (i == 2) {
-            _loadResults();
-          }
-        },
-        indicatorColor: DefensysTokens.maroon.withValues(alpha: 0.15),
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.assignment),
-            label: context.l10n.navAssignments,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.rate_review),
-            label: context.l10n.navGradeSheet,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.bar_chart),
-            label: context.l10n.navResults,
-          ),
-        ],
-      ),
-    ),
-    ),
     );
   }
 
@@ -285,7 +293,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
       context: context,
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
       builder: (_) => SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 8),
@@ -297,21 +306,29 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 height: 4,
                 margin: const EdgeInsets.only(bottom: 16),
                 decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(2)),
+                  color: Colors.grey.shade300,
+                  borderRadius: BorderRadius.circular(2),
+                ),
               ),
               ListTile(
                 leading: CircleAvatar(
                   backgroundColor: DefensysTokens.maroon,
                   child: Text(
-                      (widget.userData?['name'] ?? 'P')[0].toUpperCase(),
-                      style: const TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold)),
+                    (widget.userData?['name'] ?? 'P')[0].toUpperCase(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                 ),
-                title: Text(widget.userData?['name'] ?? 'Prof. Panelist',
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: Text('Panelist · ID ${widget.userData?['id'] ?? '—'}',
-                    style: const TextStyle(fontSize: 12)),
+                title: Text(
+                  widget.userData?['name'] ?? 'Prof. Panelist',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  'Panelist · ID ${widget.userData?['id'] ?? '—'}',
+                  style: const TextStyle(fontSize: 12),
+                ),
               ),
               const Divider(),
               ListTile(
@@ -319,8 +336,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 title: const Text('About DefenSYS'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const AboutScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const AboutScreen()),
+                  );
                 },
               ),
               ListTile(
@@ -328,8 +347,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 title: const Text('Privacy Policy'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const PrivacyScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                  );
                 },
               ),
               ListTile(
@@ -337,14 +358,19 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 title: const Text('Terms & Conditions'),
                 onTap: () {
                   Navigator.pop(context);
-                  Navigator.push(context,
-                      MaterialPageRoute(builder: (_) => const TermsScreen()));
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(builder: (_) => const TermsScreen()),
+                  );
                 },
               ),
               const Divider(),
               ListTile(
                 leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text('Logout', style: TextStyle(color: Colors.red)),
+                title: const Text(
+                  'Logout',
+                  style: TextStyle(color: Colors.red),
+                ),
                 onTap: () async {
                   Navigator.pop(context);
                   if (await confirmLogout(context)) {

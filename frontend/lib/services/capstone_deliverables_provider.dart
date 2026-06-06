@@ -32,7 +32,7 @@ class CapstoneDeliverablesState {
     this.statuses = const [],
     this.counts = const {},
     this.activeSemester,
-    this.selectedStage = 'Concept Proposal',
+    this.selectedStage = '',
     this.search = '',
     this.status = '',
     this.error,
@@ -172,7 +172,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     try {
       final response = await _client.post(
         Uri.parse('$baseUrl/$action/'),
-        
+
         body: jsonEncode(payload),
       );
 
@@ -192,8 +192,8 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   void _applyPayload(Map<String, dynamic> payload, {String? successMessage}) {
     state = state.copyWith(
@@ -230,7 +230,18 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     if (value is! List) {
       return [];
     }
-    return value.map((item) => item.toString()).toList();
+    final seen = <String>{};
+    final result = <String>[];
+    for (final item in value) {
+      final text = item.toString().trim();
+      if (text.isEmpty) {
+        continue;
+      }
+      if (seen.add(text)) {
+        result.add(text);
+      }
+    }
+    return result;
   }
 
   String _errorFromResponse(http.Response response) {

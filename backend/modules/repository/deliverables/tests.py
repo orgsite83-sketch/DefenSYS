@@ -227,6 +227,49 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertEqual(response.data['teams'][0]['selected_stage']['required_total'], 6)
 
 
+    def test_stage_options_follow_admin_configured_stages_only(self):
+
+        DefenseStage.objects.all().delete()
+
+        custom_stage = DefenseStage.objects.create(
+
+            label='Concept Proposql',
+
+            display_order=1,
+
+            is_active=True,
+
+        )
+
+        seed_stage_deliverables(
+
+            custom_stage,
+
+            SUGGESTED_DELIVERABLE_TEMPLATES['Concept Proposal'],
+
+        )
+
+
+        response = self.client.get('/api/repository/deliverables/')
+
+
+        self.assertEqual(response.status_code, 200)
+
+        self.assertEqual(response.data['stage_options'], ['Concept Proposql'])
+
+        self.assertEqual(response.data['selected_stage'], 'Concept Proposql')
+
+        self.assertEqual(
+
+            response.data['teams'][0]['selected_stage']['stage_label'],
+
+            'Concept Proposql',
+
+        )
+
+        self.assertNotIn('Concept Proposal', response.data['stage_options'])
+
+
 
     def test_empty_stage_returns_no_deliverables(self):
 

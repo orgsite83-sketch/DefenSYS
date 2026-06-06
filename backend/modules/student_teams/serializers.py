@@ -149,7 +149,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         if obj.is_capstone:
             return {
                 'is_pit': False,
-                'current_stage': obj.current_defense_stage or obj.ready_for_stage or 'Concept Proposal',
+                'current_stage': obj.current_defense_stage or obj.ready_for_stage or None,
                 'ready_for_stage': obj.ready_for_stage,
                 'deliverable_count': obj.deliverable_submissions.count(),
             }
@@ -165,7 +165,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         if schedule:
             return {
                 'is_pit': True,
-                'event_label': schedule.stage_label or 'PIT Event',
+                'event_label': (schedule.stage_label or '').strip(),
                 'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
             }
         return {

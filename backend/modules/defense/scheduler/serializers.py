@@ -180,7 +180,6 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 class ScheduleBaseSerializer(serializers.Serializer):
     scope = serializers.ChoiceField(
         choices=[choice[0] for choice in DefenseSchedule.SCOPE_CHOICES],
-        default=DefenseSchedule.SCOPE_CAPSTONE,
     )
     semester_id = serializers.IntegerField(required=False)
     defense_stage_id = serializers.IntegerField(required=False, allow_null=True)

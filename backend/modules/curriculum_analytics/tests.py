@@ -5,6 +5,7 @@ from academic_period_management.models import SchoolYear, Semester
 from repository.deliverables.models import DeliverableSubmission
 from repository.vault.models import VaultEntry
 from student_teams.models import StudentTeam, TeamMembership
+from .services import UNCLASSIFIED_TECH_STACK, extract_tech, stack_color
 
 
 User = get_user_model()
@@ -97,6 +98,59 @@ class CurriculumAnalyticsApiTests(APITestCase):
         self.assertTrue(response.data['distribution'])
         self.assertTrue(response.data['suggestions'])
         self.assertEqual(response.data['trend_cards']['total_entries'], 3)
+
+    def test_unknown_project_tech_is_unclassified(self):
+        stack = extract_tech({
+            'file_name': 'Team_Obscure_Abstract.pdf',
+            'team_name': 'Team Obscure',
+            'project_title': 'Untitled Research Output',
+            'deliverable_label': 'Executive Journal',
+            'stage': 'Final Defense',
+            'year_level': '4th Year',
+            'summary': '',
+            'topics': [],
+            'category': '',
+            'category_confidence': None,
+            'extracted_text': '',
+        })
+
+        self.assertEqual(stack, UNCLASSIFIED_TECH_STACK)
+        self.assertEqual(stack_color(stack), '#6B7280')
+
+    def test_low_confidence_category_does_not_invent_stack(self):
+        stack = extract_tech({
+            'file_name': 'Team_Low_Confidence.pdf',
+            'team_name': 'Team Low Confidence',
+            'project_title': 'General Project',
+            'deliverable_label': 'Executive Journal',
+            'stage': 'Final Defense',
+            'year_level': '4th Year',
+            'summary': '',
+            'topics': [],
+            'category': 'Database Systems',
+            'category_confidence': 5,
+            'extracted_text': '',
+        })
+
+        self.assertEqual(stack, UNCLASSIFIED_TECH_STACK)
+
+    def test_pit_course_code_alone_does_not_invent_stack(self):
+        stack = extract_tech({
+            'type': 'pit',
+            'file_name': '1stYear.PIT101.GeneralOutput.1stSemester.pdf',
+            'team_name': 'Team Course Only',
+            'project_title': '',
+            'deliverable_label': '1stYear.PIT101.GeneralOutput.1stSemester.pdf',
+            'stage': 'PIT101',
+            'year_level': '1st Year',
+            'summary': '',
+            'topics': [],
+            'category': '',
+            'category_confidence': None,
+            'extracted_text': '',
+        })
+
+        self.assertEqual(stack, UNCLASSIFIED_TECH_STACK)
 
     def test_non_admin_cannot_read_curriculum_analytics(self):
         self.client.force_authenticate(user=self.faculty)

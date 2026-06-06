@@ -112,7 +112,7 @@ class RubricSerializer(serializers.ModelSerializer):
 
 class RubricWriteSerializer(serializers.Serializer):
     name = serializers.CharField(max_length=160)
-    scope = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.SCOPE_CHOICES], default=Rubric.SCOPE_CAPSTONE)
+    scope = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.SCOPE_CHOICES])
     semester_id = serializers.IntegerField(required=False)
     defense_stage_id = serializers.IntegerField(required=False, allow_null=True)
     event_name = serializers.CharField(required=False, allow_blank=True, max_length=120)
@@ -134,7 +134,7 @@ class RubricWriteSerializer(serializers.Serializer):
         if user and getattr(user, 'is_pit_lead', False) and getattr(user, 'role', None) != 'admin':
             attrs['scope'] = Rubric.SCOPE_PIT
         elif user and self._is_capstone_only_manager(user):
-            scope = attrs.get('scope', Rubric.SCOPE_CAPSTONE)
+            scope = attrs.get('scope')
             if scope == Rubric.SCOPE_PIT:
                 if self.instance is None:
                     raise serializers.ValidationError({
@@ -148,7 +148,7 @@ class RubricWriteSerializer(serializers.Serializer):
                 attrs['scope'] = Rubric.SCOPE_CAPSTONE
 
         attrs['semester'] = self._resolve_semester(attrs)
-        scope = attrs.get('scope', Rubric.SCOPE_CAPSTONE)
+        scope = attrs.get('scope')
         attrs['defense_stage'] = self._resolve_defense_stage(attrs, scope)
         attrs['event_name'] = (attrs.get('event_name') or '').strip()
 

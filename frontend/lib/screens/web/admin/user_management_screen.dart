@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/academic_period_provider.dart';
+import '../../../services/auth_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/clipboard_copy.dart';
 import '../../../utils/csv_file_io.dart';
@@ -3372,9 +3373,10 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     if (id == null) {
       return;
     }
-    final ok = await ref
-        .read(userManagementProvider.notifier)
-        .updateUser(id, _accessPayloadFromCurrent());
+    final ok = await _updateUserAndRefreshCurrent(
+      id,
+      _accessPayloadFromCurrent(),
+    );
     if (!mounted || !ok) {
       return;
     }
@@ -3393,6 +3395,24 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       });
     }
     await _loadRoleAssignments(id);
+  }
+
+  Future<bool> _updateUserAndRefreshCurrent(
+    int id,
+    Map<String, dynamic> payload,
+  ) async {
+    final ok = await ref
+        .read(userManagementProvider.notifier)
+        .updateUser(id, payload);
+    if (!ok || !mounted) {
+      return ok;
+    }
+
+    final auth = ref.read(authProvider);
+    if (_asInt(auth.user?['id']) == id && auth.token != null) {
+      await ref.read(authProvider.notifier).fetchCurrentUser(auth.token!);
+    }
+    return ok;
   }
 
   static const _histHead = TextStyle(
@@ -4597,9 +4617,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             password: pwd.isNotEmpty ? pwd : null,
           );
         }
-        final ok = await ref
-            .read(userManagementProvider.notifier)
-            .updateUser(id, payload);
+        final ok = await _updateUserAndRefreshCurrent(id, payload);
         if (mounted && ok && onAccessPage) {
           final rows = ref.read(userManagementProvider).users;
           for (final row in rows) {
@@ -4878,9 +4896,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     }
 
     if (editing) {
-      await ref
-          .read(userManagementProvider.notifier)
-          .updateUser(_asInt(user['id'])!, payload);
+      await _updateUserAndRefreshCurrent(_asInt(user['id'])!, payload);
     } else {
       await ref.read(userManagementProvider.notifier).addUser(payload);
     }

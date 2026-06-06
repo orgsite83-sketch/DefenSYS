@@ -20,7 +20,7 @@ class TeamData {
     required this.defenseDate,
     required this.teamId,
     this.scheduleId = '',
-    this.scope = 'capstone',
+    required this.scope,
     required this.isCapstone,
     required this.members,
     required this.criteria,
@@ -30,6 +30,13 @@ class TeamData {
     this.adviserWeight = 0,
     this.panelRubric,
   });
+
+  bool get hasValidScope => scope == 'capstone' || scope == 'pit';
+  String get scopeLabel {
+    if (scope == 'capstone') return 'Capstone';
+    if (scope == 'pit') return 'PIT';
+    return 'Scope missing';
+  }
 }
 
 class Criterion {
@@ -76,11 +83,10 @@ class TeamOverallResult {
     required this.maxScore,
   });
 
-  double get average =>
-      panelistScores.isEmpty
-          ? 0
-          : panelistScores.map((p) => p.total).reduce((a, b) => a + b) /
-              panelistScores.length;
+  double get average => panelistScores.isEmpty
+      ? 0
+      : panelistScores.map((p) => p.total).reduce((a, b) => a + b) /
+            panelistScores.length;
 
   double get averagePct => average / maxScore * 100;
 }

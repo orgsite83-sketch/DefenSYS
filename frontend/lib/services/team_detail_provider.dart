@@ -91,7 +91,11 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
   }
 
   Future<void> load() async {
-    state = state.copyWith(isLoading: true, clearError: true, clearMessage: true);
+    state = state.copyWith(
+      isLoading: true,
+      clearError: true,
+      clearMessage: true,
+    );
 
     try {
       final teamResponse = await _client.get(
@@ -143,26 +147,29 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         stageOptions: deliverableData.$2,
       );
     } catch (e) {
-      state = state.copyWith(
-        isLoading: false,
-        error: 'Connection error: $e',
-      );
+      state = state.copyWith(isLoading: false, error: 'Connection error: $e');
     }
   }
 
   Future<bool> save(Map<String, dynamic> payload) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
 
     try {
       final response = await _client.patch(
         Uri.parse('${ApiConfig.teamsUrl}/$_teamId/'),
-        
+
         body: jsonEncode(payload),
       );
 
       if (response.statusCode == 200) {
         final data = Map<String, dynamic>.from(jsonDecode(response.body));
-        final team = Map<String, dynamic>.from(data['team'] as Map? ?? const {});
+        final team = Map<String, dynamic>.from(
+          data['team'] as Map? ?? const {},
+        );
         final level = team['level']?.toString() ?? '';
         var adviserHistory = state.adviserHistory;
         if (level.toUpperCase().contains('CAPSTONE')) {
@@ -183,10 +190,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       );
       return false;
     } catch (e) {
-      state = state.copyWith(
-        isSaving: false,
-        error: 'Connection error: $e',
-      );
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
   }
@@ -255,10 +259,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       }
       final payload = Map<String, dynamic>.from(jsonDecode(response.body));
       final teams = _readMapList(payload['teams']);
-      final stageOptions = List<String>.from(
-        (payload['stage_options'] as List? ?? const [])
-            .map((item) => item.toString()),
-      );
+      final stageOptions = _readStringList(payload['stage_options']);
       for (final team in teams) {
         if (_asInt(team['id']) == _teamId) {
           return (team, stageOptions);
@@ -270,8 +271,8 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     }
   }
 
-  AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
-
+  AuthenticatedHttpClient get _client =>
+      ref.read(authenticatedHttpClientProvider);
 
   List<Map<String, dynamic>> _readMapList(dynamic value) {
     if (value is! List) {
@@ -281,6 +282,24 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         .whereType<Map>()
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+
+  List<String> _readStringList(dynamic value) {
+    if (value is! List) {
+      return const [];
+    }
+    final seen = <String>{};
+    final result = <String>[];
+    for (final item in value) {
+      final text = item.toString().trim();
+      if (text.isEmpty) {
+        continue;
+      }
+      if (seen.add(text)) {
+        result.add(text);
+      }
+    }
+    return result;
   }
 
   String _errorFromResponse(http.Response response) {

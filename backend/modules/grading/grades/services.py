@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import Exists, OuterRef, Q
 from django.utils import timezone
 
 from academic_period_management.models import Semester
@@ -527,6 +527,25 @@ def _grade_has_score_data(grade):
 
 def _is_unscheduled_placeholder_label(stage_label):
     return (stage_label or '').strip() in {'', 'Unscheduled'}
+
+
+def without_stale_unscheduled_placeholders(queryset):
+    real_grade_for_same_context = TeamGrade.objects.filter(
+        team_id=OuterRef('team_id'),
+        semester_id=OuterRef('semester_id'),
+        scope=OuterRef('scope'),
+    ).exclude(pk=OuterRef('pk')).exclude(stage_label__in=['', 'Unscheduled'])
+
+    return (
+        queryset.annotate(
+            _has_real_grade_for_same_context=Exists(real_grade_for_same_context)
+        )
+        .exclude(
+            schedule__isnull=True,
+            stage_label__in=['', 'Unscheduled'],
+            _has_real_grade_for_same_context=True,
+        )
+    )
 
 
 def _merge_stale_grade(stale, canonical):

@@ -139,7 +139,7 @@ def _team_payload(team):
         'schoolYear': team.semester.school_year.label,
         'status': team.status,
         'isCapstone': team.is_capstone,
-        'currentStage': team.current_defense_stage or team.ready_for_stage or ('Concept Proposal' if team.is_capstone else None),
+        'currentStage': team.current_defense_stage or team.ready_for_stage or None,
         'readyForStage': team.ready_for_stage,
         'deliverableCount': team.deliverable_submissions.count() if team.is_capstone else 0,
         'adviserName': _display_name(team.adviser) if team.adviser else None,

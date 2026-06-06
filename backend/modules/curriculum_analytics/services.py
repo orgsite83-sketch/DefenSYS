@@ -1,4 +1,5 @@
 from collections import Counter, defaultdict
+import re
 
 from django.core.exceptions import PermissionDenied
 
@@ -6,6 +7,8 @@ from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name
 from repository.vault.models import VaultEntry
 
+
+UNCLASSIFIED_TECH_STACK = 'Unclassified'
 
 NB_CATEGORY_TO_STACK = {
     'Web Development': 'React / Node.js',
@@ -149,6 +152,13 @@ def text_for_entry(entry):
     return ' '.join(str(part) for part in parts if part).lower()
 
 
+def keyword_matches(text, keyword):
+    term = keyword.lower()
+    if len(term) <= 3 and term.isalnum():
+        return re.search(rf'(?<![a-z0-9]){re.escape(term)}(?![a-z0-9])', text) is not None
+    return term in text
+
+
 def extract_tech(entry):
     text = text_for_entry(entry)
     
@@ -156,7 +166,7 @@ def extract_tech(entry):
     best = None
     best_score = 0
     for stack in TECH_STACKS:
-        score = sum(1 for keyword in stack['keywords'] if keyword in text)
+        score = sum(1 for keyword in stack['keywords'] if keyword_matches(text, keyword))
         if score > best_score:
             best = stack
             best_score = score
@@ -185,18 +195,7 @@ def extract_tech(entry):
         if mapped:
             return mapped
 
-    # Fallback to course codes for PIT if present
-    if entry.get('type') == 'pit':
-        course = (entry.get('stage') or '').upper()
-        if course.startswith('PIT1'):
-            return 'Django / Python'
-        if course.startswith('PIT2'):
-            return 'React / Node.js'
-        if course.startswith('PIT3'):
-            return 'Flutter / Mobile'
-
-    # Ultimate fallback default
-    return 'Django / Python'
+    return UNCLASSIFIED_TECH_STACK
 
 
 def stack_color(label):
@@ -216,6 +215,7 @@ def stack_color(label):
         'Rust / Cargo': '#DEA584',
         'Ruby on Rails': '#A259FF',
         'C++ / Native': '#00599C',
+        UNCLASSIFIED_TECH_STACK: '#6B7280',
     }
     if label in predefined:
         return predefined[label]

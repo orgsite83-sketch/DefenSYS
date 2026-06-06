@@ -49,7 +49,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
   int? _originalAdviserId;
   final _selectedMembers = <int>{};
   int? _leaderId;
-  String _selectedDeliverableStage = 'Concept Proposal';
+  String _selectedDeliverableStage = '';
   int? _selectedReportIndex;
   bool _isEditing = false;
 
@@ -119,15 +119,12 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
       _syncFormFromTeam(team, detailState.statuses);
     }
 
-    final stageOptions = detailState.stageOptions.isNotEmpty
-        ? detailState.stageOptions
-        : const [
-            'Concept Proposal',
-            'Project Proposal',
-            'Final Defense',
-          ];
-    if (!stageOptions.contains(_selectedDeliverableStage)) {
+    final stageOptions = detailState.stageOptions;
+    if (stageOptions.isNotEmpty &&
+        !stageOptions.contains(_selectedDeliverableStage)) {
       _selectedDeliverableStage = stageOptions.first;
+    } else if (stageOptions.isEmpty) {
+      _selectedDeliverableStage = '';
     }
 
     ref.listen(teamDetailProvider(widget.teamId), (prev, next) {
@@ -287,7 +284,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     final programLabel = isCapstone
         ? 'Capstone · $yearLevel'
         : '$yearLevel PIT';
-    final adviserName = team['adviser_name']?.toString() ??
+    final adviserName =
+        team['adviser_name']?.toString() ??
         _adviserLabel(_asInt(team['adviser_id']), detailState.advisers);
 
     final memberIds = _readIntList(team['member_ids']);
@@ -444,18 +442,20 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
             InputDecorator(
               decoration: const InputDecoration(labelText: 'Program'),
               child: Text(
-                isCapstone
-                    ? 'Capstone · $yearLevel'
-                    : '$yearLevel PIT',
+                isCapstone ? 'Capstone · $yearLevel' : '$yearLevel PIT',
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<String>(
-              initialValue: statusOptions.contains(_status) ? _status : statusOptions.first,
+              initialValue: statusOptions.contains(_status)
+                  ? _status
+                  : statusOptions.first,
               decoration: const InputDecoration(labelText: 'Team Result'),
               items: statusOptions
-                  .map((item) => DropdownMenuItem(value: item, child: Text(item)))
+                  .map(
+                    (item) => DropdownMenuItem(value: item, child: Text(item)),
+                  )
                   .toList(),
               onChanged: (value) => setState(() => _status = value ?? _status),
             ),
@@ -521,9 +521,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
                         }
                       });
                     },
-                    title: Text(
-                      '${student['name']} (${student['username']})',
-                    ),
+                    title: Text('${student['name']} (${student['username']})'),
                     subtitle: _leaderId == studentId
                         ? const Text('Team Leader')
                         : null,
@@ -536,7 +534,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
                                   : Icons.circle_outlined,
                               color: _leaderId == studentId ? _gold : _muted,
                             ),
-                            onPressed: () => setState(() => _leaderId = studentId),
+                            onPressed: () =>
+                                setState(() => _leaderId = studentId),
                           )
                         : null,
                   );
@@ -658,6 +657,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
       return _emptyTab(
         'No capstone deliverable record for this team (non-capstone or not loaded).',
       );
+    }
+    if (stageOptions.isEmpty) {
+      return _emptyTab('No defense stages configured yet.');
     }
 
     final stages = (deliverableTeam['stages'] as List? ?? const [])
@@ -827,7 +829,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
             ...docs.map((doc) {
               final id = _asInt(doc['id']);
               return Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 12,
+                ),
                 child: Row(
                   children: [
                     Expanded(
@@ -851,7 +856,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
                     ),
                     IconButton(
                       tooltip: 'Download',
-                      onPressed: id == null ? null : () => _downloadTeamDocument(id),
+                      onPressed: id == null
+                          ? null
+                          : () => _downloadTeamDocument(id),
                       icon: const Icon(Icons.download_outlined, color: _maroon),
                     ),
                   ],
@@ -921,10 +928,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
                         flex: 2,
                         child: Text('ASSIGNED', style: headStyle),
                       ),
-                      Expanded(
-                        flex: 2,
-                        child: Text('ENDED', style: headStyle),
-                      ),
+                      Expanded(flex: 2, child: Text('ENDED', style: headStyle)),
                       Expanded(
                         flex: 2,
                         child: Text('CHANGED BY', style: headStyle),
@@ -1105,7 +1109,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Team: $teamName', style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(
+                'Team: $teamName',
+                style: const TextStyle(fontWeight: FontWeight.w700),
+              ),
               const SizedBox(height: 8),
               Text('From: ${_adviserLabel(fromAdviserId, advisers)}'),
               Text('To: ${_adviserLabel(toAdviserId, advisers)}'),
@@ -1125,7 +1132,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () => Navigator.pop(dialogContext, reasonCtrl.text.trim()),
+            onPressed: () =>
+                Navigator.pop(dialogContext, reasonCtrl.text.trim()),
             child: const Text('Confirm change'),
           ),
         ],
@@ -1156,9 +1164,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(color: _maroon),
-      ),
+      builder: (context) =>
+          const Center(child: CircularProgressIndicator(color: _maroon)),
     );
 
     try {
@@ -1197,7 +1204,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
           fileName: fileUrl.split('/').last,
         );
       } else {
-        showValidationToast(context, 'File preview is only available for PDFs.');
+        showValidationToast(
+          context,
+          'File preview is only available for PDFs.',
+        );
       }
     } catch (e) {
       if (!mounted) return;
@@ -1207,9 +1217,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
 
   Future<void> _downloadTeamDocument(int docId) async {
     try {
-      final response = await ref.read(authenticatedHttpClientProvider).get(
-        Uri.parse('${ApiConfig.teamDocumentsUrl}/$docId/download/'),
-      );
+      final response = await ref
+          .read(authenticatedHttpClientProvider)
+          .get(Uri.parse('${ApiConfig.teamDocumentsUrl}/$docId/download/'));
       if (!mounted) return;
       if (response.statusCode == 200) {
         showSuccessToast(context, 'Document downloaded.');

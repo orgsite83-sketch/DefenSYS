@@ -14,12 +14,13 @@ from .models import DeliverableSubmission
 class DynamicStageOptionsList(list):
     def _get_stages(self):
         try:
-            stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label').values_list('label', flat=True))
-            if not stages:
-                return ['Concept Proposal', 'Project Proposal', 'Final Defense']
-            return stages
+            return list(
+                DefenseStage.objects.filter(is_active=True)
+                .order_by('display_order', 'label')
+                .values_list('label', flat=True)
+            )
         except Exception:
-            return ['Concept Proposal', 'Project Proposal', 'Final Defense']
+            return []
 
     def __iter__(self):
         return iter(self._get_stages())
@@ -43,6 +44,11 @@ class DynamicStageOptionsList(list):
         return item in self._get_stages()
 
 STAGE_OPTIONS = DynamicStageOptionsList()
+
+
+def default_stage_label():
+    stages = list(STAGE_OPTIONS)
+    return stages[0] if stages else ''
 
 
 def get_deliverable_definitions(stage_label):
@@ -97,7 +103,7 @@ def definition_for(stage_label, deliverable_id):
 
 
 def current_stage_for_team(team):
-    return team.current_defense_stage or team.ready_for_stage or STAGE_OPTIONS[0]
+    return team.current_defense_stage or team.ready_for_stage or default_stage_label()
 
 
 def team_queryset_for_user(user):
@@ -265,9 +271,15 @@ def submission_payload(submission):
 
 
 def team_payload(team, selected_stage=None):
+    configured_stage_labels = list(STAGE_OPTIONS)
     selected = selected_stage or current_stage_for_team(team)
-    stages = [stage_payload(team, stage) for stage in STAGE_OPTIONS]
-    selected_payload = next((item for item in stages if item['stage_label'] == selected), stages[0])
+    stages = [stage_payload(team, stage) for stage in configured_stage_labels]
+    if configured_stage_labels and selected not in configured_stage_labels:
+        selected = configured_stage_labels[0]
+    selected_payload = next(
+        (item for item in stages if item['stage_label'] == selected),
+        stage_payload(team, selected) if selected else stage_payload(team, ''),
+    )
     return {
         'id': team.id,
         'name': team.name,

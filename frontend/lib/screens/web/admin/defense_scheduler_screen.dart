@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:file_picker/file_picker.dart';
 
 import '../../../services/defense_scheduler_provider.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../utils/defense_schedule_import_parser.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -24,18 +26,19 @@ class _DefenseSchedulerScreenState
   final _dateController = TextEditingController();
   final _timeController = TextEditingController(text: '08:00');
   final _durationController = TextEditingController(text: '60');
-  final _roomController = TextEditingController(text: 'Room 301');
+  final _roomController = TextEditingController();
   final _pitTemplateController = TextEditingController();
 
   final Set<int> _selectedPanelistIds = {};
 
-  String _scope = '';
+  String _scope = 'capstone';
   int? _stageId;
   int? _rubricId;
   int? _adviserRubricId;
   int? _capstonePeerRubricId;
   int? _peerRubricId;
   bool _showFinalPreview = false;
+  bool _scopeInitializedFromState = false;
   List<Map<String, dynamic>> _planSlots = [];
 
   @override
@@ -63,6 +66,7 @@ class _DefenseSchedulerScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
+    _initializeScopeFromState(state);
     final currentStep = _planSlots.isEmpty ? 1 : (_showFinalPreview ? 3 : 2);
 
     ref.listen(defenseSchedulerProvider, (previous, next) {
@@ -126,7 +130,7 @@ class _DefenseSchedulerScreenState
     DefenseSchedulerState next, {
     DefenseSchedulerState? previous,
   }) {
-    final targetScope = _scopeFromSchedulerState(next);
+    final targetScope = _explicitScopeFromSchedulerState(next);
     if (targetScope.isEmpty) {
       return;
     }
@@ -135,6 +139,37 @@ class _DefenseSchedulerScreenState
         previous?.canSchedulePit != next.canSchedulePit ||
         previous?.canScheduleCapstone != next.canScheduleCapstone;
     if (!modeChanged || targetScope == _scope) {
+      return;
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || targetScope == _scope) {
+        return;
+      }
+      setState(() {
+        _scopeInitializedFromState = true;
+        _scope = targetScope;
+        _stageId = null;
+        _rubricId = null;
+        _adviserRubricId = null;
+        _capstonePeerRubricId = null;
+        _peerRubricId = null;
+        _planSlots = [];
+        _showFinalPreview = false;
+      });
+    });
+  }
+
+  void _initializeScopeFromState(DefenseSchedulerState state) {
+    if (_scopeInitializedFromState) {
+      return;
+    }
+    final targetScope = _explicitScopeFromSchedulerState(state);
+    if (targetScope.isEmpty) {
+      return;
+    }
+    _scopeInitializedFromState = true;
+    if (targetScope == _scope) {
       return;
     }
 
@@ -155,7 +190,7 @@ class _DefenseSchedulerScreenState
     });
   }
 
-  String _scopeFromSchedulerState(DefenseSchedulerState state) {
+  String _explicitScopeFromSchedulerState(DefenseSchedulerState state) {
     if (state.schedulerMode == 'pit' || state.schedulerMode == 'capstone') {
       return state.schedulerMode;
     }
@@ -165,7 +200,7 @@ class _DefenseSchedulerScreenState
     if (state.canSchedulePit) {
       return 'pit';
     }
-    return _scope;
+    return '';
   }
 
   bool _canScheduleScope(DefenseSchedulerState state, String scope) {
@@ -307,9 +342,9 @@ class _DefenseSchedulerScreenState
               child: ElevatedButton.icon(
                 onPressed: state.isSaving || !_canScheduleCurrentScope(state)
                     ? null
-                    : _generatePlan,
-                icon: const Icon(Icons.bolt_rounded, size: 18),
-                label: const Text('Generate Schedule Plan'),
+                    : () => _showImportDialog(state),
+                icon: const Icon(Icons.upload_file_rounded, size: 18),
+                label: const Text('Import Schedule'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.maroon,
                   foregroundColor: AppColors.gold,
@@ -664,7 +699,7 @@ class _DefenseSchedulerScreenState
                         setState(() => _capstonePeerRubricId = value),
                   ),
                 ),
-              ] else ...[
+              ] else if (_scope == 'pit') ...[
                 Container(
                   width: double.infinity,
                   padding: const EdgeInsets.all(16),
@@ -857,7 +892,9 @@ class _DefenseSchedulerScreenState
                 'Room / Venue *',
                 TextField(
                   controller: _roomController,
-                  decoration: _schedulerInputDecoration(),
+                  decoration: _schedulerInputDecoration(
+                    hintText: 'Enter room or venue',
+                  ),
                 ),
               ),
               if (_scope == 'capstone') ...[
@@ -2935,6 +2972,938 @@ class _DefenseSchedulerScreenState
     });
   }
 
+  Future<Map<String, int?>> _stageRubricIds(int stageId) async {
+    final semesterId = _asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
+    if (semesterId == null) {
+      return {};
+    }
+    final detail = await ref
+        .read(defenseStagesProvider.notifier)
+        .fetchStageDetail(stageId, semesterId: semesterId);
+    final grading = detail?['grading_config'];
+    if (grading is! Map) {
+      return {};
+    }
+    return {
+      'panel': _asInt(grading['panel_rubric_id']),
+      'adviser': _asInt(grading['adviser_rubric_id']),
+      'peer': _asInt(grading['peer_rubric_id']),
+    };
+  }
+
+  Future<void> _showImportDialog(DefenseSchedulerState state) async {
+    if (!_canScheduleCurrentScope(state)) {
+      _showSnack(_scheduleNoticeMessage(state));
+      return;
+    }
+    if (_scope != 'capstone') {
+      _showSnack('Schedule import is available for Capstone stages first.');
+      return;
+    }
+
+    ParsedScheduleImport? parsed;
+    String? fileName;
+    int? importStageId = _stageId;
+    int? panelRubricId = _rubricId;
+    int? adviserRubricId = _adviserRubricId;
+    int? peerRubricId = _capstonePeerRubricId;
+    final dateController = TextEditingController(text: _dateController.text);
+    final roomController = TextEditingController(text: _roomController.text);
+    final durationController = TextEditingController(
+      text: _durationController.text,
+    );
+    var rubricLoading = false;
+    var importBusy = false;
+    var importErrors = <String>[];
+
+    Future<void> loadStageRubrics(
+      int? stageId,
+      void Function(void Function()) setDialogState,
+    ) async {
+      if (stageId == null) {
+        return;
+      }
+      setDialogState(() => rubricLoading = true);
+      final ids = await _stageRubricIds(stageId);
+      if (!mounted) {
+        return;
+      }
+      setDialogState(() {
+        panelRubricId = ids['panel'] ?? panelRubricId;
+        adviserRubricId = ids['adviser'] ?? adviserRubricId;
+        peerRubricId = ids['peer'] ?? peerRubricId;
+        rubricLoading = false;
+      });
+    }
+
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            final previewRows = parsed == null
+                ? <_ScheduleImportPreviewRow>[]
+                : _buildScheduleImportPreviewRows(
+                    parsed!,
+                    state,
+                    stageId: importStageId,
+                    date: dateController.text,
+                    room: roomController.text,
+                    fallbackDuration:
+                        int.tryParse(durationController.text.trim()) ?? 60,
+                    panelRubricId: panelRubricId,
+                    adviserRubricId: adviserRubricId,
+                    peerRubricId: peerRubricId,
+                  );
+            final readyRows = previewRows.where((row) => row.ready).toList();
+            final issueRows = previewRows.length - readyRows.length;
+
+            Future<void> pickFile() async {
+              final result = await FilePicker.platform.pickFiles(
+                type: FileType.custom,
+                allowedExtensions: const ['xlsx', 'csv'],
+                withData: true,
+              );
+              if (result == null || result.files.isEmpty) {
+                return;
+              }
+              final file = result.files.single;
+              final bytes = file.bytes;
+              if (bytes == null) {
+                setDialogState(() {
+                  importErrors = ['Could not read the selected file.'];
+                });
+                return;
+              }
+
+              final imported = parseScheduleImportFile(
+                bytes: bytes,
+                filename: file.name,
+              );
+              final detectedStage =
+                  _matchStageId(imported.stage, state) ??
+                  _matchStageId(
+                    imported.rows
+                        .map((row) => row.stage)
+                        .firstWhere(
+                          (value) => value.isNotEmpty,
+                          orElse: () => '',
+                        ),
+                    state,
+                  );
+              final detectedDate = _normalizeImportDate(
+                imported.date ??
+                    imported.rows
+                        .map((row) => row.date)
+                        .firstWhere(
+                          (value) => value.isNotEmpty,
+                          orElse: () => '',
+                        ),
+              );
+              final detectedRoom =
+                  imported.room ??
+                  imported.rows
+                      .map((row) => row.room)
+                      .firstWhere(
+                        (value) => value.isNotEmpty,
+                        orElse: () => '',
+                      );
+              final firstDuration = imported.rows
+                  .map((row) => row.slotDuration)
+                  .firstWhere((value) => value != null, orElse: () => null);
+
+              setDialogState(() {
+                parsed = imported;
+                fileName = file.name;
+                importErrors = imported.rows.isEmpty
+                    ? ['No schedule rows were detected. Check the headers.']
+                    : [];
+                importStageId = detectedStage ?? importStageId;
+                if (detectedDate.isNotEmpty) {
+                  dateController.text = detectedDate;
+                }
+                if (detectedRoom.trim().isNotEmpty) {
+                  roomController.text = detectedRoom.trim();
+                }
+                if (firstDuration != null) {
+                  durationController.text = firstDuration.toString();
+                }
+              });
+              if (detectedStage != null) {
+                await loadStageRubrics(detectedStage, setDialogState);
+              }
+            }
+
+            Future<void> importReadyRows() async {
+              if (readyRows.isEmpty) {
+                setDialogState(() {
+                  importErrors = ['No ready rows to import yet.'];
+                });
+                return;
+              }
+              final payloads = readyRows
+                  .map((row) => row.toPayload())
+                  .toList(growable: false);
+              setDialogState(() {
+                importBusy = true;
+                importErrors = [];
+              });
+              final result = await ref
+                  .read(defenseSchedulerProvider.notifier)
+                  .importSchedules(payloads);
+              if (!mounted) {
+                return;
+              }
+              final created = result['created'] as int? ?? 0;
+              final errors =
+                  (result['errors'] as List?)?.cast<String>() ??
+                  const <String>[];
+              setDialogState(() {
+                importBusy = false;
+                importErrors = errors;
+              });
+              if (created > 0 && errors.isEmpty) {
+                if (!dialogContext.mounted) {
+                  return;
+                }
+                Navigator.of(dialogContext).pop();
+              }
+            }
+
+            return Dialog(
+              insetPadding: const EdgeInsets.all(24),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1180),
+                child: SizedBox(
+                  height: MediaQuery.of(context).size.height * 0.86,
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(24, 20, 20, 12),
+                        child: Row(
+                          children: [
+                            const Icon(
+                              Icons.upload_file_rounded,
+                              color: AppColors.maroon,
+                              size: 24,
+                            ),
+                            const SizedBox(width: 10),
+                            const Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Import Defense Schedule',
+                                    style: TextStyle(
+                                      color: AppColors.maroon,
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  SizedBox(height: 3),
+                                  Text(
+                                    'Upload the admin schedule template, review matches, then import ready rows.',
+                                    style: TextStyle(
+                                      color: AppColors.textSecondary,
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              tooltip: 'Close',
+                              onPressed: importBusy
+                                  ? null
+                                  : () => Navigator.of(dialogContext).pop(),
+                              icon: const Icon(Icons.close_rounded),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.all(24),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: [
+                              _buildImportUploadPanel(
+                                fileName: fileName,
+                                onPickFile: pickFile,
+                              ),
+                              const SizedBox(height: 18),
+                              _buildImportContextPanel(
+                                state,
+                                stageId: importStageId,
+                                dateController: dateController,
+                                roomController: roomController,
+                                durationController: durationController,
+                                panelRubricId: panelRubricId,
+                                rubricLoading: rubricLoading,
+                                rowsDetected: previewRows.length,
+                                readyRows: readyRows.length,
+                                issueRows: issueRows,
+                                onStageChanged: (value) async {
+                                  setDialogState(() {
+                                    importStageId = value;
+                                    panelRubricId = null;
+                                    adviserRubricId = null;
+                                    peerRubricId = null;
+                                  });
+                                  await loadStageRubrics(value, setDialogState);
+                                },
+                                onContextChanged: () => setDialogState(() {}),
+                              ),
+                              if (importErrors.isNotEmpty) ...[
+                                const SizedBox(height: 14),
+                                _buildImportErrorBox(importErrors),
+                              ],
+                              const SizedBox(height: 18),
+                              _buildImportPreviewTable(previewRows),
+                            ],
+                          ),
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 24,
+                          vertical: 14,
+                        ),
+                        decoration: const BoxDecoration(
+                          border: Border(
+                            top: BorderSide(color: Color(0xFFE5E7EB)),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                issueRows > 0
+                                    ? 'Resolve $issueRows blocking issue${issueRows == 1 ? '' : 's'} before importing all rows.'
+                                    : '${readyRows.length} ready row${readyRows.length == 1 ? '' : 's'} can be imported.',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: importBusy
+                                  ? null
+                                  : () => Navigator.of(dialogContext).pop(),
+                              child: const Text('Cancel'),
+                            ),
+                            const SizedBox(width: 10),
+                            ElevatedButton.icon(
+                              onPressed:
+                                  state.isSaving ||
+                                      readyRows.isEmpty ||
+                                      importBusy
+                                  ? null
+                                  : importReadyRows,
+                              icon: const Icon(Icons.file_upload_outlined),
+                              label: const Text('Import Ready Rows'),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.maroon,
+                                foregroundColor: AppColors.gold,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 18,
+                                  vertical: 15,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                textStyle: const TextStyle(
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    dateController.dispose();
+    roomController.dispose();
+    durationController.dispose();
+  }
+
+  Widget _buildImportUploadPanel({
+    required String? fileName,
+    required Future<void> Function() onPickFile,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: const Icon(
+              Icons.table_chart_outlined,
+              color: AppColors.maroon,
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName ?? 'Upload the admin schedule template',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Supported files: .xlsx and .csv. Merged-cell-style team blocks are grouped automatically.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: onPickFile,
+            icon: const Icon(Icons.upload_file_rounded, size: 18),
+            label: Text(fileName == null ? 'Upload File' : 'Replace File'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildImportContextPanel(
+    DefenseSchedulerState state, {
+    required int? stageId,
+    required TextEditingController dateController,
+    required TextEditingController roomController,
+    required TextEditingController durationController,
+    required int? panelRubricId,
+    required bool rubricLoading,
+    required int rowsDetected,
+    required int readyRows,
+    required int issueRows,
+    required ValueChanged<int?> onStageChanged,
+    required VoidCallback onContextChanged,
+  }) {
+    final stageItems = state.defenseStages
+        .map(
+          (stage) => DropdownMenuItem<int?>(
+            value: _asInt(stage['id']),
+            child: Text(stage['label']?.toString() ?? ''),
+          ),
+        )
+        .toList();
+    final rubricName = _rubricName(state, panelRubricId);
+
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Detected Context',
+            style: TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 2,
+                child: _labeledField(
+                  'Stage',
+                  DropdownButtonFormField<int?>(
+                    initialValue: stageId,
+                    decoration: _schedulerInputDecoration(
+                      hintText: 'Select stage if not detected',
+                    ),
+                    items: stageItems,
+                    onChanged: onStageChanged,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _labeledField(
+                  'Date',
+                  _scheduleDateField(
+                    controller: dateController,
+                    onSelected: onContextChanged,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _labeledField(
+                  'Default duration',
+                  TextField(
+                    controller: durationController,
+                    keyboardType: TextInputType.number,
+                    decoration: _schedulerInputDecoration(),
+                    onChanged: (_) => onContextChanged(),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 2,
+                child: _labeledField(
+                  'Default room',
+                  TextField(
+                    controller: roomController,
+                    decoration: _schedulerInputDecoration(
+                      hintText: 'Use only if rows have no room',
+                    ),
+                    onChanged: (_) => onContextChanged(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: [
+              _importMetric('Rows detected', rowsDetected.toString()),
+              _importMetric('Ready', readyRows.toString(), success: true),
+              _importMetric(
+                'Needs attention',
+                issueRows.toString(),
+                warning: issueRows > 0,
+              ),
+              _importMetric(
+                'Panel rubric',
+                rubricLoading
+                    ? 'Loading...'
+                    : (rubricName.isEmpty ? 'Missing' : rubricName),
+                warning: rubricName.isEmpty && !rubricLoading,
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _importMetric(
+    String label,
+    String value, {
+    bool success = false,
+    bool warning = false,
+  }) {
+    final bg = success
+        ? const Color(0xFFECFDF3)
+        : warning
+        ? const Color(0xFFFFF7ED)
+        : const Color(0xFFF8FAFC);
+    final fg = success
+        ? const Color(0xFF027A48)
+        : warning
+        ? const Color(0xFFB45309)
+        : AppColors.textPrimary;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        '$label: $value',
+        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w900),
+      ),
+    );
+  }
+
+  Widget _buildImportErrorBox(List<String> errors) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: errors
+            .take(4)
+            .map(
+              (error) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Text(
+                  error,
+                  style: const TextStyle(
+                    color: Color(0xFF92400E),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            )
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildImportPreviewTable(List<_ScheduleImportPreviewRow> rows) {
+    if (rows.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(24),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB)),
+        ),
+        child: const Center(
+          child: Text(
+            'Upload a file to preview schedule rows.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: DataTable(
+          headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+          columns: const [
+            DataColumn(label: Text('Status')),
+            DataColumn(label: Text('Time')),
+            DataColumn(label: Text('Team')),
+            DataColumn(label: Text('Project')),
+            DataColumn(label: Text('Chair')),
+            DataColumn(label: Text('Panel Members')),
+            DataColumn(label: Text('Documenter')),
+            DataColumn(label: Text('Room')),
+            DataColumn(label: Text('Issues')),
+          ],
+          rows: rows.map((row) {
+            final issueText = row.issues.isNotEmpty
+                ? row.issues.join('; ')
+                : row.warnings.join('; ');
+            return DataRow(
+              color: WidgetStateProperty.all(
+                row.ready ? Colors.white : const Color(0xFFFFFBEB),
+              ),
+              cells: [
+                DataCell(
+                  _importStatusChip(row.ready ? 'Ready' : 'Needs attention'),
+                ),
+                DataCell(Text(row.timeLabel)),
+                DataCell(Text(row.teamLabel)),
+                DataCell(Text(row.projectLabel)),
+                DataCell(Text(row.chairLabel)),
+                DataCell(Text(row.panelLabel)),
+                DataCell(Text(row.documenterLabel)),
+                DataCell(Text(row.room)),
+                DataCell(
+                  SizedBox(
+                    width: 320,
+                    child: Text(
+                      issueText.isEmpty ? '-' : issueText,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: row.issues.isNotEmpty
+                            ? const Color(0xFFB42318)
+                            : AppColors.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
+  Widget _importStatusChip(String label) {
+    final ready = label == 'Ready';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      decoration: BoxDecoration(
+        color: ready ? const Color(0xFFECFDF3) : const Color(0xFFFFF7ED),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: ready ? const Color(0xFF027A48) : const Color(0xFFB45309),
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+
+  List<_ScheduleImportPreviewRow> _buildScheduleImportPreviewRows(
+    ParsedScheduleImport parsed,
+    DefenseSchedulerState state, {
+    required int? stageId,
+    required String date,
+    required String room,
+    required int fallbackDuration,
+    required int? panelRubricId,
+    required int? adviserRubricId,
+    required int? peerRubricId,
+  }) {
+    return parsed.rows.map((source) {
+      final issues = <String>[];
+      final warnings = <String>[];
+      final rowDate = _normalizeImportDate(source.date).isNotEmpty
+          ? _normalizeImportDate(source.date)
+          : date.trim();
+      final rowRoom = source.room.trim().isNotEmpty
+          ? source.room.trim()
+          : room.trim();
+      final duration = source.slotDuration ?? fallbackDuration;
+      final teamMatch = _matchTeam(source, state);
+      final panelistMatches = <_ImportNameMatch>[];
+
+      final chairMatch = _matchPanelist(source.chair, state);
+      if (source.chair.trim().isNotEmpty) {
+        panelistMatches.add(chairMatch);
+      }
+      for (final name in source.panelMembers) {
+        panelistMatches.add(_matchPanelist(name, state));
+      }
+
+      if (stageId == null) {
+        issues.add('Select a defense stage.');
+      }
+      if (panelRubricId == null ||
+          adviserRubricId == null ||
+          peerRubricId == null) {
+        issues.add('Stage grading rubrics are incomplete.');
+      }
+      if (rowDate.isEmpty) {
+        issues.add('Date is missing.');
+      }
+      if (rowRoom.isEmpty) {
+        issues.add('Room is missing.');
+      }
+      if (source.startTime.isEmpty) {
+        issues.add('Time could not be parsed.');
+      }
+      if (duration < 15) {
+        issues.add('Slot duration must be at least 15 minutes.');
+      }
+      if (teamMatch.id == null) {
+        issues.add(teamMatch.message);
+      } else if (teamMatch.message.isNotEmpty) {
+        warnings.add(teamMatch.message);
+      }
+      final panelistIds = <int>[];
+      for (final match in panelistMatches) {
+        if (match.id == null) {
+          issues.add(match.message);
+        } else if (!panelistIds.contains(match.id)) {
+          panelistIds.add(match.id!);
+        }
+      }
+      if (panelistIds.isEmpty) {
+        issues.add('At least one chair or panel member is required.');
+      }
+      if (source.documenter.trim().isNotEmpty) {
+        warnings.add(
+          'Documenter is shown for review but is not assigned as a grading panelist yet.',
+        );
+      }
+
+      return _ScheduleImportPreviewRow(
+        source: source,
+        teamId: teamMatch.id,
+        panelistIds: panelistIds,
+        stageId: stageId,
+        panelRubricId: panelRubricId,
+        date: rowDate,
+        room: rowRoom,
+        duration: duration,
+        issues: issues,
+        warnings: warnings,
+      );
+    }).toList();
+  }
+
+  _ImportNameMatch _matchTeam(
+    ParsedScheduleImportRow row,
+    DefenseSchedulerState state,
+  ) {
+    final name = _normalizeName(row.teamName);
+    final project = _normalizeName(row.projectTitle);
+    final teams = _teamsForScope(state, 'capstone');
+    final byName = teams.where((team) {
+      return _normalizeName(team['name']?.toString() ?? '') == name;
+    }).toList();
+    if (byName.length == 1) {
+      final storedProject = byName.first['project_title']?.toString() ?? '';
+      if (project.isNotEmpty && _normalizeName(storedProject) != project) {
+        return _ImportNameMatch(
+          id: _asInt(byName.first['id']),
+          message: 'Project title differs from the stored team project.',
+        );
+      }
+      return _ImportNameMatch(id: _asInt(byName.first['id']));
+    }
+    if (byName.length > 1) {
+      return const _ImportNameMatch(message: 'Multiple teams match this name.');
+    }
+    if (project.isNotEmpty) {
+      final byProject = teams.where((team) {
+        return _normalizeName(team['project_title']?.toString() ?? '') ==
+            project;
+      }).toList();
+      if (byProject.length == 1) {
+        return _ImportNameMatch(
+          id: _asInt(byProject.first['id']),
+          message: 'Matched by project title because team name was not found.',
+        );
+      }
+    }
+    return _ImportNameMatch(message: 'Team "${row.teamName}" was not found.');
+  }
+
+  _ImportNameMatch _matchPanelist(String rawName, DefenseSchedulerState state) {
+    final name = _normalizeName(rawName);
+    if (name.isEmpty) {
+      return const _ImportNameMatch(message: 'Panelist name is missing.');
+    }
+    final exact = state.panelists.where((panelist) {
+      return _normalizeName(panelist['name']?.toString() ?? '') == name ||
+          _normalizeName(panelist['username']?.toString() ?? '') == name;
+    }).toList();
+    if (exact.length == 1) {
+      return _ImportNameMatch(id: _asInt(exact.first['id']));
+    }
+    if (exact.length > 1) {
+      return _ImportNameMatch(message: 'Panelist "$rawName" is ambiguous.');
+    }
+
+    final lastNameMatches = state.panelists.where((panelist) {
+      final display = panelist['name']?.toString() ?? '';
+      final parts = display.trim().split(RegExp(r'\s+'));
+      final last = parts.isEmpty ? '' : parts.last;
+      return _normalizeName(last) == name;
+    }).toList();
+    if (lastNameMatches.length == 1) {
+      return _ImportNameMatch(id: _asInt(lastNameMatches.first['id']));
+    }
+    if (lastNameMatches.length > 1) {
+      return _ImportNameMatch(
+        message: 'Panelist "$rawName" matches multiple faculty.',
+      );
+    }
+    return _ImportNameMatch(message: 'Panelist "$rawName" was not found.');
+  }
+
+  int? _matchStageId(String? rawStage, DefenseSchedulerState state) {
+    final stage = _normalizeName(rawStage ?? '');
+    if (stage.isEmpty) {
+      return null;
+    }
+    for (final item in state.defenseStages) {
+      if (_normalizeName(item['label']?.toString() ?? '') == stage) {
+        return _asInt(item['id']);
+      }
+    }
+    return null;
+  }
+
+  String _rubricName(DefenseSchedulerState state, int? rubricId) {
+    if (rubricId == null) {
+      return '';
+    }
+    for (final rubric in state.rubrics) {
+      if (_asInt(rubric['id']) == rubricId) {
+        return rubric['name']?.toString() ?? '';
+      }
+    }
+    return '';
+  }
+
+  String _normalizeImportDate(String? value) {
+    final text = value?.trim() ?? '';
+    if (text.isEmpty) {
+      return '';
+    }
+    final parsed = DateTime.tryParse(text);
+    if (parsed != null) {
+      return _formatScheduleDate(parsed);
+    }
+    final match = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{2,4})$').firstMatch(text);
+    if (match == null) {
+      return text;
+    }
+    final month = int.tryParse(match.group(1) ?? '') ?? 1;
+    final day = int.tryParse(match.group(2) ?? '') ?? 1;
+    var year = int.tryParse(match.group(3) ?? '') ?? DateTime.now().year;
+    if (year < 100) {
+      year += 2000;
+    }
+    return _formatScheduleDate(DateTime(year, month, day));
+  }
+
+  String _normalizeName(String value) {
+    return value.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+  }
+
   List<Map<String, dynamic>> _capstoneRubricsForEval(
     DefenseSchedulerState state,
     String evaluationType,
@@ -3430,4 +4399,73 @@ class _DefenseSchedulerScreenState
     }
     return result;
   }
+}
+
+class _ScheduleImportPreviewRow {
+  const _ScheduleImportPreviewRow({
+    required this.source,
+    required this.teamId,
+    required this.panelistIds,
+    required this.stageId,
+    required this.panelRubricId,
+    required this.date,
+    required this.room,
+    required this.duration,
+    required this.issues,
+    required this.warnings,
+  });
+
+  final ParsedScheduleImportRow source;
+  final int? teamId;
+  final List<int> panelistIds;
+  final int? stageId;
+  final int? panelRubricId;
+  final String date;
+  final String room;
+  final int duration;
+  final List<String> issues;
+  final List<String> warnings;
+
+  bool get ready => issues.isEmpty;
+
+  String get timeLabel {
+    if (source.startTime.isEmpty) {
+      return source.time.isEmpty ? '-' : source.time;
+    }
+    if (source.endTime.isEmpty) {
+      return source.startTime;
+    }
+    return '${source.startTime} - ${source.endTime}';
+  }
+
+  String get teamLabel => source.teamName.isEmpty ? '-' : source.teamName;
+  String get projectLabel =>
+      source.projectTitle.isEmpty ? '-' : source.projectTitle;
+  String get chairLabel => source.chair.isEmpty ? '-' : source.chair;
+  String get panelLabel =>
+      source.panelMembers.isEmpty ? '-' : source.panelMembers.join(', ');
+  String get documenterLabel =>
+      source.documenter.isEmpty ? '-' : source.documenter;
+
+  Map<String, dynamic> toPayload() {
+    return {
+      'scope': 'capstone',
+      'team_id': teamId,
+      'defense_stage_id': stageId,
+      'event_name': '',
+      'rubric_id': panelRubricId,
+      'scheduled_date': date,
+      'start_time': source.startTime,
+      'slot_duration': duration,
+      'room': room,
+      'panelist_ids': panelistIds,
+    };
+  }
+}
+
+class _ImportNameMatch {
+  const _ImportNameMatch({this.id, this.message = ''});
+
+  final int? id;
+  final String message;
 }

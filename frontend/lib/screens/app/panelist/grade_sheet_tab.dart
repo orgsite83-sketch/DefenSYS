@@ -105,7 +105,9 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final panelRubricName = _panelRubricName(team);
     final hasPanelRubric = team.panelRubric != null;
     final isLocked = team.isPosted;
-    final canPost = hasPanelRubric && _criteria.isNotEmpty && !isLocked;
+    final hasValidScope = team.hasValidScope;
+    final canPost =
+        hasValidScope && hasPanelRubric && _criteria.isNotEmpty && !isLocked;
 
     final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
     final total = criteria.fold(0.0, (s, c) => s + c.score);
@@ -128,15 +130,21 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             decoration: InputDecoration(
               labelText: 'Select Team',
               prefixIcon: const Icon(Icons.group, size: 20),
-              border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
             ),
             items: widget.teams
                 .asMap()
                 .entries
-                .map((e) =>
-                    DropdownMenuItem(value: e.key, child: Text(e.value.name)))
+                .map(
+                  (e) =>
+                      DropdownMenuItem(value: e.key, child: Text(e.value.name)),
+                )
                 .toList(),
             onChanged: (v) {
               if (v == null) {
@@ -151,8 +159,11 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
             const SizedBox(height: 8),
             Row(
               children: [
-                const Icon(Icons.assignment_outlined,
-                    size: 18, color: DefensysTokens.maroon),
+                const Icon(
+                  Icons.assignment_outlined,
+                  size: 18,
+                  color: DefensysTokens.maroon,
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
@@ -169,7 +180,9 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ],
           const SizedBox(height: 12),
           Card(
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
             elevation: 3,
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -183,18 +196,30 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(team.name,
-                                style: const TextStyle(
-                                    fontWeight: FontWeight.bold, fontSize: 15)),
-                            Text(team.project,
-                                style: const TextStyle(
-                                    color: Colors.grey, fontSize: 12)),
                             Text(
-                              team.isCapstone ? 'Capstone' : 'PIT',
+                              team.name,
                               style: const TextStyle(
-                                color: DefensysTokens.maroon,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              team.project,
+                              style: const TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
+                              ),
+                            ),
+                            Text(
+                              team.scopeLabel,
+                              style: TextStyle(
+                                color: hasValidScope
+                                    ? DefensysTokens.maroon
+                                    : Colors.orange.shade800,
                                 fontSize: 11,
-                                fontWeight: FontWeight.w600,
+                                fontWeight: hasValidScope
+                                    ? FontWeight.w600
+                                    : FontWeight.w800,
                               ),
                             ),
                           ],
@@ -225,26 +250,72 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                         ],
                       ),
                     ),
+                  if (!hasValidScope)
+                    Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.error_outline,
+                            size: 16,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'This assignment is missing its schedule scope. Ask an admin to repair the schedule before grading.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.orange.shade800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const Divider(height: 24),
-                  Container(
-                    padding: const EdgeInsets.all(10),
-                    decoration: BoxDecoration(
-                      color: DefensysTokens.maroon.withValues(alpha: 0.05),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceAround,
-                      children: [
-                        _weightChip('Panel', '$panelWeight%', DefensysTokens.maroon),
-                        if (showAdviser)
-                          _weightChip('Adviser', '${team.adviserWeight}%', DefensysTokens.gold),
-                        _weightChip('Peer', '$peerWeight%', const Color(0xFF10B981)),
-                      ],
-                    ),
-                  ),
+                  if (hasValidScope)
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withValues(alpha: 0.05),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _weightChip(
+                            'Panel',
+                            '$panelWeight%',
+                            DefensysTokens.maroon,
+                          ),
+                          if (showAdviser)
+                            _weightChip(
+                              'Adviser',
+                              '${team.adviserWeight}%',
+                              DefensysTokens.gold,
+                            ),
+                          _weightChip(
+                            'Peer',
+                            '$peerWeight%',
+                            const Color(0xFF10B981),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    _scopeWeightUnavailable(),
                   const SizedBox(height: 16),
-                  const Text('Rubric Criteria',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const Text(
+                    'Rubric Criteria',
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  ),
                   const SizedBox(height: 8),
                   if (!hasPanelRubric)
                     Container(
@@ -294,30 +365,50 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text('Panel Raw Score',
-                          style: TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
+                      const Text(
+                        'Panel Raw Score',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
                       Text(
                         '${total.toStringAsFixed(1)} / ${maxTotal.toStringAsFixed(0)}',
                         style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: DefensysTokens.maroon),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                          color: DefensysTokens.maroon,
+                        ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 4),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Text('Score (normalized)',
-                          style: TextStyle(fontSize: 13, color: Colors.grey)),
-                      Text(
-                        '${panelPct.toStringAsFixed(1)}%  ×  $panelWeight%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
-                        style: const TextStyle(fontSize: 13, color: Colors.grey),
+                  if (hasValidScope)
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Score (normalized)',
+                          style: TextStyle(fontSize: 13, color: Colors.grey),
+                        ),
+                        Text(
+                          '${panelPct.toStringAsFixed(1)}%  ×  $panelWeight%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey,
+                          ),
+                        ),
+                      ],
+                    )
+                  else
+                    Text(
+                      'Score weighting is unavailable until the schedule scope is repaired.',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.orange.shade800,
+                        fontWeight: FontWeight.w600,
                       ),
-                    ],
-                  ),
+                    ),
                   const SizedBox(height: 16),
                   if (!isLocked) ...[
                     TextField(
@@ -325,7 +416,8 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       decoration: InputDecoration(
                         labelText: 'Remarks / Feedback',
                         border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(10)),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
                         alignLabelWithHint: true,
                       ),
                     ),
@@ -337,10 +429,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                             icon: const Icon(Icons.save, size: 16),
                             label: const Text('Save Draft'),
                             style: OutlinedButton.styleFrom(
-                              side: const BorderSide(color: DefensysTokens.maroon),
+                              side: const BorderSide(
+                                color: DefensysTokens.maroon,
+                              ),
                               foregroundColor: DefensysTokens.maroon,
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
                             onPressed: () {
                               showSuccessToast(context, 'Draft saved.');
@@ -356,9 +451,12 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                               backgroundColor: Colors.red.shade700,
                               foregroundColor: Colors.white,
                               shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8)),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
                             ),
-                            onPressed: canPost ? () => _confirmPost(team) : null,
+                            onPressed: canPost
+                                ? () => _confirmPost(team)
+                                : null,
                           ),
                         ),
                       ],
@@ -374,6 +472,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<void> _confirmPost(TeamData team) async {
+    if (!team.hasValidScope) {
+      showValidationToast(
+        context,
+        'Schedule scope is missing. Ask an admin to repair this schedule before grading.',
+      );
+      return;
+    }
     if (team.panelRubric == null) {
       showValidationToast(
         context,
@@ -399,6 +504,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   }
 
   Future<void> _submitGrades(TeamData team) async {
+    if (!team.hasValidScope) {
+      showValidationToast(
+        context,
+        'Schedule scope is missing. Ask an admin to repair this schedule before grading.',
+      );
+      return;
+    }
+
     showInfoToast(
       context,
       'Submitting grades...',
@@ -406,10 +519,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     );
 
     final criteriaScores = _criteria
-        .map((c) => {
-              'criterion_id': c.id,
-              'score': c.score,
-            })
+        .map((c) => {'criterion_id': c.id, 'score': c.score})
         .toList();
 
     final payload = <String, dynamic>{
@@ -425,7 +535,9 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       final isGuest = ref.read(authProvider).user?['role'] == 'guest_panelist';
       final httpClient = ref.read(authenticatedHttpClientProvider);
       final submitPath = isGuest ? 'guest-submit-grades/' : 'submit-grades/';
-      final submitUrl = Uri.parse('${ApiConfig.defenseSchedulesUrl}/$submitPath');
+      final submitUrl = Uri.parse(
+        '${ApiConfig.defenseSchedulesUrl}/$submitPath',
+      );
       final response = await httpClient.post(
         submitUrl,
         body: json.encode(payload),
@@ -437,10 +549,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       if (response.statusCode == 201) {
         setState(() => team.isPosted = true);
         widget.onGradesSubmitted?.call();
-        showSuccessToast(
-          context,
-          'Grades saved to database successfully!',
-        );
+        showSuccessToast(context, 'Grades saved to database successfully!');
       } else {
         showErrorToast(
           context,
@@ -468,14 +577,20 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(c.name,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              Text(
+                c.name,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
               Text(
                 '${c.score.toStringAsFixed(0)} / ${c.maxScore.toStringAsFixed(0)}',
                 style: TextStyle(
-                    fontSize: 13,
-                    color: locked ? Colors.grey : DefensysTokens.maroon,
-                    fontWeight: FontWeight.bold),
+                  fontSize: 13,
+                  color: locked ? Colors.grey : DefensysTokens.maroon,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ],
           ),
@@ -505,21 +620,29 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: isPosted ? Colors.red.withValues(alpha: 0.1) : Colors.blue.withValues(alpha: 0.1),
+        color: isPosted
+            ? Colors.red.withValues(alpha: 0.1)
+            : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: isPosted ? Colors.red : Colors.blue),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(isPosted ? Icons.lock : Icons.edit,
-              size: 12, color: isPosted ? Colors.red : Colors.blue),
+          Icon(
+            isPosted ? Icons.lock : Icons.edit,
+            size: 12,
+            color: isPosted ? Colors.red : Colors.blue,
+          ),
           const SizedBox(width: 4),
-          Text(label,
-              style: TextStyle(
-                  fontSize: 11,
-                  color: isPosted ? Colors.red : Colors.blue,
-                  fontWeight: FontWeight.bold)),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              color: isPosted ? Colors.red : Colors.blue,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -528,11 +651,44 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   Widget _weightChip(String label, String weight, Color color) {
     return Column(
       children: [
-        Text(weight,
-            style: TextStyle(
-                fontWeight: FontWeight.bold, color: color, fontSize: 15)),
+        Text(
+          weight,
+          style: TextStyle(
+            fontWeight: FontWeight.bold,
+            color: color,
+            fontSize: 15,
+          ),
+        ),
         Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
       ],
+    );
+  }
+
+  Widget _scopeWeightUnavailable() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.error_outline, size: 16, color: Colors.orange),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Grading weights cannot be shown because this schedule has no scope.',
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.orange.shade800,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -540,14 +696,22 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     return Row(
       children: [
         Container(
-            width: 4,
-            height: 20,
-            decoration: BoxDecoration(
-                color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: DefensysTokens.maroon,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
         const SizedBox(width: 8),
-        Text(title,
-            style: const TextStyle(
-                fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: DefensysTokens.maroon,
+          ),
+        ),
       ],
     );
   }

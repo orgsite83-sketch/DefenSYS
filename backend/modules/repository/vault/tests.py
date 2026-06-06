@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
+from defense.stages.models import DefenseStage
 from repository.deliverables.models import DeliverableSubmission
 from student_teams.models import StudentTeam, TeamMembership
 from .models import VaultEntry
@@ -106,6 +107,40 @@ class DigitalVaultApiTests(APITestCase):
         self.assertEqual(capstone_response.data['counts']['filtered'], 1)
         self.assertEqual(capstone_response.data['entries'][0]['type'], 'capstone')
         self.assertEqual(empty_response.data['entries'], [])
+
+    def test_stage_options_include_admin_stages_and_historical_vault_stages(self):
+        self.client.force_authenticate(user=self.admin)
+        DefenseStage.objects.create(
+            label='Admin Configured Vault Stage',
+            display_order=50,
+            is_active=True,
+        )
+        DefenseStage.objects.create(
+            label='Inactive Vault Stage',
+            display_order=51,
+            is_active=False,
+        )
+        DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='Archived Legacy Stage',
+            deliverable_id='D10',
+            label='D10 - Legacy Vault Document',
+            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            required=False,
+            file_name='Team_Cipher_Legacy.pdf',
+            file_size='256 KB',
+            uploaded_by=self.faculty,
+        )
+
+        response = self.client.get('/api/repository/vault/')
+
+        self.assertEqual(response.status_code, 200)
+        options = response.data['options']['stage_options']
+        self.assertIn('Admin Configured Vault Stage', options)
+        self.assertIn('Archived Legacy Stage', options)
+        self.assertIn('Concept Proposal', options)
+        self.assertIn('PIT301', options)
+        self.assertNotIn('Inactive Vault Stage', options)
 
     def test_admin_dashboard_reports_current_phase_vault_counts(self):
         self.client.force_authenticate(user=self.admin)

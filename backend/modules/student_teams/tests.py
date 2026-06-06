@@ -932,6 +932,56 @@ class StudentTeamApiTests(APITestCase):
         self.assertTrue(context['is_pit'])
         self.assertEqual(context['event_label'], 'Midterm PIT Showcase')
 
+    def test_pit_team_defense_context_does_not_invent_event_label(self):
+        team = StudentTeam.objects.create(
+            name='Team PIT Blank Event',
+            project_title='PIT Blank Event',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=self.first_semester,
+            leader=self.student_1,
+        )
+        from defense.scheduler.models import DefenseSchedule
+
+        schedule = DefenseSchedule.objects.create(
+            team=team,
+            semester=self.first_semester,
+            scope=DefenseSchedule.SCOPE_PIT,
+            event_name='Temporary PIT Event',
+            scheduled_date='2026-08-15',
+            start_time='09:00',
+            slot_duration=60,
+            room='Room 101',
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        )
+        DefenseSchedule.objects.filter(pk=schedule.pk).update(event_name='')
+
+        response = self.client.get(f'/api/teams/{team.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        context = response.data['team']['defense_context']
+        self.assertTrue(context['is_pit'])
+        self.assertEqual(context['event_label'], '')
+
+    def test_capstone_defense_context_does_not_invent_stage(self):
+        team = StudentTeam.objects.create(
+            name='Team Cap No Stage',
+            project_title='Capstone Without Stage',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.first_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+
+        response = self.client.get(f'/api/teams/{team.id}/')
+
+        self.assertEqual(response.status_code, 200)
+        context = response.data['team']['defense_context']
+        self.assertFalse(context['is_pit'])
+        self.assertIsNone(context['current_stage'])
+        self.assertIsNone(context['ready_for_stage'])
+
     def test_bulk_import_with_adviser_filter_only_imports_valid_adviser_rows(self):
         self._activate_capstone_intake_semester()
         response = self.client.post(

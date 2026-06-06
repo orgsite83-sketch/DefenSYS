@@ -84,6 +84,7 @@ class AdviserDashboardContent extends StatelessWidget {
 
   Widget _teamCard(dynamic team, VoidCallback onOpenDeliverables) {
     final map = (team as Map?)?.cast<String, dynamic>() ?? {};
+    final currentStage = map['currentStage']?.toString().trim() ?? '';
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: 2,
@@ -108,24 +109,26 @@ class AdviserDashboardContent extends StatelessWidget {
                     map['projectTitle']?.toString() ?? '',
                     style: const TextStyle(fontSize: 14, color: Colors.grey),
                   ),
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.blue.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: Text(
-                      map['currentStage']?.toString() ?? '',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.blue.shade700,
+                  if (currentStage.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 4,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Text(
+                        currentStage,
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
             ),

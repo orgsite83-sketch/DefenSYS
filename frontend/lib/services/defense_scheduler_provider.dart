@@ -297,6 +297,47 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
+  Future<Map<String, dynamic>> importSchedules(
+    List<Map<String, dynamic>> payloads,
+  ) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    var created = 0;
+    final errors = <String>[];
+
+    for (var index = 0; index < payloads.length; index++) {
+      try {
+        final response = await _client.post(
+          Uri.parse('$baseUrl/'),
+          body: jsonEncode(payloads[index]),
+        );
+        if (response.statusCode == 201) {
+          created++;
+        } else {
+          errors.add('Row ${index + 1}: ${_errorFromResponse(response)}');
+        }
+      } catch (e) {
+        errors.add('Row ${index + 1}: Connection error: $e');
+      }
+    }
+
+    await fetchSchedules(
+      successMessage: created > 0
+          ? '$created imported schedule${created == 1 ? '' : 's'} saved.'
+          : null,
+    );
+
+    if (errors.isNotEmpty && created == 0) {
+      state = state.copyWith(error: errors.first);
+    }
+
+    return {'created': created, 'errors': errors};
+  }
+
   Future<bool> updateStatus(int scheduleId, String status) async {
     state = state.copyWith(
       isSaving: true,

@@ -271,6 +271,20 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(duplicate.status_code, 400)
         self.assertIn('team_id', duplicate.data)
 
+    def test_manual_schedule_create_requires_scope(self):
+        payload = {**self.schedule_payload(), 'team_id': self.team.id}
+        payload.pop('scope')
+
+        response = self.client.post(
+            '/api/defense/schedules/',
+            payload,
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('scope', response.data)
+        self.assertEqual(DefenseSchedule.objects.count(), 0)
+
     def test_manual_schedule_create_rejects_same_room_overlap(self):
         other_team = self.create_ready_team()
         first = self.client.post(

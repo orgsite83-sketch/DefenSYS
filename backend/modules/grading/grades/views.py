@@ -26,6 +26,7 @@ from .services import (
     sync_missing_grade_rows,
     IncompleteGradingTeamsError,
     update_group_settings,
+    without_stale_unscheduled_placeholders,
 )
 
 
@@ -120,8 +121,11 @@ def options_payload(queryset):
 
 
 def grade_center_payload(request, queryset=None, sync_info=None):
-    base = grade_records_for(request.user)
-    current = queryset if queryset is not None else base
+    raw_base = grade_records_for(request.user)
+    base = without_stale_unscheduled_placeholders(raw_base)
+    current = without_stale_unscheduled_placeholders(
+        queryset if queryset is not None else raw_base
+    )
     semester = active_semester()
     payload = {
         'grades': TeamGradeSerializer(current, many=True).data,
