@@ -87,6 +87,9 @@ flutter:
 
   assets:
     - assets/logo.png
+    - assets/logo-login-mark-48.png
+    - assets/logo-login-mark-58.png
+    - assets/login_hero.png
 
   fonts:
     - family: Poppins
