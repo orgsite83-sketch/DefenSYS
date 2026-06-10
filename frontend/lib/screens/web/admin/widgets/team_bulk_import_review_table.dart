@@ -87,6 +87,9 @@ class TeamBulkImportReviewTable extends StatelessWidget {
     final issues = (preview?['issues'] as List? ?? const [])
         .map((item) => item.toString())
         .toList();
+    final warnings = (preview?['warnings'] as List? ?? const [])
+        .map((item) => item.toString())
+        .toList();
     final borderColor = ready ? _green : (issues.isEmpty ? const Color(0xFFE5E7EB) : _amber);
     final members = (row['member_ids'] as List? ?? const [])
         .map((item) => item.toString())
@@ -156,6 +159,27 @@ class TeamBulkImportReviewTable extends StatelessWidget {
                       child: Text(
                         issue,
                         style: const TextStyle(color: _red, fontSize: 12, fontWeight: FontWeight.w500),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+          if (warnings.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...warnings.map(
+              (warning) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, size: 14, color: _amber),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        warning,
+                        style: const TextStyle(color: _amber, fontSize: 12, fontWeight: FontWeight.w500),
                       ),
                     ),
                   ],

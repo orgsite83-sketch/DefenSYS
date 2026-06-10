@@ -11,7 +11,9 @@ class StudentTeamSummaryCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final teamName = team['name'] ?? 'Unknown Team';
-    final projectTitle = team['projectTitle'] ?? '—';
+    final projectTitle = team['projectTitle'] ?? team['project_title'] ?? '—';
+    final systemName = team['system_name'] ?? team['systemName'] ?? '';
+    final projectManagerName = team['project_manager_name'] ?? team['projectManagerName'] ?? '';
     final level = team['level'] ?? '—';
     final status = team['status'] ?? 'Pending';
     final memberCount = team['memberCount'] ?? 0;
@@ -124,6 +126,38 @@ class StudentTeamSummaryCard extends StatelessWidget {
                       ),
                     ],
                   ),
+                  if (systemName.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.hub, color: Colors.white70, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'System: $systemName',
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  if (projectManagerName.isNotEmpty) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        const Icon(Icons.manage_accounts, color: Colors.white70, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'PM: $projectManagerName',
+                            style: const TextStyle(color: Colors.white, fontSize: 13),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                   const SizedBox(height: 8),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,

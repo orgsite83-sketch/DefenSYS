@@ -23,6 +23,7 @@ import 'pit_lead_dashboard_content.dart';
 import 'pit_lead_cohort_screen.dart';
 import 'pit_instructor_assignment_screen.dart';
 import 'adviser_dashboard_content.dart';
+import 'pit_events_management_screen.dart';
 
 enum FacultyWorkspace { pitLead, adviser, repoAssistant }
 
@@ -52,19 +53,38 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
   @override
   Widget build(BuildContext context) {
+    final dashState = ref.watch(dashboardProvider('faculty'));
+    final roles =
+        (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
+
     final routerState = GoRouterState.of(context);
     final sectionFromRoute = FacultyRoutes.sectionForLocation(
       routerState.uri.path,
     );
     if (sectionFromRoute != null && sectionFromRoute != _activeSection) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) setState(() => _activeSection = sectionFromRoute);
+        if (mounted) {
+          setState(() {
+            _activeSection = sectionFromRoute;
+            final workspace = _resolvedWorkspace(roles);
+            final isUserMgmt = sectionFromRoute == 'cohort' ||
+                sectionFromRoute == 'student_teams' ||
+                sectionFromRoute == 'pit_student_import' ||
+                sectionFromRoute == 'pit_instructors' ||
+                (sectionFromRoute == 'deliverables' && workspace == FacultyWorkspace.pitLead);
+            final isSched = sectionFromRoute == 'defense_scheduler' ||
+                sectionFromRoute == 'defense_board';
+            if (isUserMgmt) {
+              _userManagementExpanded = true;
+              _schedulingExpanded = false;
+            } else if (isSched) {
+              _schedulingExpanded = true;
+              _userManagementExpanded = false;
+            }
+          });
+        }
       });
     }
-
-    final dashState = ref.watch(dashboardProvider('faculty'));
-    final roles =
-        (dashState.data?['roles'] as Map?)?.cast<String, dynamic>() ?? {};
     // Check if user is ONLY an uploader (no other roles)
     final isOnlyUploader =
         roles['uploader'] == true &&
@@ -242,6 +262,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       });
     }
 
+    final facultyName = widget.userData?['name']?.toString() ??
+        ref.read(dashboardProvider('faculty')).data?['faculty']?['name']?.toString() ??
+        'Faculty';
+
     return Container(
       width: DefensysTokens.sidebarWidth,
       color: DefensysTokens.maroon,
@@ -263,8 +287,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   ),
                   child: ClipOval(
                     child: Image.asset(
-                      'assets/logo.png',
-                      fit: BoxFit.cover,
+                      'assets/logo-login-mark-48.png',
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                      isAntiAlias: true,
                       errorBuilder: (_, __, ___) => const Icon(
                         Icons.shield_rounded,
                         color: DefensysTokens.maroon,
@@ -277,6 +303,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 const Text(
                   'DefenSYS',
                   style: TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
                     color: DefensysTokens.gold,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
@@ -286,65 +313,56 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
           ),
           if (available.length > 1)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 4, 12, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
                   color: Colors.white.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.12),
-                  ),
+                  width: 1,
                 ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<FacultyWorkspace>(
-                    isExpanded: true,
-                    value: workspace,
-                    dropdownColor: const Color(0xFF5E0D08),
-                    iconEnabledColor: DefensysTokens.gold,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    items: available
-                        .map(
-                          (ws) => DropdownMenuItem(
-                            value: ws,
-                            child: Text(_workspaceLabel(ws, roles)),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (value) {
-                      if (value != null) {
-                        _afterSidebarAction(
-                          isWide,
-                          () => _switchWorkspace(value),
-                        );
-                      }
-                    },
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<FacultyWorkspace>(
+                  isExpanded: true,
+                  value: workspace,
+                  dropdownColor: const Color(0xFF5E0D08),
+                  iconEnabledColor: DefensysTokens.gold,
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
                   ),
+                  items: available
+                      .map(
+                        (ws) => DropdownMenuItem(
+                          value: ws,
+                          child: Text(_workspaceLabel(ws, roles)),
+                        ),
+                      )
+                      .toList(),
+                  onChanged: (value) {
+                    if (value != null) {
+                      _afterSidebarAction(
+                        isWide,
+                        () => _switchWorkspace(value),
+                      );
+                    }
+                  },
                 ),
               ),
             ),
           Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(top: 20),
+              padding: const EdgeInsets.only(top: 16),
               children: [
-                _buildSidebarItem(
-                  icon: Icons.dashboard_outlined,
-                  label: 'Dashboard',
-                  onTap: () => _afterSidebarAction(
-                    isWide,
-                    () => _goToSection('dashboard'),
-                  ),
-                  isActive: _activeSection == 'dashboard',
-                ),
-                const SizedBox(height: 8),
                 ..._sidebarItemsForWorkspace(workspace, roles, isWide: isWide),
                 if (roles['uploader'] == true) ...[
+                  _buildSectionHeader('Tools'),
                   _buildSidebarItem(
                     icon: Icons.upload_file,
                     label: 'Upload Documents',
@@ -358,13 +376,88 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ],
             ),
           ),
-
-          // Footer
           Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
+          _buildUserProfileCard(facultyName, _workspaceLabel(workspace, roles), isWide),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildUserProfileCard(String facultyName, String roleLabel, bool isWide) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: DefensysTokens.gold.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+              color: Colors.white.withValues(alpha: 0.1),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.school_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  facultyName,
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  roleLabel,
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamily,
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
           Material(
             color: Colors.transparent,
-            child: InkWell(
-              onTap: () async {
+            child: IconButton(
+              icon: const Icon(
+                Icons.logout_rounded,
+                color: Color(0xFFFCA5A5),
+                size: 18,
+              ),
+              tooltip: 'Log Out',
+              onPressed: () async {
                 if (!isWide) {
                   Navigator.of(context).pop();
                 }
@@ -372,33 +465,28 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                   await ref.read(authProvider.notifier).logout();
                 }
               },
-              hoverColor: Colors.white.withValues(alpha: 0.05),
-              child: Container(
-                height: 58,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.logout_rounded,
-                      color: Color(0xFFD1D5DB),
-                      size: 18,
-                    ),
-                    SizedBox(width: 14),
-                    Text(
-                      'Log Out',
-                      style: TextStyle(
-                        color: Color(0xFFD1D5DB),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(6),
+              splashRadius: 20,
             ),
           ),
-          const SizedBox(height: 16),
         ],
+      ),
+    );
+  }
+
+  Widget _buildSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          fontFamily: DefensysTokens.fontFamily,
+          color: Colors.white.withValues(alpha: 0.45),
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.3,
+        ),
       ),
     );
   }
@@ -411,15 +499,35 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     switch (workspace) {
       case FacultyWorkspace.pitLead:
         return [
+          _buildSectionHeader('Dashboard'),
+          _buildSidebarItem(
+            icon: Icons.dashboard_outlined,
+            label: 'Dashboard',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('dashboard'),
+            ),
+            isActive: _activeSection == 'dashboard',
+          ),
+          _buildSectionHeader('Management'),
           _buildExpandableSidebarItem(
             icon: Icons.manage_accounts_outlined,
             label: 'User Management',
             isExpanded: _userManagementExpanded,
+            isActive: _activeSection == 'cohort' ||
+                _activeSection == 'pit_student_import' ||
+                _activeSection == 'pit_instructors' ||
+                _activeSection == 'student_teams' ||
+                _activeSection == 'deliverables' ||
+                _activeSection == 'pit_events',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => setState(
-                () => _userManagementExpanded = !_userManagementExpanded,
-              ),
+              () => setState(() {
+                _userManagementExpanded = !_userManagementExpanded;
+                if (_userManagementExpanded) {
+                  _schedulingExpanded = false;
+                }
+              }),
             ),
           ),
           if (_userManagementExpanded) ...[
@@ -442,14 +550,40 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ),
               isActive: _activeSection == 'student_teams',
             ),
+            _buildSubSidebarItem(
+              icon: Icons.folder_open_outlined,
+              label: 'PIT Deliverables',
+              onTap: () => _afterSidebarAction(
+                isWide,
+                () => _goToSection('deliverables'),
+              ),
+              isActive: _activeSection == 'deliverables',
+            ),
+            _buildSubSidebarItem(
+              icon: Icons.event_note_outlined,
+              label: 'PIT Events',
+              onTap: () => _afterSidebarAction(
+                isWide,
+                () => _goToSection('pit_events'),
+              ),
+              isActive: _activeSection == 'pit_events',
+            ),
           ],
+          _buildSectionHeader('Operations'),
           _buildExpandableSidebarItem(
             icon: Icons.calendar_month_outlined,
             label: 'Scheduling',
             isExpanded: _schedulingExpanded,
+            isActive: _activeSection == 'defense_scheduler' ||
+                _activeSection == 'defense_board',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => setState(() => _schedulingExpanded = !_schedulingExpanded),
+              () => setState(() {
+                _schedulingExpanded = !_schedulingExpanded;
+                if (_schedulingExpanded) {
+                  _userManagementExpanded = false;
+                }
+              }),
             ),
           ),
           if (_schedulingExpanded) ...[
@@ -472,6 +606,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               isActive: _activeSection == 'defense_board',
             ),
           ],
+          _buildSectionHeader('Evaluation'),
           _buildSidebarItem(
             icon: Icons.grading_outlined,
             label: 'Grade Center',
@@ -488,6 +623,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'rubric_engine',
           ),
+          _buildSectionHeader('Archive & Audit'),
           _buildSidebarItem(
             icon: Icons.manage_search,
             label: 'Repository Vault',
@@ -509,6 +645,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ];
       case FacultyWorkspace.adviser:
         return [
+          _buildSectionHeader('Dashboard'),
+          _buildSidebarItem(
+            icon: Icons.dashboard_outlined,
+            label: 'Dashboard',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('dashboard'),
+            ),
+            isActive: _activeSection == 'dashboard',
+          ),
+          _buildSectionHeader('Advising'),
           _buildSidebarItem(
             icon: Icons.folder_open_outlined,
             label: 'Capstone Deliverables',
@@ -546,6 +693,17 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         ];
       case FacultyWorkspace.repoAssistant:
         return [
+          _buildSectionHeader('Dashboard'),
+          _buildSidebarItem(
+            icon: Icons.dashboard_outlined,
+            label: 'Dashboard',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('dashboard'),
+            ),
+            isActive: _activeSection == 'dashboard',
+          ),
+          _buildSectionHeader('Repository'),
           _buildSidebarItem(
             icon: Icons.manage_search,
             label: 'Repository Vault',
@@ -566,37 +724,49 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     bool isActive = false,
   }) {
     final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
+    final containerColor = isActive
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.transparent;
 
-    return Material(
-      color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: Colors.white.withValues(alpha: 0.05),
-        child: Container(
-          height: 52,
-          decoration: BoxDecoration(
-            border: isActive
-                ? const Border(
-                    left: BorderSide(color: DefensysTokens.gold, width: 4),
-                  )
-                : null,
-          ),
-          padding: EdgeInsets.only(left: isActive ? 23 : 27, right: 24),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Material(
+          color: containerColor,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: Colors.white.withValues(alpha: 0.05),
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.only(left: 10, right: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: isActive ? DefensysTokens.gold : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Icon(icon, color: color, size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamily,
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -608,37 +778,57 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required String label,
     required bool isExpanded,
     required VoidCallback onTap,
+    bool isActive = false,
   }) {
-    final color = const Color(0xFFD1D5DB);
+    final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
+    final containerColor = isActive
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.transparent;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: Colors.white.withValues(alpha: 0.05),
-        child: Container(
-          height: 52,
-          padding: const EdgeInsets.only(left: 27, right: 24),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Material(
+          color: containerColor,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: Colors.white.withValues(alpha: 0.05),
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.only(left: 10, right: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: isActive ? DefensysTokens.gold : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Icon(icon, color: color, size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamily,
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                    color: color.withValues(alpha: 0.86),
+                    size: 18,
+                  ),
+                ],
               ),
-              Icon(
-                isExpanded ? Icons.expand_less : Icons.expand_more,
-                color: color,
-                size: 20,
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -651,38 +841,39 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required VoidCallback onTap,
     bool isActive = false,
   }) {
-    final color = isActive ? DefensysTokens.gold : const Color(0xFFD1D5DB);
+    final color = isActive ? DefensysTokens.gold : Colors.white.withValues(alpha: 0.7);
 
-    return Material(
-      color: isActive ? const Color(0xFF5E0D08) : Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        hoverColor: Colors.white.withValues(alpha: 0.05),
-        child: Container(
-          height: 48,
-          decoration: BoxDecoration(
-            border: isActive
-                ? const Border(
-                    left: BorderSide(color: DefensysTokens.gold, width: 4),
-                  )
-                : null,
-          ),
-          padding: EdgeInsets.only(left: isActive ? 43 : 47, right: 24),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    color: color,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Material(
+          color: isActive ? Colors.white.withValues(alpha: 0.04) : Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            hoverColor: Colors.white.withValues(alpha: 0.03),
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.only(left: 36, right: 14),
+              child: Row(
+                children: [
+                  Icon(icon, color: color, size: 14),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: DefensysTokens.fontFamily,
+                        color: color,
+                        fontSize: 12,
+                        height: 1.25,
+                        fontWeight: isActive ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -712,9 +903,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
     switch (activeSection) {
       case 'deliverables':
+        final ws = _resolvedWorkspace(roles);
+        final initialScope = ws == FacultyWorkspace.pitLead ? 'pit' : 'capstone';
         return Container(
           color: Colors.white,
-          child: const CapstoneDeliverablesScreen(),
+          child: CapstoneDeliverablesScreen(initialScope: initialScope),
         );
       case 'weekly_reports':
         return Container(
@@ -741,6 +934,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return Container(
           color: Colors.white,
           child: const StudentTeamsScreen(mode: TeamListMode.pitLead),
+        );
+      case 'pit_events':
+        return Container(
+          color: Colors.white,
+          child: const PitEventsManagementScreen(),
         );
       case 'pit_instructors':
         return Container(

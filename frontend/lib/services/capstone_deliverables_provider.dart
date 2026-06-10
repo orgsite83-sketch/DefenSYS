@@ -21,6 +21,7 @@ class CapstoneDeliverablesState {
   final String selectedStage;
   final String search;
   final String status;
+  final String scope;
   final String? error;
   final String? message;
 
@@ -35,6 +36,7 @@ class CapstoneDeliverablesState {
     this.selectedStage = '',
     this.search = '',
     this.status = '',
+    this.scope = 'capstone',
     this.error,
     this.message,
   });
@@ -50,6 +52,7 @@ class CapstoneDeliverablesState {
     String? selectedStage,
     String? search,
     String? status,
+    String? scope,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -69,6 +72,7 @@ class CapstoneDeliverablesState {
       selectedStage: selectedStage ?? this.selectedStage,
       search: search ?? this.search,
       status: status ?? this.status,
+      scope: scope ?? this.scope,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -87,11 +91,13 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? search,
     String? selectedStage,
     String? status,
+    String? scope,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextStage = selectedStage ?? state.selectedStage;
     final nextStatus = status ?? state.status;
+    final nextScope = scope ?? state.scope;
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -99,6 +105,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       search: nextSearch,
       selectedStage: nextStage,
       status: nextStatus,
+      scope: nextScope,
       clearError: true,
       clearMessage: true,
     );
@@ -109,6 +116,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextSearch.trim().isNotEmpty) 'search': nextSearch.trim(),
           if (nextStage.isNotEmpty) 'stage_label': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
+          if (nextScope.isNotEmpty) 'scope': nextScope,
         },
       );
       final response = await _client.get(uri);
@@ -211,6 +219,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       clearActiveSemester: payload['active_semester'] == null,
       selectedStage:
           payload['selected_stage']?.toString() ?? state.selectedStage,
+      scope: payload['scope']?.toString() ?? state.scope,
       message: successMessage,
       clearError: true,
     );

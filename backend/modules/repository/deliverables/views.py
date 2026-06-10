@@ -24,38 +24,64 @@ from .services import (
 
 
 class CanManageDeliverables(BasePermission):
-    message = 'Only administrators, assigned advisers, and team members can manage Capstone deliverables.'
+    message = 'Only administrators, assigned advisers, PIT leads, PIT instructors, and team members can manage deliverables.'
 
     def has_permission(self, request, view):
         user = request.user
-        return bool(
-            user
-            and user.is_authenticated
-            and (
-                getattr(user, 'role', None) == 'admin'
-                or getattr(user, 'is_superuser', False)
-                or (getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_adviser', False))
-                or getattr(user, 'role', None) == 'student'  # Allow students to upload
-            )
-        )
+        if not (user and user.is_authenticated):
+            return False
+        if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+            return True
+        if getattr(user, 'role', None) == 'student':
+            return True
+        if getattr(user, 'role', None) == 'faculty':
+            if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False):
+                return True
+            from user_management.models import PitInstructorAssignment
+            return PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+        return False
 
 
-def deliverables_payload(request, queryset=None, selected_stage=None):
+def deliverables_payload(request, queryset=None, selected_stage=None, scope=None):
+    if scope is None:
+        scope = request.query_params.get('scope', 'capstone')
+
     base = team_queryset_for_user(request.user)
+    if scope == 'pit':
+        base = base.filter(level__icontains='PIT')
+    else:
+        base = base.exclude(level__icontains='PIT')
+
     current = queryset if queryset is not None else base
-    stage_options = list(STAGE_OPTIONS)
+    if queryset is not None:
+        if scope == 'pit':
+            current = current.filter(level__icontains='PIT')
+        else:
+            current = current.exclude(level__icontains='PIT')
+
+    semester = active_semester()
+    if scope == 'pit':
+        from defense.scheduler.models import PitEventGradingConfig
+        stage_options = list(
+            PitEventGradingConfig.objects.filter(semester=semester)
+            .order_by('event_name')
+            .values_list('event_name', flat=True)
+        )
+    else:
+        stage_options = list(STAGE_OPTIONS)
+
     requested_stage = selected_stage or request.query_params.get('stage_label') or ''
     stage = (
         requested_stage
         if requested_stage in stage_options
         else (stage_options[0] if stage_options else '')
     )
-    semester = active_semester()
     return {
         'teams': [team_payload(team, selected_stage=stage) for team in current],
         'counts': counts_payload(current),
         'stage_options': stage_options,
         'selected_stage': stage,
+        'scope': scope,
         'statuses': [
             {'value': '', 'label': 'All Teams'},
             {'value': 'ready', 'label': 'Ready / Endorsed'},
@@ -111,7 +137,7 @@ class CapstoneDeliverableUploadView(APIView):
         return Response(
             {
                 'submission_id': submission.id,
-                **deliverables_payload(request),
+                **deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
             },
             status=status.HTTP_200_OK,
         )
@@ -128,13 +154,15 @@ class CapstoneDeliverableRemoveView(APIView):
             return Response({'deliverable_id': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
         team = get_allowed_team(request, attrs['team_id'])
         remove_submission(team, attrs['stage_label'], attrs['deliverable_id'])
-        return Response(deliverables_payload(request), status=status.HTTP_200_OK)
+        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
 
 
 class CapstoneDeliverableEndorseView(APIView):
     permission_classes = [CanManageDeliverables]
 
     def post(self, request):
+        if getattr(request.user, 'role', None) == 'student':
+            return Response({'detail': 'Students cannot endorse deliverables.'}, status=status.HTTP_403_FORBIDDEN)
         serializer = DeliverableActionSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         attrs = serializer.validated_data
@@ -143,7 +171,7 @@ class CapstoneDeliverableEndorseView(APIView):
             endorse_team(team, attrs['stage_label'])
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
-        return Response(deliverables_payload(request), status=status.HTTP_200_OK)
+        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
 
 
 class CompileWeeklyReportsView(APIView):

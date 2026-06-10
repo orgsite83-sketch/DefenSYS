@@ -5,8 +5,8 @@ import '../terms_screen.dart';
 import 'student/team_tab.dart';
 import 'student/repository_tab.dart';
 import 'student/peer_eval_tab.dart';
-import 'student/weekly_report_tab.dart';
-import 'student/my_grades_tab.dart';
+import 'student/student_deliverables_tab.dart';
+import 'student/section_integration_tab.dart';
 import 'student/profile_edit_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../services/dashboard_provider.dart';
@@ -55,6 +55,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final team = dataToPass['team'] as Map<String, dynamic>?;
     final isCapstone = team?['isCapstone'] == true;
 
+    final isPM = widget.userData?['is_project_manager'] == true ||
+        dataToPass['student']?['is_project_manager'] == true;
+
     final tabChildren = <Widget>[
       TeamTab(
         studentData: dataToPass,
@@ -62,9 +65,9 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
             ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
       ),
       const RepositoryTab(),
-      isCapstone
-          ? const WeeklyReportTab()
-          : MyGradesTab(studentData: dataToPass),
+      if (isPM)
+        SectionIntegrationTab(studentData: dataToPass),
+      StudentDeliverablesTab(isCapstone: isCapstone, studentData: dataToPass),
       PeerEvalTab(
         isCapstone: isCapstone,
         peerEvalAllowed: dataToPass['peerEvalEnabled'] == true,
@@ -94,9 +97,14 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         icon: const Icon(Icons.folder_open),
         label: l10n.navDigitalVault,
       ),
-      NavigationDestination(
-        icon: Icon(isCapstone ? Icons.assignment : Icons.grade),
-        label: isCapstone ? l10n.navWeeklyReport : l10n.navMyGrades,
+      if (isPM)
+        const NavigationDestination(
+          icon: Icon(Icons.hub),
+          label: 'Integration',
+        ),
+      const NavigationDestination(
+        icon: Icon(Icons.upload_file),
+        label: 'Deliverables',
       ),
       NavigationDestination(
         icon: const Icon(Icons.star_rate),

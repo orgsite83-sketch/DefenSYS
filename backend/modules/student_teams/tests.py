@@ -573,6 +573,79 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(rows['Team Not Adviser']['adviser_status'], 'not_adviser')
         self.assertFalse(rows['Team Not Adviser']['ready'])
 
+    def test_bulk_import_preview_rejects_pit_lead_wrong_template(self):
+        self._activate_capstone_intake_semester()
+        pit_lead = User.objects.create_user(
+            username='pit-lead-preview-warn',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        self.client.force_authenticate(user=pit_lead)
+        pit_row = self._bulk_team_row('Team PIT Warn', 'Ada Lovelace')
+        pit_row['level'] = StudentTeam.LEVEL_3_PIT
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [pit_row],
+                'csv_columns': ['team_name', 'project_title', 'year_level', 'member_ids', 'leader_id', 'adviser_id'],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['rows'][0]
+        self.assertFalse(row['ready'])
+        self.assertEqual(len(row['issues']), 1)
+        self.assertIn("Wrong Template: PIT import templates should not contain 'adviser_id'", row['issues'][0])
+
+    def test_bulk_import_preview_rejects_admin_wrong_template(self):
+        self._activate_capstone_intake_semester()
+        bad_row = {
+            'team_name': 'Team Cap Bad',
+            'project_title': 'Cap Bad',
+            'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+            'leader_id': 'Juan Dela Cruz',
+        }
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [bad_row],
+                'csv_columns': ['team_name', 'project_title', 'member_ids', 'leader_id'],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['rows'][0]
+        self.assertFalse(row['ready'])
+        self.assertEqual(len(row['issues']), 1)
+        self.assertIn("Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id'", row['issues'][0])
+
+    def test_bulk_import_preview_accepts_admin_client_template(self):
+        self._activate_capstone_intake_semester()
+        client_row = {
+            'team_name': 'Team Client Cap',
+            'project_title': 'Client Cap Project',
+            'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+            'leader_id': 'Juan Dela Cruz',
+            'adviser_id': 'Ada Lovelace',
+        }
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [client_row],
+                'csv_columns': ['team name', 'capstone project', 'adviser', 'team members'],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['rows'][0]
+        self.assertTrue(row['ready'])
+        self.assertEqual(len(row['issues']), 0)
+
     def test_bulk_import_rejects_invalid_adviser_row(self):
         self._activate_capstone_intake_semester()
         response = self.client.post(
@@ -599,6 +672,7 @@ class StudentTeamApiTests(APITestCase):
                     {
                         'team_name': 'Team Inferred Year',
                         'project_title': 'Inferred',
+                        'year_level': '',
                         'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
                         'leader_id': 'Juan Dela Cruz',
                         'adviser_id': 'Ada Lovelace',
@@ -849,7 +923,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual([team['id'] for team in response.data['teams']], [team_a.id])
 
-    def test_pit_bulk_import_ignores_adviser_column(self):
+    def test_pit_bulk_import_blocks_on_adviser_column(self):
         pit_lead = User.objects.create_user(
             username='pit-lead-adviser-skip',
             password='pass12345',
@@ -871,13 +945,53 @@ class StudentTeamApiTests(APITestCase):
                         'adviser_id': 'Ada Lovelace',
                     },
                 ],
+                'csv_columns': ['team_name', 'project_title', 'member_ids', 'leader_id', 'adviser_id'],
             },
             format='json',
         )
 
-        self.assertEqual(response.status_code, 201)
-        team = StudentTeam.objects.get(name='Team PIT No Adv')
-        self.assertIsNone(team.adviser_id)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['created_count'], 0)
+        self.assertEqual(response.data['error_count'], 1)
+        self.assertFalse(StudentTeam.objects.filter(name='Team PIT No Adv').exists())
+        self.assertIn("Wrong Template", response.data['errors'][0]['errors'][0])
+
+    def test_pit_bulk_import_correct_template_no_wrong_template_error(self):
+        """PIT lead with csv_columns=['team_name','project_title','member_ids','leader_id']
+        should NOT trigger a wrong-template error, even if the row dict has year_level."""
+        pit_lead = User.objects.create_user(
+            username='pit-lead-correct-tpl',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team PIT Correct',
+                        'project_title': 'PIT Correct',
+                        'year_level': '3rd Year',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                    },
+                ],
+                'csv_columns': ['team_name', 'project_title', 'member_ids', 'leader_id'],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        row = response.data['rows'][0]
+        # Should NOT have a wrong-template issue
+        self.assertFalse(
+            any('Wrong Template' in issue for issue in row.get('issues', [])),
+            f"Unexpected wrong-template issue: {row.get('issues')}",
+        )
 
     def test_no_adviser_count_excludes_pit_teams(self):
         StudentTeam.objects.create(
@@ -1226,4 +1340,75 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('level', response.data)
         self.assertIn('not a valid team program level', response.data['level'][0])
+
+    def test_section_assignment_list_create(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            '/api/teams/section-assignments/',
+            {
+                'section': 'BSIT-2A',
+                'year_level': '2nd Year',
+                'system_name': 'Enterprise Resource Planning',
+                'project_manager_id': self.student_1.id,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['section'], 'BSIT-2A')
+        self.assertEqual(response.data['system_name'], 'Enterprise Resource Planning')
+        self.assertEqual(response.data['project_manager_id'], self.student_1.id)
+
+        response = self.client.get('/api/teams/section-assignments/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]['section'], 'BSIT-2A')
+
+    def test_bulk_import_unified_section_csv(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'section': 'BSIT-2A',
+                'system_name': 'Enterprise Resource Planning',
+                'project_manager': 'Juan Dela Cruz',
+                'teams': [
+                    {
+                        'team_name': 'Group 1',
+                        'project_title': 'Core Module',
+                        'member_ids': ['2024-0001'],
+                        'leader_id': '2024-0001',
+                    }
+                ]
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        
+        from student_teams.models import SectionAssignment
+        assignment = SectionAssignment.objects.filter(section='BSIT-2A').first()
+        self.assertIsNotNone(assignment)
+        self.assertEqual(assignment.system_name, 'Enterprise Resource Planning')
+        self.assertEqual(assignment.project_manager, self.student_1)
+
+    def test_student_pm_dashboard_and_visible_teams(self):
+        from student_teams.models import SectionAssignment
+        SectionAssignment.objects.create(
+            section='BSIT-2A',
+            semester=self.first_semester,
+            year_level='2nd Year',
+            system_name='Integrated School ERP',
+            project_manager=self.student_1,
+        )
+        
+        self.client.force_authenticate(user=self.student_1)
+        
+        response = self.client.get('/api/me/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['is_project_manager'], True)
+        self.assertEqual(response.data['managed_section'], 'BSIT-2A')
+        
+        response = self.client.get('/api/dashboards/student/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['student']['is_project_manager'], True)
+        self.assertEqual(response.data['student']['managed_section'], 'BSIT-2A')
 

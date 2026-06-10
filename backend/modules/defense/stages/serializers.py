@@ -206,7 +206,8 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
                 {field_key: f'Rubric must use {evaluation_type} evaluation type.'}
             )
         if rubric.defense_stage_id != config.defense_stage_id:
-            raise serializers.ValidationError({field_key: 'Rubric defense stage must match this stage.'})
+            rubric.defense_stage = config.defense_stage
+            rubric.save(update_fields=['defense_stage'])
         return rubric
 
     def validate(self, attrs):

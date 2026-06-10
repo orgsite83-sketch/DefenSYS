@@ -1251,3 +1251,74 @@ class PitEventGradingConfigTests(APITestCase):
             '2ndYear-PIT201-IoTMonitor-2ndYearPITExpo-1stSemester.pdf'
         )
 
+    def test_delete_pit_event_config(self):
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo Delete',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        response = self.client.delete(
+            f'/api/defense/schedules/pit-event-config/?config_id={config.id}'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(PitEventGradingConfig.objects.filter(id=config.id).exists())
+
+    def test_scheduling_gated_by_pre_defense_deliverables(self):
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo Gated',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        from .models import PitEventDeliverable
+        PitEventDeliverable.objects.create(
+            pit_event_config=config,
+            deliverable_id='PROPOSAL_PDF',
+            label='Proposal PDF',
+            deliverable_type=PitEventDeliverable.TYPE_PRE,
+            required=True,
+        )
+
+        self.team.ready_for_stage = ''
+        self.team.save()
+
+        payload = self.pit_payload(event_name='2nd Year PIT Expo Gated', team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('team_id', response.data)
+
+        confirm_payload = {
+            **self.pit_payload(event_name='2nd Year PIT Expo Gated'),
+            'slots': [{'team_id': self.team.id}],
+        }
+        response = self.client.post('/api/defense/schedules/confirm-plan/', confirm_payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('slots', response.data)
+
+        self.team.ready_for_stage = '2nd Year PIT Expo Gated'
+        self.team.save()
+
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
+    def test_scheduling_allowed_if_no_pre_defense_deliverables(self):
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo Open',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        self.team.ready_for_stage = ''
+        self.team.save()
+
+        payload = self.pit_payload(event_name='2nd Year PIT Expo Open', team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+

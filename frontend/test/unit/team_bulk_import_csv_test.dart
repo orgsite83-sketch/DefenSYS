@@ -9,18 +9,49 @@ team_name,project_title,year_level,member_ids,leader_id,adviser_id
 Team Alpha,Project A,3rd Year,101|102,101,201
 ''';
 
-      final rows = parseTeamBulkCsv(csv);
+      final result = parseTeamBulkCsv(csv);
 
-      expect(rows, hasLength(1));
-      expect(rows.first['team_name'], 'Team Alpha');
-      expect(rows.first['project_title'], 'Project A');
-      expect(rows.first['year_level'], '3rd Year');
-      expect(rows.first['member_ids'], ['101', '102']);
-      expect(rows.first['leader_id'], '101');
+      expect(result.rows, hasLength(1));
+      expect(result.rows.first['team_name'], 'Team Alpha');
+      expect(result.rows.first['project_title'], 'Project A');
+      expect(result.rows.first['year_level'], '3rd Year');
+      expect(result.rows.first['member_ids'], ['101', '102']);
+      expect(result.rows.first['leader_id'], '101');
     });
 
     test('returns empty list when headers are invalid', () {
-      expect(parseTeamBulkCsv('foo,bar\n1,2'), isEmpty);
+      expect(parseTeamBulkCsv('foo,bar\n1,2').rows, isEmpty);
+    });
+
+    test('parses client multi-row template and collapses teams correctly', () {
+      const csv = '''
+Team Name,Capstone Project,Adviser,Team Members
+TechVision,Eventify,RAY AN J. QUIÑON,"DOMINGUEZ, Noel R."
+,,,"DAGO-OC, Evan John S."
+,,,"PINGKIAN, El Jane"
+,,,"DIU, Sciemon Jed"
+Techpro,Campus Tutoring to FMCP,RAY AN J. QUIÑON,"CABANTAC, John Mike B."
+''';
+
+      final result = parseTeamBulkCsv(csv);
+
+      expect(result.rows, hasLength(2));
+      expect(result.rows[0]['team_name'], 'TechVision');
+      expect(result.rows[0]['project_title'], 'Eventify');
+      expect(result.rows[0]['adviser_id'], 'RAY AN J. QUIÑON');
+      expect(result.rows[0]['member_ids'], [
+        'DOMINGUEZ, Noel R.',
+        'DAGO-OC, Evan John S.',
+        'PINGKIAN, El Jane',
+        'DIU, Sciemon Jed',
+      ]);
+      expect(result.rows[0]['leader_id'], 'DOMINGUEZ, Noel R.');
+
+      expect(result.rows[1]['team_name'], 'Techpro');
+      expect(result.rows[1]['project_title'], 'Campus Tutoring to FMCP');
+      expect(result.rows[1]['adviser_id'], 'RAY AN J. QUIÑON');
+      expect(result.rows[1]['member_ids'], ['CABANTAC, John Mike B.']);
+      expect(result.rows[1]['leader_id'], 'CABANTAC, John Mike B.');
     });
   });
 
@@ -53,14 +84,14 @@ team_name,project_title,year_level,member_ids,leader_id,adviser_id
 Team PIT,Title,3rd Year,101,101,
 ''';
 
-      final rows = parseTeamBulkCsvWithContext(
+      final result = parseTeamBulkCsvWithContext(
         csv,
         isCapstoneAdmin: false,
         pitLeadYear: '3rd Year',
       );
 
-      expect(rows.first['level'], '3rd Year PIT');
-      expect(rows.first.containsKey('adviser_id'), isFalse);
+      expect(result.rows.first['level'], '3rd Year PIT');
+      expect(result.rows.first.containsKey('adviser_id'), isTrue);
     });
 
     test('PIT header omits adviser column', () {
@@ -86,26 +117,26 @@ team_name,project_title,year_level,member_ids,leader_id,adviser_id
 Team Cap,Title,3rd Year,101,101,
 ''';
 
-      final rows = parseTeamBulkCsvWithContext(
+      final result = parseTeamBulkCsvWithContext(
         csv,
         isCapstoneAdmin: true,
         pitLeadYear: '3rd Year',
       );
 
-      expect(rows.first.containsKey('level'), isFalse);
+      expect(result.rows.first.containsKey('level'), isFalse);
     });
   });
 
   group('sampleTeamCsvForYear', () {
     test('each year level has one team with four members', () {
       for (final year in teamSampleYearLevels) {
-        final rows = parseTeamBulkCsv(sampleTeamCsvForYear(
+        final result = parseTeamBulkCsv(sampleTeamCsvForYear(
           year,
           isCapstoneAdmin: true,
         ));
-        expect(rows, hasLength(1), reason: year);
-        expect(rows.first['year_level'], year);
-        expect(rows.first['member_ids'], hasLength(4));
+        expect(result.rows, hasLength(1), reason: year);
+        expect(result.rows.first['year_level'], year);
+        expect(result.rows.first['member_ids'], hasLength(4));
       }
     });
 

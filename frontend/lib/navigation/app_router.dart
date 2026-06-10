@@ -377,6 +377,7 @@ List<RouteBase> _facultyRoutes() {
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(path: 'uploader', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(path: 'pit-events', builder: (_, __) => const SizedBox.shrink()),
       ],
     ),
   ];

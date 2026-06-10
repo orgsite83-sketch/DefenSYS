@@ -234,3 +234,51 @@ class PitEventGradingConfig(models.Model):
 
     def __str__(self):
         return f'{self.event_name} ({self.semester})'
+
+
+class PitEventDeliverable(models.Model):
+    TYPE_PRE = 'pre'
+    TYPE_VAULT = 'vault'
+
+    TYPE_CHOICES = (
+        (TYPE_PRE, 'Pre-Defense'),
+        (TYPE_VAULT, 'Vault'),
+    )
+
+    pit_event_config = models.ForeignKey(
+        PitEventGradingConfig,
+        related_name='deliverables',
+        on_delete=models.CASCADE,
+    )
+    deliverable_id = models.CharField(max_length=20)
+    label = models.CharField(max_length=180)
+    deliverable_type = models.CharField(
+        max_length=20,
+        choices=TYPE_CHOICES,
+        default=TYPE_PRE,
+    )
+    required = models.BooleanField(default=True)
+    display_order = models.PositiveSmallIntegerField(default=1)
+    vault_note = models.TextField(blank=True)
+    vault_file_template = models.CharField(
+        max_length=255,
+        blank=True,
+        default='',
+        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {event}, {semester}',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'defense'
+        db_table = 'defense_scheduler_piteventdeliverable'
+        ordering = ['display_order', 'deliverable_id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['pit_event_config', 'deliverable_id'],
+                name='unique_deliverable_per_pit_event',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.pit_event_config.event_name} - {self.label}'

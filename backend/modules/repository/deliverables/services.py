@@ -72,6 +72,35 @@ def get_deliverable_definitions(stage_label):
         return []
 
 
+def get_deliverable_definitions_for_team(team, stage_label):
+    """Load deliverable definitions configured for a Capstone stage or PIT event."""
+    if not team or not stage_label:
+        return []
+    if team.is_capstone:
+        return get_deliverable_definitions(stage_label)
+    
+    # It's a PIT team! stage_label here is the event name.
+    from defense.scheduler.models import PitEventGradingConfig
+    config = PitEventGradingConfig.objects.filter(
+        semester=team.semester,
+        event_name__iexact=stage_label.strip()
+    ).prefetch_related('deliverables').first()
+    if not config:
+        return []
+    return [
+        {
+            'id': (d.deliverable_id or '').strip(),
+            'label': d.label,
+            'required': d.required,
+            'type': d.deliverable_type,
+            'vault_note': d.vault_note,
+            'vault_file_template': d.vault_file_template,
+        }
+        for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
+        if (d.deliverable_id or '').strip()
+    ]
+
+
 def deliverable_definitions_for_stage(stage_label):
     """Runtime source of truth: admin-configured StageDeliverable rows only."""
     return get_deliverable_definitions(stage_label)
@@ -92,18 +121,66 @@ def defense_stage_for_label(stage_label):
     return DefenseStage.objects.filter(label=stage_label).first()
 
 
-def definition_for(stage_label, deliverable_id):
+def definition_for(team, stage_label, deliverable_id):
     deliverable_id = (deliverable_id or '').strip()
     if not deliverable_id:
         return None
-    for item in deliverable_definitions_for_stage(stage_label):
+    for item in get_deliverable_definitions_for_team(team, stage_label):
         if item['id'] == deliverable_id:
             return item
     return None
 
 
 def current_stage_for_team(team):
-    return team.current_defense_stage or team.ready_for_stage or default_stage_label()
+    if not team:
+        return default_stage_label()
+    if team.is_capstone:
+        return team.current_defense_stage or team.ready_for_stage or default_stage_label()
+    else:
+        # For PIT: find the scheduled schedule or the first event config
+        from defense.scheduler.models import DefenseSchedule
+        sched = (
+            DefenseSchedule.objects.filter(
+                team=team,
+                scope=DefenseSchedule.SCOPE_PIT,
+                status=DefenseSchedule.STATUS_SCHEDULED,
+            )
+            .order_by('scheduled_date', 'start_time')
+            .first()
+        )
+        if sched and sched.event_name:
+            return sched.event_name
+        
+        # Or, if they have configured events for this semester,
+        # find the first event for which they don't have a STATUS_DONE schedule.
+        from defense.scheduler.models import PitEventGradingConfig
+        configs = list(PitEventGradingConfig.objects.filter(semester=team.semester).order_by('event_name'))
+        if configs:
+            completed_events = set(
+                DefenseSchedule.objects.filter(
+                    team=team,
+                    scope=DefenseSchedule.SCOPE_PIT,
+                    status=DefenseSchedule.STATUS_DONE,
+                ).values_list('event_name', flat=True)
+            )
+            for config in configs:
+                if config.event_name not in completed_events:
+                    return config.event_name
+            return configs[-1].event_name
+
+        # Fall back to any scheduled schedule, or first event config
+        sched_any = (
+            DefenseSchedule.objects.filter(
+                team=team,
+                scope=DefenseSchedule.SCOPE_PIT,
+            )
+            .order_by('-scheduled_date', '-start_time')
+            .first()
+        )
+        if sched_any and sched_any.event_name:
+            return sched_any.event_name
+            
+        return 'No PIT event configured'
 
 
 def team_queryset_for_user(user):
@@ -119,14 +196,36 @@ def team_queryset_for_user(user):
             'memberships__student',
             'deliverable_submissions',
         )
-        .filter(level__icontains='Capstone')
     )
 
     if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
         return queryset
     if getattr(user, 'role', None) == 'faculty':
+        q = Q()
         if getattr(user, 'is_adviser', False):
-            return queryset.filter(adviser=user)
+            q |= Q(adviser=user)
+        if getattr(user, 'is_pit_lead', False):
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if pit_year:
+                q |= Q(level__icontains=pit_year) & Q(level__icontains='PIT')
+            else:
+                q |= Q(level__icontains='PIT')
+        
+        # PIT Instructors
+        from user_management.models import PitInstructorAssignment
+        from student_teams.team_levels import normalize_year_level
+        assignments = PitInstructorAssignment.objects.filter(faculty=user, is_active=True)
+        if assignments.exists():
+            for assign in assignments:
+                norm_year = normalize_year_level(assign.year_level)
+                q |= Q(
+                    semester=assign.semester,
+                    section=assign.section,
+                    level__icontains=norm_year
+                ) & Q(level__icontains='PIT')
+
+        if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False) or assignments.exists():
+            return queryset.filter(q)
         return queryset.none()
     if getattr(user, 'role', None) == 'student':
         return queryset.filter(memberships__student=user).distinct()
@@ -178,22 +277,22 @@ def submissions_for(team, stage_label):
     }
 
 
-def stage_deliverables_configured(stage_label):
-    return bool(deliverable_definitions_for_stage(stage_label))
+def stage_deliverables_configured(team, stage_label):
+    return bool(get_deliverable_definitions_for_team(team, stage_label))
 
 
 def required_complete(team, stage_label):
     submitted = submissions_for(team, stage_label)
     return all(
         item['id'] in submitted
-        for item in deliverable_definitions_for_stage(stage_label)
+        for item in get_deliverable_definitions_for_team(team, stage_label)
         if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
     )
 
 
 def stage_payload(team, stage_label):
     submitted = submissions_for(team, stage_label)
-    definitions = deliverable_definitions_for_stage(stage_label)
+    definitions = get_deliverable_definitions_for_team(team, stage_label)
     unlocked = vault_unlocked(team, stage_label)
     rows = []
 
@@ -240,7 +339,7 @@ def stage_payload(team, stage_label):
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
-        'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)),
+        'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label),
         'vault_unlocked': unlocked,
         'required_complete': configured and all(item['uploaded'] for item in required_items),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
@@ -271,7 +370,15 @@ def submission_payload(submission):
 
 
 def team_payload(team, selected_stage=None):
-    configured_stage_labels = list(STAGE_OPTIONS)
+    if team.is_capstone:
+        configured_stage_labels = list(STAGE_OPTIONS)
+    else:
+        from defense.scheduler.models import PitEventGradingConfig
+        configured_stage_labels = list(
+            PitEventGradingConfig.objects.filter(semester=team.semester)
+            .order_by('event_name')
+            .values_list('event_name', flat=True)
+        )
     selected = selected_stage or current_stage_for_team(team)
     stages = [stage_payload(team, stage) for stage in configured_stage_labels]
     if configured_stage_labels and selected not in configured_stage_labels:
@@ -324,9 +431,9 @@ def counts_payload(teams):
 @transaction.atomic
 def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None):
     deliverable_id = (deliverable_id or '').strip()
-    if not team.is_capstone:
-        raise PermissionError('Only Capstone teams can submit Capstone deliverables.')
-    definition = definition_for(stage_label, deliverable_id)
+    if not team.is_capstone and not team.is_pit:
+        raise PermissionError('Only Capstone or PIT teams can submit deliverables.')
+    definition = definition_for(team, stage_label, deliverable_id)
     if definition is None:
         raise ValueError('Deliverable does not exist for this stage.')
     if definition['type'] == DeliverableSubmission.TYPE_VAULT:
@@ -382,9 +489,13 @@ def remove_submission(team, stage_label, deliverable_id):
     if hasattr(team, '_prefetched_objects_cache'):
         team._prefetched_objects_cache.pop('deliverable_submissions', None)
     if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
-        stage = defense_stage_for_label(stage_label)
-        if stage is not None:
-            mark_stage_locked(team, stage)
+        if team.is_capstone:
+            stage = defense_stage_for_label(stage_label)
+            if stage is not None:
+                mark_stage_locked(team, stage)
+            else:
+                team.ready_for_stage = None
+                team.save(update_fields=['ready_for_stage', 'updated_at'])
         else:
             team.ready_for_stage = None
             team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -393,15 +504,18 @@ def remove_submission(team, stage_label, deliverable_id):
 
 @transaction.atomic
 def endorse_team(team, stage_label):
-    if not stage_deliverables_configured(stage_label):
+    if not stage_deliverables_configured(team, stage_label):
         raise ValueError(
-            'No deliverables configured for this stage. Add them in Defense Stages before endorsement.'
+            'No deliverables configured for this stage. Add them in Defense Stages or PIT configs before endorsement.'
         )
     if not required_complete(team, stage_label):
         raise ValueError('All required pre-defense deliverables must be uploaded before endorsement.')
-    stage = defense_stage_for_label(stage_label)
-    if stage is None:
-        raise ValueError('Defense stage does not exist.')
-    mark_stage_ready(team, stage)
+    if team.is_capstone:
+        stage = defense_stage_for_label(stage_label)
+        if stage is None:
+            raise ValueError('Defense stage does not exist.')
+        mark_stage_ready(team, stage)
+    else:
+        team.ready_for_stage = stage_label
+        team.save(update_fields=['ready_for_stage', 'updated_at'])
     return team
-

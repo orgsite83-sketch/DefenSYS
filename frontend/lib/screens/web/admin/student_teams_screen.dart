@@ -89,6 +89,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Timer? _rowPreviewTimer;
   String? _bulkImportSessionBaseline;
   String? _bulkImportPersistedSnapshot;
+  String? _templateWarning;
+  List<String> _csvColumns = [];
+  String? _section;
+  String? _systemName;
+  String? _projectManager;
 
   bool get _isBulkImportVisible => _showBulkImport == true;
   String get _selectedBulkAdviserFilter => _bulkAdviserFilter ?? 'all';
@@ -937,53 +942,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return;
     }
 
-    final yearLevel = await showDialog<String>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        surfaceTintColor: Colors.transparent,
-        title: const Text('Download sample team CSV'),
-        content: SizedBox(
-          width: 360,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const Text(
-                'Each file has one team with four members for that year level. '
-                'Import the matching student batch from User Management first.',
-                style: TextStyle(fontSize: 13.5, height: 1.45),
-              ),
-              const SizedBox(height: 16),
-              for (final year in teamSampleYearLevels)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 6),
-                  child: OutlinedButton(
-                    onPressed: () => Navigator.of(dialogContext).pop(year),
-                    child: Text(year),
-                  ),
-                ),
-            ],
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
-          ),
-        ],
-      ),
-    );
-
-    if (yearLevel == null || !mounted) {
-      return;
-    }
-
     await downloadTextFile(
-      filename: sampleTeamCsvFilenameForYear(yearLevel),
-      content: sampleTeamCsvForYear(
-        yearLevel,
-        isCapstoneAdmin: _isCapstoneAdmin,
-      ),
+      filename: 'defensys-official-capstone-template.csv',
+      content: 'Team Name,Capstone Project,Adviser,Team Members\n'
+          'TechVision,Eventify,RAY AN J. QUIÑON,DOMINGUEZ, Noel R.\n'
+          ',,,DAGO-OC, Evan John S.\n'
+          ',,,PINGKIAN, El Jane\n'
+          ',,,DIU, Sciemon Jed\n'
+          'Techpro,Campus Tutoring to FMCP,RAY AN J. QUIÑON,CABANTAC, John Mike B.\n',
     );
   }
 
@@ -1091,6 +1057,11 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       _parsedBulkRows = [];
       _bulkCsv = '';
       _bulkPreview = null;
+      _templateWarning = null;
+      _csvColumns = [];
+      _section = null;
+      _systemName = null;
+      _projectManager = null;
     });
   }
 
@@ -1108,6 +1079,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   void _openBulkImport({bool resumeDraft = false}) {
     _bulkImportSessionBaseline = null;
     _bulkImportPersistedSnapshot = null;
+    setState(() {
+      _templateWarning = null;
+      _csvColumns = [];
+    });
     if (resumeDraft && _savedDraft != null) {
       setState(() {
         _showBulkImport = true;
@@ -1117,9 +1092,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         _bulkAdviserFilter = _savedDraft!.adviserFilter;
         _bulkPreview = _savedDraft!.preview;
         _bulkCsv = rowsToTeamCsv(
-        _parsedBulkRows,
-        isCapstoneAdmin: _isCapstoneAdmin,
-      );
+          _parsedBulkRows,
+          isCapstoneAdmin: _isCapstoneAdmin,
+        );
+        _csvColumns = bulkImportHeaderFor(isCapstoneAdmin: _isCapstoneAdmin).split(',');
       });
       _captureBulkImportBaseline(persisted: true);
       _refreshBulkPreview();
@@ -1130,11 +1106,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     _captureBulkImportBaseline();
   }
 
-  void _applyParsedRows(List<Map<String, dynamic>> rows) {
-    final normalized = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+  void _applyParsedRows(ParsedBulkCsvResult result) {
+    final normalized = result.rows.map((row) => Map<String, dynamic>.from(row)).toList();
     _deriveLevelsOnRows(normalized);
     setState(() {
       _parsedBulkRows = normalized;
+      _section = result.section;
+      _systemName = result.systemName;
+      _projectManager = result.projectManager;
       _bulkCsv = rowsToTeamCsv(
         _parsedBulkRows,
         isCapstoneAdmin: _isCapstoneAdmin,
@@ -1233,36 +1212,87 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _teamCsvFormatCard() {
-    final columns = _isCapstoneAdmin
-        ? const [
-            'team_name',
-            'project_title',
-            'year_level',
-            'member_ids',
-            'leader_id',
-            'adviser_id',
-          ]
-        : const [
-            'team_name',
-            'project_title',
-            'member_ids',
-            'leader_id',
-          ];
-    final values = _isCapstoneAdmin
-        ? const [
-            'Team VaultSync',
-            'Cloud File Sync',
-            '3rd Year',
-            'Juan Dela Cruz|Maria Santos',
-            'Juan Dela Cruz',
-            'Ada Lovelace',
-          ]
-        : const [
-            'Team CodeLearners',
-            'Smart Campus Navigator',
-            'Carlos Reyes|Maria Santos',
-            'Carlos Reyes',
-          ];
+    if (_isCapstoneAdmin) {
+      final columns = const [
+        'Team Name',
+        'Capstone Project',
+        'Adviser',
+        'Team Members',
+      ];
+      final rows = const [
+        ['TechVision', 'Eventify', 'RAY AN J. QUIÑON', 'DOMINGUEZ, Noel R.'],
+        ['', '', '', 'DAGO-OC, Evan John S.'],
+        ['', '', '', 'PINGKIAN, El Jane'],
+        ['', '', '', 'DIU, Sciemon Jed'],
+        ['Techpro', 'Campus Tutoring to FMCP', 'RAY AN J. QUIÑON', 'CABANTAC, John Mike B.'],
+      ];
+
+      return DefensysCard(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 20, 24, 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Official Capstone CSV Format',
+                    style: TextStyle(
+                      color: _ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(height: 4),
+                  Text(
+                    'Each team can span multiple rows. The first member listed is set as the team leader.',
+                    style: TextStyle(
+                      color: Color(0xFF536079),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Container(height: 1, color: _line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 20, 24, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _bulkSampleMultiRowTable(columns, rows),
+                  const SizedBox(height: 14),
+                  _infoBanner(
+                    'Official format: Team Members must use full names (First Last or Last, First). The adviser and year level will be resolved from student details. Standard DefenSYS format (one-row-per-team with pipe-separated member names) is also accepted automatically.',
+                  ),
+                  const SizedBox(height: 16),
+                  _secondaryButton(
+                    icon: Icons.file_download_rounded,
+                    label: 'Download Sample Template',
+                    onTap: _downloadCsvTemplate,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final columns = const [
+      'team_name',
+      'project_title',
+      'member_ids',
+      'leader_id',
+    ];
+    final values = const [
+      'Team CodeLearners',
+      'Smart Campus Navigator',
+      'Carlos Reyes|Maria Santos',
+      'Carlos Reyes',
+    ];
 
     return DefensysCard(
       child: Column(
@@ -1302,9 +1332,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 _bulkSampleTable(columns, values),
                 const SizedBox(height: 14),
                 _infoBanner(
-                  _isCapstoneAdmin
-                      ? 'Use full names (First Last) for members, leader, and adviser. Pipe-separate members. Capitalization is ignored; spelling must match User Management.'
-                      : 'Use full names (First Last) for members and leader. Program is set to ${_pitLeadYear ?? "your year"} PIT automatically. Pipe-separate members.',
+                  'Use full names (First Last) for members and leader. Program is set to ${_pitLeadYear ?? "your year"} PIT automatically. Pipe-separate members.',
                 ),
                 const SizedBox(height: 16),
                 _secondaryButton(
@@ -1374,6 +1402,69 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                   .toList(),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _bulkSampleMultiRowTable(List<String> columns, List<List<String>> rows) {
+    return Container(
+      decoration: BoxDecoration(
+        border: Border.all(color: const Color(0xFFDDE2EA)),
+      ),
+      child: Column(
+        children: [
+          Container(
+            height: 38,
+            color: const Color(0xFFF8FAFC),
+            child: Row(
+              children: columns
+                  .map(
+                    (column) => Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          column,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+          ),
+          for (final row in rows)
+            Container(
+              height: 36,
+              decoration: const BoxDecoration(
+                border: Border(top: BorderSide(color: Color(0xFFE5E7EB))),
+              ),
+              alignment: Alignment.centerLeft,
+              child: Row(
+                children: row
+                    .map(
+                      (value) => Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          child: Text(
+                            value,
+                            style: const TextStyle(
+                              color: Color(0xFF536079),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ),
+                    )
+                    .toList(),
+              ),
+            ),
         ],
       ),
     );
@@ -1484,8 +1575,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 _fieldLabel('CSV FILE'),
                 const SizedBox(height: 8),
                 _bulkUploadDropZone(state),
-                if (_parsedBulkRows.isNotEmpty) ...[
+                if (_templateWarning != null) ...[
+                  const SizedBox(height: 12),
+                  _notice(_templateWarning!, warning: true),
+                ],
+                if (_parsedBulkRows.isNotEmpty && _templateWarning == null) ...[
                   const SizedBox(height: 20),
+                  _unifiedSectionMetadataCard(),
                   _teamBulkReviewSection(state),
                 ],
                 const SizedBox(height: 22),
@@ -1496,12 +1592,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                       label: state.isSaving
                           ? 'Importing...'
                           : 'Import ready teams',
-                      onTap: state.isSaving || _parsedBulkRows.isEmpty
+                      onTap: state.isSaving || _parsedBulkRows.isEmpty || _templateWarning != null
                           ? null
                           : _importBulkTeams,
                     ),
                     const SizedBox(width: 12),
-                    if (_parsedBulkRows.isNotEmpty)
+                    if (_parsedBulkRows.isNotEmpty && _templateWarning == null)
                       _secondaryButton(
                         icon: Icons.file_download_rounded,
                         label: 'Export CSV',
@@ -1819,17 +1915,65 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         return;
       }
 
-      final rows = parseTeamBulkCsvWithContext(
+      final lines = csv
+          .split(RegExp(r'\r?\n'))
+          .map((line) => line.trim())
+          .where((line) => line.isNotEmpty)
+          .toList();
+      List<String> headers = [];
+      if (lines.isNotEmpty) {
+        headers = lines.first
+            .split(',')
+            .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
+            .toList();
+
+        String? warning;
+        final isClientTemplate = headers.contains('team name') && headers.contains('team members');
+        final recognizedHeaders = {
+          'team_name',
+          'project_title',
+          'level',
+          'year_level',
+          'member_ids',
+          'leader_id',
+          'adviser_id',
+          'team name',
+          'capstone project',
+          'adviser',
+          'team members',
+        };
+        final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
+
+        if (unrecognized.isNotEmpty) {
+          warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
+        } else if (!_isCapstoneAdmin) {
+          if (headers.contains('adviser_id') || headers.contains('year_level')) {
+            warning = 'Wrong template? PIT import templates should not contain "adviser_id" or "year_level" columns. These will be ignored or cleared.';
+          }
+        } else {
+          if (!isClientTemplate) {
+            if (!headers.contains('adviser_id') || !headers.contains('year_level')) {
+              warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_id" columns (or "Team Name" and "Team Members" for client format).';
+            }
+          }
+        }
+        setState(() {
+          _templateWarning = warning;
+          _csvColumns = headers;
+        });
+      }
+
+      final result = parseTeamBulkCsvWithContext(
         csv,
         isCapstoneAdmin: _isCapstoneAdmin,
         pitLeadYear: _pitLeadYear,
       );
-      if (rows.isEmpty) {
+      if (result.rows.isEmpty) {
         _snack('Selected file is not a valid DefenSYS team CSV template.');
         return;
       }
 
-      _applyParsedRows(rows);
+      _applyParsedRows(result);
     } catch (e) {
       _snack('Could not read CSV file: $e');
     }
@@ -1837,18 +1981,24 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   Future<void> _refreshBulkPreview() async {
     if (_parsedBulkRows.isEmpty) {
-      final rows = parseTeamBulkCsvWithContext(
+      final result = parseTeamBulkCsvWithContext(
         _csvDraft,
         isCapstoneAdmin: _isCapstoneAdmin,
         pitLeadYear: _pitLeadYear,
       );
-      if (rows.isEmpty) {
+      if (result.rows.isEmpty) {
         setState(() => _bulkPreview = null);
         return;
       }
-      final normalized = rows.map((row) => Map<String, dynamic>.from(row)).toList();
+      final normalized = result.rows.map((row) => Map<String, dynamic>.from(row)).toList();
       _deriveLevelsOnRows(normalized);
-      setState(() => _parsedBulkRows = normalized);
+      setState(() {
+        _parsedBulkRows = normalized;
+        _csvColumns = result.csvColumns;
+        _section = result.section;
+        _systemName = result.systemName;
+        _projectManager = result.projectManager;
+      });
     }
 
     _deriveLevelsOnRows(_parsedBulkRows);
@@ -1861,6 +2011,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final preview = await ref.read(studentTeamsProvider.notifier).bulkImportPreview(
       _parsedBulkRows,
       adviserFilter: _selectedBulkAdviserFilter,
+      csvColumns: _csvColumns.isNotEmpty ? _csvColumns : null,
+      section: _section,
+      systemName: _systemName,
+      projectManager: _projectManager,
     );
     if (!mounted) return;
     setState(() => _bulkPreview = preview);
@@ -1912,6 +2066,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final result = await ref.read(studentTeamsProvider.notifier).bulkImport(
       rows,
       adviserFilter: _selectedBulkAdviserFilter,
+      csvColumns: _csvColumns.isNotEmpty ? _csvColumns : null,
+      section: _section,
+      systemName: _systemName,
+      projectManager: _projectManager,
     );
 
     if (!mounted || result == null) {
@@ -2290,7 +2448,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         csv,
         isCapstoneAdmin: _isCapstoneAdmin,
         pitLeadYear: _pitLeadYear,
-      );
+      ).rows;
 
   String _projectTitle(Map<String, dynamic> team) {
     final title = team['project_title']?.toString();
@@ -2348,6 +2506,62 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return value.toInt();
     }
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  Widget _unifiedSectionMetadataCard() {
+    if (_section == null || _section!.isEmpty) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.hub_rounded, color: Color(0xFF16A34A), size: 20),
+              const SizedBox(width: 8),
+              Text(
+                'Unified Section Integration: $_section',
+                style: const TextStyle(
+                  color: Color(0xFF14532D),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            children: [
+              const Text('System Name: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF14532D))),
+              Text(_systemName ?? 'Not specified', style: const TextStyle(fontSize: 13, color: Color(0xFF166534))),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Text('Project Manager: ', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Color(0xFF14532D))),
+              Text(_projectManager ?? 'Not specified', style: const TextStyle(fontSize: 13, color: Color(0xFF166534))),
+              const SizedBox(width: 6),
+              if (_bulkPreview != null && _bulkPreview!['section_assignment'] != null) ...[
+                if (_bulkPreview!['section_assignment']['project_manager_valid'] == true)
+                  const Icon(Icons.check_circle_outline_rounded, color: Colors.green, size: 15)
+                else if (_bulkPreview!['section_assignment']['project_manager_error'] != null)
+                  Tooltip(
+                    message: _bulkPreview!['section_assignment']['project_manager_error'],
+                    child: const Icon(Icons.error_outline_rounded, color: Colors.red, size: 15),
+                  )
+              ]
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   void _snack(String message) {

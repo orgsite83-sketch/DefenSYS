@@ -24,6 +24,7 @@ from .bulk_import import (
     build_team_payload_from_row,
     preview_bulk_teams,
     prepare_bulk_row,
+    resolve_user_by_full_name,
     validate_bulk_team_row,
 )
 from .team_levels import levels_for_user, user_is_admin, user_is_pit_lead_only
@@ -34,13 +35,14 @@ from .term_scope import (
     pit_roster_student_ids,
     term_scope_payload,
 )
-from .models import StudentTeam, TeamAdviserAssignment, TeamMembership
+from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, SectionAssignment
 from .serializers import (
     AdviserOptionSerializer,
     BulkTeamRowSerializer,
     StudentTeamSerializer,
     StudentTeamWriteSerializer,
     TeamAdviserAssignmentSerializer,
+    SectionAssignmentSerializer,
 )
 
 
@@ -383,9 +385,11 @@ def _normalize_adviser_filter(raw):
     return ADVISER_FILTER_ALL
 
 
-def _reject_capstone_bulk_import_if_closed(user):
+def _reject_capstone_bulk_import_if_closed(user, *, section=''):
     from .team_levels import user_is_admin
 
+    if (section or '').strip():
+        return None
     if not user_is_admin(user):
         return None
     active = active_semester()
@@ -400,7 +404,8 @@ class BulkImportTeamsPreviewView(APIView):
     permission_classes = [CanManageTeams]
 
     def post(self, request):
-        blocked = _reject_capstone_bulk_import_if_closed(request.user)
+        section = request.data.get('section', '').strip()
+        blocked = _reject_capstone_bulk_import_if_closed(request.user, section=section)
         if blocked is not None:
             return blocked
 
@@ -409,16 +414,40 @@ class BulkImportTeamsPreviewView(APIView):
             return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
+        csv_columns = request.data.get('csv_columns')
+        if csv_columns is not None and not isinstance(csv_columns, list):
+            csv_columns = None
         preview_rows, summary = preview_bulk_teams(
             rows,
             adviser_filter=adviser_filter,
             user=request.user,
+            csv_columns=csv_columns,
+            section_import=bool(section),
+            import_section=section,
         )
+
+        system_name = request.data.get('system_name', '').strip()
+        pm_name = request.data.get('project_manager', '').strip()
+        section_assignment = None
+
+        if section:
+            pm_user = None
+            pm_error = None
+            if pm_name:
+                pm_user, pm_error = resolve_user_by_full_name(pm_name, role='student', field_label='Project Manager')
+            section_assignment = {
+                'section': section,
+                'system_name': system_name,
+                'project_manager_name': pm_name,
+                'project_manager_valid': pm_user is not None if pm_name else True,
+                'project_manager_error': pm_error,
+            }
 
         return Response({
             'rows': preview_rows,
             'summary': summary,
             'adviser_filter': adviser_filter,
+            'section_assignment': section_assignment,
         })
 
 
@@ -426,7 +455,8 @@ class BulkImportTeamsView(APIView):
     permission_classes = [CanManageTeams]
 
     def post(self, request):
-        blocked = _reject_capstone_bulk_import_if_closed(request.user)
+        section = request.data.get('section', '').strip()
+        blocked = _reject_capstone_bulk_import_if_closed(request.user, section=section)
         if blocked is not None:
             return blocked
 
@@ -434,7 +464,35 @@ class BulkImportTeamsView(APIView):
         if not isinstance(rows, list):
             return Response({'detail': 'teams must be a list.'}, status=status.HTTP_400_BAD_REQUEST)
 
+        system_name = request.data.get('system_name', '').strip()
+        pm_name = request.data.get('project_manager', '').strip()
+
+        if section:
+            pm_user = None
+            if pm_name:
+                pm_user, pm_error = resolve_user_by_full_name(pm_name, role='student', field_label='Project Manager')
+                if pm_error:
+                    return Response({'detail': pm_error}, status=status.HTTP_400_BAD_REQUEST)
+            
+            active = active_semester()
+            if not active:
+                return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+            
+            year_level = (getattr(request.user, 'pit_lead_year', None) or '2nd Year').strip() or '2nd Year'
+            SectionAssignment.objects.update_or_create(
+                section=section,
+                semester=active,
+                defaults={
+                    'system_name': system_name,
+                    'project_manager': pm_user,
+                    'year_level': year_level,
+                }
+            )
+
         adviser_filter = _normalize_adviser_filter(request.data.get('adviser_filter'))
+        csv_columns = request.data.get('csv_columns')
+        if csv_columns is not None and not isinstance(csv_columns, list):
+            csv_columns = None
         created = []
         skipped = []
         errors = []
@@ -442,7 +500,14 @@ class BulkImportTeamsView(APIView):
 
         for index, row in enumerate(rows, start=1):
             team_name = (row.get('team_name') or '').strip()
-            prepared, prep_issues = prepare_bulk_row(row, request.user)
+            prepared, prep_issues = prepare_bulk_row(
+                row,
+                request.user,
+                check_template=True,
+                csv_columns=csv_columns,
+                section_import=bool(section),
+                import_section=section,
+            )
             if prep_issues:
                 errors.append({
                     'row': index,
@@ -454,7 +519,11 @@ class BulkImportTeamsView(APIView):
 
             row_serializer = BulkTeamRowSerializer(
                 data=prepared,
-                context={'user': request.user},
+                context={
+                    'user': request.user,
+                    'section_import': bool(section),
+                    'import_section': section,
+                },
             )
             if not row_serializer.is_valid():
                 errors.append({
@@ -469,6 +538,9 @@ class BulkImportTeamsView(APIView):
                 row_serializer.validated_data,
                 adviser_filter=adviser_filter,
                 user=request.user,
+                csv_columns=csv_columns,
+                section_import=bool(section),
+                import_section=section,
             )
             team_name = result['team_name']
             if not result['ready']:
@@ -491,7 +563,12 @@ class BulkImportTeamsView(APIView):
             payload = build_team_payload_from_row(result, user=request.user)
             serializer = StudentTeamWriteSerializer(
                 data=payload,
-                context={'assigned_by': request.user, 'user': request.user},
+                context={
+                    'assigned_by': request.user,
+                    'user': request.user,
+                    'section_import': bool(section),
+                    'import_section': section,
+                },
             )
             if not serializer.is_valid():
                 errors.append({
@@ -516,3 +593,81 @@ class BulkImportTeamsView(APIView):
             'counts': counts_payload(),
             'adviser_filter': adviser_filter,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+
+
+class SectionAssignmentListCreateView(APIView):
+    def get_permissions(self):
+        if self.request.method == 'GET':
+            return [IsAuthenticated()]
+        return [CanManageTeams()]
+
+    def get(self, request):
+        active = active_semester()
+        if not active:
+            return Response([])
+        queryset = SectionAssignment.objects.filter(semester=active)
+        serializer = SectionAssignmentSerializer(queryset, many=True)
+        return Response(serializer.data)
+
+    def post(self, request):
+        active = active_semester()
+        if not active:
+            return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        section = request.data.get('section', '').strip()
+        year_level = request.data.get('year_level', '').strip()
+        system_name = request.data.get('system_name', '').strip()
+        pm_id = request.data.get('project_manager_id')
+
+        if not section:
+            return Response({'section': 'Section is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not year_level:
+            return Response({'year_level': 'Year level is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        pm = None
+        if pm_id:
+            pm = get_object_or_404(User, pk=pm_id, role='student')
+
+        assignment, created = SectionAssignment.objects.update_or_create(
+            section=section,
+            semester=active,
+            defaults={
+                'year_level': year_level,
+                'system_name': system_name,
+                'project_manager': pm,
+            }
+        )
+        return Response(SectionAssignmentSerializer(assignment).data, status=status.HTTP_201_CREATED)
+
+
+class SectionAssignmentDetailView(APIView):
+    permission_classes = [CanManageTeams]
+
+    def get_object(self, pk):
+        return get_object_or_404(SectionAssignment, pk=pk)
+
+    def get(self, request, pk):
+        assignment = self.get_object(pk)
+        return Response(SectionAssignmentSerializer(assignment).data)
+
+    def patch(self, request, pk):
+        assignment = self.get_object(pk)
+        data = request.data
+        if 'year_level' in data:
+            assignment.year_level = data['year_level']
+        if 'system_name' in data:
+            assignment.system_name = data['system_name']
+        if 'project_manager_id' in data:
+            pm_id = data['project_manager_id']
+            if pm_id:
+                assignment.project_manager = get_object_or_404(User, pk=pm_id, role='student')
+            else:
+                assignment.project_manager = None
+        assignment.save()
+        return Response(SectionAssignmentSerializer(assignment).data)
+
+    def delete(self, request, pk):
+        assignment = self.get_object(pk)
+        assignment.delete()
+        return Response(status=status.HTTP_204_NO_CONTENT)
+

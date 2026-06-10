@@ -602,6 +602,8 @@ class PitLeadOfficialClassListImportView(APIView):
         records_created = 0
         records_updated = 0
         errors = []
+        warnings = []
+        seen_ids = {}
 
         with transaction.atomic():
             for index, row in enumerate(rows, start=1):
@@ -612,11 +614,23 @@ class PitLeadOfficialClassListImportView(APIView):
 
                 data = serializer.validated_data
                 username = _clean_spaces(data['id_number'])
+
+                if username in seen_ids:
+                    warnings.append(
+                        f"Student ID '{username}' is duplicated in the class list (Row {index} and Row {seen_ids[username]})."
+                    )
+                else:
+                    seen_ids[username] = index
+
                 first_name = _clean_spaces(data.get('first_name'))
                 last_name = _clean_spaces(data.get('last_name'))
                 if not (first_name or last_name):
                     first_name, last_name = _split_official_full_name(data.get('full_name'))
                 row_section = _clean_spaces(data.get('section') or section)
+                if data.get('section') and row_section != section:
+                    warnings.append(
+                        f"Row {index} ('{username}'): section '{row_section}' differs from metadata section '{section}'."
+                    )
                 row_year = _normalize_year_level(data.get('year_level') or pit_year)
 
                 if row_year != pit_year:
@@ -676,7 +690,6 @@ class PitLeadOfficialClassListImportView(APIView):
                 else:
                     records_updated += 1
 
-        warnings = []
         instructor_assignment = None
         instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
             faculty=faculty,

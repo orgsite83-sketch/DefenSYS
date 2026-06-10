@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../navigation/admin_route_paths.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../services/academic_period_provider.dart';
+import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -753,6 +754,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     // Fetch periods for grade composition weights
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
+    // Fetch capstone published rubrics
+    await ref.read(rubricEngineProvider.notifier).fetchRubrics(
+          scope: 'capstone',
+          status: 'published',
+        );
 
     final semesters = <Map<String, dynamic>>[];
     for (final year in ref.read(academicPeriodProvider).schoolYears) {
@@ -779,6 +785,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final adviserCtrl = TextEditingController(text: '30');
     final peerCtrl = TextEditingController(text: '20');
     var isActive = stage?['is_active'] != false;
+
+    int? panelRubricId;
+    int? adviserRubricId;
+    int? peerRubricId;
 
     final activePeriod = ref.read(academicPeriodProvider).activeSemester;
     int? semesterId = activePeriod != null ? _asInt(activePeriod['id']) : null;
@@ -808,6 +818,37 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               final total = (int.tryParse(panelCtrl.text.trim()) ?? 0) +
                   (int.tryParse(adviserCtrl.text.trim()) ?? 0) +
                   (int.tryParse(peerCtrl.text.trim()) ?? 0);
+
+              List<Map<String, dynamic>> getRubricOptions(String evaluationType) {
+                final rubrics = ref.watch(rubricEngineProvider).rubrics;
+                return rubrics.where((r) {
+                  final scopeMatch = r['scope'] == 'capstone';
+                  final semMatch = _asInt(r['semester_id']) == semesterId;
+                  final evalMatch = r['evaluation_type'] == evaluationType;
+                  final publishedMatch = r['status'] == 'published';
+                  return scopeMatch && semMatch && evalMatch && publishedMatch;
+                }).toList();
+              }
+
+              List<DropdownMenuItem<int>> buildRubricDropdownItems(String evaluationType) {
+                final options = getRubricOptions(evaluationType);
+                final items = options.map((r) {
+                  return DropdownMenuItem<int>(
+                    value: _asInt(r['id']),
+                    child: Text(r['name']?.toString() ?? ''),
+                  );
+                }).toList();
+
+                items.insert(
+                  0,
+                  const DropdownMenuItem<int>(
+                    value: null,
+                    child: Text('None (No Rubric)'),
+                  ),
+                );
+
+                return items;
+              }
 
               return AlertDialog(
                 title: Text(editing ? 'Edit Defense Stage' : 'Add Defense Stage'),
@@ -971,6 +1012,51 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               textStyle: const TextStyle(
                                   fontSize: 12, fontWeight: FontWeight.w600),
                             ),
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<int>(
+                            initialValue: panelRubricId,
+                            decoration: const InputDecoration(
+                              labelText: 'Panel Rubric',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            items: buildRubricDropdownItems('panel'),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                panelRubricId = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<int>(
+                            initialValue: adviserRubricId,
+                            decoration: const InputDecoration(
+                              labelText: 'Adviser Rubric',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            items: buildRubricDropdownItems('adviser'),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                adviserRubricId = value;
+                              });
+                            },
+                          ),
+                          const SizedBox(height: 14),
+                          DropdownButtonFormField<int>(
+                            initialValue: peerRubricId,
+                            decoration: const InputDecoration(
+                              labelText: 'Peer Rubric',
+                              isDense: true,
+                              border: OutlineInputBorder(),
+                            ),
+                            items: buildRubricDropdownItems('peer'),
+                            onChanged: (value) {
+                              setDialogState(() {
+                                peerRubricId = value;
+                              });
+                            },
                           ),
                         ],
                         const SizedBox(height: 20),
@@ -1151,6 +1237,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             'panel_weight': int.tryParse(panelCtrl.text.trim()) ?? 50,
             'adviser_weight': int.tryParse(adviserCtrl.text.trim()) ?? 30,
             'peer_weight': int.tryParse(peerCtrl.text.trim()) ?? 20,
+            'panel_rubric_id': panelRubricId,
+            'adviser_rubric_id': adviserRubricId,
+            'peer_rubric_id': peerRubricId,
           },
         );
       }

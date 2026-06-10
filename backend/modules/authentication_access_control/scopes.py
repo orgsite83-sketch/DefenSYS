@@ -77,6 +77,17 @@ def visible_teams_for(user):
     if getattr(user, 'role', None) == 'faculty':
         return base.filter(Q(adviser=user) | pit_instructor_section_filters(user)).distinct()
     if getattr(user, 'role', None) == 'student':
+        from student_teams.models import SectionAssignment
+        pm_section = SectionAssignment.objects.filter(
+            project_manager=user,
+            semester__is_active=True
+        ).first()
+        if pm_section:
+            return base.filter(
+                Q(leader=user) | 
+                Q(memberships__student=user) | 
+                Q(section=pm_section.section, semester=pm_section.semester)
+            ).distinct()
         return base.filter(Q(leader=user) | Q(memberships__student=user)).distinct()
     return base.none()
 
@@ -130,6 +141,17 @@ def visible_schedules_for(user):
             | Q(team__in=visible_teams_for(user))
         ).distinct()
     if getattr(user, 'role', None) == 'student':
+        from student_teams.models import SectionAssignment
+        pm_section = SectionAssignment.objects.filter(
+            project_manager=user,
+            semester__is_active=True
+        ).first()
+        if pm_section:
+            return base.filter(
+                Q(team__leader=user) | 
+                Q(team__memberships__student=user) |
+                Q(team__section=pm_section.section, semester=pm_section.semester)
+            ).distinct()
         return base.filter(
             Q(team__leader=user) | Q(team__memberships__student=user)
         ).distinct()

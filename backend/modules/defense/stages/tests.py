@@ -210,6 +210,81 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(config.panel_rubric_id, panel_rubric.id)
         self.assertEqual(config.panel_weight, 55)
 
+    def test_grading_config_patch_updates_rubrics(self):
+        panel_rubric = Rubric.objects.create(
+            name='Panel Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            defense_stage=self.stage,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        adviser_rubric = Rubric.objects.create(
+            name='Adviser Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            defense_stage=self.stage,
+            evaluation_type=Rubric.EVAL_ADVISER,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='Peer Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            defense_stage=self.stage,
+            evaluation_type=Rubric.EVAL_PEER,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+
+        response = self.client.patch(
+            f'/api/defense/stages/{self.stage.id}/grading-config/?semester_id={self.semester.id}',
+            {
+                'panel_rubric_id': panel_rubric.id,
+                'adviser_rubric_id': adviser_rubric.id,
+                'peer_rubric_id': peer_rubric.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        config = StageGradingConfig.objects.get(
+            defense_stage=self.stage,
+            semester=self.semester,
+        )
+        self.assertEqual(config.panel_rubric_id, panel_rubric.id)
+        self.assertEqual(config.adviser_rubric_id, adviser_rubric.id)
+        self.assertEqual(config.peer_rubric_id, peer_rubric.id)
+
+    def test_grading_config_patch_reassociates_rubrics(self):
+        other_stage = DefenseStage.objects.create(label='Other Stage', display_order=10)
+        panel_rubric = Rubric.objects.create(
+            name='Other Stage Panel Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            defense_stage=other_stage,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+        )
+
+        response = self.client.patch(
+            f'/api/defense/stages/{self.stage.id}/grading-config/?semester_id={self.semester.id}',
+            {
+                'panel_rubric_id': panel_rubric.id,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        config = StageGradingConfig.objects.get(
+            defense_stage=self.stage,
+            semester=self.semester,
+        )
+        self.assertEqual(config.panel_rubric_id, panel_rubric.id)
+        
+        # Verify the rubric's defense stage was updated in the DB
+        panel_rubric.refresh_from_db()
+        self.assertEqual(panel_rubric.defense_stage_id, self.stage.id)
+
     def test_stage_detail_includes_grading_config(self):
         get_or_create_stage_grading_config(self.stage, self.semester)
 

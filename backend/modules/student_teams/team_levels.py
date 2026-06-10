@@ -217,12 +217,66 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
     return resolved
 
 
-def prepare_bulk_row(row, user, *, member_user_ids=None, leader_user_id=None, semester=None):
+def _normalize_csv_columns(columns):
+    return {
+        (column or '').strip().lower().replace(' ', '_')
+        for column in (columns or [])
+    }
+
+
+def prepare_bulk_row(
+    row,
+    user,
+    *,
+    member_user_ids=None,
+    leader_user_id=None,
+    semester=None,
+    check_template=False,
+    csv_columns=None,
+    section_import=False,
+    import_section='',
+):
     """Normalize CSV row level/year_level for the requesting user."""
+    is_admin = user_is_admin(user)
+    is_pit_lead = user_is_pit_lead_only(user)
+    section_import = bool(section_import)
+
+    if check_template:
+        # Use explicit CSV columns when available; fall back to row keys for backwards compat
+        columns_to_check = set(csv_columns) if csv_columns else set(row.keys())
+        normalized_columns = _normalize_csv_columns(columns_to_check)
+        pit_template = {'team_name', 'project_title', 'member_ids', 'leader_id'}
+        if is_pit_lead or (is_admin and section_import):
+            if normalized_columns & {'adviser_id', 'year_level'}:
+                return None, [
+                    "Wrong Template: PIT import templates should not contain 'adviser_id' or 'year_level' columns."
+                ]
+            if not pit_template.issubset(normalized_columns):
+                return None, [
+                    "Wrong Template: PIT import templates must contain 'team_name', 'project_title', 'member_ids', and 'leader_id' columns."
+                ]
+        elif is_admin:
+            is_client_template = 'team_name' in normalized_columns and (
+                'team_members' in normalized_columns or 'members' in normalized_columns
+            )
+            is_defensys_template = 'adviser_id' in normalized_columns and 'year_level' in normalized_columns
+            if not (is_client_template or is_defensys_template):
+                return None, [
+                    "Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id' columns (or 'Team Name' and 'Team Members' for client format)."
+                ]
+
     data = dict(row)
+    if section_import and is_admin:
+        year = normalize_year_level(data.get('year_level', '')) or '2nd Year'
+        data['year_level'] = year
+        data['level'] = f'{year} PIT'
+        section = ' '.join((import_section or data.get('section') or '').strip().split())
+        if section:
+            data['section'] = section
+        return data, []
     explicit_year = normalize_year_level(data.get('year_level', ''))
 
-    if user_is_admin(user):
+    if is_admin:
         if member_user_ids:
             inferred, issues = infer_year_level_from_members(
                 member_user_ids,

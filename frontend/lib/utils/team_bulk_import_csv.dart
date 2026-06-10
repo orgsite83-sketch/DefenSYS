@@ -50,20 +50,184 @@ String _csvCell(dynamic value) {
   return text;
 }
 
-List<Map<String, dynamic>> parseTeamBulkCsv(String csv) {
-  final lines = csv
+class ParsedBulkCsvResult {
+  final List<Map<String, dynamic>> rows;
+  final List<String> csvColumns;
+  final String? section;
+  final String? systemName;
+  final String? projectManager;
+
+  const ParsedBulkCsvResult({
+    required this.rows,
+    required this.csvColumns,
+    this.section,
+    this.systemName,
+    this.projectManager,
+  });
+}
+
+List<String> _parseCsvLine(String line) {
+  final result = <String>[];
+  var currentCell = StringBuffer();
+  var inQuotes = false;
+  for (var i = 0; i < line.length; i++) {
+    final char = line[i];
+    if (char == '"') {
+      if (inQuotes && i + 1 < line.length && line[i + 1] == '"') {
+        currentCell.write('"');
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char == ',' && !inQuotes) {
+      result.add(currentCell.toString().trim());
+      currentCell.clear();
+    } else {
+      currentCell.write(char);
+    }
+  }
+  result.add(currentCell.toString().trim());
+  return result;
+}
+
+ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
+  final rawLines = csv
       .split(RegExp(r'\r?\n'))
       .map((line) => line.trim())
-      .where((line) => line.isNotEmpty)
       .toList();
-  if (lines.length < 2) {
-    return [];
+  if (rawLines.isEmpty) {
+    return const ParsedBulkCsvResult(rows: [], csvColumns: []);
   }
 
-  final headers = lines.first
-      .split(',')
+  var section = '';
+  var systemName = '';
+  var projectManager = '';
+  var lineIndex = 0;
+
+  while (lineIndex < rawLines.length) {
+    final line = rawLines[lineIndex];
+    if (line.isEmpty) {
+      lineIndex++;
+      continue;
+    }
+    final cols = _parseCsvLine(line);
+    if (cols.isEmpty) {
+      lineIndex++;
+      continue;
+    }
+    final key = cols[0].trim().toLowerCase().replaceFirst('\ufeff', '');
+    if (key == 'section') {
+      section = cols.length > 1 ? cols[1].trim() : '';
+      lineIndex++;
+    } else if (key == 'system name' || key == 'system_name') {
+      systemName = cols.length > 1 ? cols[1].trim() : '';
+      lineIndex++;
+    } else if (key == 'project manager' || key == 'project_manager' || key == 'pm') {
+      projectManager = cols.length > 1 ? cols[1].trim() : '';
+      lineIndex++;
+    } else {
+      break;
+    }
+  }
+
+  final lines = rawLines
+      .skip(lineIndex)
+      .where((line) => line.isNotEmpty)
+      .toList();
+
+  if (lines.isEmpty) {
+    return ParsedBulkCsvResult(
+      rows: const [],
+      csvColumns: const [],
+      section: section.isNotEmpty ? section : null,
+      systemName: systemName.isNotEmpty ? systemName : null,
+      projectManager: projectManager.isNotEmpty ? projectManager : null,
+    );
+  }
+
+  final headers = _parseCsvLine(lines.first)
       .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
       .toList();
+
+  final isClientFormat = (headers.contains('team name') || headers.contains('team_name')) &&
+      (headers.contains('team members') || headers.contains('team_members') || headers.contains('members'));
+
+  if (isClientFormat) {
+    final teamNameIdx = headers.contains('team name') ? headers.indexOf('team name') : headers.indexOf('team_name');
+    
+    var projectIdx = headers.indexOf('capstone project');
+    if (projectIdx == -1) projectIdx = headers.indexOf('module');
+    if (projectIdx == -1) projectIdx = headers.indexOf('project_title');
+    
+    final adviserIdx = headers.indexOf('adviser');
+    
+    var membersIdx = headers.indexOf('team members');
+    if (membersIdx == -1) membersIdx = headers.indexOf('team_members');
+    if (membersIdx == -1) membersIdx = headers.indexOf('members');
+
+    if (teamNameIdx == -1 || membersIdx == -1) {
+      return ParsedBulkCsvResult(
+        rows: const [],
+        csvColumns: headers,
+        section: section.isNotEmpty ? section : null,
+        systemName: systemName.isNotEmpty ? systemName : null,
+        projectManager: projectManager.isNotEmpty ? projectManager : null,
+      );
+    }
+
+    final parsedRows = <Map<String, dynamic>>[];
+    Map<String, dynamic>? currentTeam;
+
+    for (final line in lines.skip(1)) {
+      final columns = _parseCsvLine(line);
+      String read(int idx) => (idx >= 0 && idx < columns.length) ? columns[idx] : '';
+
+      final teamName = read(teamNameIdx);
+      final project = read(projectIdx);
+      final adviser = read(adviserIdx);
+      final member = read(membersIdx);
+
+      if (teamName.isNotEmpty) {
+        if (currentTeam != null && (currentTeam['member_ids'] as List).isNotEmpty) {
+          parsedRows.add(currentTeam);
+        }
+        currentTeam = {
+          'team_name': teamName,
+          'project_title': project.isNotEmpty ? project : teamName,
+          'year_level': '',
+          'member_ids': <String>[if (member.isNotEmpty) member],
+          'leader_id': member,
+          if (adviserIdx >= 0) 'adviser_id': adviser,
+          if (section.isNotEmpty) 'section': section,
+        };
+      } else {
+        if (currentTeam != null && member.isNotEmpty) {
+          (currentTeam['member_ids'] as List<String>).add(member);
+        }
+      }
+    }
+    if (currentTeam != null && (currentTeam['member_ids'] as List).isNotEmpty) {
+      parsedRows.add(currentTeam);
+    }
+    return ParsedBulkCsvResult(
+      rows: parsedRows,
+      csvColumns: headers,
+      section: section.isNotEmpty ? section : null,
+      systemName: systemName.isNotEmpty ? systemName : null,
+      projectManager: projectManager.isNotEmpty ? projectManager : null,
+    );
+  }
+
+  if (lines.length < 2) {
+    return ParsedBulkCsvResult(
+      rows: const [],
+      csvColumns: headers,
+      section: section.isNotEmpty ? section : null,
+      systemName: systemName.isNotEmpty ? systemName : null,
+      projectManager: projectManager.isNotEmpty ? projectManager : null,
+    );
+  }
+
   int index(String name) => headers.indexOf(name);
   final teamNameIndex = index('team_name');
   final projectTitleIndex = index('project_title');
@@ -74,13 +238,19 @@ List<Map<String, dynamic>> parseTeamBulkCsv(String csv) {
   final adviserIdIndex = index('adviser_id');
 
   if ([teamNameIndex, memberIdsIndex, leaderIdIndex].contains(-1)) {
-    return [];
+    return ParsedBulkCsvResult(
+      rows: const [],
+      csvColumns: headers,
+      section: section.isNotEmpty ? section : null,
+      systemName: systemName.isNotEmpty ? systemName : null,
+      projectManager: projectManager.isNotEmpty ? projectManager : null,
+    );
   }
 
-  return lines
+  final rows = lines
       .skip(1)
       .map((line) {
-        final columns = line.split(',').map((cell) => cell.trim()).toList();
+        final columns = _parseCsvLine(line);
         String read(int columnIndex) =>
             columnIndex >= 0 && columnIndex < columns.length
                 ? columns[columnIndex]
@@ -101,10 +271,18 @@ List<Map<String, dynamic>> parseTeamBulkCsv(String csv) {
               .toList(),
           'leader_id': read(leaderIdIndex),
           if (adviserIdIndex >= 0) 'adviser_id': read(adviserIdIndex),
+          if (section.isNotEmpty) 'section': section,
         };
       })
       .where((row) => row['team_name'].toString().isNotEmpty)
       .toList();
+  return ParsedBulkCsvResult(
+    rows: rows,
+    csvColumns: headers,
+    section: section.isNotEmpty ? section : null,
+    systemName: systemName.isNotEmpty ? systemName : null,
+    projectManager: projectManager.isNotEmpty ? projectManager : null,
+  );
 }
 
 String _yearFromLevel(String level) {
@@ -129,23 +307,22 @@ void applyDerivedLevelToRow(
     row['year_level'] = targetYear;
     row['level'] = '$targetYear PIT';
   }
-  row.remove('adviser_id');
 }
 
-List<Map<String, dynamic>> parseTeamBulkCsvWithContext(
+ParsedBulkCsvResult parseTeamBulkCsvWithContext(
   String csv, {
   required bool isCapstoneAdmin,
   String? pitLeadYear,
 }) {
-  final rows = parseTeamBulkCsv(csv);
-  for (final row in rows) {
+  final result = parseTeamBulkCsv(csv);
+  for (final row in result.rows) {
     applyDerivedLevelToRow(
       row,
       isCapstoneAdmin: isCapstoneAdmin,
       pitLeadYear: pitLeadYear,
     );
   }
-  return rows;
+  return result;
 }
 
 const teamSampleYearLevels = [
@@ -180,8 +357,8 @@ String sampleTeamCsvForYear(
   if (isCapstoneAdmin) {
     return source.trim();
   }
-  final rows = parseTeamBulkCsv(source);
-  return rowsToTeamCsv(rows, isCapstoneAdmin: false);
+  final result = parseTeamBulkCsv(source);
+  return rowsToTeamCsv(result.rows, isCapstoneAdmin: false);
 }
 
 String sampleTeamCsvFilenameForYear(String yearLevel) {

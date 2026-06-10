@@ -127,6 +127,43 @@ class TeamMembership(models.Model):
         return f'{self.student} -> {self.team}'
 
 
+class SectionAssignment(models.Model):
+    section = models.CharField(max_length=80)
+    semester = models.ForeignKey(
+        'academic_period_management.Semester',
+        related_name='section_assignments',
+        on_delete=models.CASCADE,
+    )
+    year_level = models.CharField(max_length=20)
+    system_name = models.CharField(max_length=255, blank=True, default='')
+    project_manager = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='managed_sections',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['section', 'year_level']
+        constraints = [
+            models.UniqueConstraint(fields=['section', 'semester'], name='unique_section_per_semester'),
+        ]
+
+    def clean(self):
+        if self.project_manager_id and getattr(self.project_manager, 'role', None) != 'student':
+            raise ValidationError({'project_manager': 'Section project manager must be a student.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.section} ({self.year_level})'
+
+
 class TeamStageProgress(models.Model):
     STATUS_LOCKED = 'locked'
     STATUS_READY = 'ready'

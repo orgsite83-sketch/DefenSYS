@@ -26,7 +26,7 @@ from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_schedules_for
 from user_management.permissions import IsPanelist
 
-from .models import DefenseSchedule, SchedulePanelist
+from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig
 from academic_period_management.models import Semester
 
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
@@ -160,13 +160,6 @@ class PitEventConfigLookupView(APIView):
     permission_classes = [CanManageSchedules]
 
     def get(self, request):
-        event_name = request.query_params.get('event_name', '').strip()
-        if not event_name:
-            return Response(
-                {'detail': 'event_name query parameter is required.'},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         semester_id = request.query_params.get('semester_id')
         if semester_id:
             semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
@@ -178,8 +171,38 @@ class PitEventConfigLookupView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        event_name = request.query_params.get('event_name', '').strip()
+        if not event_name:
+            configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
+            return Response({'configs': [pit_event_config_payload(c) for c in configs]})
+
         config = get_pit_event_config(semester, event_name)
+        if config is None:
+            default_config = {
+                'id': None,
+                'event_name': event_name,
+                'panel_rubric_id': None,
+                'peer_rubric_id': None,
+                'panel_weight': 80,
+                'peer_weight': 20,
+                'is_officially_complete': False,
+                'peer_grading_enabled': False,
+                'vault_file_template': '',
+                'deliverables': [],
+            }
+            return Response({'config': default_config})
         return Response({'config': pit_event_config_payload(config)})
+
+    def delete(self, request):
+        config_id = request.query_params.get('config_id')
+        if not config_id:
+            return Response(
+                {'detail': 'config_id query parameter is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        config = get_object_or_404(PitEventGradingConfig, pk=config_id)
+        config.delete()
+        return Response({'success': True}, status=status.HTTP_200_OK)
 
     def post(self, request):
         event_name = request.data.get('event_name', '').strip()
@@ -213,6 +236,12 @@ class PitEventConfigLookupView(APIView):
             )
 
         vault_file_template = request.data.get('vault_file_template')
+        deliverables = request.data.get('deliverables')
+        if deliverables is not None and not isinstance(deliverables, list):
+            return Response(
+                {'detail': 'deliverables must be a list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         # Retrieve Rubrics
         panel_rubric = get_object_or_404(Rubric, pk=panel_rubric_id)
@@ -227,6 +256,7 @@ class PitEventConfigLookupView(APIView):
                 panel_weight=panel_weight,
                 peer_weight=peer_weight,
                 vault_file_template=vault_file_template,
+                deliverables=deliverables,
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)
         except ValidationError as e:

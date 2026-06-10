@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/academic_period_provider.dart';
 import '../../../services/defense_stages_provider.dart';
+import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -41,6 +42,13 @@ class _DefenseStageEditorScreenState
   List<Map<String, dynamic>> _deliverables = [];
   Map<String, dynamic>? _stage;
   bool _isDirty = false;
+
+  int? _panelRubricId;
+  String? _panelRubricName;
+  int? _adviserRubricId;
+  String? _adviserRubricName;
+  int? _peerRubricId;
+  String? _peerRubricName;
 
   void _markDirty() {
     if (_loading || _isDirty) return;
@@ -108,6 +116,19 @@ class _DefenseStageEditorScreenState
         .read(defenseStagesProvider.notifier)
         .fetchStageDetail(widget.stageId, semesterId: _semesterId);
 
+    if (detail != null) {
+      final semester = detail['active_semester'];
+      if (semester is Map) {
+        _semesterId = _asInt(semester['id']);
+      }
+    }
+
+    // Load Capstone published rubrics
+    await ref.read(rubricEngineProvider.notifier).fetchRubrics(
+          scope: 'capstone',
+          status: 'published',
+        );
+
     if (!mounted) return;
 
     if (detail != null) {
@@ -118,10 +139,6 @@ class _DefenseStageEditorScreenState
       final grading = detail['grading_config'];
       if (grading is Map) {
         _applyWeights(Map<String, dynamic>.from(grading));
-      }
-      final semester = detail['active_semester'];
-      if (semester is Map) {
-        _semesterId = _asInt(semester['id']);
       }
     }
 
@@ -150,6 +167,12 @@ class _DefenseStageEditorScreenState
     _panel.text = grading['panel_weight']?.toString() ?? '50';
     _adviser.text = grading['adviser_weight']?.toString() ?? '30';
     _peer.text = grading['peer_weight']?.toString() ?? '20';
+    _panelRubricId = _asInt(grading['panel_rubric_id']);
+    _panelRubricName = grading['panel_rubric_name']?.toString();
+    _adviserRubricId = _asInt(grading['adviser_rubric_id']);
+    _adviserRubricName = grading['adviser_rubric_name']?.toString();
+    _peerRubricId = _asInt(grading['peer_rubric_id']);
+    _peerRubricName = grading['peer_rubric_name']?.toString();
   }
 
   int? _asInt(dynamic value) {
@@ -215,6 +238,9 @@ class _DefenseStageEditorScreenState
           'panel_weight': int.tryParse(_panel.text.trim()) ?? 0,
           'adviser_weight': int.tryParse(_adviser.text.trim()) ?? 0,
           'peer_weight': int.tryParse(_peer.text.trim()) ?? 0,
+          'panel_rubric_id': _panelRubricId,
+          'adviser_rubric_id': _adviserRubricId,
+          'peer_rubric_id': _peerRubricId,
         });
 
     if (!mounted) return;
@@ -231,6 +257,51 @@ class _DefenseStageEditorScreenState
       _error = ref.read(defenseStagesProvider).error ??
           'Failed to save stage or grade weights.';
     });
+  }
+
+  List<Map<String, dynamic>> _getRubricOptions(String evaluationType) {
+    final rubrics = ref.watch(rubricEngineProvider).rubrics;
+    return rubrics.where((r) {
+      final scopeMatch = r['scope'] == 'capstone';
+      final stageMatch = _asInt(r['defense_stage_id']) == widget.stageId;
+      final semMatch = _asInt(r['semester_id']) == _semesterId;
+      final evalMatch = r['evaluation_type'] == evaluationType;
+      final publishedMatch = r['status'] == 'published';
+      return scopeMatch && stageMatch && semMatch && evalMatch && publishedMatch;
+    }).toList();
+  }
+
+  List<DropdownMenuItem<int>> _buildRubricDropdownItems(
+    String evaluationType,
+    int? currentId,
+    String? currentName,
+  ) {
+    final options = _getRubricOptions(evaluationType);
+    final items = options.map((r) {
+      return DropdownMenuItem<int>(
+        value: _asInt(r['id']),
+        child: Text(r['name']?.toString() ?? ''),
+      );
+    }).toList();
+
+    // If currentId is set but not in options, add a fallback item to avoid Flutter crash
+    if (currentId != null && !options.any((r) => _asInt(r['id']) == currentId)) {
+      items.add(DropdownMenuItem<int>(
+        value: currentId,
+        child: Text(currentName ?? 'Rubric #$currentId'),
+      ));
+    }
+
+    // Always allow unselecting
+    items.insert(
+      0,
+      const DropdownMenuItem<int>(
+        value: null,
+        child: Text('None (No Rubric)'),
+      ),
+    );
+
+    return items;
   }
 
   void _resetWeights() {
@@ -343,8 +414,8 @@ class _DefenseStageEditorScreenState
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Text(
-                          'How Panel, Adviser, and Peer scores combine for this stage. '
-                          'Assign rubrics in Defense Scheduler. Defaults are 50 / 30 / 20.',
+                          'How Panel, Adviser, and Peer scores combine for this stage, '
+                          'and their assigned rubrics. Defaults are 50 / 30 / 20.',
                           style: TextStyle(
                             color: AppColors.textSecondary,
                             fontSize: 13,
@@ -415,7 +486,73 @@ class _DefenseStageEditorScreenState
                             fontSize: 13,
                           ),
                         ),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<int>(
+                          initialValue: _panelRubricId,
+                          decoration: const InputDecoration(
+                            labelText: 'Panel Rubric',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _buildRubricDropdownItems(
+                            'panel',
+                            _panelRubricId,
+                            _panelRubricName,
+                          ),
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _panelRubricId = value;
+                                  });
+                                  _markDirty();
+                                },
+                        ),
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<int>(
+                          initialValue: _adviserRubricId,
+                          decoration: const InputDecoration(
+                            labelText: 'Adviser Rubric',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _buildRubricDropdownItems(
+                            'adviser',
+                            _adviserRubricId,
+                            _adviserRubricName,
+                          ),
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _adviserRubricId = value;
+                                  });
+                                  _markDirty();
+                                },
+                        ),
+                        const SizedBox(height: 14),
+                        DropdownButtonFormField<int>(
+                          initialValue: _peerRubricId,
+                          decoration: const InputDecoration(
+                            labelText: 'Peer Rubric',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          items: _buildRubricDropdownItems(
+                            'peer',
+                            _peerRubricId,
+                            _peerRubricName,
+                          ),
+                          onChanged: _saving
+                              ? null
+                              : (value) {
+                                  setState(() {
+                                    _peerRubricId = value;
+                                  });
+                                  _markDirty();
+                                },
+                        ),
+                        const SizedBox(height: 14),
                         OutlinedButton.icon(
                           onPressed: _resetWeights,
                           icon: const Icon(Icons.restore, size: 16),

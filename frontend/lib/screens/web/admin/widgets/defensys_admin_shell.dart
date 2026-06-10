@@ -326,7 +326,7 @@ class _TopNav extends StatelessWidget {
   }
 }
 
-class _Sidebar extends StatelessWidget {
+class _Sidebar extends StatefulWidget {
   final DefensysAdminSection activeSection;
   final ValueChanged<DefensysAdminSection> onNavigate;
   final VoidCallback onLogout;
@@ -336,6 +336,64 @@ class _Sidebar extends StatelessWidget {
     required this.onNavigate,
     required this.onLogout,
   });
+
+  @override
+  State<_Sidebar> createState() => _SidebarState();
+}
+
+class _SidebarState extends State<_Sidebar> {
+  late bool _isUserManagementOpen;
+  late bool _isSchedulingOpen;
+
+  @override
+  void initState() {
+    super.initState();
+    final inUserMgmt = widget.activeSection == DefensysAdminSection.userManagement ||
+        widget.activeSection == DefensysAdminSection.studentTeams ||
+        widget.activeSection == DefensysAdminSection.studentAcademicRecords;
+    final inSched = widget.activeSection == DefensysAdminSection.scheduling ||
+        widget.activeSection == DefensysAdminSection.defenseBoard ||
+        widget.activeSection == DefensysAdminSection.defenseStages;
+
+    _isUserManagementOpen = inUserMgmt;
+    _isSchedulingOpen = inSched;
+
+    if (inUserMgmt) {
+      _isSchedulingOpen = false;
+    } else if (inSched) {
+      _isUserManagementOpen = false;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_Sidebar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.activeSection != oldWidget.activeSection) {
+      final wasInUserMgmt = oldWidget.activeSection == DefensysAdminSection.userManagement ||
+          oldWidget.activeSection == DefensysAdminSection.studentTeams ||
+          oldWidget.activeSection == DefensysAdminSection.studentAcademicRecords;
+      final nowInUserMgmt = widget.activeSection == DefensysAdminSection.userManagement ||
+          widget.activeSection == DefensysAdminSection.studentTeams ||
+          widget.activeSection == DefensysAdminSection.studentAcademicRecords;
+
+      if (nowInUserMgmt && !wasInUserMgmt) {
+        _isUserManagementOpen = true;
+        _isSchedulingOpen = false;
+      }
+
+      final wasInSched = oldWidget.activeSection == DefensysAdminSection.scheduling ||
+          oldWidget.activeSection == DefensysAdminSection.defenseBoard ||
+          oldWidget.activeSection == DefensysAdminSection.defenseStages;
+      final nowInSched = widget.activeSection == DefensysAdminSection.scheduling ||
+          widget.activeSection == DefensysAdminSection.defenseBoard ||
+          widget.activeSection == DefensysAdminSection.defenseStages;
+
+      if (nowInSched && !wasInSched) {
+        _isSchedulingOpen = true;
+        _isUserManagementOpen = false;
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -367,168 +425,262 @@ class _Sidebar extends StatelessWidget {
           Container(height: 1, color: Colors.white.withValues(alpha: 0.07)),
           Expanded(
             child: ListView(
-              padding: const EdgeInsets.only(top: 20),
+              padding: const EdgeInsets.only(top: 16),
               children: [
+                const _SectionHeader(title: 'Dashboard'),
                 _NavItem(
                   section: DefensysAdminSection.overview,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.show_chart_rounded,
                   label: l10n.navOverview,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.academicPeriods,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.calendar_month_rounded,
                   label: l10n.navAcademicPeriods,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
+                const _SectionHeader(title: 'Management'),
                 _NavItem(
                   section: DefensysAdminSection.userManagement,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.groups_2_rounded,
                   label: l10n.navUserManagement,
-                  trailing: Icons.keyboard_arrow_down_rounded,
-                  onTap: onNavigate,
+                  trailing: _isUserManagementOpen
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  onTap: (_) {
+                    setState(() {
+                      _isUserManagementOpen = !_isUserManagementOpen;
+                      if (_isUserManagementOpen) {
+                        _isSchedulingOpen = false;
+                      }
+                    });
+                  },
                 ),
                 if (_isUserManagementOpen) ...[
                   _SubNavItem(
                     section: DefensysAdminSection.userManagement,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.person_rounded,
                     label: l10n.navUserManagement,
-                    onTap: onNavigate,
+                    onTap: widget.onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.studentTeams,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.groups_rounded,
-                  label: l10n.navStudentTeams,
-                    onTap: onNavigate,
+                    label: l10n.navStudentTeams,
+                    onTap: widget.onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.studentAcademicRecords,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.badge_rounded,
                     label: l10n.navStudentRecords,
-                    onTap: onNavigate,
+                    onTap: widget.onNavigate,
                   ),
                 ],
                 _NavItem(
                   section: DefensysAdminSection.gradeCenter,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.grade_rounded,
                   label: l10n.navGradeCenter,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.rubricEngine,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.checklist_rounded,
                   label: l10n.navRubricEngine,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
+                const _SectionHeader(title: 'Analytics & Audit'),
                 _NavItem(
                   section: DefensysAdminSection.repositoryAudit,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.camera_alt_rounded,
                   label: l10n.navRepositoryAudit,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.curriculumAnalytics,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.manage_search_rounded,
                   label: l10n.navCurriculumAnalytics,
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.auditCompliance,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.verified_user_outlined,
                   label: 'Audit Trail',
-                  onTap: onNavigate,
+                  onTap: widget.onNavigate,
                 ),
+                const _SectionHeader(title: 'Operations'),
                 _NavItem(
                   section: DefensysAdminSection.scheduling,
-                  activeSection: activeSection,
+                  activeSection: widget.activeSection,
                   icon: Icons.event_note_rounded,
                   label: l10n.navScheduling,
-                  trailing: Icons.keyboard_arrow_down_rounded,
-                  onTap: onNavigate,
+                  trailing: _isSchedulingOpen
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  onTap: (_) {
+                    setState(() {
+                      _isSchedulingOpen = !_isSchedulingOpen;
+                      if (_isSchedulingOpen) {
+                        _isUserManagementOpen = false;
+                      }
+                    });
+                  },
                 ),
                 if (_isSchedulingOpen) ...[
                   _SubNavItem(
                     section: DefensysAdminSection.scheduling,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.auto_awesome_rounded,
                     label: l10n.navDefenseScheduler,
-                    onTap: onNavigate,
+                    onTap: widget.onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.defenseBoard,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.view_column_rounded,
                     label: l10n.navDefenseBoard,
-                    onTap: onNavigate,
+                    onTap: widget.onNavigate,
                   ),
                   _SubNavItem(
                     section: DefensysAdminSection.defenseStages,
-                    activeSection: activeSection,
+                    activeSection: widget.activeSection,
                     icon: Icons.layers_rounded,
                     label: l10n.navDefenseStages,
-                    onTap: onNavigate,
+                    onTap: widget.onNavigate,
                   ),
                 ],
               ],
             ),
           ),
           Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onLogout,
-              hoverColor: Colors.white.withValues(alpha: 0.05),
-              child: Container(
-                height: 58,
-                padding: const EdgeInsets.symmetric(horizontal: 20),
-                child: const Row(
-                  children: [
-                    Icon(
-                      Icons.logout_rounded,
-                      color: Color(0xFFD1D5DB),
-                      size: 18,
-                    ),
-                    SizedBox(width: 14),
-                    Text(
-                      'Log Out',
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        color: Color(0xFFD1D5DB),
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
+          _UserProfileCard(onLogout: widget.onLogout),
         ],
       ),
     );
   }
+}
 
-  bool get _isUserManagementOpen =>
-      activeSection == DefensysAdminSection.userManagement ||
-      activeSection == DefensysAdminSection.studentTeams ||
-      activeSection == DefensysAdminSection.studentAcademicRecords;
+class _SectionHeader extends StatelessWidget {
+  final String title;
 
-  bool get _isSchedulingOpen =>
-      activeSection == DefensysAdminSection.scheduling ||
-      activeSection == DefensysAdminSection.defenseBoard ||
-      activeSection == DefensysAdminSection.defenseStages;
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 8),
+      child: Text(
+        title.toUpperCase(),
+        style: TextStyle(
+          color: Colors.white.withValues(alpha: 0.45),
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _UserProfileCard extends StatelessWidget {
+  final VoidCallback onLogout;
+
+  const _UserProfileCard({required this.onLogout});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(12, 12, 12, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: DefensysUi.accentGold.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+              color: Colors.white.withValues(alpha: 0.1),
+            ),
+            child: const Center(
+              child: Icon(
+                Icons.admin_panel_settings_rounded,
+                color: Colors.white,
+                size: 18,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  'Administrator',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                SizedBox(height: 2),
+                Text(
+                  'Academic Portal',
+                  style: TextStyle(
+                    color: Color(0xFF9CA3AF),
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: IconButton(
+              icon: const Icon(
+                Icons.logout_rounded,
+                color: Color(0xFFFCA5A5), // Soft red accent
+                size: 18,
+              ),
+              tooltip: 'Log Out',
+              onPressed: onLogout,
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(6),
+              splashRadius: 20,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _NavItem extends StatelessWidget {
@@ -561,40 +713,53 @@ class _NavItem extends StatelessWidget {
                 activeSection == DefensysAdminSection.defenseBoard ||
                 activeSection == DefensysAdminSection.defenseStages));
     final color = selected ? DefensysUi.accentGold : const Color(0xFFD1D5DB);
+    final containerColor = selected
+        ? Colors.white.withValues(alpha: 0.08)
+        : Colors.transparent;
 
-    return Material(
-      color: selected ? DefensysUi.primaryDark : Colors.transparent,
-      child: InkWell(
-        onTap: () => onTap(section),
-        hoverColor: Colors.white.withValues(alpha: 0.05),
-        child: Container(
-          height: 52,
-          decoration: BoxDecoration(
-            border: selected
-                ? const Border(
-                    left: BorderSide(color: DefensysUi.accentGold, width: 4),
-                  )
-                : null,
-          ),
-          padding: EdgeInsets.only(left: selected ? 23 : 27, right: 24),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 18),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    color: color,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Material(
+          color: containerColor,
+          child: InkWell(
+            onTap: () => onTap(section),
+            hoverColor: Colors.white.withValues(alpha: 0.05),
+            child: Container(
+              height: 46,
+              padding: const EdgeInsets.only(left: 10, right: 14),
+              child: Row(
+                children: [
+                  Container(
+                    width: 3,
+                    height: 16,
+                    decoration: BoxDecoration(
+                      color: selected ? DefensysUi.accentGold : Colors.transparent,
+                      borderRadius: BorderRadius.circular(99),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 8),
+                  Icon(icon, color: color, size: 18),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: DefensysUi.fontFamily,
+                        color: color,
+                        fontSize: 13,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  if (trailing != null) ...[
+                    const SizedBox(width: 8),
+                    Icon(trailing, color: color.withValues(alpha: 0.86), size: 18),
+                  ],
+                ],
               ),
-              if (trailing != null)
-                Icon(trailing, color: color.withValues(alpha: 0.86), size: 20),
-            ],
+            ),
           ),
         ),
       ),
@@ -620,33 +785,39 @@ class _SubNavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final selected = section == activeSection;
-    final color = selected ? DefensysUi.accentGold : Colors.white;
+    final color = selected ? DefensysUi.accentGold : Colors.white.withValues(alpha: 0.7);
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: () => onTap(section),
-        hoverColor: Colors.white.withValues(alpha: 0.04),
-        child: Container(
-          constraints: const BoxConstraints(minHeight: 39),
-          padding: const EdgeInsets.fromLTRB(56, 8, 22, 8),
-          child: Row(
-            children: [
-              Icon(icon, color: color, size: 16),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  label,
-                  style: TextStyle(
-                    fontFamily: DefensysUi.fontFamily,
-                    color: color,
-                    fontSize: 13,
-                    height: 1.25,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: Material(
+          color: selected ? Colors.white.withValues(alpha: 0.04) : Colors.transparent,
+          child: InkWell(
+            onTap: () => onTap(section),
+            hoverColor: Colors.white.withValues(alpha: 0.03),
+            child: Container(
+              height: 38,
+              padding: const EdgeInsets.only(left: 36, right: 14),
+              child: Row(
+                children: [
+                  Icon(icon, color: color, size: 14),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      label,
+                      style: TextStyle(
+                        fontFamily: DefensysUi.fontFamily,
+                        color: color,
+                        fontSize: 12,
+                        height: 1.25,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      ),
+                    ),
                   ),
-                ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       ),
@@ -698,8 +869,10 @@ class _BrandSeal extends StatelessWidget {
       ),
       child: ClipOval(
         child: Image.asset(
-          'assets/logo.png',
-          fit: BoxFit.cover,
+          'assets/logo-login-mark-48.png',
+          fit: BoxFit.contain,
+          filterQuality: FilterQuality.high,
+          isAntiAlias: true,
           errorBuilder: (_, __, ___) => const ColoredBox(
             color: DefensysUi.primaryMaroon,
             child: Icon(

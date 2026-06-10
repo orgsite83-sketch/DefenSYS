@@ -30,6 +30,7 @@ class _DefenseSchedulerScreenState
   final _pitTemplateController = TextEditingController();
 
   final Set<int> _selectedPanelistIds = {};
+  List<Map<String, dynamic>> _pitDeliverables = [];
 
   String _scope = 'capstone';
   int? _stageId;
@@ -51,6 +52,10 @@ class _DefenseSchedulerScreenState
     _durationController.dispose();
     _roomController.dispose();
     _pitTemplateController.dispose();
+    for (final d in _pitDeliverables) {
+      (d['_labelController'] as TextEditingController?)?.dispose();
+      (d['_vaultNoteController'] as TextEditingController?)?.dispose();
+    }
     super.dispose();
   }
 
@@ -622,83 +627,6 @@ class _DefenseSchedulerScreenState
                     },
                   ),
                 ),
-                const SizedBox(height: 14),
-                _labeledField(
-                  'Panel rubric *',
-                  DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(
-                      state,
-                      _rubricId,
-                      'panel',
-                    ),
-                    decoration: _schedulerInputDecoration(),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('Select panel rubric'),
-                      ),
-                      ..._capstoneRubricsForEval(state, 'panel').map(
-                        (rubric) => DropdownMenuItem<int?>(
-                          value: _asInt(rubric['id']),
-                          child: Text(rubric['name']?.toString() ?? ''),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) => setState(() => _rubricId = value),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _labeledField(
-                  'Adviser rubric *',
-                  DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(
-                      state,
-                      _adviserRubricId,
-                      'adviser',
-                    ),
-                    decoration: _schedulerInputDecoration(),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('Select adviser rubric'),
-                      ),
-                      ..._capstoneRubricsForEval(state, 'adviser').map(
-                        (rubric) => DropdownMenuItem<int?>(
-                          value: _asInt(rubric['id']),
-                          child: Text(rubric['name']?.toString() ?? ''),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _adviserRubricId = value),
-                  ),
-                ),
-                const SizedBox(height: 14),
-                _labeledField(
-                  'Peer rubric *',
-                  DropdownButtonFormField<int?>(
-                    initialValue: _validCapstoneRubricId(
-                      state,
-                      _capstonePeerRubricId,
-                      'peer',
-                    ),
-                    decoration: _schedulerInputDecoration(),
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('Select peer rubric'),
-                      ),
-                      ..._capstoneRubricsForEval(state, 'peer').map(
-                        (rubric) => DropdownMenuItem<int?>(
-                          value: _asInt(rubric['id']),
-                          child: Text(rubric['name']?.toString() ?? ''),
-                        ),
-                      ),
-                    ],
-                    onChanged: (value) =>
-                        setState(() => _capstonePeerRubricId = value),
-                  ),
-                ),
               ] else if (_scope == 'pit') ...[
                 Container(
                   width: double.infinity,
@@ -720,141 +648,32 @@ class _DefenseSchedulerScreenState
                         ),
                       ),
                       const SizedBox(height: 14),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: _labeledField(
-                              'Event name *',
-                              TextField(
-                                controller: _eventController,
-                                decoration: _schedulerInputDecoration(
-                                  hintText: 'e.g. 2nd Year PIT Expo',
-                                ),
-                                onChanged: (val) {
-                                  _prefillPitEventConfig();
-                                  setState(() {});
-                                },
-                              ),
-                            ),
+                      _labeledField(
+                        'Event name *',
+                        DropdownButtonFormField<String>(
+                          value: state.pitEvents.any((e) => e['event_name'] == _eventController.text)
+                              ? _eventController.text
+                              : null,
+                          decoration: _schedulerInputDecoration(
+                            hintText: 'Select PIT event',
                           ),
-                          const SizedBox(width: 12),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 28),
-                            child: SizedBox(
-                              width: 44,
-                              height: 44,
-                              child: Tooltip(
-                                message: _eventController.text.trim().isEmpty
-                                    ? 'Enter an Event Name first to configure settings'
-                                    : 'Configure event weights and file template',
-                                child: IconButton(
-                                  icon: const Icon(Icons.tune_rounded),
-                                  color: _eventController.text.trim().isNotEmpty
-                                      ? AppColors.maroon
-                                      : Colors.grey,
-                                  onPressed:
-                                      _eventController.text.trim().isNotEmpty
-                                      ? () => _showPitConfigDialog(state)
-                                      : null,
-                                  style: IconButton.styleFrom(
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(8),
-                                      side: BorderSide(
-                                        color:
-                                            _eventController.text
-                                                .trim()
-                                                .isNotEmpty
-                                            ? AppColors.maroon.withValues(
-                                                alpha: 0.2,
-                                              )
-                                            : Colors.grey.withValues(
-                                                alpha: 0.2,
-                                              ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 14),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _labeledField(
-                              'Panel rubric *',
-                              DropdownButtonFormField<int?>(
-                                initialValue: rubricId,
-                                decoration: _schedulerInputDecoration(),
-                                items: [
-                                  const DropdownMenuItem<int?>(
-                                    value: null,
-                                    child: Text('Select panel rubric'),
-                                  ),
-                                  ...rubricItems.map(
-                                    (rubric) => DropdownMenuItem<int?>(
-                                      value: _asInt(rubric['id']),
-                                      child: Text(
-                                        rubric['name']?.toString() ?? '',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _rubricId = value;
-                                  });
-                                },
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _labeledField(
-                              'Peer rubric *',
-                              DropdownButtonFormField<int?>(
-                                initialValue: _validPeerRubricId(state),
-                                decoration: _schedulerInputDecoration(),
-                                items: [
-                                  const DropdownMenuItem<int?>(
-                                    value: null,
-                                    child: Text('Select peer rubric'),
-                                  ),
-                                  ..._peerRubricsForContext(state).map(
-                                    (rubric) => DropdownMenuItem<int?>(
-                                      value: _asInt(rubric['id']),
-                                      child: Text(
-                                        rubric['name']?.toString() ?? '',
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                                onChanged: (value) {
-                                  setState(() {
-                                    _peerRubricId = value;
-                                  });
-                                },
-                              ),
-                            ),
-                          ),
-                        ],
+                          items: state.pitEvents.map((e) {
+                            final name = e['event_name']?.toString() ?? '';
+                            return DropdownMenuItem<String>(
+                              value: name,
+                              child: Text(name),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              _eventController.text = val;
+                              _prefillPitEventConfig();
+                              setState(() {});
+                            }
+                          },
+                        ),
                       ),
                     ],
-                  ),
-                ),
-                const SizedBox(height: 8),
-                const Padding(
-                  padding: EdgeInsets.only(left: 2),
-                  child: Text(
-                    'Panel and peer rubrics define criteria only. Click the tune settings icon next to the event name to configure grading weights and templates.',
-                    style: TextStyle(
-                      color: Color(0xFF98A2B3),
-                      fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                    ),
                   ),
                 ),
               ],
@@ -1832,13 +1651,6 @@ class _DefenseSchedulerScreenState
       return;
     }
 
-    if (_scope == 'capstone') {
-      final synced = await _syncCapstoneStageRubrics();
-      if (!synced) {
-        return;
-      }
-    }
-
     payload['slots'] = _planSlots
         .map((slot) => {'team_id': _asInt(slot['team_id'])})
         .toList();
@@ -1873,22 +1685,10 @@ class _DefenseSchedulerScreenState
     }
 
     if (_scope == 'capstone') {
-      if (_validCapstoneRubricId(schedulerState, _rubricId, 'panel') == null) {
-        _showSnack('Select a panel rubric.');
-        return null;
-      }
-      if (_validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') ==
-          null) {
-        _showSnack('Select an adviser rubric.');
-        return null;
-      }
-      if (_validCapstoneRubricId(
-            schedulerState,
-            _capstonePeerRubricId,
-            'peer',
-          ) ==
-          null) {
-        _showSnack('Select a peer rubric.');
+      if (_validCapstoneRubricId(schedulerState, _rubricId, 'panel') == null ||
+          _validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') == null ||
+          _validCapstoneRubricId(schedulerState, _capstonePeerRubricId, 'peer') == null) {
+        _showSnack('Please configure stage rubrics in the Defense Stages tab first.');
         return null;
       }
     }
@@ -1899,12 +1699,9 @@ class _DefenseSchedulerScreenState
     }
 
     if (_scope == 'pit') {
-      if (_validRubricId(ref.read(defenseSchedulerProvider)) == null) {
-        _showSnack('Select a panel rubric.');
-        return null;
-      }
-      if (_validPeerRubricId(ref.read(defenseSchedulerProvider)) == null) {
-        _showSnack('Select a peer rubric.');
+      if (_validRubricId(ref.read(defenseSchedulerProvider)) == null ||
+          _validPeerRubricId(ref.read(defenseSchedulerProvider)) == null) {
+        _showSnack('Please configure event rubrics in the PIT Events tab first.');
         return null;
       }
       if (_pitWeightTotal() != 100) {
@@ -1970,6 +1767,10 @@ class _DefenseSchedulerScreenState
     if (!mounted || config == null) {
       return;
     }
+    for (final d in _pitDeliverables) {
+      (d['_labelController'] as TextEditingController?)?.dispose();
+      (d['_vaultNoteController'] as TextEditingController?)?.dispose();
+    }
     setState(() {
       _rubricId = _asInt(config['panel_rubric_id']) ?? _rubricId;
       _peerRubricId = _asInt(config['peer_rubric_id']) ?? _peerRubricId;
@@ -1977,299 +1778,19 @@ class _DefenseSchedulerScreenState
       _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
       _pitTemplateController.text =
           config['vault_file_template']?.toString() ?? '';
+      _pitDeliverables = [];
+      if (config['deliverables'] is List) {
+        for (final d in config['deliverables']) {
+          _pitDeliverables.add({
+            'deliverable_id': d['deliverable_id']?.toString() ?? '',
+            'label': d['label']?.toString() ?? '',
+            'required': d['required'] == true,
+            'vault_note': d['vault_note']?.toString() ?? '',
+            'display_order': _asInt(d['display_order']) ?? 1,
+          });
+        }
+      }
     });
-  }
-
-  void _showPitConfigDialog(DefenseSchedulerState state) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            final total =
-                (int.tryParse(_panelWeightController.text.trim()) ?? 0) +
-                (int.tryParse(_peerWeightController.text.trim()) ?? 0);
-            final isValid =
-                total == 100 && _rubricId != null && _peerRubricId != null;
-
-            return AlertDialog(
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-              ),
-              title: const Row(
-                children: [
-                  Icon(Icons.tune_rounded, color: AppColors.maroon),
-                  SizedBox(width: 8),
-                  Text(
-                    'Configure PIT Event Settings',
-                    style: TextStyle(
-                      color: AppColors.maroon,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 16,
-                    ),
-                  ),
-                ],
-              ),
-              content: SizedBox(
-                width: 500,
-                child: SingleChildScrollView(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Set the grading weight distribution and vault template for this event. These settings will persist and be used during scheduling.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 13,
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      _labeledField(
-                        'Vault File Template',
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            TextField(
-                              controller: _pitTemplateController,
-                              decoration: _schedulerInputDecoration(
-                                hintText: 'e.g. {course}_{year}_{project}_Expo',
-                              ),
-                              onChanged: (_) => setDialogState(() {}),
-                            ),
-                            const SizedBox(height: 8),
-                            Wrap(
-                              spacing: 8,
-                              runSpacing: 8,
-                              children:
-                                  [
-                                    '{year}',
-                                    '{course}',
-                                    '{project}',
-                                    '{event}',
-                                    '{semester}',
-                                  ].map((variable) {
-                                    return InkWell(
-                                      onTap: () {
-                                        _insertVariable(
-                                          _pitTemplateController,
-                                          variable,
-                                        );
-                                        setDialogState(() {});
-                                      },
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 10,
-                                          vertical: 6,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFF3F4F6),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                          border: Border.all(
-                                            color: const Color(0xFFE5E7EB),
-                                          ),
-                                        ),
-                                        child: Text(
-                                          variable,
-                                          style: const TextStyle(
-                                            fontFamily: 'monospace',
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.w600,
-                                            color: AppColors.maroon,
-                                          ),
-                                        ),
-                                      ),
-                                    );
-                                  }).toList(),
-                            ),
-                            const SizedBox(height: 10),
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(12),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFF9FAFB),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: const Color(0xFFE5E7EB),
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  const Icon(
-                                    Icons.insert_drive_file_outlined,
-                                    size: 16,
-                                    color: AppColors.maroon,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  const Text(
-                                    'Preview: ',
-                                    style: TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      fontSize: 12,
-                                      color: AppColors.textSecondary,
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Text(
-                                      _resolvePitPreview(
-                                        _pitTemplateController.text,
-                                        _eventController.text,
-                                      ),
-                                      style: const TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.maroon,
-                                      ),
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 18),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _labeledField(
-                              'Panel %',
-                              TextField(
-                                controller: _panelWeightController,
-                                keyboardType: TextInputType.number,
-                                decoration: _schedulerInputDecoration(),
-                                onChanged: (_) => setDialogState(() {}),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 14),
-                          Expanded(
-                            child: _labeledField(
-                              'Peer %',
-                              TextField(
-                                controller: _peerWeightController,
-                                keyboardType: TextInputType.number,
-                                decoration: _schedulerInputDecoration(),
-                                onChanged: (_) => setDialogState(() {}),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Padding(
-                            padding: const EdgeInsets.only(top: 22),
-                            child: Text(
-                              'Total $total%',
-                              style: TextStyle(
-                                color: total == 100
-                                    ? const Color(0xFF027A48)
-                                    : const Color(0xFFB42318),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (_rubricId == null || _peerRubricId == null) ...[
-                        const SizedBox(height: 14),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFEF3C7),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFFBBF24)),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(
-                                Icons.warning_amber_rounded,
-                                color: Color(0xFFD97706),
-                                size: 16,
-                              ),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Please select a Panel Rubric and Peer Rubric on the scheduling card first.',
-                                  style: TextStyle(
-                                    color: Color(0xFF92400E),
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(dialogContext),
-                  child: const Text(
-                    'Cancel',
-                    style: TextStyle(color: AppColors.textSecondary),
-                  ),
-                ),
-                ElevatedButton.icon(
-                  onPressed: isValid && !state.isSaving
-                      ? () async {
-                          final eventName = _eventController.text.trim();
-                          final panelWeight =
-                              int.tryParse(
-                                _panelWeightController.text.trim(),
-                              ) ??
-                              80;
-                          final peerWeight =
-                              int.tryParse(_peerWeightController.text.trim()) ??
-                              20;
-                          final activeSemesterId = state.activeSemester?['id'];
-
-                          final payload = {
-                            'event_name': eventName,
-                            'panel_rubric_id': _rubricId,
-                            'peer_rubric_id': _peerRubricId,
-                            'panel_weight': panelWeight,
-                            'peer_weight': peerWeight,
-                            'vault_file_template': _pitTemplateController.text
-                                .trim(),
-                            if (activeSemesterId != null)
-                              'semester_id': activeSemesterId,
-                          };
-
-                          final success = await ref
-                              .read(defenseSchedulerProvider.notifier)
-                              .savePitEventConfig(payload);
-
-                          if (success && context.mounted) {
-                            Navigator.pop(dialogContext);
-                          }
-                        }
-                      : null,
-                  icon: const Icon(Icons.save_rounded, size: 16),
-                  label: const Text('Save Settings'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: AppColors.gold,
-                    elevation: 0,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
   }
 
   Future<void> _showManualDialog(DefenseSchedulerState state) async {
@@ -2435,14 +1956,24 @@ class _DefenseSchedulerScreenState
                           },
                         )
                       else ...[
-                        TextField(
-                          controller: event,
+                        DropdownButtonFormField<String>(
+                          value: state.pitEvents.any((e) => e['event_name'] == event.text)
+                              ? event.text
+                              : null,
                           decoration: const InputDecoration(
                             labelText: 'PIT Event Name',
                           ),
+                          items: state.pitEvents.map((e) {
+                            final name = e['event_name']?.toString() ?? '';
+                            return DropdownMenuItem<String>(
+                              value: name,
+                              child: Text(name),
+                            );
+                          }).toList(),
                           onChanged: (val) async {
-                            final eventName = val.trim();
-                            if (eventName.length >= 3) {
+                            if (val != null) {
+                              event.text = val;
+                              final eventName = val.trim();
                               final semesterId = _asInt(
                                 ref
                                     .read(defenseSchedulerProvider)
@@ -2477,228 +2008,6 @@ class _DefenseSchedulerScreenState
                               setDialogState(() {});
                             }
                           },
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: vaultFileTemplate,
-                          decoration: const InputDecoration(
-                            labelText: 'Vault File Template',
-                            hintText: 'e.g. {course}_{year}_{project}_Expo',
-                          ),
-                          onChanged: (_) => setDialogState(() {}),
-                        ),
-                        const SizedBox(height: 8),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children:
-                              [
-                                '{year}',
-                                '{course}',
-                                '{project}',
-                                '{event}',
-                                '{semester}',
-                              ].map((variable) {
-                                return InkWell(
-                                  onTap: () {
-                                    _insertVariable(
-                                      vaultFileTemplate,
-                                      variable,
-                                    );
-                                    setDialogState(() {});
-                                  },
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 10,
-                                      vertical: 6,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFF3F4F6),
-                                      borderRadius: BorderRadius.circular(6),
-                                      border: Border.all(
-                                        color: const Color(0xFFE5E7EB),
-                                      ),
-                                    ),
-                                    child: Text(
-                                      variable,
-                                      style: const TextStyle(
-                                        fontFamily: 'monospace',
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: AppColors.maroon,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }).toList(),
-                        ),
-                        const SizedBox(height: 10),
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF9FAFB),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFE5E7EB)),
-                          ),
-                          child: Row(
-                            children: [
-                              const Icon(
-                                Icons.insert_drive_file_outlined,
-                                size: 16,
-                                color: AppColors.maroon,
-                              ),
-                              const SizedBox(width: 8),
-                              const Text(
-                                'Preview: ',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w800,
-                                  fontSize: 12,
-                                  color: AppColors.textSecondary,
-                                ),
-                              ),
-                              Expanded(
-                                child: Text(
-                                  _resolvePitPreview(
-                                    vaultFileTemplate.text,
-                                    event.text,
-                                  ),
-                                  style: const TextStyle(
-                                    fontFamily: 'monospace',
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.maroon,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      const SizedBox(height: 12),
-                      DropdownButtonFormField<int?>(
-                        initialValue: validRubric,
-                        decoration: const InputDecoration(
-                          labelText: 'Panel Rubric',
-                        ),
-                        items: [
-                          const DropdownMenuItem<int?>(
-                            value: null,
-                            child: Text('Select panel rubric'),
-                          ),
-                          ...panelRubrics.map(
-                            (rubric) => DropdownMenuItem<int?>(
-                              value: _asInt(rubric['id']),
-                              child: Text(rubric['name']?.toString() ?? ''),
-                            ),
-                          ),
-                        ],
-                        onChanged: (value) {
-                          setDialogState(() {
-                            rubricId = value;
-                          });
-                        },
-                      ),
-                      if (scope == 'capstone') ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int?>(
-                          initialValue: validAdviserRubric,
-                          decoration: const InputDecoration(
-                            labelText: 'Adviser Rubric',
-                          ),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('Select adviser rubric'),
-                            ),
-                            ...adviserRubrics.map(
-                              (rubric) => DropdownMenuItem<int?>(
-                                value: _asInt(rubric['id']),
-                                child: Text(rubric['name']?.toString() ?? ''),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              adviserRubricId = value;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int?>(
-                          initialValue: validCapstonePeerRubric,
-                          decoration: const InputDecoration(
-                            labelText: 'Peer Rubric',
-                          ),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('Select peer rubric'),
-                            ),
-                            ...capstonePeerRubrics.map(
-                              (rubric) => DropdownMenuItem<int?>(
-                                value: _asInt(rubric['id']),
-                                child: Text(rubric['name']?.toString() ?? ''),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              capstonePeerRubricId = value;
-                            });
-                          },
-                        ),
-                      ],
-                      if (scope == 'pit') ...[
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int?>(
-                          initialValue: validPeerRubric,
-                          decoration: const InputDecoration(
-                            labelText: 'Peer Rubric',
-                          ),
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('Select peer rubric'),
-                            ),
-                            ...peerRubrics.map(
-                              (rubric) => DropdownMenuItem<int?>(
-                                value: _asInt(rubric['id']),
-                                child: Text(rubric['name']?.toString() ?? ''),
-                              ),
-                            ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              peerRubricId = value;
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: TextField(
-                                controller: panelWeight,
-                                decoration: const InputDecoration(
-                                  labelText: 'Panel %',
-                                ),
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: TextField(
-                                controller: peerWeight,
-                                decoration: const InputDecoration(
-                                  labelText: 'Peer %',
-                                ),
-                                keyboardType: TextInputType.number,
-                              ),
-                            ),
-                          ],
                         ),
                       ],
                       const SizedBox(height: 12),
@@ -2833,70 +2142,18 @@ class _DefenseSchedulerScreenState
         _showSnack('Select a defense stage.');
         return;
       }
-      if (rubricId == null) {
-        _showSnack('Select a panel rubric.');
-        return;
-      }
-      if (adviserRubricId == null) {
-        _showSnack('Select an adviser rubric.');
-        return;
-      }
-      if (capstonePeerRubricId == null) {
-        _showSnack('Select a peer rubric.');
-        return;
-      }
-
-      final semesterId = _asInt(
-        ref.read(defenseSchedulerProvider).activeSemester?['id'],
-      );
-      if (semesterId == null) {
-        _showSnack('No active semester for rubric assignment.');
-        return;
-      }
-      final synced = await ref
-          .read(defenseStagesProvider.notifier)
-          .updateGradingConfig(stageId!, semesterId, {
-            'panel_rubric_id': rubricId,
-            'adviser_rubric_id': adviserRubricId,
-            'peer_rubric_id': capstonePeerRubricId,
-          });
-      if (!mounted || !synced) {
-        return;
-      }
       setState(() {
         _scope = scope;
         _stageId = stageId;
-        _rubricId = rubricId;
-        _adviserRubricId = adviserRubricId;
-        _capstonePeerRubricId = capstonePeerRubricId;
       });
     } else {
       if (eventText.isEmpty) {
         _showSnack('Enter a PIT event name.');
         return;
       }
-      if (rubricId == null) {
-        _showSnack('Select a panel rubric.');
-        return;
-      }
-      if (peerRubricId == null) {
-        _showSnack('Select a peer rubric.');
-        return;
-      }
-      final manualPanelWeight = int.tryParse(panelWeightText) ?? 0;
-      final manualPeerWeight = int.tryParse(peerWeightText) ?? 0;
-      if (manualPanelWeight + manualPeerWeight != 100) {
-        _showSnack('Panel and peer weights must total 100%.');
-        return;
-      }
       setState(() {
         _scope = scope;
         _eventController.text = eventText;
-        _rubricId = rubricId;
-        _peerRubricId = peerRubricId;
-        _panelWeightController.text = manualPanelWeight.toString();
-        _peerWeightController.text = manualPeerWeight.toString();
-        _pitTemplateController.text = vaultFileTemplate.text.trim();
       });
     }
 
@@ -2923,25 +2180,7 @@ class _DefenseSchedulerScreenState
         .createSchedule(schedulePayload);
   }
 
-  Future<bool> _syncCapstoneStageRubrics() async {
-    if (_scope != 'capstone' || _stageId == null) {
-      return true;
-    }
-    final semesterId = _asInt(
-      ref.read(defenseSchedulerProvider).activeSemester?['id'],
-    );
-    if (semesterId == null) {
-      _showSnack('No active semester for rubric assignment.');
-      return false;
-    }
-    return ref
-        .read(defenseStagesProvider.notifier)
-        .updateGradingConfig(_stageId!, semesterId, {
-          'panel_rubric_id': _rubricId,
-          'adviser_rubric_id': _adviserRubricId,
-          'peer_rubric_id': _capstonePeerRubricId,
-        });
-  }
+
 
   Future<void> _prefillCapstoneStageRubrics() async {
     if (_scope != 'capstone' || _stageId == null) {

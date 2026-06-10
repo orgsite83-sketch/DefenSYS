@@ -860,11 +860,18 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
       );
       return;
     }
-    final saved = await notifier.pitLeadOfficialClassListImport(
+    final responsePayload = await notifier.pitLeadOfficialClassListImport(
       metadata: parsed.metadata,
       students: parsed.students,
     );
-    if (!mounted || !saved) return;
+    if (!mounted || responsePayload == null) return;
+
+    final warnings = responsePayload['warnings'] as List? ?? const [];
+    final errors = responsePayload['errors'] as List? ?? const [];
+    if (warnings.isNotEmpty || errors.isNotEmpty) {
+      _showImportSummaryDialog(warnings, errors);
+    }
+
     ref.read(pitInstructorProvider.notifier).fetchAssignments();
     _applyFilters();
   }
@@ -994,6 +1001,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     final programIndex = findHeader((value) => value == 'program');
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');
+    final sectionColumnIndex = findHeader((value) => value == 'section' || value == 'class section');
     final students = <Map<String, dynamic>>[];
 
     for (final row in rows.skip(headerIndex + 1)) {
@@ -1009,6 +1017,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
         if (levelIndex != -1)
           'year_level': _normalizeYearLevel(read(levelIndex)),
         if (emailIndex != -1) 'email': read(emailIndex),
+        if (sectionColumnIndex != -1) 'section': read(sectionColumnIndex),
       });
     }
 
@@ -1099,6 +1108,95 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
       child: Text(
         message,
         style: const TextStyle(color: Color(0xFF374151), fontSize: 13),
+      ),
+    );
+  }
+
+  List<String> _formatBulkImportErrorLines(dynamic messages) {
+    if (messages is List) {
+      return messages.map((item) => item.toString()).toList();
+    }
+    if (messages is Map) {
+      final lines = <String>[];
+      for (final entry in messages.entries) {
+        final key = entry.key.toString();
+        final value = entry.value;
+        if (value is List) {
+          for (final item in value) {
+            lines.add('$key: $item');
+          }
+        } else {
+          lines.add('$key: $value');
+        }
+      }
+      return lines;
+    }
+    return [messages?.toString() ?? 'Unknown error'];
+  }
+
+  Future<void> _showImportSummaryDialog(List<dynamic> warnings, List<dynamic> errors) async {
+    if (!mounted) return;
+    await showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        surfaceTintColor: Colors.transparent,
+        title: const Text('Class List Import Details'),
+        content: SizedBox(
+          width: 520,
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (errors.isNotEmpty) ...[
+                  const Row(
+                    children: [
+                      Icon(Icons.error_outline_rounded, color: Colors.red, size: 20),
+                      SizedBox(width: 8),
+                      Text('Errors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.red)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...errors.map((error) {
+                    final row = error['row'];
+                    final id = error['id_number'] ?? '';
+                    final issueLines = _formatBulkImportErrorLines(error['errors']);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 8),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Row $row ${id.isNotEmpty ? "· Student ID: $id" : ""}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                          ...issueLines.map((line) => Text('• $line', style: const TextStyle(fontSize: 12.5))),
+                        ],
+                      ),
+                    );
+                  }),
+                  if (warnings.isNotEmpty) const Divider(),
+                ],
+                if (warnings.isNotEmpty) ...[
+                  const Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
+                      SizedBox(width: 8),
+                      Text('Warnings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amber)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ...warnings.map((warning) => Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Text('• $warning', style: const TextStyle(fontSize: 13)),
+                  )),
+                ],
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(dialogContext).pop(),
+            child: const Text('Close'),
+          ),
+        ],
       ),
     );
   }

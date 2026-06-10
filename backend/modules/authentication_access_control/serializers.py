@@ -21,6 +21,8 @@ def _coerce_bool(value) -> bool:
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
+    is_project_manager = serializers.SerializerMethodField()
+    managed_section = serializers.SerializerMethodField()
 
     class Meta:
         model = User
@@ -28,6 +30,7 @@ class UserSerializer(serializers.ModelSerializer):
             'id', 'username', 'email', 'first_name', 'last_name', 'name', 'role',
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
             'is_repo_assistant', 'repo_assistant_year', 'is_uploader', 'facultyRoles',
+            'is_project_manager', 'managed_section',
         ]
 
     def get_name(self, obj):
@@ -44,6 +47,25 @@ class UserSerializer(serializers.ModelSerializer):
             'repoAssistantYear': getattr(obj, 'repo_assistant_year', '') or '',
             'uploader': obj.is_uploader,
         }
+
+    def get_is_project_manager(self, obj):
+        if obj.role != 'student':
+            return False
+        from student_teams.models import SectionAssignment
+        return SectionAssignment.objects.filter(
+            project_manager=obj,
+            semester__is_active=True
+        ).exists()
+
+    def get_managed_section(self, obj):
+        if obj.role != 'student':
+            return None
+        from student_teams.models import SectionAssignment
+        assignment = SectionAssignment.objects.filter(
+            project_manager=obj,
+            semester__is_active=True
+        ).first()
+        return assignment.section if assignment else None
 
 
 class SystemAuditLogSerializer(serializers.ModelSerializer):

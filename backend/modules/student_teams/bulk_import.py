@@ -147,15 +147,29 @@ def row_passes_adviser_filter(adviser_status, adviser_filter):
     return True
 
 
-def validate_bulk_team_row(data, adviser_filter=ADVISER_FILTER_ALL, user=None):
+def validate_bulk_team_row(
+    data,
+    adviser_filter=ADVISER_FILTER_ALL,
+    user=None,
+    csv_columns=None,
+    *,
+    section_import=False,
+    import_section='',
+):
     """
     Validate a parsed bulk row without writing to the DB.
     Returns dict with preview fields and import payload pieces.
     """
     issues = []
+    warnings = []
     pit_row = is_pit_bulk_row(data, user)
-    adviser_ref = '' if pit_row else (data.get('adviser_id') or '').strip()
+    raw_adviser = (data.get('adviser_id') or '').strip()
+    adviser_ref = '' if pit_row else raw_adviser
     if pit_row:
+        if raw_adviser:
+            warnings.append(
+                f"PIT teams do not have advisers. The adviser_id column ('{raw_adviser}') will be ignored."
+            )
         data = dict(data)
         data['adviser_id'] = ''
         adviser, adviser_status, adviser_name = None, ADVISER_STATUS_NONE, ''
@@ -214,6 +228,9 @@ def validate_bulk_team_row(data, adviser_filter=ADVISER_FILTER_ALL, user=None):
             user,
             member_user_ids=list(member_ref_map.values()),
             leader_user_id=leader.id if leader else None,
+            csv_columns=csv_columns,
+            section_import=section_import,
+            import_section=import_section,
         )
         if prep_issues:
             issues.extend(prep_issues)
@@ -245,6 +262,7 @@ def validate_bulk_team_row(data, adviser_filter=ADVISER_FILTER_ALL, user=None):
         'adviser_name': adviser_name,
         'ready': ready,
         'issues': issues,
+        'warnings': warnings,
         'leader': leader,
         'adviser': adviser,
         'member_ref_map': member_ref_map,
@@ -252,7 +270,15 @@ def validate_bulk_team_row(data, adviser_filter=ADVISER_FILTER_ALL, user=None):
     }
 
 
-def preview_bulk_teams(rows, adviser_filter=ADVISER_FILTER_ALL, user=None):
+def preview_bulk_teams(
+    rows,
+    adviser_filter=ADVISER_FILTER_ALL,
+    user=None,
+    csv_columns=None,
+    *,
+    section_import=False,
+    import_section='',
+):
     preview_rows = []
     summary = {
         'total': 0,
@@ -263,7 +289,18 @@ def preview_bulk_teams(rows, adviser_filter=ADVISER_FILTER_ALL, user=None):
     }
 
     for index, row in enumerate(rows, start=1):
-        prepared, prep_issues = prepare_bulk_row(row, user) if user else (row, [])
+        prepared, prep_issues = (
+            prepare_bulk_row(
+                row,
+                user,
+                check_template=True,
+                csv_columns=csv_columns,
+                section_import=section_import,
+                import_section=import_section,
+            )
+            if user
+            else (row, [])
+        )
         if prep_issues:
             preview_rows.append({
                 'row': index,
@@ -283,7 +320,14 @@ def preview_bulk_teams(rows, adviser_filter=ADVISER_FILTER_ALL, user=None):
                 summary['without_adviser'] += 1
             continue
 
-        row_serializer = BulkTeamRowSerializer(data=prepared, context={'user': user})
+        row_serializer = BulkTeamRowSerializer(
+            data=prepared,
+            context={
+                'user': user,
+                'section_import': section_import,
+                'import_section': import_section,
+            },
+        )
         if not row_serializer.is_valid():
             preview_rows.append({
                 'row': index,
@@ -307,6 +351,9 @@ def preview_bulk_teams(rows, adviser_filter=ADVISER_FILTER_ALL, user=None):
             row_serializer.validated_data,
             adviser_filter=adviser_filter,
             user=user,
+            csv_columns=csv_columns,
+            section_import=section_import,
+            import_section=import_section,
         )
         row_data = result['data']
         preview_rows.append({
@@ -322,6 +369,7 @@ def preview_bulk_teams(rows, adviser_filter=ADVISER_FILTER_ALL, user=None):
             'program_label': program_label_for_row(row_data, user) if user else '',
             'ready': result['ready'],
             'issues': result['issues'],
+            'warnings': result.get('warnings', []),
         })
 
         summary['total'] += 1

@@ -267,6 +267,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   Future<Map<String, dynamic>?> bulkImportPreview(
     List<Map<String, dynamic>> rows, {
     String adviserFilter = 'all',
+    List<String>? csvColumns,
+    String? section,
+    String? systemName,
+    String? projectManager,
   }) async {
     if (rows.isEmpty) {
       state = state.copyWith(error: 'CSV has no valid team rows.');
@@ -282,6 +286,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         body: jsonEncode({
           'teams': rows,
           'adviser_filter': adviserFilter,
+          if (csvColumns != null) 'csv_columns': csvColumns,
+          if (section != null) 'section': section,
+          if (systemName != null) 'system_name': systemName,
+          if (projectManager != null) 'project_manager': projectManager,
         }),
       );
 
@@ -300,6 +308,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
   Future<Map<String, dynamic>?> bulkImport(
     List<Map<String, dynamic>> rows, {
     String adviserFilter = 'all',
+    List<String>? csvColumns,
+    String? section,
+    String? systemName,
+    String? projectManager,
   }) async {
     if (rows.isEmpty) {
       state = state.copyWith(error: 'CSV has no valid team rows.');
@@ -319,6 +331,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
         body: jsonEncode({
           'teams': rows,
           'adviser_filter': adviserFilter,
+          if (csvColumns != null) 'csv_columns': csvColumns,
+          if (section != null) 'section': section,
+          if (systemName != null) 'system_name': systemName,
+          if (projectManager != null) 'project_manager': projectManager,
         }),
       );
 

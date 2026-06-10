@@ -64,7 +64,27 @@ def _display_name(user):
     return full_name or user.username
 
 
+def _project_manager_fields(user):
+    if getattr(user, 'role', None) != 'student':
+        return False, None
+
+    from student_teams.models import SectionAssignment
+
+    assignment = (
+        SectionAssignment.objects.filter(
+            project_manager=user,
+            semester__is_active=True,
+        )
+        .order_by('section')
+        .first()
+    )
+    if assignment is None:
+        return False, None
+    return True, assignment.section
+
+
 def _user_payload(user):
+    is_project_manager, managed_section = _project_manager_fields(user)
     return {
         'id': user.id,
         'username': user.username,
@@ -72,6 +92,8 @@ def _user_payload(user):
         'email': user.email,
         'role': user.role,
         'team_id': user.team_id,
+        'is_project_manager': is_project_manager,
+        'managed_section': managed_section,
     }
 
 

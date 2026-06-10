@@ -92,8 +92,8 @@ class DeliverableSubmission(models.Model):
         ]
 
     def clean(self):
-        if self.team_id and not self.team.is_capstone:
-            raise ValidationError({'team': 'Only Capstone teams can submit Capstone deliverables.'})
+        if self.team_id and not (self.team.is_capstone or self.team.is_pit):
+            raise ValidationError({'team': 'Only Capstone or PIT teams can submit deliverables.'})
         if not self.file_name.strip():
             raise ValidationError({'file_name': 'File name is required.'})
 

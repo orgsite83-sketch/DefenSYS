@@ -427,43 +427,27 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
 
 
-    def test_non_capstone_team_rejected_on_upsert(self):
-
+    def test_pit_team_rejected_for_capstone_stage_deliverable(self):
         pit_team = StudentTeam.objects.create(
-
             name='Team PIT Only',
-
             project_title='PIT Project',
-
             level=StudentTeam.LEVEL_3_PIT,
-
             year_level='3rd Year',
-
             semester=self.semester,
-
             leader=self.other_student,
-
         )
 
-        with self.assertRaises(PermissionError) as ctx:
-
+        with self.assertRaises(ValueError) as ctx:
             upsert_submission(
-
                 pit_team,
-
                 'Concept Proposal',
-
                 'D1',
-
                 'acceptance.pdf',
-
                 '10 KB',
-
                 self.admin,
-
             )
 
-        self.assertIn('Capstone', str(ctx.exception))
+        self.assertIn('Deliverable does not exist', str(ctx.exception))
 
 
 
@@ -855,6 +839,196 @@ class CapstoneDeliverablesApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(response_success.status_code, 200)
+
+    def test_pit_lead_scoping_for_deliverables(self):
+        # Create a PIT lead user (3rd Year)
+        pit_lead = User.objects.create_user(
+            username='pit-lead-3',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        
+        # Create PIT teams for 3rd Year and 2nd Year
+        pit_team_3 = StudentTeam.objects.create(
+            name='PIT Team 3',
+            project_title='PIT 3 Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+        pit_team_2 = StudentTeam.objects.create(
+            name='PIT Team 2',
+            project_title='PIT 2 Project',
+            level=StudentTeam.LEVEL_2_PIT,
+            year_level='2nd Year',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+        
+        # Authenticate as PIT lead
+        self.client.force_authenticate(user=pit_lead)
+        
+        # Fetch deliverables in 'pit' scope
+        response = self.client.get('/api/repository/deliverables/', {'scope': 'pit'})
+        self.assertEqual(response.status_code, 200)
+        
+        # Counts should only include the 3rd Year PIT team (not the 3rd Year Capstone team or 2nd Year PIT team)
+        self.assertEqual(response.data['counts']['teams'], 1)
+        self.assertEqual(response.data['teams'][0]['name'], 'PIT Team 3')
+
+    def test_pit_deliverables_serialization_choices_validation(self):
+        from defense.scheduler.models import PitEventGradingConfig, PitEventDeliverable
+        from grading.rubrics.models import Rubric
+        
+        # Create rubrics
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric',
+            evaluation_type='panel',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric',
+            evaluation_type='peer',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        
+        # Configure PIT event
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='PIT Expo 2026',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+            panel_weight=80,
+            peer_weight=20,
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=config,
+            deliverable_id='PIT_D1',
+            label='PIT Project Poster',
+            required=True,
+        )
+        
+        pit_team = StudentTeam.objects.create(
+            name='PIT Team 3',
+            project_title='PIT 3 Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+        
+        # Attempt upload with Capstone stage (should fail serializer validation for PIT team)
+        response_fail = self.client.post(
+            '/api/repository/deliverables/upload/',
+            {
+                'team_id': pit_team.id,
+                'stage_label': 'Concept Proposal',
+                'deliverable_id': 'D1',
+                'file_name': 'test.pdf',
+            },
+            format='json',
+        )
+        self.assertEqual(response_fail.status_code, 400)
+        self.assertIn('stage_label', response_fail.data)
+        
+        # Attempt upload with correct PIT event (should succeed validation)
+        response_success = self.client.post(
+            '/api/repository/deliverables/upload/',
+            {
+                'team_id': pit_team.id,
+                'stage_label': 'PIT Expo 2026',
+                'deliverable_id': 'PIT_D1',
+                'file_name': 'test.pdf',
+            },
+            format='json',
+        )
+        self.assertEqual(response_success.status_code, 200)
+
+    def test_student_upload_and_delete_success(self):
+        self.client.force_authenticate(user=self.student)
+        response_upload = self.client.post(
+            '/api/repository/deliverables/upload/',
+            {
+                'team_id': self.team.id,
+                'stage_label': 'Concept Proposal',
+                'deliverable_id': 'D1',
+                'file_name': 'student_doc.pdf',
+            },
+            format='json',
+        )
+        self.assertEqual(response_upload.status_code, 200)
+        self.assertTrue(DeliverableSubmission.objects.filter(team=self.team, deliverable_id='D1').exists())
+        
+        response_remove = self.client.post(
+            '/api/repository/deliverables/remove/',
+            {
+                'team_id': self.team.id,
+                'stage_label': 'Concept Proposal',
+                'deliverable_id': 'D1',
+            },
+            format='json',
+        )
+        self.assertEqual(response_remove.status_code, 200)
+        self.assertFalse(DeliverableSubmission.objects.filter(team=self.team, deliverable_id='D1').exists())
+
+    def test_student_endorse_forbidden(self):
+        self.client.force_authenticate(user=self.student)
+        response = self.client.post(
+            '/api/repository/deliverables/endorse/',
+            {
+                'team_id': self.team.id,
+                'stage_label': 'Concept Proposal',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_pit_instructor_scoping(self):
+        from user_management.models import PitInstructorAssignment
+        instructor = User.objects.create_user(
+            username='instructor-1',
+            password='pass12345',
+            role='faculty',
+        )
+        PitInstructorAssignment.objects.create(
+            faculty=instructor,
+            semester=self.semester,
+            year_level='3rd Year',
+            section='IT3A',
+            is_active=True,
+        )
+        pit_team_assigned = StudentTeam.objects.create(
+            name='PIT Team Assigned',
+            project_title='PIT Assigned Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            section='IT3A',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+        pit_team_other = StudentTeam.objects.create(
+            name='PIT Team Other',
+            project_title='PIT Other Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            section='IT3B',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+        self.client.force_authenticate(user=instructor)
+        response = self.client.get('/api/repository/deliverables/', {'scope': 'pit'})
+        self.assertEqual(response.status_code, 200)
+        team_ids = [team['id'] for team in response.data['teams']]
+        self.assertIn(pit_team_assigned.id, team_ids)
+        self.assertNotIn(pit_team_other.id, team_ids)
+
 
 
 

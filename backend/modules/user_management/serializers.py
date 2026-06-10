@@ -215,6 +215,16 @@ class BulkUserRowSerializer(serializers.Serializer):
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
 
+    def validate_year_level(self, value):
+        if not value:
+            return value
+        valid_choices = ['1st Year', '2nd Year', '3rd Year', '4th Year']
+        if value not in valid_choices:
+            raise serializers.ValidationError(
+                f"'{value}' is not a valid year level. Must be one of: {', '.join(valid_choices)}."
+            )
+        return value
+
 
 class OfficialClassListStudentSerializer(serializers.Serializer):
     id_number = serializers.CharField(max_length=150)

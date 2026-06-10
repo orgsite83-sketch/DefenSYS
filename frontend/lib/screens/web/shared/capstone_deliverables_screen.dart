@@ -53,7 +53,8 @@ String _formatUploadFailureMessage(int statusCode, String responseBody) {
 }
 
 class CapstoneDeliverablesScreen extends ConsumerStatefulWidget {
-  const CapstoneDeliverablesScreen({super.key});
+  final String? initialScope;
+  const CapstoneDeliverablesScreen({super.key, this.initialScope});
 
   @override
   ConsumerState<CapstoneDeliverablesScreen> createState() =>
@@ -70,7 +71,9 @@ class _CapstoneDeliverablesScreenState
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+        scope: widget.initialScope,
+      );
     });
   }
 
@@ -87,7 +90,7 @@ class _CapstoneDeliverablesScreenState
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Capstone Deliverables'),
+        title: Text(state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables'),
         actions: [
           IconButton(
             tooltip: 'Refresh',
@@ -137,8 +140,11 @@ class _CapstoneDeliverablesScreenState
                     const SizedBox(height: 12),
                     _notice(
                       Icons.info_outline,
-                      'No deliverables configured for ${state.selectedStage}. '
-                      'Add them in Defense Stages so Required progress can be tracked.',
+                      state.scope == 'pit'
+                          ? 'No deliverables configured for ${state.selectedStage}. '
+                            'Add them in PIT Event Settings.'
+                          : 'No deliverables configured for ${state.selectedStage}. '
+                            'Add them in Defense Stages so Required progress can be tracked.',
                       AppColors.gold,
                     ),
                   ],
@@ -162,6 +168,10 @@ class _CapstoneDeliverablesScreenState
   }
 
   Widget _buildHeader(CapstoneDeliverablesState state) {
+    final title = state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables';
+    final defaultSubtitle = state.scope == 'pit'
+        ? 'Upload pre-event requirements and complete deliverables for PIT events.'
+        : 'Upload pre-defense requirements and unlock vault submissions after defense.';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -169,9 +179,9 @@ class _CapstoneDeliverablesScreenState
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Capstone Deliverables',
-                style: TextStyle(
+              Text(
+                title,
+                style: const TextStyle(
                   fontSize: 24,
                   fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
@@ -179,8 +189,7 @@ class _CapstoneDeliverablesScreenState
               ),
               const SizedBox(height: 6),
               Text(
-                state.activeSemester?['display_name']?.toString() ??
-                    'Upload pre-defense requirements and unlock vault submissions after defense.',
+                state.activeSemester?['display_name']?.toString() ?? defaultSubtitle,
                 style: const TextStyle(color: AppColors.textSecondary),
               ),
             ],
@@ -191,12 +200,13 @@ class _CapstoneDeliverablesScreenState
   }
 
   Widget _buildStats(CapstoneDeliverablesState state) {
+    final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
     return Wrap(
       spacing: 14,
       runSpacing: 14,
       children: [
         _stat(
-          'Capstone Teams',
+          teamLabel,
           _count(state, 'teams'),
           Icons.groups_2_outlined,
           AppColors.maroon,
@@ -300,10 +310,10 @@ class _CapstoneDeliverablesScreenState
               width: 220,
               child: DropdownButtonFormField<String>(
                 initialValue: selectedStage,
-                decoration: const InputDecoration(labelText: 'Stage View'),
+                decoration: InputDecoration(labelText: state.scope == 'pit' ? 'PIT Event' : 'Stage View'),
                 hint: Text(
                   stageOptions.isEmpty
-                      ? 'No stages configured'
+                      ? (state.scope == 'pit' ? 'No events configured' : 'No stages configured')
                       : 'Select stage',
                 ),
                 items: stageOptions
@@ -372,26 +382,30 @@ class _CapstoneDeliverablesScreenState
 
   Widget _buildTeamList(CapstoneDeliverablesState state) {
     if (state.teams.isEmpty) {
+      final emptyTitle = state.scope == 'pit' ? 'No PIT teams found' : 'No Capstone teams found';
+      final emptySubtitle = state.scope == 'pit'
+          ? 'Assign PIT teams first.'
+          : 'Assign Capstone teams and advisers first.';
       return Card(
         child: Container(
           width: double.infinity,
           padding: const EdgeInsets.all(34),
-          child: const Column(
+          child: Column(
             children: [
-              Icon(
+              const Icon(
                 Icons.folder_open_outlined,
                 size: 42,
                 color: AppColors.textSecondary,
               ),
-              SizedBox(height: 10),
+              const SizedBox(height: 10),
               Text(
-                'No Capstone teams found',
-                style: TextStyle(fontWeight: FontWeight.w800),
+                emptyTitle,
+                style: const TextStyle(fontWeight: FontWeight.w800),
               ),
-              SizedBox(height: 4),
+              const SizedBox(height: 4),
               Text(
-                'Assign Capstone teams and advisers first.',
-                style: TextStyle(color: AppColors.textSecondary),
+                emptySubtitle,
+                style: const TextStyle(color: AppColors.textSecondary),
               ),
             ],
           ),

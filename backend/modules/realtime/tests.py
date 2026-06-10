@@ -67,9 +67,17 @@ class RealtimeBroadcastTests(TestCase):
 
 
 class GradingFlagsConsumerTests(TestCase):
+    def _websocket_application(self):
+        from channels.routing import URLRouter
+
+        from realtime.routing import websocket_urlpatterns
+
+        return URLRouter(websocket_urlpatterns)
+
     def test_rejects_missing_token(self):
         from channels.testing import WebsocketCommunicator
-        from defensys_backend.asgi import application
+
+        application = self._websocket_application()
 
         async def run():
             communicator = WebsocketCommunicator(application, '/ws/grading/')
@@ -80,7 +88,8 @@ class GradingFlagsConsumerTests(TestCase):
 
     def test_accepts_valid_token(self):
         from channels.testing import WebsocketCommunicator
-        from defensys_backend.asgi import application
+
+        application = self._websocket_application()
 
         user = User.objects.create_user(
             username='ws_user',

@@ -378,13 +378,13 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
-  Future<bool> pitLeadOfficialClassListImport({
+  Future<Map<String, dynamic>?> pitLeadOfficialClassListImport({
     required Map<String, dynamic> metadata,
     required List<Map<String, dynamic>> students,
   }) async {
     if (students.isEmpty) {
       state = state.copyWith(error: 'Class list has no valid student rows.');
-      return false;
+      return null;
     }
 
     state = state.copyWith(
@@ -418,17 +418,17 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
               '$warnings warnings. $errors errors.$assignment',
           clearError: true,
         );
-        return errors == 0;
+        return payload;
       }
 
       state = state.copyWith(
         isSaving: false,
         error: _errorFromResponse(response),
       );
-      return false;
+      return null;
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
-      return false;
+      return null;
     }
   }
 
