@@ -54,17 +54,17 @@ String _formatUploadFailureMessage(int statusCode, String responseBody) {
   return 'Upload failed: $trimmed';
 }
 
-class CapstoneDeliverablesScreen extends ConsumerStatefulWidget {
+class TeamDeliverablesScreen extends ConsumerStatefulWidget {
   final String? initialScope;
-  const CapstoneDeliverablesScreen({super.key, this.initialScope});
+  const TeamDeliverablesScreen({super.key, this.initialScope});
 
   @override
-  ConsumerState<CapstoneDeliverablesScreen> createState() =>
-      _CapstoneDeliverablesScreenState();
+  ConsumerState<TeamDeliverablesScreen> createState() =>
+      _TeamDeliverablesScreenState();
 }
 
-class _CapstoneDeliverablesScreenState
-    extends ConsumerState<CapstoneDeliverablesScreen> {
+class _TeamDeliverablesScreenState
+    extends ConsumerState<TeamDeliverablesScreen> {
   final _searchController = TextEditingController();
   Timer? _pendingRemoveTimer;
   bool _pendingRemoveCancelled = false;
@@ -815,6 +815,9 @@ class _CapstoneDeliverablesScreenState
     final user = authState.user;
     final isFaculty = user?['role'] == 'faculty';
     final isAdmin = user?['role'] == 'admin';
+    final stages = _stageList(team);
+    final stage = _stagePayload(stages, stageLabel);
+    final endorsed = stage['endorsed'] == true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -973,6 +976,7 @@ class _CapstoneDeliverablesScreenState
                           stageLabel,
                           item['id'],
                           setDialogState,
+                          isEndorsed: endorsed,
                         ),
                         icon: const Icon(Icons.close, color: AppColors.danger),
                         label: const Text('Reject'),
@@ -1002,6 +1006,7 @@ class _CapstoneDeliverablesScreenState
                               stageLabel,
                               item['id'],
                               setDialogState,
+                              isEndorsed: endorsed,
                             ),
                             icon: const Icon(Icons.refresh, size: 14),
                             label: const Text('Reject'),
@@ -1232,8 +1237,9 @@ class _CapstoneDeliverablesScreenState
     int teamId,
     String stageLabel,
     String deliverableId,
-    void Function(void Function()) setDialogState,
-  ) async {
+    void Function(void Function()) setDialogState, {
+    bool isEndorsed = false,
+  }) async {
     final controller = TextEditingController();
     final confirmed = await showDialog<bool>(
       context: context,
@@ -1243,6 +1249,39 @@ class _CapstoneDeliverablesScreenState
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            if (isEndorsed) ...[
+              Container(
+                padding: const EdgeInsets.all(12),
+                margin: const EdgeInsets.only(bottom: 16),
+                decoration: BoxDecoration(
+                  color: AppColors.danger.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: AppColors.danger.withValues(alpha: 0.25),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.warning_amber_rounded,
+                      color: AppColors.danger,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'WARNING: This team is currently endorsed. Rejecting this required pre-defense deliverable will automatically revoke their endorsement.',
+                        style: TextStyle(
+                          color: AppColors.danger,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const Text(
               'Please provide feedback or remarks explaining why this deliverable is rejected.',
               style: TextStyle(fontSize: 13, color: AppColors.textSecondary),

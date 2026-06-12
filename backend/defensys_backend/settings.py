@@ -89,6 +89,7 @@ INSTALLED_APPS = [
     'channels',
     'realtime',
     'reports',
+    'notifications',
 ]
 
 # App API tests only; do not collect ad-hoc scripts in backend/tests/ (see tests/README.md).

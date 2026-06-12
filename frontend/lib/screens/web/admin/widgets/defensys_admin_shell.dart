@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../l10n/l10n_ext.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/offline_banner.dart';
+import '../../../../services/notifications_provider.dart';
+import '../../../../widgets/notifications_modal.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -296,7 +299,9 @@ class _TopNav extends StatelessWidget {
           const Spacer(),
           const SizedBox(width: 16),
           _SemesterPill(label: activeSemesterLabel),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
+          const _NotificationsBell(),
+          const SizedBox(width: 20),
           Container(
             width: 36,
             height: 36,
@@ -321,6 +326,59 @@ class _TopNav extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _NotificationsBell extends ConsumerStatefulWidget {
+  const _NotificationsBell();
+
+  @override
+  ConsumerState<_NotificationsBell> createState() => _NotificationsBellState();
+}
+
+class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(notificationsProvider.notifier).fetchNotifications();
+    });
+  }
+
+  void _showNotifications(BuildContext context) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (_) => const NotificationsModal(),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = ref.watch(notificationsProvider);
+
+    return Badge(
+      isLabelVisible: state.unreadCount > 0,
+      label: Text(
+        state.unreadCount.toString(),
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 9.5,
+          fontWeight: FontWeight.bold,
+        ),
+      ),
+      backgroundColor: DefensysUi.primaryMaroon,
+      child: IconButton(
+        icon: const Icon(
+          Icons.notifications_outlined,
+          color: DefensysUi.steelGrey,
+          size: 23,
+        ),
+        tooltip: 'Notifications',
+        onPressed: () => _showNotifications(context),
       ),
     );
   }

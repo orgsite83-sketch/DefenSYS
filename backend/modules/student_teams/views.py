@@ -671,3 +671,159 @@ class SectionAssignmentDetailView(APIView):
         assignment.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+
+class StudentTeamSendReminderView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request, team_id):
+        user = request.user
+        team = get_object_or_404(StudentTeam, pk=team_id)
+
+        # Permissions check: Admins can remind any team. PIT leads can remind PIT teams in their year.
+        is_admin = getattr(user, 'role', None) == 'admin' or user.is_superuser
+        is_pit_lead = getattr(user, 'is_pit_lead', False)
+
+        if not is_admin:
+            if not is_pit_lead:
+                return Response({'detail': 'Only administrators and PIT leads can send reminders.'}, status=status.HTTP_403_FORBIDDEN)
+            # PIT Lead verification:
+            pit_lead_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if not team.is_pit:
+                return Response({'detail': 'PIT leads can only send reminders to PIT teams.'}, status=status.HTTP_403_FORBIDDEN)
+            if pit_lead_year and team.year_level != pit_lead_year:
+                return Response({'detail': f'You can only remind {pit_lead_year} teams.'}, status=status.HTTP_403_FORBIDDEN)
+
+        stage_label = request.data.get('stage_label', '').strip()
+        if not stage_label:
+            return Response({'detail': 'stage_label is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        # Import notification and deliverable modules locally
+        from notifications.models import Notification
+        from repository.deliverables.services import get_deliverable_definitions_for_team, submissions_for
+        from repository.deliverables.models import DeliverableSubmission
+
+        definitions = get_deliverable_definitions_for_team(team, stage_label)
+        submitted = submissions_for(team, stage_label)
+
+        missing_list = []
+        for item in definitions:
+            if item['type'] == 'pre' and item['required']:
+                sub = submitted.get(item['id'])
+                if not sub:
+                    missing_list.append(f"- {item['label']} (Not Submitted)")
+                elif sub.status == DeliverableSubmission.STATUS_REJECTED:
+                    feedback_str = f" - Feedback: {sub.feedback}" if sub.feedback else ""
+                    missing_list.append(f"- {item['label']} (Rejected{feedback_str})")
+
+        leader = team.leader
+        if not leader:
+            return Response({'detail': 'This team has no leader assigned.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        notified_user_ids = set()
+
+        message_body = (
+            f"Dear {leader.first_name} {leader.last_name},\n\n"
+            f"This is a reminder that your team ({team.name}) has pending/incomplete deliverables for '{stage_label}'. "
+            "Please review and submit the following requirements as soon as possible:\n\n"
+        )
+        if missing_list:
+            message_body += "\n".join(missing_list)
+        else:
+            message_body += "- Pending overall stage endorsement or review of pre-defense files."
+
+        message_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
+
+        # Notify leader
+        Notification.objects.create(
+            recipient=leader,
+            sender=user,
+            title=f"Action Required: Pending Deliverables for {stage_label}",
+            message=message_body
+        )
+        notified_user_ids.add(leader.id)
+
+        # Notify other members
+        for membership in team.memberships.select_related('student').all():
+            member = membership.student
+            if member and member.id not in notified_user_ids:
+                member_body = (
+                    f"Dear {member.first_name} {member.last_name},\n\n"
+                    f"This is a reminder that your team ({team.name}) has pending/incomplete deliverables for '{stage_label}'. "
+                    "Please review and submit the following requirements as soon as possible:\n\n"
+                )
+                if missing_list:
+                    member_body += "\n".join(missing_list)
+                else:
+                    member_body += "- Pending overall stage endorsement or review of pre-defense files."
+
+                member_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
+
+                Notification.objects.create(
+                    recipient=member,
+                    sender=user,
+                    title=f"Action Required: Pending Deliverables for {stage_label}",
+                    message=member_body
+                )
+                notified_user_ids.add(member.id)
+
+        # CC Adviser/Instructor
+        adviser = team.adviser
+        if adviser and adviser.id not in notified_user_ids:
+            adviser_body = (
+                f"Dear {adviser.first_name} {adviser.last_name},\n\n"
+                f"This is a copy of the reminder sent to team {team.name} (Led by {leader.first_name} {leader.last_name}) "
+                f"regarding pending/incomplete deliverables for '{stage_label}':\n\n"
+            )
+            if missing_list:
+                adviser_body += "\n".join(missing_list)
+            else:
+                adviser_body += "- Pending overall stage endorsement or review of pre-defense files."
+            
+            adviser_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
+            
+            Notification.objects.create(
+                recipient=adviser,
+                sender=user,
+                title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
+                message=adviser_body
+            )
+            notified_user_ids.add(adviser.id)
+
+        # CC PIT Instructor(s)
+        if not team.is_capstone:
+            from user_management.models import PitInstructorAssignment
+            assignments = PitInstructorAssignment.objects.filter(
+                semester=team.semester,
+                year_level=team.year_level,
+                section=team.section,
+                is_active=True
+            ).select_related('faculty')
+            
+            for assignment in assignments:
+                instructor = assignment.faculty
+                if instructor and instructor.id not in notified_user_ids:
+                    inst_body = (
+                        f"Dear {instructor.first_name} {instructor.last_name},\n\n"
+                        f"This is a copy of the reminder sent to team {team.name} (Led by {leader.first_name} {leader.last_name}) "
+                        f"regarding pending/incomplete deliverables for '{stage_label}':\n\n"
+                    )
+                    if missing_list:
+                        inst_body += "\n".join(missing_list)
+                    else:
+                        inst_body += "- Pending overall stage endorsement or review of pre-defense files."
+                    
+                    inst_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
+                    
+                    Notification.objects.create(
+                        recipient=instructor,
+                        sender=user,
+                        title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
+                        message=inst_body
+                    )
+                    notified_user_ids.add(instructor.id)
+
+        return Response({
+            'status': 'success',
+            'message': f'Reminder successfully sent to team {team.name} members (and CCed adviser/instructors).'
+        })
+

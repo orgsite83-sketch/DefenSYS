@@ -16,6 +16,8 @@ import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
+import '../../services/notifications_provider.dart';
+import '../../widgets/notifications_modal.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -41,6 +43,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('student').notifier).fetchDashboardData();
+      ref.read(notificationsProvider.notifier).fetchNotifications();
     });
   }
 
@@ -145,6 +148,36 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           ],
         ),
         actions: [
+          Consumer(
+            builder: (context, ref, child) {
+              final state = ref.watch(notificationsProvider);
+              return Badge(
+                isLabelVisible: state.unreadCount > 0,
+                label: Text(
+                  state.unreadCount.toString(),
+                  style: const TextStyle(
+                    color: DefensysTokens.maroon,
+                    fontSize: 9,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                backgroundColor: Colors.white,
+                textColor: DefensysTokens.maroon,
+                child: IconButton(
+                  icon: const Icon(Icons.notifications_outlined, color: Colors.white),
+                  tooltip: 'Notifications',
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      isScrollControlled: true,
+                      builder: (_) => const NotificationsModal(),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: _profile.avatarBytes != null
                 ? CircleAvatar(

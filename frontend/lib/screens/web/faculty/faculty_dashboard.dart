@@ -8,7 +8,9 @@ import '../../../theme/defensys_tokens.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/offline_banner.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../shared/capstone_deliverables_screen.dart';
+import '../../../services/notifications_provider.dart';
+import '../../../widgets/notifications_modal.dart';
+import '../shared/team_deliverables_screen.dart';
 import '../shared/repository_audit_screen.dart';
 import '../admin/audit_compliance_screen.dart';
 import '../admin/defense_scheduler_screen.dart';
@@ -49,6 +51,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
+      ref.read(notificationsProvider.notifier).fetchNotifications();
     });
   }
 
@@ -251,6 +254,40 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             const SizedBox(width: 8),
           ],
           const Spacer(),
+          Consumer(
+            builder: (context, ref, child) {
+              final state = ref.watch(notificationsProvider);
+              return Badge(
+                isLabelVisible: state.unreadCount > 0,
+                label: Text(
+                  state.unreadCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                backgroundColor: DefensysTokens.maroon,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.notifications_outlined,
+                    color: Colors.grey.shade600,
+                    size: 23,
+                  ),
+                  tooltip: 'Notifications',
+                  onPressed: () {
+                    showModalBottomSheet(
+                      context: context,
+                      backgroundColor: Colors.transparent,
+                      isScrollControlled: true,
+                      builder: (_) => const NotificationsModal(),
+                    );
+                  },
+                ),
+              );
+            },
+          ),
+          const SizedBox(width: 16),
         ],
       ),
     );
@@ -929,7 +966,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         final initialScope = (ws == FacultyWorkspace.pitLead || ws == FacultyWorkspace.pitInstructor) ? 'pit' : 'capstone';
         return Container(
           color: Colors.white,
-          child: CapstoneDeliverablesScreen(initialScope: initialScope),
+          child: TeamDeliverablesScreen(initialScope: initialScope),
         );
       case 'weekly_reports':
         return Container(

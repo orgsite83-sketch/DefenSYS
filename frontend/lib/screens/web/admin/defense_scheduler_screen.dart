@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:file_picker/file_picker.dart';
 
 import '../../../services/defense_scheduler_provider.dart';
 import '../../../services/defense_stages_provider.dart';
+import '../../../services/capstone_deliverables_provider.dart';
+import '../../../config/api_config.dart';
+import '../../../services/authenticated_client.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/defense_schedule_import_parser.dart';
 import '../../../widgets/defensys_skeleton.dart';
@@ -28,6 +32,7 @@ class _DefenseSchedulerScreenState
   final _durationController = TextEditingController(text: '60');
   final _roomController = TextEditingController();
   final _pitTemplateController = TextEditingController();
+  final _trackerSearchController = TextEditingController();
 
   final Set<int> _selectedPanelistIds = {};
   List<Map<String, dynamic>> _pitDeliverables = [];
@@ -40,6 +45,7 @@ class _DefenseSchedulerScreenState
   int? _peerRubricId;
   bool _showFinalPreview = false;
   bool _scopeInitializedFromState = false;
+  bool _isSendingReminder = false;
   List<Map<String, dynamic>> _planSlots = [];
 
   @override
@@ -52,6 +58,7 @@ class _DefenseSchedulerScreenState
     _durationController.dispose();
     _roomController.dispose();
     _pitTemplateController.dispose();
+    _trackerSearchController.dispose();
     for (final d in _pitDeliverables) {
       (d['_labelController'] as TextEditingController?)?.dispose();
       (d['_vaultNoteController'] as TextEditingController?)?.dispose();
@@ -118,7 +125,11 @@ class _DefenseSchedulerScreenState
                   state.teams.isEmpty) ...[
                 DefensysSkeleton.list(count: 4, rowHeight: 64),
               ] else ...[
-                if (currentStep == 1) _buildStepOne(state),
+                if (currentStep == 1) ...[
+                  _buildStepOne(state),
+                  const SizedBox(height: 20),
+                  _buildTeamReadinessTracker(state),
+                ],
                 if (currentStep == 2) _buildStepTwo(state),
                 if (currentStep == 3) _buildStepThree(state),
                 const SizedBox(height: 22),
@@ -716,10 +727,10 @@ class _DefenseSchedulerScreenState
                   ),
                 ),
               ),
-              if (_scope == 'capstone') ...[
+              if (_scope == 'capstone' || _scope == 'pit') ...[
                 const SizedBox(height: 20),
                 Container(
-                  key: ValueKey('stage-info-$_stageId'),
+                  key: ValueKey('stage-info-$_scope-${_scope == 'capstone' ? _stageId : _eventController.text.trim()}'),
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(
                     horizontal: 22,
@@ -737,7 +748,9 @@ class _DefenseSchedulerScreenState
                     runSpacing: 10,
                     children: [
                       _softBadge(
-                        'Stage: ${_stageLabel(state)}',
+                        _scope == 'capstone'
+                            ? 'Stage: ${_stageLabel(state)}'
+                            : 'Event: ${_eventController.text.trim().isEmpty ? "None" : _eventController.text.trim()}',
                         const Color(0xFFDCFCE7),
                         const Color(0xFF166534),
                       ),
@@ -3569,6 +3582,16 @@ class _DefenseSchedulerScreenState
           return isCapstone && readyForStage == stageLabel;
         }).length;
       }
+    } else if (_scope == 'pit') {
+      final eventName = _eventController.text.trim();
+      if (eventName.isNotEmpty) {
+        return state.teams.where((team) {
+          final readyForStage = team['ready_for_stage']?.toString() ?? '';
+          final teamLevel = team['level']?.toString() ?? '';
+          final isPit = teamLevel.toLowerCase().contains('pit');
+          return isPit && readyForStage == eventName;
+        }).length;
+      }
     }
 
     return 0;
@@ -3637,6 +3660,424 @@ class _DefenseSchedulerScreenState
       result = '$result.pdf';
     }
     return result;
+  }
+
+  Widget _buildTeamReadinessTracker(DefenseSchedulerState state) {
+    final activeStageOrEventName = _scope == 'capstone'
+        ? _stageLabel(state)
+        : _eventController.text.trim();
+
+    final teams = _teamsForScope(state, _scope).where((team) {
+      final query = _trackerSearchController.text.toLowerCase().trim();
+      if (query.isEmpty) return true;
+      final name = (team['name']?.toString() ?? '').toLowerCase();
+      final project = (team['project_title']?.toString() ?? '').toLowerCase();
+      return name.contains(query) || project.contains(query);
+    }).toList();
+
+    return _schedulerCard(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.checklist_rtl_rounded,
+                color: AppColors.maroon,
+                size: 22,
+              ),
+              const SizedBox(width: 10),
+              const Text(
+                'Team Readiness Tracker',
+                style: TextStyle(
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              // Search input
+              Container(
+                width: 260,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFD0D5DD)),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                child: Row(
+                  children: [
+                    const Icon(Icons.search, size: 18, color: AppColors.textSecondary),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: TextField(
+                        controller: _trackerSearchController,
+                        decoration: const InputDecoration(
+                          hintText: 'Search teams...',
+                          hintStyle: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+                          border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
+                        ),
+                        style: const TextStyle(fontSize: 13),
+                        onChanged: (_) => setState(() {}),
+                      ),
+                    ),
+                    if (_trackerSearchController.text.isNotEmpty)
+                      GestureDetector(
+                        onTap: () {
+                          _trackerSearchController.clear();
+                          setState(() {});
+                        },
+                        child: const Icon(Icons.close, size: 16, color: AppColors.textSecondary),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Text(
+            'Monitor team deliverable completeness. Teams must have all required pre-defense deliverables accepted by their instructor before they are ready for scheduling.',
+            style: TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 13.5,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 18),
+          if (teams.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(24),
+              alignment: Alignment.center,
+              child: Text(
+                _trackerSearchController.text.isEmpty
+                    ? 'No teams found for the active scope.'
+                    : 'No teams match your search query.',
+                style: const TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+              ),
+            )
+          else
+            Table(
+              columnWidths: const {
+                0: FlexColumnWidth(3), // Team/Project
+                1: FlexColumnWidth(1.5), // Section
+                2: FlexColumnWidth(2), // Status
+                3: FlexColumnWidth(2.5), // Actions
+              },
+              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+              children: [
+                // Table Header
+                TableRow(
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF9FAFB),
+                    border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+                  ),
+                  children: [
+                    _tableHeaderCell('TEAM & PROJECT TITLE'),
+                    _tableHeaderCell('SECTION'),
+                    _tableHeaderCell('READINESS STATUS'),
+                    _tableHeaderCell('ACTIONS'),
+                  ],
+                ),
+                // Table Rows
+                ...teams.map((team) {
+                  final isReady = team['ready_for_stage'] == activeStageOrEventName && activeStageOrEventName.isNotEmpty;
+                  final readyForStage = team['ready_for_stage']?.toString() ?? '';
+                  final statusText = isReady
+                      ? 'Ready'
+                      : (readyForStage.isNotEmpty
+                          ? 'Endorsed for $readyForStage'
+                          : 'Awaiting Endorsement');
+
+                  return TableRow(
+                    decoration: const BoxDecoration(
+                      border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+                    ),
+                    children: [
+                      // Team Name / Title
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              team['name']?.toString() ?? '',
+                              style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              team['project_title']?.toString() ?? '-',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Section
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                        child: Text(
+                          team['section']?.toString().isNotEmpty == true
+                              ? team['section']!.toString()
+                              : 'No Section',
+                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                        ),
+                      ),
+                      // Status Badge
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 8,
+                              height: 8,
+                              decoration: BoxDecoration(
+                                color: isReady ? Colors.green : Colors.amber,
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                statusText,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: isReady ? Colors.green.shade800 : Colors.amber.shade900,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      // Actions
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                        child: Row(
+                          children: [
+                            TextButton.icon(
+                              onPressed: activeStageOrEventName.isEmpty
+                                  ? null
+                                  : () => _showTeamDeliverablesReview(context, team, activeStageOrEventName),
+                              icon: const Icon(Icons.folder_open_rounded, size: 16),
+                              label: const Text('Review Files'),
+                              style: TextButton.styleFrom(
+                                foregroundColor: AppColors.maroon,
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            if (!isReady)
+                              TextButton.icon(
+                                onPressed: _isSendingReminder || activeStageOrEventName.isEmpty
+                                    ? null
+                                    : () => _sendReminder(team['id'], activeStageOrEventName),
+                                icon: const Icon(Icons.notification_important_rounded, size: 16),
+                                label: const Text('Remind'),
+                                style: TextButton.styleFrom(
+                                  foregroundColor: const Color(0xFFD97706),
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _tableHeaderCell(String label) {
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF6B7280),
+          letterSpacing: 0.5,
+        ),
+      ),
+    );
+  }
+
+  void _showTeamDeliverablesReview(BuildContext context, Map<String, dynamic> team, String stageLabel) {
+    ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+          scope: _scope,
+          selectedStage: stageLabel,
+        );
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Consumer(
+          builder: (context, ref, child) {
+            final delState = ref.watch(capstoneDeliverablesProvider);
+            final teamData = delState.teams.firstWhere(
+              (t) => _asInt(t['id']) == _asInt(team['id']),
+              orElse: () => <String, dynamic>{},
+            );
+
+            final stageData = teamData['selected_stage'] as Map? ?? {};
+            final deliverables = stageData['deliverables'] as List? ?? [];
+
+            return AlertDialog(
+              title: Text('${team['name']} - Deliverables Review'),
+              content: SizedBox(
+                width: 600,
+                height: 400,
+                child: delState.isLoading
+                    ? const Center(child: CircularProgressIndicator(color: AppColors.maroon))
+                    : deliverables.isEmpty
+                        ? const Center(child: Text('No deliverables configured for this stage.'))
+                        : ListView.separated(
+                            itemCount: deliverables.length,
+                            separatorBuilder: (_, __) => const Divider(),
+                            itemBuilder: (context, index) {
+                              final d = deliverables[index];
+                              final label = d['label'] ?? '';
+                              final required = d['required'] == true;
+                              final type = d['type'] ?? '';
+                              final uploaded = d['uploaded'] == true;
+                              final submission = d['submission'] as Map?;
+
+                              Color statusColor = Colors.grey;
+                              String statusText = 'Not Submitted';
+                              if (uploaded && submission != null) {
+                                final status = submission['status']?.toString() ?? 'pending';
+                                if (status == 'accepted') {
+                                  statusColor = Colors.green;
+                                  statusText = 'Accepted';
+                                } else if (status == 'rejected') {
+                                  statusColor = Colors.red;
+                                  statusText = 'Rejected';
+                                } else {
+                                  statusColor = Colors.orange;
+                                  statusText = 'Pending Review';
+                                }
+                              }
+
+                              return ListTile(
+                                title: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        label,
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                                      ),
+                                    ),
+                                    if (required) ...[
+                                      const SizedBox(width: 6),
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFEECEC),
+                                          borderRadius: BorderRadius.circular(4),
+                                        ),
+                                        child: const Text(
+                                          'Required',
+                                          style: TextStyle(color: Colors.red, fontSize: 9, fontWeight: FontWeight.bold),
+                                        ),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 4),
+                                    Text('Type: ${type == 'pre' ? 'Pre-Defense' : 'Vault File'}', style: const TextStyle(fontSize: 12)),
+                                    if (uploaded &&
+                                        submission != null &&
+                                        submission['feedback'] != null &&
+                                        submission['feedback'].toString().isNotEmpty) ...[
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        'Feedback: ${submission['feedback']}',
+                                        style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic, color: Colors.red),
+                                      ),
+                                    ],
+                                  ],
+                                ),
+                                trailing: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withOpacity(0.12),
+                                    borderRadius: BorderRadius.circular(20),
+                                    border: Border.all(color: statusColor),
+                                  ),
+                                  child: Text(
+                                    statusText,
+                                    style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _sendReminder(dynamic teamId, String stageLabel) async {
+    setState(() => _isSendingReminder = true);
+    try {
+      final client = ref.read(authenticatedHttpClientProvider);
+      final url = '${ApiConfig.teamsUrl}/$teamId/remind/';
+      final response = await client.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'stage_label': stageLabel}),
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          showSuccessToast(context, 'Reminder notification successfully sent.');
+        }
+      } else {
+        final body = jsonDecode(response.body);
+        final err = body['detail'] ?? body['message'] ?? 'Failed to send reminder';
+        if (mounted) {
+          showErrorToast(context, err.toString());
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorToast(context, 'Connection error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingReminder = false);
+      }
+    }
   }
 }
 

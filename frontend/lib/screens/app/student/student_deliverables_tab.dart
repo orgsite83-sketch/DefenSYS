@@ -165,15 +165,17 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       children: [
                         const Icon(Icons.upload_file, color: Colors.white, size: 28),
                         const SizedBox(width: 12),
-                        const Text(
-                          'Deliverables',
-                          style: TextStyle(
-                            color: Colors.white,
-                            fontSize: 22,
-                            fontWeight: FontWeight.bold,
+                        const Expanded(
+                          child: Text(
+                            'Deliverables',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 22,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                        const Spacer(),
+                        const SizedBox(width: 12),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
@@ -349,7 +351,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Section: Info & Badges
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Icon(
                   uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
@@ -365,6 +369,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         item['label']?.toString() ?? '',
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                       ),
+                      const SizedBox(height: 4),
                       if (uploaded)
                         Text(
                           isWPR
@@ -385,112 +390,89 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ],
                   ),
                 ),
-                if (uploaded) ...[
-                  if (isAccepted)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.green.shade200),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Accepted',
-                            style: TextStyle(fontSize: 10, color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                const SizedBox(width: 8),
+                // Badges Column
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    if (uploaded) ...[
+                      if (isAccepted)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.green.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.green.shade200),
                           ),
-                        ],
-                      ),
-                    )
-                  else if (isRejected)
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.red.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.red.shade200),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.cancel, size: 12, color: Colors.red.shade700),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Needs Revision',
-                            style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Accepted',
+                                style: TextStyle(fontSize: 10, color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                    )
-                  else
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: Colors.orange.shade200),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.hourglass_empty, size: 12, color: Colors.orange.shade700),
-                          const SizedBox(width: 4),
-                          Text(
-                            'Awaiting Review',
-                            style: TextStyle(fontSize: 10, color: Colors.orange.shade700, fontWeight: FontWeight.bold),
+                        )
+                      else if (isRejected)
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.red.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.red.shade200),
                           ),
-                        ],
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.cancel, size: 12, color: Colors.red.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Needs Revision',
+                                style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: Colors.orange.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.orange.shade200),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.hourglass_empty, size: 12, color: Colors.orange.shade700),
+                              const SizedBox(width: 4),
+                              Text(
+                                'Awaiting Review',
+                                style: TextStyle(fontSize: 10, color: Colors.orange.shade700, fontWeight: FontWeight.bold),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const SizedBox(height: 4),
+                    ],
+                    if (item['required'] == true)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: const Text(
+                          'Required',
+                          style: TextStyle(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold),
+                        ),
                       ),
-                    ),
-                  const SizedBox(width: 8),
-                ],
-                if (item['required'] == true) ...[
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.red.shade200),
-                    ),
-                    child: const Text(
-                      'Required',
-                      style: TextStyle(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                ],
-                if (uploaded && !isWPR && !fileLocked)
-                  IconButton(
-                    tooltip: 'Remove',
-                    onPressed: () => _removeFile(team, stageLabel, item),
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  ),
-                if (isWPR)
-                  ElevatedButton.icon(
-                    onPressed: () => _showWPRDialog(team, stageLabel),
-                    icon: const Icon(Icons.assignment, size: 16),
-                    label: const Text('Manage Weekly Reports', style: TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: fileLocked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
-                    icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file, size: 16),
-                    label: Text(uploaded ? 'Replace' : 'Upload', style: const TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: uploaded ? Colors.blue.shade600 : DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                    ),
-                  ),
+                  ],
+                ),
               ],
             ),
             if (uploaded && isRejected && feedback != null && feedback.isNotEmpty) ...[
@@ -579,6 +561,43 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
               ),
             ],
+            // Bottom Actions Section
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (uploaded && !isWPR && !fileLocked) ...[
+                  IconButton(
+                    tooltip: 'Remove',
+                    onPressed: () => _removeFile(team, stageLabel, item),
+                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                if (isWPR)
+                  ElevatedButton.icon(
+                    onPressed: () => _showWPRDialog(team, stageLabel),
+                    icon: const Icon(Icons.assignment, size: 16),
+                    label: const Text('Manage Weekly Reports', style: TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: DefensysTokens.maroon,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  )
+                else
+                  ElevatedButton.icon(
+                    onPressed: fileLocked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
+                    icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file, size: 16),
+                    label: Text(uploaded ? 'Replace' : 'Upload', style: const TextStyle(fontSize: 11)),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: uploaded ? Colors.blue.shade600 : DefensysTokens.maroon,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    ),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

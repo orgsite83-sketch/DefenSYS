@@ -272,8 +272,7 @@ def vault_unlocked(team, stage_label):
 def submissions_for(team, stage_label):
     return {
         submission.deliverable_id: submission
-        for submission in team.deliverable_submissions.all()
-        if submission.stage_label == stage_label
+        for submission in DeliverableSubmission.objects.filter(team=team, stage_label=stage_label)
     }
 
 

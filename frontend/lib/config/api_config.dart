@@ -155,6 +155,7 @@ class ApiConfig {
   static String get academicPeriodsUrl => '$baseUrl/academic-periods';
   static String get capstoneDeliverablesUrl => '$baseUrl/repository/deliverables';
   static String get curriculumAnalyticsUrl => '$baseUrl/curriculum-analytics';
+  static String get notificationsUrl => '$baseUrl/notifications';
 
   /// Helper method to get all possible base URLs for connection testing
   static List<String> getAllPossibleUrls() {
