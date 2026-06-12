@@ -162,6 +162,8 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             adviser=self.adviser,
 
+            status=StudentTeam.STATUS_PENDING,
+
         )
 
         self.other_team = StudentTeam.objects.create(
@@ -179,6 +181,8 @@ class CapstoneDeliverablesApiTests(APITestCase):
             leader=self.other_student,
 
             adviser=self.other_adviser,
+
+            status=StudentTeam.STATUS_PENDING,
 
         )
 
@@ -531,6 +535,8 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
                 uploaded_by=self.admin,
 
+                status=DeliverableSubmission.STATUS_ACCEPTED,
+
             )
 
         endorsed = self.client.post(
@@ -558,7 +564,6 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
 
     def test_vault_submission_is_locked_until_defense_done(self):
-
         locked = self.client.post(
 
             '/api/repository/deliverables/upload/',
@@ -736,6 +741,8 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
                 uploaded_by=self.admin,
 
+                status=DeliverableSubmission.STATUS_ACCEPTED,
+
             )
 
         self.client.post(
@@ -774,6 +781,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
                 required=definition['required'],
                 file_name=f"{definition['id']}.pdf",
                 uploaded_by=self.admin,
+                status=DeliverableSubmission.STATUS_ACCEPTED,
             )
         endorse_team(self.team, 'Concept Proposal')
 

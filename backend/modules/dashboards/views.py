@@ -163,7 +163,7 @@ def _team_payload(team):
         'isCapstone': team.is_capstone,
         'currentStage': team.current_defense_stage or team.ready_for_stage or None,
         'readyForStage': team.ready_for_stage,
-        'deliverableCount': team.deliverable_submissions.count() if team.is_capstone else 0,
+        'deliverableCount': team.deliverable_submissions.count(),
         'adviserName': _display_name(team.adviser) if team.adviser else None,
         'leaderName': _display_name(team.leader),
         'memberCount': len(memberships),
@@ -775,7 +775,26 @@ class FacultyDashboardView(APIView):
             'leader',
             'adviser',
         ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
-        pit_teams = _pit_teams_queryset(user)
+        is_pit_instructor = PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+        if is_pit_instructor:
+            from student_teams.team_levels import normalize_year_level
+            assignments = PitInstructorAssignment.objects.filter(faculty=user, is_active=True)
+            q = Q()
+            for assign in assignments:
+                norm_year = normalize_year_level(assign.year_level)
+                q |= Q(
+                    semester=assign.semester,
+                    section=assign.section,
+                    level__icontains=norm_year
+                ) & Q(level__icontains='PIT')
+            pit_teams = StudentTeam.objects.filter(q).select_related(
+                'semester',
+                'semester__school_year',
+                'leader',
+                'adviser',
+            ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
+        else:
+            pit_teams = _pit_teams_queryset(user)
         pit_lead_overview = _pit_lead_overview_payload(user)
         pit_assistant = (
             current_repo_assistant_for_year(user.pit_lead_year)

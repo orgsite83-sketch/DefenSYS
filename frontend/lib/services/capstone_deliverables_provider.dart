@@ -166,6 +166,22 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }, successMessage: 'Team endorsed for defense scheduling.');
   }
 
+  Future<bool> reviewDeliverable({
+    required int teamId,
+    required String stageLabel,
+    required String deliverableId,
+    required String status,
+    String? feedback,
+  }) async {
+    return _postAction('review', {
+      'team_id': teamId,
+      'stage_label': stageLabel,
+      'deliverable_id': deliverableId,
+      'status': status,
+      if (feedback != null) 'feedback': feedback,
+    }, successMessage: 'Deliverable review status updated.');
+  }
+
   Future<bool> _postAction(
     String action,
     Map<String, dynamic> payload, {

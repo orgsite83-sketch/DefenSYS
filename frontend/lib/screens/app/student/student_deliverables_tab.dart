@@ -327,10 +327,16 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     bool endorsed,
   ) {
     final uploaded = item['uploaded'] == true;
-    final locked = endorsed || item['locked'] == true;
     final submission = Map<String, dynamic>.from(
       item['submission'] as Map? ?? const {},
     );
+    final status = submission['status']?.toString();
+    final feedback = submission['feedback']?.toString();
+    final isAccepted = status == 'accepted';
+    final isRejected = status == 'rejected';
+
+    // Lock file from edits/removals if endorsed OR backend lock is set OR review status is Accepted
+    final fileLocked = endorsed || item['locked'] == true || isAccepted;
     final isWPR = item['id'] == 'WPR';
     final suggestedFile = item['suggested_file_name']?.toString() ?? '';
 
@@ -379,6 +385,69 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ],
                   ),
                 ),
+                if (uploaded) ...[
+                  if (isAccepted)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.green.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Accepted',
+                            style: TextStyle(fontSize: 10, color: Colors.green.shade700, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (isRejected)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.red.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.red.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cancel, size: 12, color: Colors.red.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Needs Revision',
+                            style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.hourglass_empty, size: 12, color: Colors.orange.shade700),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Awaiting Review',
+                            style: TextStyle(fontSize: 10, color: Colors.orange.shade700, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
+                  const SizedBox(width: 8),
+                ],
                 if (item['required'] == true) ...[
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -394,7 +463,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                   const SizedBox(width: 8),
                 ],
-                if (uploaded && !isWPR && !locked)
+                if (uploaded && !isWPR && !fileLocked)
                   IconButton(
                     tooltip: 'Remove',
                     onPressed: () => _removeFile(team, stageLabel, item),
@@ -413,7 +482,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   )
                 else
                   ElevatedButton.icon(
-                    onPressed: locked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
+                    onPressed: fileLocked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
                     icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file, size: 16),
                     label: Text(uploaded ? 'Replace' : 'Upload', style: const TextStyle(fontSize: 11)),
                     style: ElevatedButton.styleFrom(
@@ -424,6 +493,58 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
               ],
             ),
+            if (uploaded && isRejected && feedback != null && feedback.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Adviser/Instructor Remarks:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      feedback,
+                      style: TextStyle(fontSize: 12, color: Colors.red.shade900),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (uploaded && isAccepted && feedback != null && feedback.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.green.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Remarks:',
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      feedback,
+                      style: TextStyle(fontSize: 12, color: Colors.green.shade900),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             if (suggestedFile.isNotEmpty && !uploaded) ...[
               const SizedBox(height: 8),
               Container(

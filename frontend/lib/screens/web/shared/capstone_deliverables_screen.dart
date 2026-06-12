@@ -15,6 +15,8 @@ import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
 import '../../../utils/progress_upload.dart';
+import '../../../services/auth_provider.dart';
+import '../../../utils/pdf_viewer.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
   try {
@@ -809,6 +811,11 @@ class _CapstoneDeliverablesScreenState
 
     final suggestedFile = item['suggested_file_name']?.toString() ?? '';
 
+    final authState = ref.watch(authProvider);
+    final user = authState.user;
+    final isFaculty = user?['role'] == 'faculty';
+    final isAdmin = user?['role'] == 'admin';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -832,7 +839,7 @@ class _CapstoneDeliverablesScreenState
                       item['label']?.toString() ?? '',
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
-                    if (uploaded)
+                    if (uploaded) ...[
                       Text(
                         isWPR
                             ? 'All weekly reports approved - ${submission['uploaded_by_name'] ?? ''}'
@@ -841,8 +848,56 @@ class _CapstoneDeliverablesScreenState
                           color: AppColors.textSecondary,
                           fontSize: 12,
                         ),
-                      )
-                    else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
+                      ),
+                      if (submission['reviewed_by_name'] != null && (submission['reviewed_by_name']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          'Reviewed by: ${submission['reviewed_by_name']}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                      if (submission['status'] == 'rejected' && (submission['feedback']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.danger.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.danger.withValues(alpha: 0.15)),
+                          ),
+                          child: Text(
+                            'Remarks: ${submission['feedback']}',
+                            style: const TextStyle(
+                              color: AppColors.danger,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (submission['status'] == 'accepted' && (submission['feedback']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: AppColors.success.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: AppColors.success.withValues(alpha: 0.15)),
+                          ),
+                          child: Text(
+                            'Remarks: ${submission['feedback']}',
+                            style: const TextStyle(
+                              color: AppColors.success,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ] else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
                       Text(
                         item['vault_note'].toString(),
                         style: const TextStyle(
@@ -864,43 +919,183 @@ class _CapstoneDeliverablesScreenState
               ),
               if (item['required'] == true) _chip('Required', AppColors.danger),
               const SizedBox(width: 8),
-              if (uploaded && !isWPR)
-                IconButton(
-                  tooltip: 'Remove',
-                  onPressed: () => _removeFile(team, stageLabel, item),
-                  icon: const Icon(
-                    Icons.delete_outline,
-                    color: AppColors.danger,
-                  ),
-                ),
-              // Show "View & Approve" button for WPR, "Upload" for others
-              if (isWPR)
-                OutlinedButton.icon(
-                  onPressed: () => _showApproveWPRDialog(
-                    team,
-                    stageLabel,
-                    uploaded,
-                    setDialogState,
-                  ),
-                  icon: Icon(
-                    uploaded ? Icons.visibility : Icons.check_circle_outline,
-                  ),
-                  label: Text(uploaded ? 'View Reports' : 'View & Approve'),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: uploaded ? Colors.blue : AppColors.success,
-                    side: BorderSide(
-                      color: uploaded ? Colors.blue : AppColors.success,
+              if (isFaculty && !isAdmin) ...[
+                if (isWPR) ...[
+                  OutlinedButton.icon(
+                    onPressed: () => _showApproveWPRDialog(
+                      team,
+                      stageLabel,
+                      uploaded,
+                      setDialogState,
+                    ),
+                    icon: Icon(
+                      uploaded ? Icons.visibility : Icons.check_circle_outline,
+                    ),
+                    label: Text(uploaded ? 'View Reports' : 'View & Approve'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: uploaded ? Colors.blue : AppColors.success,
+                      side: BorderSide(
+                        color: uploaded ? Colors.blue : AppColors.success,
+                      ),
                     ),
                   ),
-                )
-              else
-                OutlinedButton.icon(
-                  onPressed: locked
-                      ? null
-                      : () => _promptUploadOrReplace(team, stageLabel, item),
-                  icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
-                  label: Text(uploaded ? 'Replace' : 'Upload'),
-                ),
+                ] else ...[
+                  if (uploaded) ...[
+                    OutlinedButton.icon(
+                      onPressed: () => _viewPdf(
+                        submission['file_url'] ?? '',
+                        submission['file_name'] ?? 'document.pdf',
+                      ),
+                      icon: const Icon(Icons.picture_as_pdf),
+                      label: const Text('View PDF'),
+                    ),
+                    const SizedBox(width: 8),
+                    if (submission['status'] == 'pending') ...[
+                      OutlinedButton.icon(
+                        onPressed: () => _reviewSubmission(
+                          _asInt(team['id']),
+                          stageLabel,
+                          item['id'],
+                          'accepted',
+                          setDialogState,
+                        ),
+                        icon: const Icon(Icons.check, color: AppColors.success),
+                        label: const Text('Accept'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.success,
+                          side: const BorderSide(color: AppColors.success),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton.icon(
+                        onPressed: () => _promptRejectionFeedback(
+                          _asInt(team['id']),
+                          stageLabel,
+                          item['id'],
+                          setDialogState,
+                        ),
+                        icon: const Icon(Icons.close, color: AppColors.danger),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                        ),
+                      ),
+                    ] else if (submission['status'] == 'accepted') ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.check_circle, color: AppColors.success, size: 20),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Accepted',
+                            style: TextStyle(
+                              color: AppColors.success,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => _promptRejectionFeedback(
+                              _asInt(team['id']),
+                              stageLabel,
+                              item['id'],
+                              setDialogState,
+                            ),
+                            icon: const Icon(Icons.refresh, size: 14),
+                            label: const Text('Reject'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.danger,
+                              side: const BorderSide(color: AppColors.danger),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ] else if (submission['status'] == 'rejected') ...[
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.cancel, color: AppColors.danger, size: 20),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Rejected',
+                            style: TextStyle(
+                              color: AppColors.danger,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          OutlinedButton.icon(
+                            onPressed: () => _reviewSubmission(
+                              _asInt(team['id']),
+                              stageLabel,
+                              item['id'],
+                              'accepted',
+                              setDialogState,
+                            ),
+                            icon: const Icon(Icons.check, size: 14),
+                            label: const Text('Accept'),
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: AppColors.success,
+                              side: const BorderSide(color: AppColors.success),
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ] else ...[
+                    const Text(
+                      'Awaiting Student Upload',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontStyle: FontStyle.italic,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ],
+              ] else ...[
+                if (uploaded && !isWPR)
+                  IconButton(
+                    tooltip: 'Remove',
+                    onPressed: () => _removeFile(team, stageLabel, item),
+                    icon: const Icon(
+                      Icons.delete_outline,
+                      color: AppColors.danger,
+                    ),
+                  ),
+                if (isWPR)
+                  OutlinedButton.icon(
+                    onPressed: () => _showApproveWPRDialog(
+                      team,
+                      stageLabel,
+                      uploaded,
+                      setDialogState,
+                    ),
+                    icon: Icon(
+                      uploaded ? Icons.visibility : Icons.check_circle_outline,
+                    ),
+                    label: Text(uploaded ? 'View Reports' : 'View & Approve'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: uploaded ? Colors.blue : AppColors.success,
+                      side: BorderSide(
+                        color: uploaded ? Colors.blue : AppColors.success,
+                      ),
+                    ),
+                  )
+                else
+                  OutlinedButton.icon(
+                    onPressed: locked
+                        ? null
+                        : () => _promptUploadOrReplace(team, stageLabel, item),
+                    icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
+                    label: Text(uploaded ? 'Replace' : 'Upload'),
+                  ),
+              ],
             ],
           ),
         ),
@@ -992,6 +1187,143 @@ class _CapstoneDeliverablesScreenState
           ),
       ],
     );
+  }
+
+  Future<void> _reviewSubmission(
+    int teamId,
+    String stageLabel,
+    String deliverableId,
+    String status,
+    void Function(void Function()) setDialogState, {
+    String? feedback,
+  }) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.maroon),
+      ),
+    );
+
+    try {
+      final success = await ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .reviewDeliverable(
+            teamId: teamId,
+            stageLabel: stageLabel,
+            deliverableId: deliverableId,
+            status: status,
+            feedback: feedback,
+          );
+
+      if (mounted) Navigator.pop(context);
+
+      if (success) {
+        showSuccessToast(context, 'Deliverable review status updated.');
+        setDialogState(() {});
+      }
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      showErrorToast(context, 'Failed to update review status: $e');
+    }
+  }
+
+  Future<void> _promptRejectionFeedback(
+    int teamId,
+    String stageLabel,
+    String deliverableId,
+    void Function(void Function()) setDialogState,
+  ) async {
+    final controller = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Reject Deliverable & Request Revision'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Please provide feedback or remarks explaining why this deliverable is rejected.',
+              style: TextStyle(fontSize: 13, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: controller,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                labelText: 'Feedback / Remarks',
+                alignLabelWithHint: true,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isEmpty) {
+                showValidationToast(context, 'Remarks are required for rejection.');
+                return;
+              }
+              Navigator.pop(dialogContext, true);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Reject'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await _reviewSubmission(
+        teamId,
+        stageLabel,
+        deliverableId,
+        'rejected',
+        setDialogState,
+        feedback: controller.text.trim(),
+      );
+    }
+  }
+
+  Future<void> _viewPdf(String fileUrl, String fileName) async {
+    if (fileUrl.isEmpty) {
+      showErrorToast(context, 'File URL not available');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.maroon),
+      ),
+    );
+
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+      await viewPdfInDialog(
+        context: context,
+        pdfBytes: bytes,
+        fileName: fileName,
+      );
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        showErrorToast(context, 'Error opening file: $e');
+      }
+    }
   }
 
   Future<void> _promptUploadOrReplace(

@@ -24,8 +24,9 @@ import 'pit_lead_cohort_screen.dart';
 import 'pit_instructor_assignment_screen.dart';
 import 'adviser_dashboard_content.dart';
 import 'pit_events_management_screen.dart';
+import 'pit_instructor_dashboard_content.dart';
 
-enum FacultyWorkspace { pitLead, adviser, repoAssistant }
+enum FacultyWorkspace { pitLead, adviser, repoAssistant, pitInstructor }
 
 class FacultyDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -90,14 +91,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         roles['uploader'] == true &&
         roles['adviser'] != true &&
         roles['pit_lead'] != true &&
-        roles['repo_assistant'] != true;
+        roles['repo_assistant'] != true &&
+        roles['pit_instructor'] != true;
 
     // Show sidebar if user has any faculty role
     final showSidebar =
         roles['adviser'] == true ||
         roles['pit_lead'] == true ||
         roles['repo_assistant'] == true ||
-        roles['uploader'] == true;
+        roles['uploader'] == true ||
+        roles['pit_instructor'] == true;
 
     // If user is only uploader, show uploader dashboard directly
     if (isOnlyUploader) {
@@ -165,6 +168,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     if (roles['adviser'] == true) {
       workspaces.add(FacultyWorkspace.adviser);
     }
+    if (roles['pit_instructor'] == true) {
+      workspaces.add(FacultyWorkspace.pitInstructor);
+    }
     if (roles['repo_assistant'] == true && roles['pit_lead'] != true) {
       workspaces.add(FacultyWorkspace.repoAssistant);
     }
@@ -192,6 +198,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return 'PIT Lead · $year';
       case FacultyWorkspace.adviser:
         return 'Project Adviser';
+      case FacultyWorkspace.pitInstructor:
+        return 'PIT Instructor';
       case FacultyWorkspace.repoAssistant:
         return 'Repository Assistant';
     }
@@ -551,15 +559,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               isActive: _activeSection == 'student_teams',
             ),
             _buildSubSidebarItem(
-              icon: Icons.folder_open_outlined,
-              label: 'PIT Deliverables',
-              onTap: () => _afterSidebarAction(
-                isWide,
-                () => _goToSection('deliverables'),
-              ),
-              isActive: _activeSection == 'deliverables',
-            ),
-            _buildSubSidebarItem(
               icon: Icons.event_note_outlined,
               label: 'PIT Events',
               onTap: () => _afterSidebarAction(
@@ -689,6 +688,29 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               () => _goToSection('audit_compliance'),
             ),
             isActive: _activeSection == 'audit_compliance',
+          ),
+        ];
+      case FacultyWorkspace.pitInstructor:
+        return [
+          _buildSectionHeader('Dashboard'),
+          _buildSidebarItem(
+            icon: Icons.dashboard_outlined,
+            label: 'Dashboard',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('dashboard'),
+            ),
+            isActive: _activeSection == 'dashboard',
+          ),
+          _buildSectionHeader('Instruction'),
+          _buildSidebarItem(
+            icon: Icons.folder_open_outlined,
+            label: 'PIT Deliverables',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('deliverables'),
+            ),
+            isActive: _activeSection == 'deliverables',
           ),
         ];
       case FacultyWorkspace.repoAssistant:
@@ -904,7 +926,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     switch (activeSection) {
       case 'deliverables':
         final ws = _resolvedWorkspace(roles);
-        final initialScope = ws == FacultyWorkspace.pitLead ? 'pit' : 'capstone';
+        final initialScope = (ws == FacultyWorkspace.pitLead || ws == FacultyWorkspace.pitInstructor) ? 'pit' : 'capstone';
         return Container(
           color: Colors.white,
           child: CapstoneDeliverablesScreen(initialScope: initialScope),
@@ -1028,6 +1050,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           onOpenWeeklyReports: () => _goToSection('weekly_reports'),
           onOpenGrading: () => _goToSection('adviser_grading'),
         );
+      case FacultyWorkspace.pitInstructor:
+        return PitInstructorDashboardContent(
+          data: dashState.data,
+          facultyName: facultyName,
+          onOpenDeliverables: () => _goToSection('deliverables'),
+        );
       case FacultyWorkspace.repoAssistant:
         final repoYear =
             dashState.data?['repo_assistant_year']?.toString() ??
@@ -1052,4 +1080,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
     }
   }
+
+
 }

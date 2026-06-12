@@ -284,7 +284,7 @@ def stage_deliverables_configured(team, stage_label):
 def required_complete(team, stage_label):
     submitted = submissions_for(team, stage_label)
     return all(
-        item['id'] in submitted
+        item['id'] in submitted and submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
         for item in get_deliverable_definitions_for_team(team, stage_label)
         if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
     )
@@ -341,7 +341,7 @@ def stage_payload(team, stage_label):
         'deliverables_configured': configured,
         'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label),
         'vault_unlocked': unlocked,
-        'required_complete': configured and all(item['uploaded'] for item in required_items),
+        'required_complete': configured and required_complete(team, stage_label),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
@@ -366,6 +366,10 @@ def submission_payload(submission):
         'file_url': submission.file_url,
         'uploaded_by_name': display_name(submission.uploaded_by),
         'uploaded_at': submission.uploaded_at,
+        'status': submission.status,
+        'feedback': submission.feedback,
+        'reviewed_by_name': display_name(submission.reviewed_by),
+        'reviewed_at': submission.reviewed_at,
     }
 
 
@@ -462,6 +466,8 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         'file_name': file_name.strip(),
         'file_size': (file_size or '').strip(),
         'uploaded_by': user,
+        'status': DeliverableSubmission.STATUS_PENDING,
+        'feedback': '',
     }
     
     if file is not None:
@@ -519,3 +525,41 @@ def endorse_team(team, stage_label):
         team.ready_for_stage = stage_label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
     return team
+
+
+@transaction.atomic
+def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user):
+    from django.utils import timezone
+    try:
+        submission = DeliverableSubmission.objects.get(
+            team=team,
+            stage_label=stage_label,
+            deliverable_id=deliverable_id
+        )
+    except DeliverableSubmission.DoesNotExist:
+        raise ValueError('Deliverable submission not found.')
+
+    if status_val not in (DeliverableSubmission.STATUS_ACCEPTED, DeliverableSubmission.STATUS_REJECTED):
+        raise ValueError('Invalid review status action.')
+
+    submission.status = status_val
+    submission.feedback = (feedback_val or '').strip()
+    submission.reviewed_by = reviewer_user
+    submission.reviewed_at = timezone.now()
+    submission.save()
+
+    # Re-evaluate team readiness if we are rejecting a required pre-defense deliverable
+    if status_val == DeliverableSubmission.STATUS_REJECTED:
+        if team.ready_for_stage == stage_label and not required_complete(team, stage_label):
+            if team.is_capstone:
+                stage = defense_stage_for_label(stage_label)
+                if stage is not None:
+                    mark_stage_locked(team, stage)
+                else:
+                    team.ready_for_stage = None
+                    team.save(update_fields=['ready_for_stage', 'updated_at'])
+            else:
+                team.ready_for_stage = None
+                team.save(update_fields=['ready_for_stage', 'updated_at'])
+
+    return submission

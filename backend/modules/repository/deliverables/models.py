@@ -12,6 +12,16 @@ class DeliverableSubmission(models.Model):
         (TYPE_VAULT, 'Vault'),
     )
 
+    STATUS_PENDING = 'pending'
+    STATUS_ACCEPTED = 'accepted'
+    STATUS_REJECTED = 'rejected'
+
+    STATUS_CHOICES = (
+        (STATUS_PENDING, 'Pending Review'),
+        (STATUS_ACCEPTED, 'Accepted'),
+        (STATUS_REJECTED, 'Rejected'),
+    )
+
     team = models.ForeignKey(
         'student_teams.StudentTeam',
         related_name='deliverable_submissions',
@@ -22,6 +32,29 @@ class DeliverableSubmission(models.Model):
     label = models.CharField(max_length=180)
     deliverable_type = models.CharField(max_length=20, choices=TYPE_CHOICES)
     required = models.BooleanField(default=False)
+    
+    status = models.CharField(
+        max_length=20,
+        choices=STATUS_CHOICES,
+        default=STATUS_PENDING,
+        help_text='Review and approval status'
+    )
+    feedback = models.TextField(
+        blank=True,
+        default='',
+        help_text='Rejection feedback or remarks'
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='reviewed_deliverables',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    reviewed_at = models.DateTimeField(
+        null=True,
+        blank=True
+    )
     
     # Actual file storage
     file = models.FileField(

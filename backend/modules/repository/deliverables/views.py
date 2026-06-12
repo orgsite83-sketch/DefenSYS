@@ -9,6 +9,7 @@ from academic_period_management.serializers import SemesterSerializer
 from .serializers import (
     DeliverableActionSerializer,
     DeliverableUploadSerializer,
+    DeliverableReviewSerializer,
 )
 from .services import (
     STAGE_OPTIONS,
@@ -259,3 +260,31 @@ class CompileWeeklyReportsView(APIView):
                 {'error': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+
+
+class CapstoneDeliverableReviewView(APIView):
+    permission_classes = [CanManageDeliverables]
+
+    def post(self, request):
+        serializer = DeliverableReviewSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attrs = serializer.validated_data
+        team = get_allowed_team(request, attrs['team_id'])
+
+        try:
+            from .services import review_submission
+            review_submission(
+                team=team,
+                stage_label=attrs['stage_label'],
+                deliverable_id=attrs['deliverable_id'],
+                status_val=attrs['status'],
+                feedback_val=attrs.get('feedback', ''),
+                reviewer_user=request.user,
+            )
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+
+        return Response(
+            deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
+            status=status.HTTP_200_OK
+        )
