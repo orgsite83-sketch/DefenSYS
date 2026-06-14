@@ -4,6 +4,7 @@ import '../../../services/defense_scheduler_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
   const PitEventsManagementScreen({super.key});
@@ -80,6 +81,95 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     );
   }
 
+  Widget _primaryButton({
+    required Widget icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: icon,
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: DefensysTokens.maroon,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          textStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            fontFamily: DefensysTokens.fontFamily,
+          ),
+        ),
+      ),
+    );
+  }
+
+
+  Widget _cardButton({
+    required Widget icon,
+    required String label,
+    required VoidCallback onTap,
+    required Color color,
+    required Color borderColor,
+  }) {
+    return SizedBox(
+      height: 32,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: icon,
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: color,
+          side: BorderSide(color: borderColor),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          textStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            fontFamily: DefensysTokens.fontFamily,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _cardIconButton({
+    required Widget icon,
+    required VoidCallback onTap,
+    required Color color,
+    required Color hoverColor,
+    required String tooltip,
+  }) {
+    return Tooltip(
+      message: tooltip,
+      child: SizedBox(
+        width: 32,
+        height: 32,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(6),
+          hoverColor: hoverColor,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: DefensysTokens.border),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Center(
+              child: IconTheme(
+                data: IconThemeData(color: color),
+                child: icon,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
@@ -107,100 +197,54 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       },
     );
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      appBar: AppBar(
-        title: Row(
+    final activeSem = state.activeSemester;
+    final activeSemLabel = activeSem != null ? (activeSem['display_name']?.toString() ?? '') : 'No active semester';
+
+    if (isLoading) {
+      return const Center(
+        child: CircularProgressIndicator(color: AppColors.maroon),
+      );
+    }
+
+    return RefreshIndicator(
+      color: AppColors.maroon,
+      onRefresh: _loadData,
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const Icon(Icons.event_note, color: AppColors.maroon, size: 24),
-            const SizedBox(width: 8),
-            const Text(
-              'PIT Events Configuration',
-              style: TextStyle(
-                color: AppColors.maroon,
-                fontSize: 20,
-                fontWeight: FontWeight.w800,
+            DefensysPageHeader(
+              icon: Icons.event_note_outlined,
+              title: 'PIT Events Configuration',
+              subtitle: activeSemLabel,
+              actions: _primaryButton(
+                icon: const Icon(Icons.add, size: 18, color: Colors.white),
+                label: 'Add Event',
+                onTap: () => _showEventDialog(),
               ),
             ),
+            const SizedBox(height: 28),
+            _buildTopBanner(),
+            const SizedBox(height: 24),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Event Configurations',
+                  style: DefensysUi.sectionTitle,
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            if (_configs.isEmpty)
+              _buildEmptyState()
+            else
+              _buildGrid(),
           ],
         ),
-        backgroundColor: Colors.white,
-        elevation: 0,
-        actions: [
-          if (state.activeSemester != null)
-            Padding(
-              padding: const EdgeInsets.only(right: 16.0),
-              child: Center(
-                child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  decoration: BoxDecoration(
-                    color: AppColors.maroon.withOpacity(0.06),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: AppColors.maroon.withOpacity(0.1)),
-                  ),
-                  child: Text(
-                    state.activeSemester!['display_name']?.toString() ?? '',
-                    style: const TextStyle(
-                      color: AppColors.maroon,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-        ],
       ),
-      body: isLoading
-          ? const Center(
-              child: CircularProgressIndicator(color: AppColors.maroon),
-            )
-          : RefreshIndicator(
-              color: AppColors.maroon,
-              onRefresh: _loadData,
-              child: SingleChildScrollView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.all(24.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _buildTopBanner(),
-                    const SizedBox(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text(
-                          'Event Configurations',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        ElevatedButton.icon(
-                          onPressed: () => _showEventDialog(),
-                          icon: const Icon(Icons.add, size: 18, color: Colors.white),
-                          label: const Text('Add Event', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.maroon,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 16),
-                    if (_configs.isEmpty)
-                      _buildEmptyState()
-                    else
-                      _buildGrid(),
-                  ],
-                ),
-              ),
-            ),
     );
   }
 
@@ -208,39 +252,36 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.02),
-            blurRadius: 8,
-            offset: const Offset(0, 4),
-          ),
-        ],
+        color: DefensysTokens.infoBg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: DefensysTokens.infoBorder),
       ),
-      child: const Row(
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(Icons.info_outline, color: AppColors.maroon, size: 24),
-          SizedBox(width: 16),
+          const Icon(Icons.info_outline, color: DefensysTokens.infoText, size: 20),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
+                const Text(
                   'Event setup precedes scheduling',
                   style: TextStyle(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
+                    fontWeight: FontWeight.bold,
+                    color: DefensysTokens.infoText,
                     fontSize: 14,
+                    fontFamily: DefensysTokens.fontFamily,
                   ),
                 ),
-                SizedBox(height: 4),
+                const SizedBox(height: 4),
                 Text(
                   'Configure events, grading weights, rubrics, and deliverable guidelines. Pre-Defense deliverables will block defense scheduler assignments until student teams upload them and instructors endorse the team.',
                   style: TextStyle(
-                    color: AppColors.textSecondary,
+                    color: DefensysTokens.infoText.withValues(alpha: 0.9),
                     fontSize: 13,
+                    fontFamily: DefensysTokens.fontFamily,
+                    height: 1.4,
                   ),
                 ),
               ],
@@ -252,13 +293,8 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   }
 
   Widget _buildEmptyState() {
-    return Container(
+    return DefensysCard(
       padding: const EdgeInsets.all(48),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
       child: Column(
         children: [
           Icon(Icons.event_busy_outlined, size: 48, color: Colors.grey.shade400),
@@ -268,26 +304,25 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
-              color: AppColors.textPrimary,
+              color: DefensysTokens.textPrimary,
+              fontFamily: DefensysTokens.fontFamily,
             ),
           ),
           const SizedBox(height: 8),
           const Text(
             'Configure grading rules and deliverable checklists for this semester.',
             style: TextStyle(
-              color: AppColors.textSecondary,
+              color: DefensysTokens.textSecondary,
               fontSize: 13,
+              fontFamily: DefensysTokens.fontFamily,
             ),
             textAlign: TextAlign.center,
           ),
           const SizedBox(height: 24),
-          ElevatedButton(
-            onPressed: () => _showEventDialog(),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.maroon,
-              elevation: 0,
-            ),
-            child: const Text('Add Event', style: TextStyle(color: Colors.white)),
+          _primaryButton(
+            icon: const Icon(Icons.add, size: 18, color: Colors.white),
+            label: 'Add Event',
+            onTap: () => _showEventDialog(),
           ),
         ],
       ),
@@ -325,9 +360,9 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: crossCount,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-            mainAxisExtent: 220,
+            crossAxisSpacing: 20,
+            mainAxisSpacing: 20,
+            mainAxisExtent: 235,
           ),
           itemCount: _configs.length,
           itemBuilder: (context, index) {
@@ -336,98 +371,94 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
             final vaultCount = delivs.where((d) => d['deliverable_type'] == 'vault').length;
 
-            return Card(
-              color: Colors.white,
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-                side: BorderSide(color: Colors.grey.shade200),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            config['event_name']?.toString() ?? '',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.w800,
-                              color: AppColors.textPrimary,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
+            return DefensysCard(
+              padding: const EdgeInsets.all(20.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Text(
+                          config['event_name']?.toString() ?? '',
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textPrimary,
+                            fontFamily: DefensysTokens.fontFamily,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: DefensysTokens.maroon.withOpacity(0.08),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${config['panel_weight']}% Panel / ${config['peer_weight']}% Peer',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                              color: DefensysTokens.maroon,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          _buildConfigRow(
-                            icon: Icons.assignment_outlined,
-                            label: 'Panel Rubric: ',
-                            value: rubricName(config['panel_rubric_id']),
-                          ),
-                          const SizedBox(height: 6),
-                          _buildConfigRow(
-                            icon: Icons.groups_outlined,
-                            label: 'Peer Rubric: ',
-                            value: peerRubricName(config['peer_rubric_id']),
-                          ),
-                          const SizedBox(height: 6),
-                          _buildConfigRow(
-                            icon: Icons.folder_outlined,
-                            label: 'Deliverables: ',
-                            value: '$preCount Pre-Defense, $vaultCount Vault Template',
-                          ),
-                        ],
                       ),
-                    ),
-                    const Divider(height: 24),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => _showEventDialog(config),
-                          icon: const Icon(Icons.edit_outlined, size: 14, color: AppColors.textPrimary),
-                          label: const Text('Edit', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.bold)),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.grey.shade300),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15)),
+                        ),
+                        child: Text(
+                          '${config['panel_weight']}% Panel / ${config['peer_weight']}% Peer',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.maroon,
+                            fontFamily: DefensysTokens.fontFamily,
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        IconButton(
-                          onPressed: () => _deleteConfig(config),
-                          icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                          tooltip: 'Delete Event',
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildConfigRow(
+                          icon: Icons.assignment_outlined,
+                          label: 'Panel Rubric: ',
+                          value: rubricName(config['panel_rubric_id']),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildConfigRow(
+                          icon: Icons.groups_outlined,
+                          label: 'Peer Rubric: ',
+                          value: peerRubricName(config['peer_rubric_id']),
+                        ),
+                        const SizedBox(height: 10),
+                        _buildConfigRow(
+                          icon: Icons.folder_outlined,
+                          label: 'Deliverables: ',
+                          value: '$preCount Pre-Defense, $vaultCount Vault Template',
                         ),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  const Divider(height: 24),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      _cardButton(
+                        icon: const Icon(Icons.edit_outlined, size: 14),
+                        label: 'Edit',
+                        onTap: () => _showEventDialog(config),
+                        color: DefensysTokens.textDark,
+                        borderColor: const Color(0xFFD1D5DB),
+                      ),
+                      const SizedBox(width: 8),
+                      _cardIconButton(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                        onTap: () => _deleteConfig(config),
+                        color: DefensysTokens.danger,
+                        hoverColor: DefensysTokens.dangerBg,
+                        tooltip: 'Delete Event',
+                      ),
+                    ],
+                  ),
+                ],
               ),
             );
           },
@@ -443,14 +474,22 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
   }) {
     return Row(
       children: [
-        Icon(icon, size: 15, color: Colors.grey.shade600),
-        const SizedBox(width: 8),
+        Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            shape: BoxShape.circle,
+          ),
+          child: Icon(icon, size: 14, color: DefensysTokens.textSecondary),
+        ),
+        const SizedBox(width: 10),
         Text(
           label,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 12.5,
-            color: Colors.grey.shade600,
-            fontWeight: FontWeight.w600,
+            color: DefensysTokens.textSecondary,
+            fontWeight: FontWeight.w500,
+            fontFamily: DefensysTokens.fontFamily,
           ),
         ),
         Expanded(
@@ -458,8 +497,9 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             value,
             style: const TextStyle(
               fontSize: 12.5,
-              color: AppColors.textPrimary,
+              color: DefensysTokens.textPrimary,
               fontWeight: FontWeight.w700,
+              fontFamily: DefensysTokens.fontFamily,
             ),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -487,6 +527,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   final _formKey = GlobalKey<FormState>();
   final _eventNameController = TextEditingController();
   final _vaultFileTemplateController = TextEditingController();
+  late final TextEditingController _panelWeightController;
+  late final TextEditingController _peerWeightController;
 
   int? _panelRubricId;
   int? _peerRubricId;
@@ -509,6 +551,29 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       final delList = widget.config!['deliverables'] as List? ?? [];
       _deliverables = delList.map((item) => Map<String, dynamic>.from(item as Map)).toList();
     }
+    _panelWeightController = TextEditingController(text: _panelWeight.toString());
+    _peerWeightController = TextEditingController(text: _peerWeight.toString());
+  }
+
+  @override
+  void dispose() {
+    _eventNameController.dispose();
+    _vaultFileTemplateController.dispose();
+    _panelWeightController.dispose();
+    _peerWeightController.dispose();
+    super.dispose();
+  }
+
+  void _onPanelWeightChanged(String value) {
+    setState(() {
+      _panelWeight = int.tryParse(value.trim()) ?? 0;
+    });
+  }
+
+  void _onPeerWeightChanged(String value) {
+    setState(() {
+      _peerWeight = int.tryParse(value.trim()) ?? 0;
+    });
   }
 
   void _addDeliverable() {
@@ -594,6 +659,182 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     }
   }
 
+  InputDecoration _dialogInputDecoration({
+    required String labelText,
+    String? hintText,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      labelStyle: const TextStyle(
+        fontFamily: DefensysTokens.fontFamily,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: DefensysTokens.textSecondary,
+      ),
+      hintStyle: const TextStyle(
+        fontFamily: DefensysTokens.fontFamily,
+        fontSize: 13,
+        color: Colors.grey,
+      ),
+      filled: true,
+      fillColor: const Color(0xFFF9FAFB),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: DefensysTokens.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildWeightSplitBar() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        ClipRRect(
+          borderRadius: BorderRadius.circular(4),
+          child: Container(
+            height: 10,
+            color: Colors.grey.shade200,
+            child: Row(
+              children: [
+                if (_panelWeight > 0)
+                  Expanded(
+                    flex: _panelWeight,
+                    child: Container(
+                      color: DefensysTokens.maroon,
+                    ),
+                  ),
+                if (_peerWeight > 0)
+                  Expanded(
+                    flex: _peerWeight,
+                    child: Container(
+                      color: DefensysTokens.gold,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Row(
+              children: [
+                Container(width: 8, height: 8, decoration: const BoxDecoration(color: DefensysTokens.maroon, shape: BoxShape.circle)),
+                const SizedBox(width: 6),
+                Text('Panel Evaluation: $_panelWeight%', style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary, fontFamily: DefensysTokens.fontFamily, fontWeight: FontWeight.w600)),
+              ],
+            ),
+            Row(
+              children: [
+                Container(width: 8, height: 8, decoration: const BoxDecoration(color: DefensysTokens.gold, shape: BoxShape.circle)),
+                const SizedBox(width: 6),
+                Text('Peer Evaluation: $_peerWeight%', style: const TextStyle(fontSize: 12, color: DefensysTokens.textSecondary, fontFamily: DefensysTokens.fontFamily, fontWeight: FontWeight.w600)),
+              ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildFormGroup({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required List<Widget> children,
+  }) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, color: DefensysTokens.maroon, size: 18),
+              const SizedBox(width: 8),
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                  color: DefensysTokens.textPrimary,
+                  fontFamily: DefensysTokens.fontFamily,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  subtitle,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade500,
+                    fontFamily: DefensysTokens.fontFamily,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          ...children,
+        ],
+      ),
+    );
+  }
+
+  Widget _secondaryButton({
+    required Widget icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: icon,
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: DefensysTokens.textDark,
+          side: const BorderSide(color: Color(0xFFD1D5DB)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          textStyle: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            fontFamily: DefensysTokens.fontFamily,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
@@ -616,17 +857,27 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    widget.config == null ? 'Configure New PIT Event' : 'Edit Event Configuration',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.maroon,
-                    ),
+                  Row(
+                    children: [
+                      const Icon(Icons.settings_suggest_outlined, color: DefensysTokens.maroon, size: 22),
+                      const SizedBox(width: 8),
+                      Text(
+                        widget.config == null ? 'Configure New PIT Event' : 'Edit Event Configuration',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.maroon,
+                          fontFamily: DefensysTokens.fontFamily,
+                        ),
+                      ),
+                    ],
                   ),
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close),
+                    icon: const Icon(Icons.close_rounded),
+                    style: IconButton.styleFrom(
+                      hoverColor: Colors.grey.shade100,
+                    ),
                   ),
                 ],
               ),
@@ -636,129 +887,260 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      // Event Name
-                      TextFormField(
-                        controller: _eventNameController,
-                        decoration: const InputDecoration(
-                          labelText: 'Event Name',
-                          hintText: 'e.g. 2nd Year PIT Expo',
-                          border: OutlineInputBorder(),
-                        ),
-                        validator: (value) {
-                          if (value == null || value.trim().isEmpty) {
-                            return 'Event Name is required.';
-                          }
-                          return null;
-                        },
-                      ),
-                      const SizedBox(height: 16),
-                      // Rubrics Selection
-                      Row(
+                      // Group 1: General configuration
+                      _buildFormGroup(
+                        title: 'General Details',
+                        subtitle: '• Required event details and rubrics',
+                        icon: Icons.event_note_outlined,
                         children: [
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              value: _panelRubricId,
-                              decoration: const InputDecoration(
-                                labelText: 'Panel Rubric',
-                                border: OutlineInputBorder(),
-                              ),
-                              items: panelRubrics.map((r) {
-                                return DropdownMenuItem<int>(
-                                  value: int.tryParse(r['id']?.toString() ?? ''),
-                                  child: Text(r['name']?.toString() ?? ''),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() => _panelRubricId = value);
-                              },
+                          TextFormField(
+                            controller: _eventNameController,
+                            decoration: _dialogInputDecoration(
+                              labelText: 'Event Name',
+                              hintText: 'e.g. 2nd Year PIT Expo',
                             ),
+                            validator: (value) {
+                              if (value == null || value.trim().isEmpty) {
+                                return 'Event Name is required.';
+                              }
+                              return null;
+                            },
+                            style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: DropdownButtonFormField<int>(
-                              value: _peerRubricId,
-                              decoration: const InputDecoration(
-                                labelText: 'Peer Rubric',
-                                border: OutlineInputBorder(),
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: _panelRubricId,
+                                  decoration: _dialogInputDecoration(labelText: 'Panel Rubric (Required)'),
+                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14, color: DefensysTokens.textPrimary),
+                                  items: panelRubrics.map((r) {
+                                    return DropdownMenuItem<int>(
+                                      value: int.tryParse(r['id']?.toString() ?? ''),
+                                      child: Text(r['name']?.toString() ?? ''),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() => _panelRubricId = value);
+                                  },
+                                ),
                               ),
-                              items: peerRubrics.map((r) {
-                                return DropdownMenuItem<int>(
-                                  value: int.tryParse(r['id']?.toString() ?? ''),
-                                  child: Text(r['name']?.toString() ?? ''),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() => _peerRubricId = value);
-                              },
-                            ),
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: DropdownButtonFormField<int>(
+                                  initialValue: _peerRubricId,
+                                  decoration: _dialogInputDecoration(labelText: 'Peer Rubric (Required)'),
+                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14, color: DefensysTokens.textPrimary),
+                                  items: peerRubrics.map((r) {
+                                    return DropdownMenuItem<int>(
+                                      value: int.tryParse(r['id']?.toString() ?? ''),
+                                      child: Text(r['name']?.toString() ?? ''),
+                                    );
+                                  }).toList(),
+                                  onChanged: (value) {
+                                    setState(() => _peerRubricId = value);
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 16),
-                      // Weights
-                      Row(
+
+                      // Group 2: Weight distribution
+                      _buildFormGroup(
+                        title: 'Grading Weight Split',
+                        subtitle: '• Adjust the ratio between Panel and Peer evaluation (Must total 100%)',
+                        icon: Icons.percent_outlined,
                         children: [
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: _panelWeight.toString(),
-                              decoration: const InputDecoration(
-                                labelText: 'Panel Weight (%)',
-                                border: OutlineInputBorder(),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _panelWeightController,
+                                  decoration: _dialogInputDecoration(
+                                    labelText: 'Panel Weight (%)',
+                                    hintText: 'e.g. 80',
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
+                                  onChanged: _onPanelWeightChanged,
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Required';
+                                    }
+                                    final parsed = int.tryParse(value);
+                                    if (parsed == null) {
+                                      return 'Invalid number';
+                                    }
+                                    if (parsed < 0) {
+                                      return 'Must be >= 0';
+                                    }
+                                    return null;
+                                  },
+                                ),
                               ),
-                              keyboardType: TextInputType.number,
-                              onChanged: (value) {
-                                final parsed = int.tryParse(value) ?? 0;
+                              const SizedBox(width: 16),
+                              Expanded(
+                                child: TextFormField(
+                                  controller: _peerWeightController,
+                                  decoration: _dialogInputDecoration(
+                                    labelText: 'Peer Weight (%)',
+                                    hintText: 'e.g. 20',
+                                  ),
+                                  keyboardType: TextInputType.number,
+                                  style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
+                                  onChanged: _onPeerWeightChanged,
+                                  validator: (value) {
+                                    if (value == null || value.trim().isEmpty) {
+                                      return 'Required';
+                                    }
+                                    final parsed = int.tryParse(value);
+                                    if (parsed == null) {
+                                      return 'Invalid number';
+                                    }
+                                    if (parsed < 0) {
+                                      return 'Must be >= 0';
+                                    }
+                                    return null;
+                                  },
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Slide or type to adjust weights:',
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                  color: Colors.grey.shade600,
+                                  fontFamily: DefensysTokens.fontFamily,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          SliderTheme(
+                            data: SliderThemeData(
+                              activeTrackColor: DefensysTokens.maroon,
+                              inactiveTrackColor: DefensysTokens.gold,
+                              thumbColor: DefensysTokens.maroon,
+                              overlayColor: DefensysTokens.maroon.withValues(alpha: 0.12),
+                              valueIndicatorColor: DefensysTokens.maroon,
+                              valueIndicatorTextStyle: const TextStyle(color: Colors.white),
+                              trackHeight: 6,
+                            ),
+                            child: Slider(
+                              value: _panelWeight.clamp(0, 100).toDouble(),
+                              min: 0,
+                              max: 100,
+                              divisions: 20, // step of 5%
+                              label: 'Panel: $_panelWeight% / Peer: $_peerWeight%',
+                              onChanged: (val) {
+                                final panelVal = val.toInt();
+                                final peerVal = 100 - panelVal;
                                 setState(() {
-                                  _panelWeight = parsed;
-                                  _peerWeight = (100 - parsed).clamp(0, 100);
+                                  _panelWeight = panelVal;
+                                  _peerWeight = peerVal;
+                                  _panelWeightController.text = panelVal.toString();
+                                  _peerWeightController.text = peerVal.toString();
                                 });
                               },
                             ),
                           ),
-                          const SizedBox(width: 16),
-                          Expanded(
-                            child: TextFormField(
-                              key: ValueKey('peerWeight_$_peerWeight'),
-                              initialValue: _peerWeight.toString(),
-                              decoration: const InputDecoration(
-                                labelText: 'Peer Weight (%)',
-                                border: OutlineInputBorder(),
+                          const SizedBox(height: 12),
+                          _buildWeightSplitBar(),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Total: ${_panelWeight + _peerWeight}%${(_panelWeight + _peerWeight) == 100 ? '' : ' — must equal 100%'}',
+                                style: TextStyle(
+                                  color: (_panelWeight + _peerWeight) == 100
+                                      ? DefensysTokens.success
+                                      : DefensysTokens.danger,
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  fontFamily: DefensysTokens.fontFamily,
+                                ),
                               ),
-                              keyboardType: TextInputType.number,
-                              onChanged: (value) {
-                                final parsed = int.tryParse(value) ?? 0;
-                                setState(() {
-                                  _peerWeight = parsed;
-                                  _panelWeight = (100 - parsed).clamp(0, 100);
-                                });
-                              },
-                            ),
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setState(() {
+                                    _panelWeight = 80;
+                                    _peerWeight = 20;
+                                    _panelWeightController.text = '80';
+                                    _peerWeightController.text = '20';
+                                  });
+                                },
+                                icon: const Icon(Icons.restore, size: 14, color: DefensysTokens.maroon),
+                                label: const Text('Reset to 80 / 20'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: DefensysTokens.maroon,
+                                  side: const BorderSide(color: DefensysTokens.maroon, width: 1),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                  textStyle: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    fontFamily: DefensysTokens.fontFamily,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
-                      const Divider(),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          const Text(
-                            'Deliverables Checklist',
-                            style: TextStyle(
-                              fontSize: 15,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.textPrimary,
+
+                      // Deliverables Header Section
+                      Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.checklist_outlined, color: DefensysTokens.maroon, size: 18),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Deliverables Checklist',
+                                      style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold,
+                                        color: DefensysTokens.textPrimary,
+                                        fontFamily: DefensysTokens.fontFamily,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Text(
+                                      '• Add student deliverables for this event',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey.shade500,
+                                        fontFamily: DefensysTokens.fontFamily,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                TextButton.icon(
+                                  onPressed: _addDeliverable,
+                                  icon: const Icon(Icons.add, size: 16),
+                                  label: const Text('Add Deliverable'),
+                                  style: TextButton.styleFrom(
+                                    foregroundColor: DefensysTokens.maroon,
+                                    textStyle: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontWeight: FontWeight.bold, fontSize: 13),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          TextButton.icon(
-                            onPressed: _addDeliverable,
-                            icon: const Icon(Icons.add, size: 16),
-                            label: const Text('Add Deliverable'),
-                            style: TextButton.styleFrom(foregroundColor: AppColors.maroon),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
+                          const SizedBox(height: 12),
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -771,141 +1153,212 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           final labelCtrl = TextEditingController(text: d['label']);
                           final templateCtrl = TextEditingController(text: d['vault_file_template']);
 
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                              side: BorderSide(color: Colors.grey.shade200),
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 16),
+                            padding: const EdgeInsets.all(16),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.03),
+                                  blurRadius: 4,
+                                  offset: const Offset(0, 1),
+                                ),
+                              ],
                             ),
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Expanded(
-                                        child: TextFormField(
-                                          controller: labelCtrl,
-                                          decoration: const InputDecoration(
-                                            labelText: 'Name / Label',
-                                            hintText: 'e.g. System Demo URL',
-                                            border: OutlineInputBorder(),
-                                          ),
-                                          onChanged: (val) {
-                                            d['label'] = val.trim();
-                                            // Re-evaluate template preview
-                                            if (isVault) {
-                                              setState(() {});
-                                            }
-                                          },
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      flex: 4,
+                                      child: TextFormField(
+                                        controller: labelCtrl,
+                                        decoration: _dialogInputDecoration(
+                                          labelText: 'Name / Label',
+                                          hintText: 'e.g. System Demo URL',
                                         ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      SizedBox(
-                                        width: 125,
-                                        child: DropdownButtonFormField<String>(
-                                          initialValue: d['deliverable_type']?.toString(),
-                                          decoration: const InputDecoration(
-                                            labelText: 'Type',
-                                            border: OutlineInputBorder(),
-                                            contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                                          ),
-                                          items: const [
-                                            DropdownMenuItem(value: 'pre', child: Text('Pre-Defense', style: TextStyle(fontSize: 13))),
-                                            DropdownMenuItem(value: 'vault', child: Text('Vault', style: TextStyle(fontSize: 13))),
-                                          ],
-                                          onChanged: (val) {
-                                            if (val != null) {
-                                              setState(() {
-                                                d['deliverable_type'] = val;
-                                              });
-                                            }
-                                          },
-                                        ),
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Checkbox(
-                                        value: d['required'] == true,
+                                        style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
                                         onChanged: (val) {
-                                          setState(() {
-                                            d['required'] = val == true;
-                                          });
+                                          d['label'] = val.trim();
+                                          // Re-evaluate template preview
+                                          if (isVault) {
+                                            setState(() {});
+                                          }
                                         },
                                       ),
-                                      const Text('Required', style: TextStyle(fontSize: 13)),
-                                      const SizedBox(width: 4),
-                                      IconButton(
-                                        onPressed: () => _removeDeliverable(idx),
-                                        icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                                        padding: EdgeInsets.zero,
-                                        constraints: const BoxConstraints(),
-                                      ),
-                                    ],
-                                  ),
-                                  if (isVault) ...[
-                                    const SizedBox(height: 8),
-                                    TextFormField(
-                                      controller: templateCtrl,
-                                      decoration: const InputDecoration(
-                                        labelText: 'Vault Naming Template',
-                                        hintText: 'e.g. {year}.{course}.{project}.{semester}',
-                                        border: OutlineInputBorder(),
-                                      ),
-                                      onChanged: (val) {
-                                        setState(() {
-                                          d['vault_file_template'] = val.trim();
-                                        });
-                                      },
                                     ),
-                                    const SizedBox(height: 6),
-                                    Wrap(
-                                      spacing: 6,
-                                      children: ['{year}', '{course}', '{project}', '{event}', '{semester}', '{deliverable}']
-                                          .map((varName) => ActionChip(
-                                                label: Text(varName, style: const TextStyle(fontSize: 11)),
-                                                padding: EdgeInsets.zero,
-                                                onPressed: () {
-                                                  final current = templateCtrl.text;
-                                                  final next = current + varName;
-                                                  templateCtrl.text = next;
-                                                  setState(() {
-                                                    d['vault_file_template'] = next;
-                                                  });
-                                                },
-                                              ))
-                                          .toList(),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      flex: 2,
+                                      child: DropdownButtonFormField<String>(
+                                        initialValue: d['deliverable_type']?.toString(),
+                                        decoration: _dialogInputDecoration(labelText: 'Type'),
+                                        style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13, color: DefensysTokens.textPrimary),
+                                        items: const [
+                                          DropdownMenuItem(value: 'pre', child: Text('Pre-Defense', style: TextStyle(fontSize: 13, fontFamily: DefensysTokens.fontFamily))),
+                                          DropdownMenuItem(value: 'vault', child: Text('Vault', style: TextStyle(fontSize: 13, fontFamily: DefensysTokens.fontFamily))),
+                                        ],
+                                        onChanged: (val) {
+                                          if (val != null) {
+                                            setState(() {
+                                              d['deliverable_type'] = val;
+                                            });
+                                          }
+                                        },
+                                      ),
                                     ),
-                                    const SizedBox(height: 8),
+                                    const SizedBox(width: 12),
                                     Container(
-                                      padding: const EdgeInsets.all(8),
+                                      height: 48,
+                                      padding: const EdgeInsets.symmetric(horizontal: 8),
                                       decoration: BoxDecoration(
-                                        color: Colors.grey.shade100,
-                                        borderRadius: BorderRadius.circular(6),
+                                        color: const Color(0xFFF9FAFB),
+                                        border: Border.all(color: const Color(0xFFE5E7EB)),
+                                        borderRadius: BorderRadius.circular(8),
                                       ),
                                       child: Row(
+                                        mainAxisSize: MainAxisSize.min,
                                         children: [
-                                          const Text(
-                                            'Preview: ',
-                                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey),
+                                          Checkbox(
+                                            value: d['required'] == true,
+                                            activeColor: DefensysTokens.maroon,
+                                            onChanged: (val) {
+                                              setState(() {
+                                                d['required'] = val == true;
+                                              });
+                                            },
                                           ),
-                                          Expanded(
-                                            child: Text(
-                                              _resolveFilenamePreview(d['vault_file_template'] ?? '', d['label'] ?? ''),
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontFamily: 'monospace',
-                                                fontWeight: FontWeight.bold,
-                                                color: AppColors.maroon,
-                                              ),
+                                          const Text(
+                                            'Required',
+                                            style: TextStyle(
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                              fontFamily: DefensysTokens.fontFamily,
+                                              color: DefensysTokens.textPrimary,
                                             ),
                                           ),
+                                          const SizedBox(width: 4),
                                         ],
                                       ),
                                     ),
+                                    const SizedBox(width: 12),
+                                    IconButton(
+                                      onPressed: () => _removeDeliverable(idx),
+                                      icon: const Icon(Icons.delete_outline_rounded, color: DefensysTokens.danger),
+                                      style: IconButton.styleFrom(
+                                        hoverColor: DefensysTokens.dangerBg,
+                                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                        padding: const EdgeInsets.all(12),
+                                      ),
+                                    ),
                                   ],
+                                ),
+                                if (isVault) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            TextFormField(
+                                              controller: templateCtrl,
+                                              decoration: _dialogInputDecoration(
+                                                labelText: 'Vault Naming Template',
+                                                hintText: 'e.g. {year}.{course}.{project}.{semester}',
+                                              ),
+                                              style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13),
+                                              onChanged: (val) {
+                                                setState(() {
+                                                  d['vault_file_template'] = val.trim();
+                                                });
+                                              },
+                                            ),
+                                            const SizedBox(height: 8),
+                                            Wrap(
+                                              spacing: 6,
+                                              runSpacing: 6,
+                                              children: ['{year}', '{course}', '{project}', '{event}', '{semester}', '{deliverable}']
+                                                  .map((varName) => ActionChip(
+                                                        label: Text(
+                                                          varName,
+                                                          style: const TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w600,
+                                                            fontFamily: DefensysTokens.fontFamily,
+                                                          ),
+                                                        ),
+                                                        labelStyle: const TextStyle(color: DefensysTokens.maroon),
+                                                        backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.05),
+                                                        side: BorderSide(color: DefensysTokens.maroon.withValues(alpha: 0.15)),
+                                                        padding: EdgeInsets.zero,
+                                                        onPressed: () {
+                                                          final current = templateCtrl.text;
+                                                          final next = current + varName;
+                                                          templateCtrl.text = next;
+                                                          setState(() {
+                                                            d['vault_file_template'] = next;
+                                                          });
+                                                        },
+                                                      ))
+                                                  .toList(),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      const SizedBox(width: 16),
+                                      Expanded(
+                                        flex: 2,
+                                        child: Container(
+                                          padding: const EdgeInsets.all(12),
+                                          decoration: BoxDecoration(
+                                            color: DefensysTokens.maroon.withValues(alpha: 0.03),
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.1)),
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Row(
+                                                children: [
+                                                  Icon(Icons.remove_red_eye_outlined, size: 14, color: DefensysTokens.maroon),
+                                                  const SizedBox(width: 6),
+                                                  const Text(
+                                                    'Filename Preview',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.w800,
+                                                      color: DefensysTokens.maroon,
+                                                      fontFamily: DefensysTokens.fontFamily,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                              const SizedBox(height: 8),
+                                              SelectableText(
+                                                _resolveFilenamePreview(d['vault_file_template'] ?? '', d['label'] ?? ''),
+                                                style: const TextStyle(
+                                                  fontSize: 12,
+                                                  fontFamily: 'monospace',
+                                                  fontWeight: FontWeight.w700,
+                                                  color: DefensysTokens.maroon,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                 ],
-                              ),
+                              ],
                             ),
                           );
                         },
@@ -918,28 +1371,37 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  OutlinedButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                    ),
-                    child: const Text('Cancel'),
+                  _secondaryButton(
+                    icon: const Icon(Icons.close, size: 18),
+                    label: 'Cancel',
+                    onTap: () => Navigator.of(context).pop(),
                   ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: state.isSaving ? null : _save,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.maroon,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    height: 42,
+                    child: ElevatedButton.icon(
+                      onPressed: state.isSaving ? null : _save,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: DefensysTokens.maroon,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                        padding: const EdgeInsets.symmetric(horizontal: 20),
+                        textStyle: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                          fontFamily: DefensysTokens.fontFamily,
+                        ),
+                      ),
+                      icon: state.isSaving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                            )
+                          : const Icon(Icons.check_circle_outline, size: 18, color: Colors.white),
+                      label: const Text('Save Configuration'),
                     ),
-                    child: state.isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                          )
-                        : const Text('Save Configuration', style: TextStyle(color: Colors.white)),
                   ),
                 ],
               ),

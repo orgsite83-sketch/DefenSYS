@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:excel/excel.dart' as xl;
 import 'package:go_router/go_router.dart';
 
 import '../../../navigation/admin_route_paths.dart';
@@ -30,8 +29,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   _CohortViewMode _viewMode = _CohortViewMode.sections;
 
   static const _ink = DefensysUi.textDark;
-  static const _line = Color(0xFFF3F4F6);
+  static const _muted = DefensysUi.steelGrey;
   static const _maroon = DefensysUi.primaryMaroon;
+  static const _line = Color(0xFFE5E7EB);
 
   @override
   void initState() {
@@ -85,7 +85,7 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
               auditMode: _isAuditMode,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 28),
           if (importState.error != null) ...[
             _notice(importState.error!, warning: true),
             const SizedBox(height: 14),
@@ -99,27 +99,78 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
             _notice(state.operatingMessage!, warning: _isAuditMode),
             const SizedBox(height: 14),
           ],
-          _cohortScopeToggle(state),
-          const SizedBox(height: 14),
-          _viewModeToggle(),
-          const SizedBox(height: 14),
-          _viewMode == _CohortViewMode.sections
-              ? _sectionFiltersRow(state, instructorState)
-              : _filtersRow(state),
-          const SizedBox(height: 16),
-          if (state.error != null) ...[
-            _notice(state.error!, warning: true),
-            const SizedBox(height: 14),
-          ],
-          if (instructorState.error != null &&
-              _viewMode == _CohortViewMode.sections) ...[
-            _notice(instructorState.error!, warning: true),
-            const SizedBox(height: 14),
-          ],
-          _viewMode == _CohortViewMode.sections
-              ? _sectionTable(state, instructorState)
-              : _rosterTable(state),
+          _viewModeTabs(),
+          const SizedBox(height: 24),
+          _summaryCards(state, instructorState),
+          const SizedBox(height: 30),
+          DefensysCard(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _searchBarRow(state, instructorState),
+                const SizedBox(height: 20),
+                if (state.error != null) ...[
+                  _notice(state.error!, warning: true),
+                  const SizedBox(height: 14),
+                ],
+                if (instructorState.error != null &&
+                    _viewMode == _CohortViewMode.sections) ...[
+                  _notice(instructorState.error!, warning: true),
+                  const SizedBox(height: 14),
+                ],
+                _viewMode == _CohortViewMode.sections
+                    ? _sectionTable(state, instructorState)
+                    : _rosterTable(state),
+              ],
+            ),
+          ),
         ],
+      ),
+    );
+  }
+
+  Widget _secondaryButton({
+    required Widget icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: OutlinedButton.icon(
+        onPressed: onTap,
+        icon: icon,
+        label: Text(label),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _ink,
+          side: const BorderSide(color: Color(0xFFD1D5DB)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
+  Widget _primaryButton({
+    required Widget icon,
+    required String label,
+    required VoidCallback? onTap,
+  }) {
+    return SizedBox(
+      height: 42,
+      child: ElevatedButton.icon(
+        onPressed: onTap,
+        icon: icon,
+        label: Text(label),
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _maroon,
+          foregroundColor: Colors.white,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
       ),
     );
   }
@@ -137,13 +188,13 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
       alignment: WrapAlignment.end,
       children: [
         if (!auditMode)
-          OutlinedButton.icon(
+          _secondaryButton(
             icon: const Icon(Icons.download_outlined, size: 18),
-            label: const Text('CSV Template'),
-            onPressed: busy ? null : () => _downloadOfficialTemplate(pitYear),
+            label: 'CSV Template',
+            onTap: busy ? null : () => _downloadOfficialTemplate(pitYear),
           ),
         if (!auditMode)
-          OutlinedButton.icon(
+          _secondaryButton(
             icon: importState.isSaving
                 ? const SizedBox(
                     width: 16,
@@ -151,10 +202,12 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
                 : const Icon(Icons.upload_file_outlined, size: 18),
-            label: const Text('Import Official Class List'),
-            onPressed: busy ? null : _pickOfficialClassList,
+            label: 'Import Official Class List',
+            onTap: busy
+                ? null
+                : () => context.go(FacultyRoutes.pitStudentImport),
           ),
-        OutlinedButton.icon(
+        _secondaryButton(
           icon: state.isSaving
               ? const SizedBox(
                   width: 16,
@@ -162,198 +215,453 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                   child: CircularProgressIndicator(strokeWidth: 2),
                 )
               : const Icon(Icons.rotate_right_outlined, size: 18),
-          label: const Text('Rollover Preview'),
-          onPressed: busy ? null : _openRolloverPreview,
+          label: 'Rollover Preview',
+          onTap: busy ? null : _openRolloverPreview,
         ),
         if (!auditMode && widget.onCreateTeam != null)
-          FilledButton.icon(
-            onPressed: busy ? null : widget.onCreateTeam,
-            style: FilledButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: Colors.white,
-            ),
+          _primaryButton(
             icon: const Icon(Icons.groups_outlined, size: 18),
-            label: const Text('Manage PIT teams'),
+            label: 'Manage PIT teams',
+            onTap: busy ? null : widget.onCreateTeam,
           ),
       ],
     );
   }
 
-  Widget _cohortScopeToggle(PitLeadCohortState state) {
-    return Row(
-      children: [
-        ChoiceChip(
-          label: const Text('Current term'),
-          selected: _cohortScope == 'active',
-          onSelected: state.isLoading
-              ? null
-              : (_) {
-                  setState(() => _cohortScope = 'active');
-                  _applyFilters();
-                },
-        ),
-        const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text('History'),
-          selected: _cohortScope == 'history',
-          onSelected: state.isLoading
-              ? null
-              : (_) {
-                  setState(() => _cohortScope = 'history');
-                  _applyFilters();
-                },
-        ),
-      ],
-    );
-  }
-
-  Widget _viewModeToggle() {
-    return Row(
-      children: [
-        ChoiceChip(
-          label: const Text('Sections'),
-          selected: _viewMode == _CohortViewMode.sections,
-          onSelected: (_) {
+  Widget _viewModeTabs() {
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      ),
+      child: Row(
+        children: [
+          _tabItem('Sections', _viewMode == _CohortViewMode.sections, () {
             setState(() => _viewMode = _CohortViewMode.sections);
-          },
-        ),
-        const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text('Students'),
-          selected: _viewMode == _CohortViewMode.students,
-          onSelected: (_) {
+          }),
+          const SizedBox(width: 24),
+          _tabItem('Students', _viewMode == _CohortViewMode.students, () {
             setState(() => _viewMode = _CohortViewMode.students);
-          },
-        ),
-      ],
+          }),
+        ],
+      ),
     );
   }
 
-  Widget _sectionFiltersRow(
+  Widget _tabItem(String label, bool active, VoidCallback onTap) {
+    return InkWell(
+      onTap: onTap,
+      hoverColor: Colors.transparent,
+      splashColor: Colors.transparent,
+      highlightColor: Colors.transparent,
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: BorderSide(
+              color: active ? _maroon : Colors.transparent,
+              width: 2,
+            ),
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? _maroon : _muted,
+            fontSize: 14,
+            fontWeight: active ? FontWeight.bold : FontWeight.w500,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _scopeFilter(PitLeadCohortState state) {
+    return Container(
+      width: 168,
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: _cohortScope,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+          style: const TextStyle(
+            color: _ink,
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+          items: const [
+            DropdownMenuItem(value: 'active', child: Text('Current Term')),
+            DropdownMenuItem(value: 'history', child: Text('History')),
+          ],
+          onChanged: state.isLoading
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  setState(() => _cohortScope = value);
+                  _applyFilters();
+                },
+        ),
+      ),
+    );
+  }
+
+  Widget _summaryCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    bool selected = false,
+    Color iconColor = _muted,
+    VoidCallback? onTap,
+  }) {
+    final card = Container(
+      height: 90,
+      padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 18),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFFFF4F4) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: selected ? _maroon : const Color(0xFFE5E7EB)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.05),
+            blurRadius: 12,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F2F4),
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Icon(icon, color: iconColor, size: 25),
+          ),
+          const SizedBox(width: 16),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: _ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                subtitle,
+                style: const TextStyle(
+                  color: Color(0xFF475569),
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+
+    if (onTap == null) {
+      return card;
+    }
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        mouseCursor: SystemMouseCursors.click,
+        child: card,
+      ),
+    );
+  }
+
+  Widget _summaryCards(
     PitLeadCohortState state,
     PitInstructorState instructorState,
   ) {
-    final summaries = _sectionSummaries(state.students, instructorState);
-    final assignedCount = summaries.where((item) => item.hasInstructor).length;
-    final needsCount = summaries.length - assignedCount;
+    final canTap = !state.isLoading && !instructorState.isLoading;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: DefensysUi.cardDecoration(),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        crossAxisAlignment: WrapCrossAlignment.center,
+    if (_viewMode == _CohortViewMode.sections) {
+      final summaries = _sectionSummaries(state.students, instructorState);
+      final assignedCount = summaries.where((item) => item.hasInstructor).length;
+      final needsCount = summaries.length - assignedCount;
+
+      return Row(
         children: [
-          SizedBox(
-            width: 320,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search section or instructor',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onChanged: (_) => setState(() {}),
+          Expanded(
+            child: _summaryCard(
+              title: 'All Sections',
+              subtitle: '${summaries.length} Total',
+              icon: Icons.folder_open_rounded,
+              selected: _sectionStatusFilter == 'all',
+              onTap: canTap ? () => setState(() => _sectionStatusFilter = 'all') : null,
             ),
           ),
-          _sectionFilterChip('All', 'all', summaries.length),
-          _sectionFilterChip('Assigned', 'assigned', assignedCount),
-          _sectionFilterChip(
-            'Needs assignment',
-            'needs_assignment',
-            needsCount,
+          const SizedBox(width: 20),
+          Expanded(
+            child: _summaryCard(
+              title: 'Assigned',
+              subtitle: '$assignedCount Assigned',
+              icon: Icons.assignment_turned_in_rounded,
+              iconColor: const Color(0xFF047857),
+              selected: _sectionStatusFilter == 'assigned',
+              onTap: canTap ? () => setState(() => _sectionStatusFilter = 'assigned') : null,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: _summaryCard(
+              title: 'Needs Assignment',
+              subtitle: '$needsCount Pending',
+              icon: Icons.assignment_late_rounded,
+              iconColor: const Color(0xFFEA580C),
+              selected: _sectionStatusFilter == 'needs_assignment',
+              onTap: canTap ? () => setState(() => _sectionStatusFilter = 'needs_assignment') : null,
+            ),
           ),
         ],
+      );
+    } else {
+      final allCount = state.counts['all']?.toString() ?? '0';
+      final onTeamCount = state.counts['on_team']?.toString() ?? '0';
+      final unassignedCount = state.counts['unassigned']?.toString() ?? '0';
+
+      return Row(
+        children: [
+          Expanded(
+            child: _summaryCard(
+              title: 'All Students',
+              subtitle: '$allCount Total',
+              icon: Icons.school_rounded,
+              iconColor: const Color(0xFF2563EB),
+              selected: _teamStatusFilter == 'all',
+              onTap: canTap
+                  ? () {
+                      setState(() => _teamStatusFilter = 'all');
+                      ref.read(pitLeadCohortProvider.notifier).fetchCohort(
+                            search: _searchController.text,
+                            teamStatusFilter: 'all',
+                            scope: _cohortScope,
+                          );
+                    }
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: _summaryCard(
+              title: 'On Team',
+              subtitle: '$onTeamCount Active',
+              icon: Icons.groups_rounded,
+              iconColor: const Color(0xFF047857),
+              selected: _teamStatusFilter == 'on_team',
+              onTap: canTap
+                  ? () {
+                      setState(() => _teamStatusFilter = 'on_team');
+                      ref.read(pitLeadCohortProvider.notifier).fetchCohort(
+                            search: _searchController.text,
+                            teamStatusFilter: 'on_team',
+                            scope: _cohortScope,
+                          );
+                    }
+                  : null,
+            ),
+          ),
+          const SizedBox(width: 20),
+          Expanded(
+            child: _summaryCard(
+              title: 'Unassigned',
+              subtitle: '$unassignedCount Pending',
+              icon: Icons.person_rounded,
+              iconColor: const Color(0xFFEA580C),
+              selected: _teamStatusFilter == 'unassigned',
+              onTap: canTap
+                  ? () {
+                      setState(() => _teamStatusFilter = 'unassigned');
+                      ref.read(pitLeadCohortProvider.notifier).fetchCohort(
+                            search: _searchController.text,
+                            teamStatusFilter: 'unassigned',
+                            scope: _cohortScope,
+                          );
+                    }
+                  : null,
+            ),
+          ),
+        ],
+      );
+    }
+  }
+
+  Widget _searchBarRow(
+    PitLeadCohortState state,
+    PitInstructorState instructorState,
+  ) {
+    return Row(
+      children: [
+        Expanded(
+          child: SizedBox(
+            height: 42,
+            child: TextField(
+              controller: _searchController,
+              enabled: !state.isLoading && !instructorState.isLoading,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                prefixIcon: const Icon(Icons.search_rounded, color: _muted, size: 19),
+                hintText: _viewMode == _CohortViewMode.sections
+                    ? 'Search section or instructor...'
+                    : 'Search name, ID, or email...',
+                hintStyle: const TextStyle(color: _muted, fontSize: 13),
+                filled: true,
+                fillColor: const Color(0xFFF3F4F6),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 10,
+                ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: _maroon),
+                ),
+              ),
+              onChanged: _viewMode == _CohortViewMode.sections
+                  ? (_) => setState(() {})
+                  : null,
+              onSubmitted: _viewMode == _CohortViewMode.students
+                  ? (_) => _applyFilters()
+                  : null,
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        _scopeFilter(state),
+        const SizedBox(width: 16),
+        if (_viewMode == _CohortViewMode.students) ...[
+          SizedBox(
+            height: 42,
+            child: ElevatedButton(
+              onPressed: state.isLoading ? null : _applyFilters,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: _maroon,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              ),
+              child: state.isLoading
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: Colors.white,
+                      ),
+                    )
+                  : const Text('Search'),
+            ),
+          ),
+          const SizedBox(width: 12),
+        ],
+        SizedBox(
+          height: 42,
+          child: OutlinedButton.icon(
+            onPressed: state.isLoading
+                ? null
+                : () {
+                    _searchController.clear();
+                    setState(() {
+                      _cohortScope = 'active';
+                      _teamStatusFilter = 'all';
+                      _sectionStatusFilter = 'all';
+                    });
+                    _applyFilters();
+                  },
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: const Text('Clear'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _ink,
+              side: const BorderSide(color: Color(0xFFD1D5DB)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _tableHeader(List<_ColumnSpec> columns) {
+    return Container(
+      height: 51,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F1F4),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Row(children: columns.map(_tableHeaderCell).toList()),
+    );
+  }
+
+  Widget _tableHeaderCell(_ColumnSpec column) {
+    return Expanded(
+      flex: (column.flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            column.label,
+            style: const TextStyle(
+              color: Color(0xFF5D6678),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
       ),
     );
   }
 
-  Widget _sectionFilterChip(String label, String value, int count) {
-    final selected = _sectionStatusFilter == value;
-    return FilterChip(
-      label: Text('$label ($count)'),
-      selected: selected,
-      onSelected: (_) => setState(() => _sectionStatusFilter = value),
-      selectedColor: const Color(0xFFFEE2E2),
-      checkmarkColor: _maroon,
-    );
-  }
-
-  Widget _filtersRow(PitLeadCohortState state) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: DefensysUi.cardDecoration(),
-      child: Wrap(
-        spacing: 12,
-        runSpacing: 12,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(
-            width: 320,
-            child: TextField(
-              controller: _searchController,
-              decoration: InputDecoration(
-                hintText: 'Search name, ID, or email',
-                prefixIcon: const Icon(Icons.search_rounded, size: 20),
-                isDense: true,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-              onSubmitted: (_) => _applyFilters(),
-            ),
-          ),
-          _filterChip('All', 'all', state),
-          _filterChip('Unassigned', 'unassigned', state),
-          _filterChip('On team', 'on_team', state),
-          FilledButton(
-            onPressed: state.isLoading ? null : _applyFilters,
-            style: FilledButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: Colors.white,
-            ),
-            child: state.isLoading
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      color: Colors.white,
-                    ),
-                  )
-                : const Text('Search'),
-          ),
-        ],
+  Widget _tableCell(Widget child, {required double flex}) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        child: Align(alignment: Alignment.centerLeft, child: child),
       ),
     );
   }
 
-  Widget _filterChip(String label, String value, PitLeadCohortState state) {
-    final selected = _teamStatusFilter == value;
-    final countKey = value == 'all' ? 'all' : value;
-    final count = state.counts[countKey]?.toString() ?? '0';
-
-    return FilterChip(
-      label: Text('$label ($count)'),
-      selected: selected,
-      onSelected: state.isLoading
-          ? null
-          : (_) {
-              setState(() => _teamStatusFilter = value);
-              ref
-                  .read(pitLeadCohortProvider.notifier)
-                  .fetchCohort(
-                    search: _searchController.text,
-                    teamStatusFilter: value,
-                    scope: _cohortScope,
-                  );
-            },
-      selectedColor: const Color(0xFFFEE2E2),
-      checkmarkColor: _maroon,
+  Widget _bodyText(String value, {bool bold = false}) {
+    return Text(
+      value,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: _ink,
+        fontSize: 13,
+        fontWeight: bold ? FontWeight.w800 : FontWeight.w500,
+      ),
     );
   }
 
@@ -377,175 +685,100 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
                 'Ask an administrator to import students or set up academic records.';
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(32),
-        decoration: DefensysUi.cardDecoration(),
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        alignment: Alignment.center,
         child: Text(
           emptyText,
+          textAlign: TextAlign.center,
           style: const TextStyle(color: Color(0xFF6B7280), fontSize: 14),
         ),
       );
     }
 
-    return Container(
-      decoration: DefensysUi.cardDecoration(),
-      child: Column(
-        children: [
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: _line)),
-            ),
-            child: const Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    'Name',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Student ID',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Email',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 1,
-                  child: Text(
-                    'Section',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Team status',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: state.students.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: _line),
-            itemBuilder: (context, index) {
-              final student = state.students[index];
-              final onTeam = student['team_status'] == 'on_team';
-              final isHistorical = student['is_historical'] == true;
-              var teamLabel = onTeam
-                  ? student['team_name']?.toString() ?? 'On team'
-                  : 'Unassigned';
-              if (isHistorical && onTeam) {
-                final term = student['term_label']?.toString();
-                if (term != null && term.isNotEmpty) {
-                  teamLabel = '$teamLabel ($term)';
-                }
+    return Column(
+      children: [
+        _tableHeader(const [
+          _ColumnSpec('Name', 3.0),
+          _ColumnSpec('Student ID', 2.0),
+          _ColumnSpec('Email', 2.0),
+          _ColumnSpec('Section', 1.5),
+          _ColumnSpec('Team status', 2.5),
+        ]),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: state.students.length,
+          itemBuilder: (context, index) {
+            final student = state.students[index];
+            final onTeam = student['team_status'] == 'on_team';
+            final isHistorical = student['is_historical'] == true;
+            var teamLabel = onTeam
+                ? student['team_name']?.toString() ?? 'On team'
+                : 'Unassigned';
+            if (isHistorical && onTeam) {
+              final term = student['term_label']?.toString();
+              if (term != null && term.isNotEmpty) {
+                teamLabel = '$teamLabel ($term)';
               }
+            }
 
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 3,
-                      child: Text(
-                        student['name']?.toString() ?? '-',
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                        ),
+            return Container(
+              height: 57,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: _line)),
+              ),
+              child: Row(
+                children: [
+                  _tableCell(
+                    Text(
+                      student['name']?.toString() ?? '-',
+                      style: const TextStyle(
+                        color: _ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        student['username']?.toString() ?? '-',
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontSize: 13,
-                        ),
+                    flex: 3.0,
+                  ),
+                  _tableCell(
+                    _bodyText(student['username']?.toString() ?? '-'),
+                    flex: 2.0,
+                  ),
+                  _tableCell(
+                    _bodyText(student['email']?.toString() ?? '-'),
+                    flex: 2.0,
+                  ),
+                  _tableCell(
+                    Text(
+                      student['section']?.toString().trim().isNotEmpty == true
+                          ? student['section'].toString()
+                          : '-',
+                      style: const TextStyle(
+                        color: Color(0xFF4B5563),
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        student['email']?.toString() ?? '-',
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: Text(
-                        student['section']?.toString().trim().isNotEmpty == true
-                            ? student['section'].toString()
-                            : '-',
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        teamLabel,
-                        style: TextStyle(
-                          color: onTeam
-                              ? const Color(0xFF047857)
-                              : const Color(0xFF92400E),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+                    flex: 1.5,
+                  ),
+                  _tableCell(
+                    onTeam
+                        ? DefensysStatusBadge.success(
+                            label: teamLabel,
+                            showDot: false,
+                          )
+                        : const DefensysStatusBadge.inactive(
+                            label: 'Unassigned',
+                          ),
+                    flex: 2.5,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -568,193 +801,131 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
       final pitYear = state.pitLeadYear ?? 'your year level';
       return Container(
         width: double.infinity,
-        padding: const EdgeInsets.all(32),
-        decoration: DefensysUi.cardDecoration(),
+        padding: const EdgeInsets.symmetric(vertical: 48),
+        alignment: Alignment.center,
         child: Text(
           state.students.isEmpty
               ? 'No section roster for $pitYear yet. Import an official class list to create section records.'
               : 'No sections match the current filters.',
+          textAlign: TextAlign.center,
           style: const TextStyle(color: Color(0xFF6B7280), fontSize: 14),
         ),
       );
     }
 
-    return Container(
-      decoration: DefensysUi.cardDecoration(),
-      child: Column(
-        children: [
-          Container(
-            height: 48,
-            padding: const EdgeInsets.symmetric(horizontal: 20),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: _line)),
-            ),
-            child: const Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Section',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
+    return Column(
+      children: [
+        _tableHeader(const [
+          _ColumnSpec('Section', 2.0),
+          _ColumnSpec('Instructor', 3.0),
+          _ColumnSpec('Students', 2.0),
+          _ColumnSpec('Team status', 2.0),
+          _ColumnSpec('Action', 1.5),
+        ]),
+        ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: summaries.length,
+          itemBuilder: (context, index) {
+            final summary = summaries[index];
+            return Container(
+              height: 57,
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                border: Border(bottom: BorderSide(color: _line)),
+              ),
+              child: Row(
+                children: [
+                  _tableCell(
+                    _bodyText(summary.section, bold: true),
+                    flex: 2.0,
                   ),
-                ),
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    'Instructor',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
+                  _tableCell(
+                    summary.hasInstructor
+                        ? _bodyText(summary.instructorName!)
+                        : const DefensysStatusBadge.inactive(
+                            label: 'Needs assignment',
+                          ),
+                    flex: 3.0,
                   ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Students',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
+                  _tableCell(
+                    _bodyText('${summary.studentCount}'),
+                    flex: 2.0,
                   ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'Team status',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
+                  _tableCell(
+                    summary.teamCount > 0
+                        ? DefensysStatusBadge.success(
+                            label: summary.teamLabel,
+                            showDot: false,
+                          )
+                        : const DefensysStatusBadge.inactive(
+                            label: 'No teams yet',
+                          ),
+                    flex: 2.0,
                   ),
-                ),
-                SizedBox(
-                  width: 72,
-                  child: Text(
-                    'Action',
-                    style: TextStyle(
-                      color: _ink,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: summaries.length,
-            separatorBuilder: (_, __) => const Divider(height: 1, color: _line),
-            itemBuilder: (context, index) {
-              final summary = summaries[index];
-              return Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                  vertical: 14,
-                ),
-                child: Row(
-                  children: [
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        summary.section,
-                        style: const TextStyle(
-                          color: _ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
+                  _tableCell(
+                    TextButton(
+                      style: TextButton.styleFrom(
+                        foregroundColor: _maroon,
+                        textStyle: const TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
                       ),
+                      onPressed: () => _showSectionDetails(summary.section),
+                      child: const Text('Details'),
                     ),
-                    Expanded(
-                      flex: 3,
-                      child: summary.hasInstructor
-                          ? Text(
-                              summary.instructorName!,
-                              style: const TextStyle(
-                                color: Color(0xFF374151),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            )
-                          : _statusPill(
-                              'Needs assignment',
-                              const Color(0xFFFFFBEB),
-                              const Color(0xFF92400E),
-                            ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        '${summary.studentCount}',
-                        style: const TextStyle(
-                          color: Color(0xFF4B5563),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: Text(
-                        summary.teamLabel,
-                        style: TextStyle(
-                          color: summary.teamCount > 0
-                              ? const Color(0xFF047857)
-                              : const Color(0xFF92400E),
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                    SizedBox(
-                      width: 72,
-                      child: Tooltip(
-                        message: 'Assign PIT instructor',
-                        child: IconButton(
-                          icon: const Icon(Icons.shield_outlined, size: 20),
-                          color: _maroon,
-                          onPressed: summary.isAssignable
-                              ? () => _openInstructorAssignment(summary.section)
-                              : null,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            },
-          ),
-        ],
-      ),
+                    flex: 1.5,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      ],
     );
   }
 
-  Widget _statusPill(String label, Color bg, Color fg) {
-    return Align(
-      alignment: Alignment.centerLeft,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(999),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: fg,
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
+  Widget _notice(
+    String message, {
+    bool warning = false,
+    VoidCallback? onDismiss,
+  }) {
+    final color = warning ? DefensysUi.warningText : DefensysUi.successText;
+    final background = warning ? DefensysUi.warningBg : DefensysUi.successBg;
+    final border = warning ? DefensysUi.warningBorder : DefensysUi.successBorder;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 3),
+              child: Text(
+                message,
+                style: TextStyle(
+                  color: color,
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           ),
-        ),
+          if (onDismiss != null)
+            IconButton(
+              onPressed: onDismiss,
+              tooltip: 'Dismiss',
+              icon: Icon(Icons.close_rounded, size: 18, color: color),
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+            ),
+        ],
       ),
     );
   }
@@ -822,9 +993,14 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
   String _sectionKey(String value) =>
       value.toLowerCase().replaceAll(RegExp(r'\s+'), '');
 
-  void _openInstructorAssignment(String section) {
-    context.go(
-      '${FacultyRoutes.pitInstructors}?section=${Uri.encodeComponent(section)}',
+  void _showSectionDetails(String section) {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) => _SectionDetailsDialog(
+        sectionName: section,
+        onClose: () => Navigator.of(dialogContext).pop(),
+      ),
     );
   }
 
@@ -847,34 +1023,6 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     );
   }
 
-  Future<void> _pickOfficialClassList() async {
-    final notifier = ref.read(userManagementProvider.notifier);
-    final file = await pickTabularDataFile();
-    if (!mounted || file == null) return;
-    final parsed = file.isXlsx
-        ? _parseOfficialClassListXlsx(file.bytes)
-        : _parseOfficialClassListCsv(file.text ?? '');
-    if (parsed.students.isEmpty) {
-      notifier.showError(
-        'No valid student rows found in the selected class list.',
-      );
-      return;
-    }
-    final responsePayload = await notifier.pitLeadOfficialClassListImport(
-      metadata: parsed.metadata,
-      students: parsed.students,
-    );
-    if (!mounted || responsePayload == null) return;
-
-    final warnings = responsePayload['warnings'] as List? ?? const [];
-    final errors = responsePayload['errors'] as List? ?? const [];
-    if (warnings.isNotEmpty || errors.isNotEmpty) {
-      _showImportSummaryDialog(warnings, errors);
-    }
-
-    ref.read(pitInstructorProvider.notifier).fetchAssignments();
-    _applyFilters();
-  }
 
   Future<void> _openRolloverPreview() async {
     final notifier = ref.read(pitLeadCohortProvider.notifier);
@@ -915,301 +1063,10 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
     _applyFilters();
   }
 
-  _OfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
-    final rows = csv
-        .split(RegExp(r'\r?\n'))
-        .map(_splitCsvLine)
-        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
-        .toList();
-    return _parseOfficialClassListRows(rows);
-  }
-
-  _OfficialClassListParseResult _parseOfficialClassListXlsx(List<int> bytes) {
-    final workbook = xl.Excel.decodeBytes(bytes);
-    if (workbook.tables.isEmpty) {
-      return const _OfficialClassListParseResult(metadata: {}, students: []);
-    }
-    final sheet = workbook.tables.values.first;
-    final rows = sheet.rows
-        .map((row) => row.map((cell) => _excelCellText(cell?.value)).toList())
-        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
-        .toList();
-    return _parseOfficialClassListRows(rows);
-  }
-
-  _OfficialClassListParseResult _parseOfficialClassListRows(
-    List<List<String>> rows,
-  ) {
-    final metadata = <String, dynamic>{};
-    var headerIndex = -1;
-
-    for (var i = 0; i < rows.length; i++) {
-      final normalized = rows[i].map(_normalizeHeader).toList();
-
-      void readMeta(String key, List<String> labels) {
-        if (metadata[key]?.toString().trim().isNotEmpty == true) return;
-        for (final label in labels) {
-          final index = normalized.indexWhere((cell) => cell == label);
-          if (index == -1) continue;
-          final value = _nextCell(rows[i], index);
-          if (value.isNotEmpty) metadata[key] = value;
-          return;
-        }
-      }
-
-      readMeta('faculty', ['faculty', 'instructor']);
-      readMeta('section', ['class section', 'section']);
-      readMeta('year_level', ['year level', 'level']);
-
-      final hasStudentNumber = normalized.any(
-        (cell) =>
-            cell.contains('student') &&
-            (cell.contains('number') ||
-                cell.contains('no') ||
-                cell == 'student n'),
-      );
-      final hasFullName = normalized.contains('full name');
-      if (hasStudentNumber && hasFullName) {
-        headerIndex = i;
-        break;
-      }
-    }
-
-    if (metadata['year_level'] != null) {
-      metadata['year_level'] = _normalizeYearLevel(
-        metadata['year_level'].toString(),
-      );
-    }
-    if (headerIndex == -1) {
-      return _OfficialClassListParseResult(
-        metadata: metadata,
-        students: const [],
-      );
-    }
-
-    final headers = rows[headerIndex].map(_normalizeHeader).toList();
-    int findHeader(bool Function(String value) matches) =>
-        headers.indexWhere(matches);
-    final idIndex = findHeader(
-      (value) =>
-          value.contains('student') &&
-          (value.contains('number') ||
-              value.contains('no') ||
-              value == 'student n'),
-    );
-    final nameIndex = findHeader((value) => value == 'full name');
-    final programIndex = findHeader((value) => value == 'program');
-    final levelIndex = findHeader((value) => value == 'level');
-    final emailIndex = findHeader((value) => value == 'email');
-    final sectionColumnIndex = findHeader((value) => value == 'section' || value == 'class section');
-    final students = <Map<String, dynamic>>[];
-
-    for (final row in rows.skip(headerIndex + 1)) {
-      String read(int index) =>
-          index >= 0 && index < row.length ? row[index].trim() : '';
-      final id = read(idIndex);
-      final name = read(nameIndex);
-      if (id.isEmpty || name.isEmpty) continue;
-      students.add({
-        'id_number': id,
-        'full_name': name,
-        if (programIndex != -1) 'program': read(programIndex),
-        if (levelIndex != -1)
-          'year_level': _normalizeYearLevel(read(levelIndex)),
-        if (emailIndex != -1) 'email': read(emailIndex),
-        if (sectionColumnIndex != -1) 'section': read(sectionColumnIndex),
-      });
-    }
-
-    return _OfficialClassListParseResult(
-      metadata: metadata,
-      students: students,
-    );
-  }
-
-  String _excelCellText(xl.CellValue? value) {
-    if (value == null) return '';
-    if (value is xl.TextCellValue) return value.value.toString().trim();
-    if (value is xl.IntCellValue) return value.value.toString();
-    if (value is xl.DoubleCellValue) {
-      final number = value.value;
-      if (number == number.roundToDouble()) {
-        return number.round().toString();
-      }
-      return number.toString();
-    }
-    return value.toString().trim();
-  }
-
-  List<String> _splitCsvLine(String line) {
-    final values = <String>[];
-    final buffer = StringBuffer();
-    var quoted = false;
-    for (var i = 0; i < line.length; i++) {
-      final char = line[i];
-      if (char == '"') {
-        if (quoted && i + 1 < line.length && line[i + 1] == '"') {
-          buffer.write('"');
-          i++;
-        } else {
-          quoted = !quoted;
-        }
-      } else if (char == ',' && !quoted) {
-        values.add(buffer.toString().trim());
-        buffer.clear();
-      } else {
-        buffer.write(char);
-      }
-    }
-    values.add(buffer.toString().trim());
-    return values;
-  }
-
-  String _nextCell(List<String> row, int index) {
-    for (var i = index + 1; i < row.length; i++) {
-      final value = row[i].trim();
-      if (value.isNotEmpty) return value;
-    }
-    return '';
-  }
-
-  String _normalizeHeader(String value) => value
-      .trim()
-      .replaceFirst('\ufeff', '')
-      .toLowerCase()
-      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
-      .trim();
-
-  String _normalizeYearLevel(String value) {
-    final lower = value.toLowerCase();
-    if (lower.contains('1')) return '1st Year';
-    if (lower.contains('2')) return '2nd Year';
-    if (lower.contains('3')) return '3rd Year';
-    if (lower.contains('4')) return '4th Year';
-    return value.trim();
-  }
-
   String _slug(String value) => value
       .toLowerCase()
       .replaceAll(' ', '-')
       .replaceAll(RegExp(r'[^a-z0-9-]'), '');
-
-  Widget _notice(String message, {bool warning = false}) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      decoration: BoxDecoration(
-        color: warning ? const Color(0xFFFFFBEB) : const Color(0xFFECFDF5),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: warning ? const Color(0xFFF59E0B) : const Color(0xFF10B981),
-        ),
-      ),
-      child: Text(
-        message,
-        style: const TextStyle(color: Color(0xFF374151), fontSize: 13),
-      ),
-    );
-  }
-
-  List<String> _formatBulkImportErrorLines(dynamic messages) {
-    if (messages is List) {
-      return messages.map((item) => item.toString()).toList();
-    }
-    if (messages is Map) {
-      final lines = <String>[];
-      for (final entry in messages.entries) {
-        final key = entry.key.toString();
-        final value = entry.value;
-        if (value is List) {
-          for (final item in value) {
-            lines.add('$key: $item');
-          }
-        } else {
-          lines.add('$key: $value');
-        }
-      }
-      return lines;
-    }
-    return [messages?.toString() ?? 'Unknown error'];
-  }
-
-  Future<void> _showImportSummaryDialog(List<dynamic> warnings, List<dynamic> errors) async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        surfaceTintColor: Colors.transparent,
-        title: const Text('Class List Import Details'),
-        content: SizedBox(
-          width: 520,
-          child: SingleChildScrollView(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (errors.isNotEmpty) ...[
-                  const Row(
-                    children: [
-                      Icon(Icons.error_outline_rounded, color: Colors.red, size: 20),
-                      SizedBox(width: 8),
-                      Text('Errors', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.red)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ...errors.map((error) {
-                    final row = error['row'];
-                    final id = error['id_number'] ?? '';
-                    final issueLines = _formatBulkImportErrorLines(error['errors']);
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Row $row ${id.isNotEmpty ? "· Student ID: $id" : ""}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-                          ...issueLines.map((line) => Text('• $line', style: const TextStyle(fontSize: 12.5))),
-                        ],
-                      ),
-                    );
-                  }),
-                  if (warnings.isNotEmpty) const Divider(),
-                ],
-                if (warnings.isNotEmpty) ...[
-                  const Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded, color: Colors.amber, size: 20),
-                      SizedBox(width: 8),
-                      Text('Warnings', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: Colors.amber)),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ...warnings.map((warning) => Padding(
-                    padding: const EdgeInsets.only(bottom: 6),
-                    child: Text('• $warning', style: const TextStyle(fontSize: 13)),
-                  )),
-                ],
-              ],
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _OfficialClassListParseResult {
-  final Map<String, dynamic> metadata;
-  final List<Map<String, dynamic>> students;
-
-  const _OfficialClassListParseResult({
-    required this.metadata,
-    required this.students,
-  });
 }
 
 class _PitRolloverPreviewDialog extends StatefulWidget {
@@ -1645,3 +1502,805 @@ class _SectionSummary {
     return '$teamCount teams';
   }
 }
+
+class _ColumnSpec {
+  final String label;
+  final double flex;
+
+  const _ColumnSpec(this.label, this.flex);
+}
+
+class _SectionDetailsDialog extends ConsumerStatefulWidget {
+  final String sectionName;
+  final VoidCallback onClose;
+
+  const _SectionDetailsDialog({
+    required this.sectionName,
+    required this.onClose,
+  });
+
+  @override
+  ConsumerState<_SectionDetailsDialog> createState() => _SectionDetailsDialogState();
+}
+
+class _SectionDetailsDialogState extends ConsumerState<_SectionDetailsDialog> {
+  int? _selectedFacultyId;
+  bool _isReplacing = false;
+
+  static const _maroon = DefensysUi.primaryMaroon;
+  static const _ink = DefensysUi.textDark;
+  static const _muted = Color(0xFF6B7280);
+  static const _line = Color(0xFFE5E7EB);
+
+  String _sectionKey(String value) =>
+      value.toLowerCase().replaceAll(RegExp(r'\s+'), '');
+
+  int? _asInt(dynamic value) {
+    if (value is int) return value;
+    return int.tryParse(value?.toString() ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final cohortState = ref.watch(pitLeadCohortProvider);
+    final instructorState = ref.watch(pitInstructorProvider);
+
+    // Filter students
+    final sectionStudents = cohortState.students.where((s) {
+      final sSec = s['section']?.toString().trim() ?? '';
+      final targetSec = widget.sectionName.trim();
+      if (targetSec == 'Unassigned section') {
+        return sSec.isEmpty || sSec == 'Unassigned section';
+      }
+      return _sectionKey(sSec) == _sectionKey(targetSec);
+    }).toList();
+
+    // Count teams
+    final teamNames = sectionStudents
+        .map((s) => s['team_name']?.toString().trim() ?? '')
+        .where((t) => t.isNotEmpty)
+        .toSet();
+    final teamCount = teamNames.length;
+
+    // Find active assignment
+    final activeAssignment = instructorState.assignments.firstWhere(
+      (a) =>
+          _sectionKey(a['section']?.toString() ?? '') ==
+              _sectionKey(widget.sectionName) &&
+          a['is_active'] == true,
+      orElse: () => <String, dynamic>{},
+    );
+    final hasInstructor = activeAssignment.isNotEmpty;
+
+    final isAssignable = widget.sectionName != 'Unassigned section';
+
+    // Faculty drop down items
+    final facultyItems = instructorState.faculty
+        .map((user) {
+          final id = _asInt(user['id']);
+          if (id == null) return null;
+          final name =
+              user['name']?.toString() ??
+              user['username']?.toString() ??
+              'Faculty';
+          final role = user['displayRole'] is Map
+              ? (user['displayRole']['label']?.toString() ?? 'Faculty')
+              : 'Faculty';
+          return DropdownMenuItem<int>(
+            value: id,
+            child: Text('$name ($role)'),
+          );
+        })
+        .whereType<DropdownMenuItem<int>>()
+        .toList();
+
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 680, maxHeight: 720),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Header with subtle maroon/gold background decoration
+            Container(
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [Color(0xFFFFF4F4), Colors.white],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(16),
+                  topRight: Radius.circular(16),
+                ),
+              ),
+              padding: const EdgeInsets.fromLTRB(24, 20, 16, 20),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Section Details: ${widget.sectionName}',
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 22,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'PIT Instructor & Student Roster',
+                          style: TextStyle(
+                            color: _muted,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Close',
+                    onPressed: instructorState.isSaving ? null : widget.onClose,
+                    icon: const Icon(Icons.close_rounded, size: 24),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _line),
+
+            // Scrollable Content
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (instructorState.error != null) ...[
+                      _dialogNotice(instructorState.error!, warning: true),
+                      const SizedBox(height: 16),
+                    ],
+                    if (instructorState.message != null) ...[
+                      _dialogNotice(instructorState.message!),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // Stat cards Row
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _statCard(
+                            title: '${sectionStudents.length}',
+                            subtitle: 'Enrolled Students',
+                            icon: Icons.people_alt_outlined,
+                            iconColor: const Color(0xFF2563EB),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(
+                          child: _statCard(
+                            title: '$teamCount',
+                            subtitle: teamCount == 1 ? 'Active Team' : 'Active Teams',
+                            icon: Icons.groups_outlined,
+                            iconColor: const Color(0xFF047857),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Instructor Assignment Card
+                    const Text(
+                      'PIT INSTRUCTOR',
+                      style: TextStyle(
+                        color: _muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 1.1,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(18),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _line),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.02),
+                            blurRadius: 8,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: !isAssignable
+                          ? const Text(
+                              'Instructor assignment is not available for Unassigned section.',
+                              style: TextStyle(
+                                color: _muted,
+                                fontStyle: FontStyle.italic,
+                                fontSize: 13,
+                              ),
+                            )
+                          : _buildInstructorSection(
+                              activeAssignment,
+                              hasInstructor,
+                              instructorState,
+                              facultyItems,
+                            ),
+                    ),
+                    const SizedBox(height: 24),
+
+                    // Student Roster Section
+                    Row(
+                      children: [
+                        const Text(
+                          'STUDENT ROSTER',
+                          style: TextStyle(
+                            color: _muted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 1.1,
+                      ),
+                    ),
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF3F4F6),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Text(
+                            '${sectionStudents.length} total',
+                            style: const TextStyle(
+                              color: _muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _buildRosterTable(sectionStudents),
+                  ],
+                ),
+              ),
+            ),
+
+            const Divider(height: 1, color: _line),
+            // Footer
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  ElevatedButton(
+                    onPressed: instructorState.isSaving ? null : widget.onClose,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: _maroon,
+                      foregroundColor: Colors.white,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 12,
+                      ),
+                    ),
+                    child: const Text(
+                      'Done',
+                      style: TextStyle(fontWeight: FontWeight.w800, fontSize: 13),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _statCard({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color iconColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _line),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: iconColor.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 22),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: _muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInstructorSection(
+    Map<String, dynamic> activeAssignment,
+    bool hasInstructor,
+    PitInstructorState instructorState,
+    List<DropdownMenuItem<int>> facultyItems,
+  ) {
+    if (hasInstructor) {
+      final name = activeAssignment['faculty_name']?.toString() ?? 'Faculty';
+      final email = activeAssignment['faculty_email']?.toString() ?? '';
+      
+      if (!_isReplacing) {
+        return Row(
+          children: [
+            CircleAvatar(
+              backgroundColor: _maroon.withValues(alpha: 0.1),
+              foregroundColor: _maroon,
+              radius: 20,
+              child: const Icon(Icons.person_rounded, size: 20),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    name,
+                    style: const TextStyle(
+                      color: _ink,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (email.isNotEmpty) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      email,
+                      style: const TextStyle(color: _muted, fontSize: 12),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const StatusBadge.success(label: 'Active'),
+            const SizedBox(width: 12),
+            PopupMenuButton<String>(
+              icon: const Icon(Icons.more_vert_rounded, color: _muted),
+              onSelected: (val) {
+                if (val == 'replace') {
+                  setState(() => _isReplacing = true);
+                } else if (val == 'remove') {
+                  _removeInstructor(activeAssignment['id']);
+                }
+              },
+              itemBuilder: (context) => [
+                const PopupMenuItem(
+                  value: 'replace',
+                  child: Row(
+                    children: [
+                      Icon(Icons.swap_horiz_rounded, size: 18),
+                      SizedBox(width: 8),
+                      Text('Replace Instructor'),
+                    ],
+                  ),
+                ),
+                const PopupMenuItem(
+                  value: 'remove',
+                  child: Row(
+                    children: [
+                      Icon(Icons.delete_outline_rounded, color: Colors.red, size: 18),
+                      SizedBox(width: 8),
+                      Text('Remove Assignment', style: TextStyle(color: Colors.red)),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      } else {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.swap_horiz_rounded, color: _muted, size: 18),
+                const SizedBox(width: 8),
+                Text(
+                  'Replacing $name',
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            DropdownButtonFormField<int>(
+              initialValue: _selectedFacultyId,
+              hint: const Text('Select replacement faculty'),
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+              items: facultyItems,
+              onChanged: instructorState.isSaving
+                  ? null
+                  : (val) => setState(() => _selectedFacultyId = val),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: instructorState.isSaving
+                      ? null
+                      : () => setState(() {
+                            _isReplacing = false;
+                            _selectedFacultyId = null;
+                          }),
+                  child: const Text('Cancel'),
+                ),
+                const SizedBox(width: 8),
+                ElevatedButton(
+                  onPressed: _selectedFacultyId == null || instructorState.isSaving
+                      ? null
+                      : () => _replaceInstructor(
+                            activeAssignment['id'],
+                            _selectedFacultyId!,
+                          ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: _maroon,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  child: instructorState.isSaving
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Assign Replacement'),
+                ),
+              ],
+            ),
+          ],
+        );
+      }
+    } else {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.warning_amber_rounded, color: DefensysUi.warningText, size: 20),
+              const SizedBox(width: 10),
+              const Expanded(
+                child: Text(
+                  'No instructor assigned to this section.',
+                  style: TextStyle(
+                    color: _ink,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              StatusBadge(
+                label: 'Needs assignment',
+                background: DefensysUi.warningBg,
+                textColor: DefensysUi.warningText,
+                borderColor: DefensysUi.warningBorder,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          DropdownButtonFormField<int>(
+            initialValue: _selectedFacultyId,
+            hint: const Text('Select instructor faculty'),
+            decoration: InputDecoration(
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+            ),
+            items: facultyItems,
+            onChanged: instructorState.isSaving
+                ? null
+                : (val) => setState(() => _selectedFacultyId = val),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              ElevatedButton.icon(
+                icon: instructorState.isSaving
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      )
+                    : const Icon(Icons.person_add_alt_1_outlined, size: 18),
+                label: const Text('Assign Instructor'),
+                onPressed: _selectedFacultyId == null || instructorState.isSaving
+                    ? null
+                    : () => _assignInstructor(_selectedFacultyId!),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _maroon,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    }
+  }
+
+  Widget _buildRosterTable(List<Map<String, dynamic>> students) {
+    if (students.isEmpty) {
+      return Container(
+        height: 120,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _line),
+        ),
+        child: const Text(
+          'No students enrolled in this section.',
+          style: TextStyle(color: _muted, fontSize: 13),
+        ),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _line),
+      ),
+      child: Column(
+        children: [
+          // Table header
+          Container(
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Color(0xFFF3F4F6),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(9),
+                topRight: Radius.circular(9),
+              ),
+            ),
+            child: Row(
+              children: [
+                _headerCell('Name', 3.0),
+                _headerCell('Student ID', 2.0),
+                _headerCell('Team status', 2.5),
+              ],
+            ),
+          ),
+          // Scrollable roster rows
+          ConstrainedBox(
+            constraints: const BoxConstraints(maxHeight: 220),
+            child: ListView.separated(
+              shrinkWrap: true,
+              itemCount: students.length,
+              separatorBuilder: (_, __) => const Divider(height: 1, color: _line),
+              itemBuilder: (context, index) {
+                final student = students[index];
+                final onTeam = student['team_status'] == 'on_team';
+                final teamLabel = onTeam
+                    ? (student['team_name']?.toString() ?? 'On team')
+                    : 'Unassigned';
+
+                return SizedBox(
+                  height: 48,
+                  child: Row(
+                    children: [
+                      _rowCell(
+                        Text(
+                          student['name']?.toString() ?? '-',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        flex: 3.0,
+                      ),
+                      _rowCell(
+                        Text(
+                          student['username']?.toString() ?? '-',
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(color: _muted, fontSize: 12.5),
+                        ),
+                        flex: 2.0,
+                      ),
+                      _rowCell(
+                        onTeam
+                            ? DefensysStatusBadge.success(
+                                label: teamLabel,
+                                showDot: false,
+                              )
+                            : const DefensysStatusBadge.inactive(
+                                label: 'Unassigned',
+                              ),
+                        flex: 2.5,
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _headerCell(String text, double flex) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF4B5563),
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _rowCell(Widget child, {required double flex}) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Align(alignment: Alignment.centerLeft, child: child),
+      ),
+    );
+  }
+
+  Widget _dialogNotice(String message, {bool warning = false}) {
+    final color = warning ? DefensysUi.warningText : DefensysUi.successText;
+    final bg = warning ? DefensysUi.warningBg : DefensysUi.successBg;
+    final border = warning ? DefensysUi.warningBorder : DefensysUi.successBorder;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Text(
+        message,
+        style: TextStyle(
+          color: color,
+          fontWeight: FontWeight.w700,
+          fontSize: 13,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _assignInstructor(int facultyId) async {
+    final ok = await ref
+        .read(pitInstructorProvider.notifier)
+        .assignInstructor(facultyId: facultyId, section: widget.sectionName);
+    if (ok && mounted) {
+      setState(() {
+        _selectedFacultyId = null;
+      });
+    }
+  }
+
+  Future<void> _removeInstructor(int assignmentId) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Confirm Removal'),
+        content: const Text(
+          'Are you sure you want to remove the instructor assignment for this section?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text('Remove'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      await ref
+          .read(pitInstructorProvider.notifier)
+          .setAssignmentActive(assignmentId, false);
+    }
+  }
+
+  Future<void> _replaceInstructor(int currentAssignmentId, int newFacultyId) async {
+    // 1. Deactivate old
+    final deactivated = await ref
+        .read(pitInstructorProvider.notifier)
+        .setAssignmentActive(currentAssignmentId, false);
+    if (!deactivated || !mounted) return;
+
+    // 2. Assign new
+    final assigned = await ref
+        .read(pitInstructorProvider.notifier)
+        .assignInstructor(facultyId: newFacultyId, section: widget.sectionName);
+        
+    if (assigned && mounted) {
+      setState(() {
+        _isReplacing = false;
+        _selectedFacultyId = null;
+      });
+    }
+  }
+}
+

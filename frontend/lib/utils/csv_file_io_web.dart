@@ -118,21 +118,34 @@ Future<PickedTabularFile?> pickTabularDataFile() {
     reader.onLoadEnd.first.then((_) {
       if (completer.isCompleted) return;
       final result = reader.result;
-      if (result is! ByteBuffer) {
+      if (result == null) {
         completer.completeError('Unable to read the selected class list file.');
         return;
       }
-      final bytes = result.asUint8List().toList();
-      completer.complete(
-        PickedTabularFile(
-          name: file.name,
-          extension: extension,
-          bytes: bytes,
-          text: extension == 'csv'
-              ? utf8.decode(bytes, allowMalformed: true)
-              : null,
-        ),
-      );
+      try {
+        List<int> bytes;
+        if (result is ByteBuffer) {
+          bytes = result.asUint8List().toList();
+        } else if (result is TypedData) {
+          bytes = result.buffer.asUint8List().toList();
+        } else if (result is List<int>) {
+          bytes = result;
+        } else {
+          bytes = (result as dynamic).asUint8List().toList();
+        }
+        completer.complete(
+          PickedTabularFile(
+            name: file.name,
+            extension: extension,
+            bytes: bytes,
+            text: extension == 'csv'
+                ? utf8.decode(bytes, allowMalformed: true)
+                : null,
+          ),
+        );
+      } catch (e) {
+        completer.completeError('Unable to read file bytes: $e');
+      }
     });
     reader.readAsArrayBuffer(file);
   });

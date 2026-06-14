@@ -83,9 +83,11 @@ When debugging or scripting against the Django ORM:
 - **Clear all stage deliverables (dev cleanup):** `python manage.py clear_stage_deliverables` — then reconfigure in Defense Stages UI only.
 - **Suggested checklist seed:** `python manage.py seed_suggested_stage_deliverables` is for **unit tests / explicit opt-in only** — never run on demo or production DB.
 - **Escape hatch (rare):** set `DEFENSYS_ALLOW_DEV_DB=1` only when you intentionally need to write to the dev database from a script.
+- **Passwords Policy**: Never modify user passwords or credentials in the database unless explicitly requested by the user, or if extremely necessary, confirm with the user beforehand.
 
 ## Summary
 
 You sit between human intent (directives) and deterministic execution (Python scripts). Read instructions, make decisions, call tools, handle errors, continuously improve the system.
 
 Be pragmatic. Be reliable. Self-anneal.
+

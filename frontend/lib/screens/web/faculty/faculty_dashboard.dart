@@ -23,6 +23,7 @@ import 'adviser_grading_screen.dart';
 import 'weekly_progress_reports_screen.dart';
 import 'pit_lead_dashboard_content.dart';
 import 'pit_lead_cohort_screen.dart';
+import 'pit_student_import_screen.dart';
 import 'pit_instructor_assignment_screen.dart';
 import 'adviser_dashboard_content.dart';
 import 'pit_events_management_screen.dart';
@@ -985,9 +986,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'pit_student_import':
         return Container(
           color: Colors.white,
-          child: PitLeadCohortScreen(
-            onCreateTeam: () => _goToSection('student_teams'),
-          ),
+          child: const PitStudentImportScreen(),
         );
       case 'student_teams':
         return Container(

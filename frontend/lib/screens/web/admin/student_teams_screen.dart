@@ -840,26 +840,65 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Widget _pitTeamScopeToggle(StudentTeamsState state) {
     return Row(
       children: [
-        ChoiceChip(
-          label: const Text('Current term'),
-          selected: _teamListScope == 'active',
-          onSelected: state.isSaving
-              ? null
-              : (_) {
-                  setState(() => _teamListScope = 'active');
-                  _fetchTeamsForCurrentRole(scope: 'active');
-                },
+        Container(
+          width: 168,
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(7),
+            border: Border.all(color: const Color(0xFFD1D5DB)),
+          ),
+          child: DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              value: _teamListScope == 'active' ? 'active' : 'history',
+              isExpanded: true,
+              icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+              style: const TextStyle(
+                color: _ink,
+                fontFamily: DefensysUi.fontFamily,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+              items: const [
+                DropdownMenuItem(value: 'active', child: Text('Current Term')),
+                DropdownMenuItem(value: 'history', child: Text('History')),
+              ],
+              onChanged: state.isSaving
+                  ? null
+                  : (value) {
+                      if (value == null) return;
+                      setState(() => _teamListScope = value);
+                      _fetchTeamsForCurrentRole(scope: value);
+                    },
+            ),
+          ),
         ),
         const SizedBox(width: 8),
-        ChoiceChip(
-          label: const Text('History'),
-          selected: _teamListScope == 'history',
-          onSelected: state.isSaving
-              ? null
-              : (_) {
-                  setState(() => _teamListScope = 'history');
-                  _fetchTeamsForCurrentRole(scope: 'history');
-                },
+        SizedBox(
+          height: 42,
+          child: OutlinedButton.icon(
+            onPressed: state.isSaving
+                ? null
+                : () {
+                    _searchController.clear();
+                    setState(() => _teamListScope = 'active');
+                    ref.read(studentTeamsProvider.notifier).fetchTeams(
+                          level: _isCapstoneAdmin ? 'Capstone' : '',
+                          scope: _isPitLeadManager ? 'active' : null,
+                          search: '',
+                        );
+                  },
+            icon: const Icon(Icons.refresh_rounded, size: 17),
+            label: const Text('Clear'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _ink,
+              side: const BorderSide(color: Color(0xFFD1D5DB)),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+            ),
+          ),
         ),
       ],
     );
