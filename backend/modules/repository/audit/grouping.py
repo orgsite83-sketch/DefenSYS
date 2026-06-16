@@ -79,7 +79,6 @@ def team_counts_payload(entries, track='all'):
             'track': team_track(team.level),
             'pre': 0,
             'vault': 0,
-            'archive': 0,
             'total': 0,
         }
         for team in teams_for_track(track)
@@ -92,16 +91,14 @@ def team_counts_payload(entries, track='all'):
         kind = entry.get('submission_kind') or ''
         if track == 'capstone' and kind == 'pit':
             continue
-        if track == 'pit' and kind in ('pre', 'vault', 'archive'):
+        if track == 'pit' and kind in ('pre', 'vault'):
             continue
         if kind == 'pre' and not entry.get('is_missing'):
             bucket['pre'] += 1
         elif kind == 'vault' and not entry.get('is_missing'):
             bucket['vault'] += 1
-        elif kind == 'archive':
-            bucket['archive'] += 1
         elif kind == 'pit':
-            bucket['archive'] += 1
+            bucket['vault'] += 1
         if entry.get('has_file') or entry.get('is_missing'):
             bucket['total'] += 1
     return sorted(tallies.values(), key=lambda item: (item['level'] or '', item['name'] or ''))
@@ -247,14 +244,14 @@ def _entries_for_stage_deliverables(
         for entry in pre_defense + vault
         if entry.get('id')
     }
-    archive = [
+    vault.extend([
         entry
         for entry in entries_for_team
-        if entry.get('submission_kind') == 'archive'
+        if entry.get('submission_kind') == 'vault'
         and entry.get('stage') == stage_label
         and entry.get('id') not in included_ids
-    ]
-    return pre_defense, vault, archive
+    ])
+    return pre_defense, vault
 
 
 def grouped_by_stage_for_team(
@@ -276,7 +273,7 @@ def grouped_by_stage_for_team(
     for stage_name in stages:
         if stage_filter and stage_name != stage_filter:
             continue
-        pre_defense, vault, archive = _entries_for_stage_deliverables(
+        pre_defense, vault = _entries_for_stage_deliverables(
             team,
             stage_name,
             entries_for_team,
@@ -284,13 +281,12 @@ def grouped_by_stage_for_team(
             include_ml=include_ml,
             include_audit_trail=include_audit_trail,
         )
-        if not (pre_defense or vault or archive) and not stage_filter:
+        if not (pre_defense or vault) and not stage_filter:
             continue
         groups.append({
             'stage': stage_name,
             'pre_defense': pre_defense,
             'vault': vault,
-            'archive': archive,
             'checklist': _checklist_for_team_stage(team, stage_name),
         })
     return groups

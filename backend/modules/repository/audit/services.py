@@ -791,7 +791,6 @@ def counts_payload(entries, filtered_entries):
         'vault_submissions': sum(
             1 for entry in filtered_entries if entry.get('submission_kind') == 'vault'
         ),
-        'archive_pdf': sum(1 for entry in filtered_entries if entry.get('submission_kind') == 'archive'),
         'missing_required': sum(1 for entry in filtered_entries if entry.get('is_missing')),
         'uploaded': sum(
             1

@@ -52,6 +52,7 @@ dependencies:
 
   meta: any
   toastification: ^3.2.0
+  google_fonts: ^6.2.1
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -90,6 +91,13 @@ flutter:
     - assets/logo-login-mark-48.png
     - assets/logo-login-mark-58.png
     - assets/login_hero.png
+    - assets/login_hero_1.png
+    - assets/login_hero_2.png
+    - assets/login_hero_3.png
+    - assets/login_hero_4.png
+    - assets/login_hero_5.png
+    - assets/login_hero_6.png
+    - assets/login_hero_7.png
 
   fonts:
     - family: Poppins

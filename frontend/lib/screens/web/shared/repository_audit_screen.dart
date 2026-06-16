@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:google_fonts/google_fonts.dart';
 import 'package:http/http.dart' as http;
 import '../../../services/authenticated_client.dart';
 import '../../../services/repository_audit_provider.dart';
@@ -28,6 +29,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   final _searchController = TextEditingController();
   final _tableHScrollController = ScrollController();
   bool _showTableScrollHint = false;
+  bool _showAdvancedFilters = false;
 
   @override
   void initState() {
@@ -197,11 +199,11 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         if (state.scope['has_assigned_assistant'] == true) {
           return 'Monitor PIT vault entries for $year. Your assigned Repository Assistant handles uploads.';
         }
-        return 'Archive passed PIT projects for $year after the event is officially complete in Grade Center.';
+        return 'Vault passed PIT projects for $year after the event is officially complete in Grade Center.';
       case 'repo_assistant':
         return 'Upload passed PIT project files for $year after the PIT lead marks the event officially complete.';
       default:
-        return 'Browse pre-defense uploads, digital vault items, and final archive PDFs by team or deliverable (e.g. D1 across all teams).';
+        return 'Browse pre-defense uploads and digital vault items by team or deliverable (e.g. D1 across all teams).';
     }
   }
 
@@ -230,14 +232,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (diagnostics is! Map) {
       return _notice(
         Icons.info_outline_rounded,
-        'No teams are ready to archive yet. Mark the PIT event officially complete in Grade Center so passed teams become ready to archive.',
+        'No teams are ready to upload to vault yet. Mark the PIT event officially complete in Grade Center so passed teams become ready to upload to vault.',
         const Color(0xFFD97706),
       );
     }
 
     final diag = Map<String, dynamic>.from(diagnostics);
     final parts = <String>[
-      'No teams are ready to archive for your year level.',
+      'No teams are ready to upload to vault for your year level.',
     ];
     final forYear = diag['completed_events_for_year'];
     if (forYear is List && forYear.isNotEmpty) {
@@ -284,10 +286,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           'Uploads are handled by your Repository Assistant. Mark events officially complete in Grade Center, then ask them to post passed team files.';
     } else if (scope == 'repo_assistant') {
       message =
-          'Uploads open after the PIT lead marks your year\'s PIT event officially complete in Grade Center (passed teams become ready to archive).';
+          'Uploads open after the PIT lead marks your year\'s PIT event officially complete in Grade Center (passed teams become ready to upload).';
     } else {
       message =
-          'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to archive; Grade Center shows Published after vault save.';
+          'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after vault save.';
     }
     return _notice(
       Icons.info_outline_rounded,
@@ -316,7 +318,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Ready to archive${events.isNotEmpty ? ' · $events' : ''}',
+            'Ready to vault${events.isNotEmpty ? ' · $events' : ''}',
             style: const TextStyle(
               color: AppColors.maroon,
               fontSize: 15,
@@ -403,9 +405,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              Text(
                 'Repository Vault',
-                style: TextStyle(
+                style: GoogleFonts.plusJakartaSans(
                   color: AppColors.maroon,
                   fontSize: 21,
                   fontWeight: FontWeight.w800,
@@ -415,7 +417,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               const SizedBox(height: 8),
               Text(
                 _headerSubtitle(state),
-                style: const TextStyle(
+                style: GoogleFonts.plusJakartaSans(
                   color: AppColors.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
@@ -424,10 +426,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               if (_scopeKey(state) == 'pit_lead' &&
                   state.scope['has_assigned_assistant'] != true) ...[
                 const SizedBox(height: 8),
-                const Text(
+                Text(
                   'Assign a Repository Assistant on your dashboard to delegate uploads.',
-                  style: TextStyle(
-                    color: Color(0xFF6B7280),
+                  style: GoogleFonts.plusJakartaSans(
+                    color: const Color(0xFF6B7280),
                     fontSize: 12.5,
                     fontStyle: FontStyle.italic,
                   ),
@@ -507,14 +509,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
-              title: state.deliverableId.isNotEmpty
-                  ? 'Missing'
-                  : 'Archive PDFs',
-              value: state.deliverableId.isNotEmpty
-                  ? _count(state, 'missing_required')
-                  : _count(state, 'archive_pdf'),
+              title: 'Missing required',
+              value: _count(state, 'missing_required'),
               valueColor: const Color(0xFFD97706),
-              icon: Icons.archive_outlined,
+              icon: Icons.error_outline_rounded,
               iconTint: const Color(0xFFFDE68A),
             ),
           ),
@@ -562,15 +560,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         _sectionHeader(
           'Repository Vault Summary',
-          'Current archive readiness, vault status, and record counts for your scope.',
+          'Current vault status and record counts for your scope.',
         ),
         const SizedBox(height: 12),
         _buildStats(state),
         if (_scopeKey(state) == 'admin') ...[
           const SizedBox(height: 18),
           _buildTypeTabs(state),
-          const SizedBox(height: 14),
-          _buildKindChips(state),
           if (state.deliverableId.isNotEmpty) ...[
             const SizedBox(height: 10),
             _buildDeliverableFilterChip(state),
@@ -596,7 +592,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         _sectionHeader(
           'Upload Queue',
-          'Teams and files that are ready for PIT or Capstone archive upload.',
+          'Teams and files that are ready for PIT or Capstone vault upload.',
         ),
         const SizedBox(height: 12),
         ...children,
@@ -610,7 +606,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         Text(
           title,
-          style: const TextStyle(
+          style: GoogleFonts.plusJakartaSans(
             color: AppColors.maroon,
             fontSize: 16,
             fontWeight: FontWeight.w800,
@@ -619,7 +615,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         const SizedBox(height: 4),
         Text(
           subtitle,
-          style: const TextStyle(
+          style: GoogleFonts.plusJakartaSans(
             color: AppColors.textSecondary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -637,57 +633,65 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     required Color iconTint,
   }) {
     return Container(
-      height: 107,
-      clipBehavior: Clip.antiAlias,
-      padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+      height: 104,
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Stack(
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Positioned(
-            right: -16,
-            bottom: -26,
-            child: Icon(
-              icon,
-              size: 76,
-              color: iconTint.withValues(alpha: 0.34),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  value.toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(
+                    color: valueColor,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.plusJakartaSans(
+                    color: const Color(0xFF5D6678),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value.toString(),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: valueColor,
-                  fontSize: 21,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
-                ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ],
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: iconTint.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(
+              icon,
+              size: 20,
+              color: iconTint,
+            ),
           ),
         ],
       ),
@@ -715,7 +719,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             alignment: Alignment.centerLeft,
             child: Text(
               'Repository Vault Records',
-              style: TextStyle(
+              style: GoogleFonts.plusJakartaSans(
                 color: AppColors.maroon,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -726,116 +730,133 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           Row(
             children: [
               Expanded(child: _searchField(state)),
-              const SizedBox(width: 16),
+              const SizedBox(width: 12),
+              _advancedFiltersButton(),
+              const SizedBox(width: 12),
               _clearFiltersButton(),
             ],
           ),
-          const SizedBox(height: 16),
-          if (_scopeKey(state) == 'admin') ...[
-            Row(
-              children: [
-                Expanded(
-                  child: _filterFromStrings(
-                    value: state.academicYear,
-                    label: 'All Years',
-                    items: _stringList(state.options['academic_years']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(academicYear: value ?? ''),
+          if (_showAdvancedFilters) ...[
+            const SizedBox(height: 16),
+            if (_scopeKey(state) == 'admin') ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.academicYear,
+                      label: 'All Years',
+                      items: _stringList(state.options['academic_years']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(academicYear: value ?? ''),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _filterFromStrings(
-                    value: state.semester,
-                    label: 'All Semesters',
-                    items: _stringList(state.options['semesters']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(semester: value ?? ''),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.semester,
+                      label: 'All Semesters',
+                      items: _stringList(state.options['semesters']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(semester: value ?? ''),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _filterFromMaps(
-                    value: state.status,
-                    label: 'All Statuses',
-                    items: _mapList(state.options['status_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(status: value ?? ''),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromMaps(
+                      value: state.status,
+                      label: 'All Statuses',
+                      items: _mapList(state.options['status_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(status: value ?? ''),
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _filterFromStrings(
-                    value: state.stage,
-                    label: 'All Stages',
-                    items: _stringList(state.options['stage_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(stage: value ?? ''),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.stage,
+                      label: 'All Stages',
+                      items: _stringList(state.options['stage_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(stage: value ?? ''),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  flex: 2,
-                  child: _filterFromMaps(
-                    value: state.deliverableId,
-                    label: 'All Deliverables',
-                    items: _mapList(state.options['deliverable_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(
-                          deliverableId: value ?? '',
-                          clearDeliverable: (value ?? '').isEmpty,
-                          clearTeam: (value ?? '').isNotEmpty,
-                        ),
+                  if (state.type != 'pit') ...[
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _filterFromMaps(
+                        value: state.submissionKind,
+                        label: 'All Kinds',
+                        items: _mapList(state.options['submission_kind_options']),
+                        onChanged: (value) => ref
+                            .read(repositoryAuditProvider.notifier)
+                            .fetchEntries(submissionKind: value ?? ''),
+                      ),
+                    ),
+                  ],
+                  const SizedBox(width: 14),
+                  Expanded(
+                    flex: state.type == 'pit' ? 2 : 1,
+                    child: _filterFromMaps(
+                      value: state.deliverableId,
+                      label: 'All Deliverables',
+                      items: _mapList(state.options['deliverable_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(
+                            deliverableId: value ?? '',
+                            clearDeliverable: (value ?? '').isEmpty,
+                            clearTeam: (value ?? '').isNotEmpty,
+                          ),
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ] else ...[
-            Row(
-              children: [
-                Expanded(
-                  child: _filterFromMaps(
-                    value: state.teamId,
-                    label: 'All Teams',
-                    items: _mapList(state.options['team_counts']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(teamId: value ?? ''),
+                ],
+              ),
+            ] else ...[
+              Row(
+                children: [
+                  Expanded(
+                    child: _filterFromMaps(
+                      value: state.teamId,
+                      label: 'All Teams',
+                      items: _mapList(state.options['team_counts']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(teamId: value ?? ''),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _filterFromStrings(
-                    value: state.stage,
-                    label: 'All Stages',
-                    items: _stringList(state.options['stage_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(stage: value ?? ''),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromStrings(
+                      value: state.stage,
+                      label: 'All Stages',
+                      items: _stringList(state.options['stage_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(stage: value ?? ''),
+                    ),
                   ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: _filterFromMaps(
-                    value: state.status,
-                    label: 'All Statuses',
-                    items: _mapList(state.options['status_options']),
-                    onChanged: (value) => ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(status: value ?? ''),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _filterFromMaps(
+                      value: state.status,
+                      label: 'All Statuses',
+                      items: _mapList(state.options['status_options']),
+                      onChanged: (value) => ref
+                          .read(repositoryAuditProvider.notifier)
+                          .fetchEntries(status: value ?? ''),
+                    ),
                   ),
-                ),
-              ],
-            ),
+                ],
+              ),
+            ],
           ],
           const SizedBox(height: 18),
           if (state.isLoading && state.entries.isEmpty)
@@ -849,13 +870,12 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(height: 14),
           Align(
             alignment: Alignment.centerLeft,
-
             child: Text(
               state.deliverableId.isNotEmpty
                   ? 'Showing ${state.entries.length} teams for ${state.deliverableSummary['label'] ?? state.deliverableId}'
                   : 'Showing ${state.entries.length} records',
-              style: const TextStyle(
-                color: Color(0xFF5D6678),
+              style: GoogleFonts.plusJakartaSans(
+                color: const Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -866,13 +886,41 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     );
   }
 
+  Widget _advancedFiltersButton() {
+    return SizedBox(
+      height: 43,
+      child: OutlinedButton.icon(
+        onPressed: () {
+          setState(() {
+            _showAdvancedFilters = !_showAdvancedFilters;
+          });
+        },
+        icon: Icon(
+          _showAdvancedFilters ? Icons.filter_alt_off_rounded : Icons.filter_alt_rounded,
+          size: 16,
+          color: _showAdvancedFilters ? AppColors.maroon : AppColors.textPrimary,
+        ),
+        label: Text(_showAdvancedFilters ? 'Hide Filters' : 'Filters'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: _showAdvancedFilters ? AppColors.maroon : AppColors.textPrimary,
+          side: BorderSide(
+            color: _showAdvancedFilters ? AppColors.maroon : const Color(0xFFD1D5DB),
+          ),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          textStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w800),
+        ),
+      ),
+    );
+  }
+
   Widget _searchField(RepositoryAuditState state) {
     return SizedBox(
       height: 43,
       child: TextField(
         controller: _searchController,
         enabled: !state.isSaving,
-        style: const TextStyle(fontSize: 13),
+        style: GoogleFonts.plusJakartaSans(fontSize: 13),
         decoration: InputDecoration(
           prefixIcon: const Icon(
             Icons.search_rounded,
@@ -880,26 +928,26 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             size: 19,
           ),
           hintText: 'Search by file name, course, or semester...',
-          hintStyle: const TextStyle(
+          hintStyle: GoogleFonts.plusJakartaSans(
             color: AppColors.textSecondary,
             fontSize: 13,
           ),
           filled: true,
-          fillColor: const Color(0xFFF3F4F6),
+          fillColor: const Color(0xFFF8FAFC),
           contentPadding: const EdgeInsets.symmetric(
             horizontal: 14,
             vertical: 10,
           ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
+            borderRadius: BorderRadius.circular(10),
+            borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
             borderSide: const BorderSide(color: AppColors.maroon),
           ),
         ),
@@ -940,10 +988,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         label: const Text('Clear Filters'),
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
-          side: const BorderSide(color: Color(0xFFD1D5DB)),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+          side: const BorderSide(color: Color(0xFFE2E8F0)),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+          textStyle: GoogleFonts.plusJakartaSans(fontSize: 13, fontWeight: FontWeight.w800),
         ),
       ),
     );
@@ -977,7 +1025,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           value: selected,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
+          style: GoogleFonts.plusJakartaSans(
             color: AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -989,6 +1037,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                   child: Text(
                     item['label']?.toString() ?? label,
                     overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               )
@@ -1014,7 +1066,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           value: selected,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: const TextStyle(
+          style: GoogleFonts.plusJakartaSans(
             color: AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -1026,6 +1078,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                   child: Text(
                     item.isEmpty ? label : item,
                     overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.plusJakartaSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                    ),
                   ),
                 ),
               )
@@ -1042,8 +1098,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(7),
-        border: Border.all(color: const Color(0xFFD1D5DB)),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: child,
     );
@@ -1227,21 +1283,52 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         children: [
           _repositoryHeaderData(),
           Container(
-            height: 96,
+            height: 220,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
               color: Colors.white,
               border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
             ),
-            child: const Text(
-              'No digital vault files found.',
-              style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.folder_open_outlined,
+                    size: 32,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  'No vault records found',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: const Color(0xFF1E293B),
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Try searching or adjusting your filter settings',
+                  style: GoogleFonts.plusJakartaSans(
+                    color: const Color(0xFF64748B),
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
       ),
       actionColumn: _repositoryActionColumn([
-        _repositoryActionSpacer(height: 96),
+        _repositoryActionSpacer(height: 220),
       ]),
     );
   }
@@ -1636,7 +1723,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               if (pendingNames.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 const Text(
-                  'Use these names from the archive queue:',
+                  'Use these names from the upload queue:',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 6),
@@ -1793,7 +1880,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
               if (pendingNames.isNotEmpty) ...[
                 const SizedBox(height: 14),
                 const Text(
-                  'Use these names from the archive queue:',
+                  'Use these names from the upload queue:',
                   style: TextStyle(fontWeight: FontWeight.w600),
                 ),
                 const SizedBox(height: 6),
@@ -2096,10 +2183,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     return AppColors.warning;
   }
 
-  bool _isAdminCapstoneView(RepositoryAuditState state) {
-    return _scopeKey(state) == 'admin' &&
-        (state.type.isEmpty || state.type == 'capstone');
-  }
 
   bool _isAdminBrowseLayout(RepositoryAuditState state) {
     return _scopeKey(state) == 'admin' && state.type != 'pit';
@@ -2163,72 +2246,58 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   Widget _buildTypeTabs(RepositoryAuditState state) {
     Widget tab(String label, String typeValue, bool selected) {
-      return Padding(
-        padding: const EdgeInsets.only(right: 8),
-        child: ChoiceChip(
-          label: Text(label),
-          selected: selected,
-          onSelected: state.isSaving
-              ? null
-              : (_) {
-                  ref
-                      .read(repositoryAuditProvider.notifier)
-                      .fetchEntries(
-                        type: typeValue,
-                        clearTeam: true,
-                        clearDeliverable: true,
-                      );
-                },
-          selectedColor: AppColors.maroon,
-          labelStyle: TextStyle(
-            color: selected ? Colors.white : AppColors.textPrimary,
-            fontWeight: FontWeight.w700,
-            fontSize: 12.5,
+      return InkWell(
+        onTap: state.isSaving
+            ? null
+            : () {
+                ref.read(repositoryAuditProvider.notifier).fetchEntries(
+                      type: typeValue,
+                      clearTeam: true,
+                      clearDeliverable: true,
+                    );
+              },
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 18),
+          decoration: BoxDecoration(
+            border: Border(
+              bottom: BorderSide(
+                color: selected ? AppColors.maroon : Colors.transparent,
+                width: 2.5,
+              ),
+            ),
+          ),
+          child: Text(
+            label,
+            style: GoogleFonts.plusJakartaSans(
+              color: selected ? AppColors.maroon : const Color(0xFF6B7280),
+              fontWeight: FontWeight.w700,
+              fontSize: 14.5,
+            ),
           ),
         ),
       );
     }
 
-    return Row(
-      children: [
-        tab('Capstone', 'capstone', state.type == 'capstone'),
-        tab('PIT', 'pit', state.type == 'pit'),
-        tab('All records', '', state.type.isEmpty),
-      ],
+    return Container(
+      decoration: const BoxDecoration(
+        border: Border(
+          bottom: BorderSide(
+            color: Color(0xFFE5E7EB),
+            width: 1.2,
+          ),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.max,
+        children: [
+          tab('Capstone', 'capstone', state.type == 'capstone'),
+          tab('PIT', 'pit', state.type == 'pit'),
+          tab('All records', '', state.type.isEmpty),
+        ],
+      ),
     );
   }
 
-  Widget _buildKindChips(RepositoryAuditState state) {
-    if (!_isAdminCapstoneView(state)) {
-      return const SizedBox.shrink();
-    }
-    const kinds = [
-      ('', 'All kinds'),
-      ('pre', 'Pre-defense'),
-      ('vault', 'Digital vault'),
-      ('archive', 'Archive PDF'),
-    ];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: kinds.map((item) {
-        final selected = state.submissionKind == item.$1;
-        return FilterChip(
-          label: Text(item.$2),
-          selected: selected,
-          onSelected: state.isSaving
-              ? null
-              : (_) {
-                  ref
-                      .read(repositoryAuditProvider.notifier)
-                      .fetchEntries(submissionKind: item.$1);
-                },
-          selectedColor: AppColors.maroon.withValues(alpha: 0.15),
-          checkmarkColor: AppColors.maroon,
-        );
-      }).toList(),
-    );
-  }
 
   Widget _buildDeliverableFilterChip(RepositoryAuditState state) {
     final summary = state.deliverableSummary;
@@ -2336,10 +2405,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             final track = _teamTrack(team);
             final pre = _asInt(team['pre']);
             final vault = _asInt(team['vault']);
-            final archive = _asInt(team['archive']);
             final counts = track == 'pit'
-                ? '$archive archive'
-                : '$pre pre · $vault vault · $archive archive';
+                ? '$vault vault'
+                : '$pre pre · $vault vault';
             final subtitle = [
               if (level.isNotEmpty) level,
               if (project.isNotEmpty && project != name) project,
@@ -2685,8 +2753,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       final stage = group['stage']?.toString() ?? '';
       final preRows = _mapList(group['pre_defense']);
       final vaultRows = _mapList(group['vault']);
-      final archiveRows = _mapList(group['archive']);
-      if (preRows.isEmpty && vaultRows.isEmpty && archiveRows.isEmpty) {
+      if (preRows.isEmpty && vaultRows.isEmpty) {
         continue;
       }
 
@@ -2717,7 +2784,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       addSubsection(
         'Digital vault deliverables',
         const Color(0xFFF5F3FF),
-        [...vaultRows, ...archiveRows],
+        vaultRows,
       );
       dataChildren.add(const SizedBox(height: 12));
       actionChildren.add(_repositoryActionSpacer(height: 12));
@@ -2746,7 +2813,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           height: 72,
           alignment: Alignment.center,
           child: const Text(
-            'No PIT archive files found.',
+            'No PIT vault files found.',
             style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
           ),
         ),
@@ -2760,7 +2827,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     for (final group in groups) {
       final course = group['stage']?.toString() ?? 'PIT';
-      final rows = _mapList(group['pit_archive']);
+      final rows = _mapList(group['pit_vault']);
       if (rows.isEmpty) continue;
 
       dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
@@ -2838,9 +2905,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         'vault': stageEntries
             .where((entry) => entry['submission_kind'] == 'vault')
             .toList(),
-        'archive': stageEntries
-            .where((entry) => entry['submission_kind'] == 'archive')
-            .toList(),
       };
     }).toList();
   }
@@ -2861,7 +2925,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         final code = entry['course_code']?.toString() ?? '';
         return stage == course || code == course;
       }).toList();
-      return {'stage': course, 'pit_archive': courseEntries};
+      return {'stage': course, 'pit_vault': courseEntries};
     }).toList();
   }
 
@@ -3008,14 +3072,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final label = switch (kind) {
       'pre' => 'Pre-defense',
       'vault' => 'Vault',
-      'archive' => 'Archive',
       'pit' => 'Digital vault',
       _ => 'File',
     };
     final color = switch (kind) {
       'pre' => const Color(0xFF2563EB),
       'vault' => const Color(0xFF7C3AED),
-      'archive' => AppColors.maroon,
+      'pit' => const Color(0xFF7C3AED),
       _ => AppColors.textSecondary,
     };
     return Container(

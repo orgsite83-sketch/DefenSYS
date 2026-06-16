@@ -20,7 +20,6 @@ SUBMISSION_KIND_OPTIONS = [
     {'value': '', 'label': 'All kinds'},
     {'value': 'pre', 'label': 'Pre-defense'},
     {'value': 'vault', 'label': 'Digital vault'},
-    {'value': 'archive', 'label': 'Archive PDF'},
 ]
 
 DEFAULT_AUDIT_PAGE_LIMIT = 100

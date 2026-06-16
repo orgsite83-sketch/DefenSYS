@@ -680,7 +680,7 @@ class RepositoryAuditApiTests(APITestCase):
         grade = TeamGrade.objects.get(team=self.capstone_team, scope=TeamGrade.SCOPE_CAPSTONE)
         self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
 
-    def test_submission_kind_pre_excludes_vault_and_archive(self):
+    def test_submission_kind_pre_excludes_vault(self):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(
             '/api/repository/audit/',
@@ -699,7 +699,8 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertIn('deliverable_options', options)
         self.assertIn('team_counts', options)
         self.assertIn('submission_kind_options', options)
-        self.assertIn('archive_pdf', response.data['counts'])
+        self.assertNotIn('archive_pdf', response.data['counts'])
+        self.assertIn('vault_submissions', response.data['counts'])
 
     def test_filter_deliverable_d1_returns_capstone_submissions(self):
         self.client.force_authenticate(user=self.admin)
@@ -729,7 +730,7 @@ class RepositoryAuditApiTests(APITestCase):
         first = response.data['grouped_by_stage'][0]
         self.assertIn('pre_defense', first)
         self.assertIn('vault', first)
-        self.assertIn('archive', first)
+        self.assertNotIn('archive', first)
 
     def test_capstone_entries_include_submission_kind(self):
         self.client.force_authenticate(user=self.admin)
@@ -737,7 +738,7 @@ class RepositoryAuditApiTests(APITestCase):
         capstone_rows = [
             entry
             for entry in response.data['entries']
-            if entry.get('submission_kind') in ('pre', 'vault', 'archive')
+            if entry.get('submission_kind') in ('pre', 'vault')
         ]
         self.assertTrue(capstone_rows)
         self.assertIn(
@@ -809,7 +810,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertIn('codelearners_d1.pdf', file_names)
         self.assertIn('3rdYear.CAP301.SmartCampusNavigator.1stSemester.pdf', file_names)
 
-    def test_grouped_by_stage_includes_pre_when_archive_exists(self):
+    def test_grouped_by_stage_includes_pre_when_vault_entry_exists(self):
         team = StudentTeam.objects.create(
             name='Archive Plus Pre',
             project_title='Archive Plus Pre',
@@ -857,7 +858,7 @@ class RepositoryAuditApiTests(APITestCase):
         concept = next(group for group in groups if group['stage'] == 'Concept Proposal')
         pre_names = [row['file_name'] for row in concept['pre_defense']]
         self.assertIn('archive_plus_pre_d1.pdf', pre_names)
-        self.assertEqual(len(concept['archive']), 1)
+        self.assertEqual(len(concept['vault']), 1)
 
     def test_options_teams_match_team_counts(self):
         self.client.force_authenticate(user=self.admin)

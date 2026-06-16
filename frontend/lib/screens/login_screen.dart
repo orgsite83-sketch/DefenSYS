@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -197,141 +199,240 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Widget _buildWebLayout(AuthState authState, BoxConstraints constraints) {
-    final pageHeight = constraints.maxHeight < 720
-        ? 720.0
-        : constraints.maxHeight;
     final isCompact = constraints.maxWidth < 980;
 
     return Scaffold(
-      backgroundColor: const Color(0xFFF8FAFC),
-      body: SingleChildScrollView(
-        child: SizedBox(
-          height: pageHeight,
-          child: Stack(
-            children: [
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                child: DecoratedBox(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Color(0xFFF8FAFC),
-                        Color(0xFFF7F8FA),
-                        Color(0xFFF3F4F6),
-                      ],
-                      stops: [0.0, 0.58, 1.0],
+      backgroundColor: Colors.white,
+      body: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Left Side: Hero Event Carousel & White branding overlays (60%)
+          Expanded(
+            flex: 6,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: _HeroCarousel(height: double.infinity),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.black.withValues(alpha: 0.15),
+                            Colors.black.withValues(alpha: 0.65),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
-              Positioned(
-                left: -120,
-                bottom: -180,
-                width: 520,
-                height: 300,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF7ED).withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(48),
+                Positioned(
+                  top: 48,
+                  left: 48,
+                  right: 48,
+                  child: IgnorePointer(
+                    child: _brandLockup(isCompact: isCompact, isDarkTheme: true),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 92,
-                left: 96,
-                child: _backgroundTile(
-                  size: 74,
-                  color: DefensysTokens.gold,
-                  opacity: 0.08,
-                  radius: 20,
-                ),
-              ),
-              Positioned(
-                top: 168,
-                left: 214,
-                child: _backgroundTile(
-                  size: 38,
-                  color: DefensysTokens.maroon,
-                  opacity: 0.06,
-                  radius: 12,
-                ),
-              ),
-              Positioned(
-                top: 72,
-                right: -110,
-                width: 360,
-                height: 220,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFDECEC).withValues(alpha: 0.58),
-                    borderRadius: BorderRadius.circular(44),
+                Positioned(
+                  bottom: 64,
+                  left: 48,
+                  right: 48,
+                  child: IgnorePointer(
+                    child: _sloganPanel(isCompact: isCompact),
                   ),
                 ),
-              ),
-              Positioned(
-                top: 128,
-                right: 170,
-                child: _backgroundTile(
-                  size: 52,
-                  color: DefensysTokens.gold,
-                  opacity: 0.07,
-                  radius: 14,
-                ),
-              ),
-              Positioned(
-                right: 68,
-                bottom: 132,
-                child: _backgroundTile(
-                  size: 92,
-                  color: DefensysTokens.maroon,
-                  opacity: 0.045,
-                  radius: 22,
-                ),
-              ),
-              Positioned(
-                left: 78,
-                bottom: 126,
-                child: _backgroundDotGrid(
-                  color: DefensysTokens.maroon,
-                  opacity: 0.11,
-                ),
-              ),
-              Positioned(
-                top: 116,
-                right: 424,
-                child: _backgroundDotGrid(
-                  color: DefensysTokens.gold,
-                  opacity: 0.12,
-                ),
-              ),
-              Center(
-                child: Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: isCompact ? 28 : 56,
-                    vertical: 34,
+              ],
+            ),
+          ),
+          // Right Side: Centered Form Input & Background decorative squares (40%)
+          Expanded(
+            flex: 4,
+            child: Stack(
+              children: [
+                Positioned.fill(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFFE2E8F0),
+                          Color(0xFFF1F5F9),
+                        ],
+                      ),
+                    ),
                   ),
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 1180),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.center,
-                      children: [
-                        Expanded(
-                          flex: isCompact ? 5 : 6,
-                          child: _buildWebStoryPanel(isCompact: isCompact),
-                        ),
-                        SizedBox(width: isCompact ? 28 : 58),
-                        SizedBox(
-                          width: isCompact ? 360 : 390,
+                ),
+                // 1. Top-Left Gold Diamond (slightly behind and to the right of the maroon one)
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(-80, -210),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 110,
+                        color: const Color(0xFFD97706),
+                        opacity: 0.35,
+                        radius: 20,
+                      ),
+                    ),
+                  ),
+                ),
+                // 2. Top-Left Maroon Diamond
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(-140, -170),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 130,
+                        color: const Color(0xFF7A110A),
+                        opacity: 0.40,
+                        radius: 24,
+                      ),
+                    ),
+                  ),
+                ),
+                // 3. Top-Right Gold Diamond
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(150, -140),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 150,
+                        color: const Color(0xFFD97706),
+                        opacity: 0.35,
+                        radius: 28,
+                      ),
+                    ),
+                  ),
+                ),
+                // 4. Bottom-Left Gold Diamond
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(-160, 160),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 140,
+                        color: const Color(0xFFD97706),
+                        opacity: 0.35,
+                        radius: 26,
+                      ),
+                    ),
+                  ),
+                ),
+                // 5. Bottom-Right Gold Diamond (behind the maroon one)
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(100, 220),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 120,
+                        color: const Color(0xFFD97706),
+                        opacity: 0.35,
+                        radius: 22,
+                      ),
+                    ),
+                  ),
+                ),
+                // 6. Bottom-Right Maroon Diamond
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(150, 180),
+                    child: Transform.rotate(
+                      angle: 0.7854,
+                      child: _backgroundTile(
+                        size: 100,
+                        color: const Color(0xFF7A110A),
+                        opacity: 0.45,
+                        radius: 18,
+                      ),
+                    ),
+                  ),
+                ),
+                // 7. Top-Left Gold Dot Grid
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(-180, -80),
+                    child: _backgroundDotGrid(
+                      color: const Color(0xFFD97706),
+                      opacity: 0.45,
+                    ),
+                  ),
+                ),
+                // 8. Top-Right Maroon Dot Grid
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(200, -80),
+                    child: _backgroundDotGrid(
+                      color: const Color(0xFF7A110A),
+                      opacity: 0.4,
+                    ),
+                  ),
+                ),
+                // 9. Bottom-Left Maroon Dot Grid
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(-180, 240),
+                    child: _backgroundDotGrid(
+                      color: const Color(0xFF7A110A),
+                      opacity: 0.45,
+                    ),
+                  ),
+                ),
+                // 10. Bottom-Right Maroon Dot Grid
+                Align(
+                  alignment: Alignment.center,
+                  child: Transform.translate(
+                    offset: const Offset(210, 110),
+                    child: _backgroundDotGrid(
+                      color: const Color(0xFF7A110A),
+                      opacity: 0.4,
+                    ),
+                  ),
+                ),
+                // Centered Form Card
+                Positioned.fill(
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(horizontal: 40, vertical: 24),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        child: TweenAnimationBuilder<double>(
+                          tween: Tween<double>(begin: 0.0, end: 1.0),
+                          duration: const Duration(milliseconds: 800),
+                          curve: Curves.easeOutBack,
+                          builder: (context, value, child) {
+                            return Transform.translate(
+                              offset: Offset(0, 30 * (1.0 - value)),
+                              child: Opacity(
+                                opacity: value.clamp(0.0, 1.0),
+                                child: child,
+                              ),
+                            );
+                          },
                           child: Column(
                             mainAxisSize: MainAxisSize.min,
                             children: [
                               _buildWebLoginCard(authState),
-                              const SizedBox(height: 28),
+                              const SizedBox(height: 24),
                               const Text(
                                 'Department of Information Technology (c) 2026',
                                 textAlign: TextAlign.center,
@@ -344,14 +445,14 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                             ],
                           ),
                         ),
-                      ],
+                      ),
                     ),
                   ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -366,28 +467,40 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       width: size,
       height: size,
       decoration: BoxDecoration(
-        color: color.withValues(alpha: opacity),
+        color: color.withOpacity(opacity * 0.15),
         borderRadius: BorderRadius.circular(radius),
-        border: Border.all(color: color.withValues(alpha: opacity * 0.72)),
+        border: Border.all(
+          color: color.withOpacity(opacity * 0.25),
+          width: 1.0,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: color.withOpacity(opacity),
+            blurRadius: size * 0.35,
+            spreadRadius: size * 0.05,
+          ),
+        ],
       ),
     );
   }
 
   Widget _backgroundDotGrid({required Color color, required double opacity}) {
-    return SizedBox(
-      width: 74,
-      height: 74,
-      child: Wrap(
-        spacing: 9,
-        runSpacing: 9,
-        children: List.generate(
-          25,
-          (_) => Container(
-            width: 4,
-            height: 4,
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: opacity),
-              shape: BoxShape.circle,
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(
+        5,
+        (_) => Row(
+          mainAxisSize: MainAxisSize.min,
+          children: List.generate(
+            5,
+            (_) => Container(
+              margin: const EdgeInsets.all(4.5),
+              width: 4,
+              height: 4,
+              decoration: BoxDecoration(
+                color: color.withOpacity(opacity),
+                shape: BoxShape.circle,
+              ),
             ),
           ),
         ),
@@ -395,44 +508,43 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _buildWebStoryPanel({required bool isCompact}) {
+  Widget _sloganPanel({required bool isCompact}) {
     return Column(
-      mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        _brandLockup(isCompact: isCompact),
-        SizedBox(height: isCompact ? 26 : 34),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(22),
-          child: Image.asset(
-            'assets/login_hero.png',
-            height: isCompact ? 300 : 390,
-            width: double.infinity,
-            fit: BoxFit.cover,
-            alignment: Alignment.center,
-          ),
-        ),
-        SizedBox(height: isCompact ? 24 : 34),
         Text.rich(
           TextSpan(
             children: [
-              const TextSpan(text: 'Defend with '),
+              const TextSpan(
+                text: 'Defend with ',
+                style: TextStyle(color: Colors.white),
+              ),
               const TextSpan(
                 text: 'clarity.\n',
-                style: TextStyle(color: DefensysTokens.maroon),
+                style: TextStyle(color: DefensysTokens.gold),
               ),
-              const TextSpan(text: 'Manage with '),
+              const TextSpan(
+                text: 'Manage with ',
+                style: TextStyle(color: Colors.white),
+              ),
               const TextSpan(
                 text: 'confidence.',
-                style: TextStyle(color: DefensysTokens.maroon),
+                style: TextStyle(color: DefensysTokens.gold),
               ),
             ],
           ),
           style: TextStyle(
-            color: const Color(0xFF111827),
             fontSize: isCompact ? 36 : 48,
             fontWeight: FontWeight.w900,
-            height: 1.08,
+            height: 1.15,
+            shadows: [
+              Shadow(
+                color: Colors.black.withValues(alpha: 0.35),
+                offset: const Offset(0, 2),
+                blurRadius: 6,
+              ),
+            ],
           ),
         ),
         const SizedBox(height: 18),
@@ -448,7 +560,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _brandLockup({required bool isCompact}) {
+  Widget _brandLockup({required bool isCompact, bool isDarkTheme = false}) {
+    final textColor = isDarkTheme ? Colors.white : DefensysTokens.maroon;
+    final subColor = isDarkTheme
+        ? Colors.white.withValues(alpha: 0.8)
+        : const Color(0xFF475569);
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -460,16 +577,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
             Text(
               'DefenSYS',
               style: TextStyle(
-                color: DefensysTokens.maroon,
+                color: textColor,
                 fontSize: isCompact ? 28 : 34,
                 fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 2),
-            const Text(
+            Text(
               'Capstone & PIT Management System',
               style: TextStyle(
-                color: Color(0xFF475569),
+                color: subColor,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
               ),
@@ -506,79 +623,109 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     final sessionBanner = _buildSessionBanner();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(32, 36, 32, 32),
+      padding: const EdgeInsets.fromLTRB(32, 40, 32, 36),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        color: Colors.white.withOpacity(0.72),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(
+          color: Colors.white.withOpacity(0.85),
+          width: 1.8,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
+            color: Colors.black.withOpacity(0.06),
             blurRadius: 36,
-            offset: const Offset(0, 20),
+            offset: const Offset(0, 16),
+          ),
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Center(child: _webLogoMark(size: 58)),
-          const SizedBox(height: 24),
           const Text(
-            'Welcome back',
+            'Welcome Back',
             textAlign: TextAlign.center,
             style: TextStyle(
-              color: Color(0xFF111827),
-              fontSize: 28,
-              fontWeight: FontWeight.w900,
+              fontFamily: 'Poppins',
+              color: Color(0xFF1E293B),
+              fontSize: 34,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.5,
             ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           const Text(
-            'Sign in to manage defenses, teams, and academic records.',
+            'Please log in to your account',
             textAlign: TextAlign.center,
             style: TextStyle(
+              fontFamily: 'Poppins',
               color: Color(0xFF64748B),
-              fontSize: 13,
-              height: 1.4,
+              fontSize: 15,
               fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 28),
+          const SizedBox(height: 32),
           if (sessionBanner != null) sessionBanner,
           Form(
             key: _formKey,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
-                  controller: _emailCtrl,
-                  decoration: _webInputDecoration(
-                    hintText: 'Username or Email',
-                    prefixIcon: const Icon(Icons.person_outline, size: 22),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Username',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF334155),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
+                ),
+                const SizedBox(height: 8),
+                _WebInputField(
+                  controller: _emailCtrl,
+                  hintText: 'Your username',
+                  prefixIcon: const Icon(Icons.person_outline, size: 22),
                   validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Enter your username or email'
+                      ? 'Enter your username'
                       : null,
                   onFieldSubmitted: (_) => _login(),
                 ),
-                const SizedBox(height: 16),
-                TextFormField(
+                const SizedBox(height: 20),
+                const Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'Password',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF334155),
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                _WebInputField(
                   controller: _passCtrl,
                   obscureText: _obscure,
-                  decoration: _webInputDecoration(
-                    hintText: 'Password',
-                    prefixIcon: const Icon(Icons.lock_outline, size: 21),
-                    suffixIcon: IconButton(
-                      tooltip: _obscure ? 'Show password' : 'Hide password',
-                      icon: Icon(
-                        _obscure
-                            ? Icons.visibility_off_outlined
-                            : Icons.visibility_outlined,
-                        size: 20,
-                      ),
-                      onPressed: () => setState(() => _obscure = !_obscure),
+                  hintText: '••••••••',
+                  prefixIcon: const Icon(Icons.lock_outline, size: 21),
+                  suffixIcon: IconButton(
+                    tooltip: _obscure ? 'Show password' : 'Hide password',
+                    icon: Icon(
+                      _obscure
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      size: 20,
                     ),
+                    onPressed: () => setState(() => _obscure = !_obscure),
                   ),
                   validator: (v) => v == null || v.trim().isEmpty
                       ? 'Enter your password'
@@ -588,7 +735,28 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 10),
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton(
+              onPressed: () {},
+              child: const Text(
+                'Forgot Password?',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Color(0xFF8B150D),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          _LoginButton(
+            onPressed: authState.isLoading ? null : _login,
+            isLoading: authState.isLoading,
+          ),
+          const SizedBox(height: 20),
           Row(
             children: [
               SizedBox(
@@ -599,73 +767,47 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   onChanged: (value) =>
                       setState(() => _rememberMe = value ?? false),
                   visualDensity: VisualDensity.compact,
-                  activeColor: DefensysTokens.maroon,
+                  activeColor: const Color(0xFF8B150D),
                 ),
               ),
               const SizedBox(width: 10),
-              const Expanded(
-                child: Text(
-                  'Remember me',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Color(0xFF475569),
-                    fontWeight: FontWeight.w500,
-                  ),
+              const Text(
+                'Remember me',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 14,
+                  color: Color(0xFF475569),
+                  fontWeight: FontWeight.w500,
                 ),
               ),
-              TextButton(
-                onPressed: () {},
+            ],
+          ),
+          const SizedBox(height: 28),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Text(
+                "Don't have an account? ",
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  color: Color(0xFF475569),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              GestureDetector(
+                onTap: () {},
                 child: const Text(
-                  'Forgot password?',
+                  'Sign Up',
                   style: TextStyle(
-                    color: DefensysTokens.maroon,
-                    fontSize: 13,
+                    fontFamily: 'Poppins',
+                    color: Color(0xFF8B150D),
+                    fontSize: 14,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 54,
-            child: ElevatedButton(
-              onPressed: authState.isLoading ? null : _login,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              child: authState.isLoading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        color: Colors.white,
-                        strokeWidth: 2,
-                      ),
-                    )
-                  : const Text(
-                      'Log in',
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-            ),
-          ),
-          const SizedBox(height: 18),
-          const Text(
-            'Stay signed in only on personal devices.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF64748B),
-              fontWeight: FontWeight.w500,
-            ),
           ),
         ],
       ),
@@ -955,7 +1097,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }) {
     return InputDecoration(
       filled: true,
-      fillColor: const Color(0xFFF8FAFC),
+      fillColor: const Color(0xFFF8FAFC).withValues(alpha: 0.8),
       hintText: hintText,
       hintStyle: const TextStyle(
         color: Color(0xFF64748B),
@@ -977,7 +1119,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.4),
+        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.8),
       ),
       errorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
@@ -985,7 +1127,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       ),
       focusedErrorBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.4),
+        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.8),
       ),
     );
   }
@@ -1217,6 +1359,370 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _HeroCarousel extends StatefulWidget {
+  const _HeroCarousel({required this.height});
+
+  final double height;
+
+  @override
+  State<_HeroCarousel> createState() => _HeroCarouselState();
+}
+
+class _HeroCarouselState extends State<_HeroCarousel> {
+  late final PageController _pageController;
+  Timer? _timer;
+  int _currentPage = 0;
+
+  final List<String> _images = [
+    'assets/login_hero_1.png',
+    'assets/login_hero_2.png',
+    'assets/login_hero_3.png',
+    'assets/login_hero_4.png',
+    'assets/login_hero_5.png',
+    'assets/login_hero_6.png',
+    'assets/login_hero_7.png',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(initialPage: 0);
+    _startTimer();
+  }
+
+  void _startTimer() {
+    _timer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (!mounted) return;
+      final nextPage = (_currentPage + 1) % _images.length;
+      _pageController.animateToPage(
+        nextPage,
+        duration: const Duration(milliseconds: 800),
+        curve: Curves.easeInOutCubic,
+      );
+    });
+  }
+
+  void _goToNextPage() {
+    if (!mounted) return;
+    _timer?.cancel();
+    final nextPage = (_currentPage + 1) % _images.length;
+    _pageController.animateToPage(
+      nextPage,
+      duration: const Duration(milliseconds: 800),
+      curve: Curves.easeInOutCubic,
+    );
+    _startTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: widget.height,
+      width: double.infinity,
+      child: Stack(
+        children: [
+          PageView.builder(
+            controller: _pageController,
+            onPageChanged: (index) {
+              setState(() {
+                _currentPage = index;
+              });
+            },
+            itemCount: _images.length,
+            itemBuilder: (context, index) {
+              return MouseRegion(
+                cursor: SystemMouseCursors.click,
+                child: GestureDetector(
+                  onTap: _goToNextPage,
+                  behavior: HitTestBehavior.opaque,
+                  child: Image.asset(
+                    _images[index],
+                    fit: BoxFit.cover,
+                    alignment: Alignment.center,
+                  ),
+                ),
+              );
+            },
+          ),
+          Positioned(
+            bottom: 16,
+            left: 0,
+            right: 0,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: List.generate(
+                _images.length,
+                (index) => AnimatedContainer(
+                  duration: const Duration(milliseconds: 300),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  width: _currentPage == index ? 24 : 8,
+                  height: 8,
+                  decoration: BoxDecoration(
+                    color: _currentPage == index
+                        ? DefensysTokens.maroon
+                        : Colors.white.withValues(alpha: 0.5),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoginButton extends StatefulWidget {
+  const _LoginButton({
+    required this.onPressed,
+    required this.isLoading,
+  });
+
+  final VoidCallback? onPressed;
+  final bool isLoading;
+
+  @override
+  State<_LoginButton> createState() => _LoginButtonState();
+}
+
+class _LoginButtonState extends State<_LoginButton> {
+  bool _isHovered = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isEnabled = widget.onPressed != null && !widget.isLoading;
+
+    return MouseRegion(
+      cursor: isEnabled ? SystemMouseCursors.click : SystemMouseCursors.basic,
+      onEnter: (_) => setState(() => _isHovered = true),
+      onExit: (_) => setState(() => _isHovered = false),
+      child: GestureDetector(
+        onTap: isEnabled ? widget.onPressed : null,
+        child: AnimatedScale(
+          scale: _isHovered && isEnabled ? 1.02 : 1.0,
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            height: 54,
+            width: double.infinity,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              gradient: LinearGradient(
+                colors: isEnabled
+                    ? [
+                        const Color(0xFF6B0B05),
+                        const Color(0xFF8B150D),
+                        const Color(0xFFB91C1C),
+                      ]
+                    : [
+                        Colors.grey.shade400,
+                        Colors.grey.shade500,
+                      ],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
+              ),
+              boxShadow: _isHovered && isEnabled
+                  ? [
+                      BoxShadow(
+                        color: const Color(0xFF8B150D).withOpacity(0.4),
+                        blurRadius: 18,
+                        offset: const Offset(0, 6),
+                      )
+                    ]
+                  : [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      )
+                    ],
+            ),
+            child: widget.isLoading
+                ? const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      color: Colors.white,
+                      strokeWidth: 2,
+                    ),
+                  )
+                : const Text(
+                    'Log in',
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: Colors.white,
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WebInputField extends StatefulWidget {
+  const _WebInputField({
+    required this.controller,
+    required this.hintText,
+    required this.prefixIcon,
+    this.obscureText = false,
+    this.validator,
+    this.onFieldSubmitted,
+    this.suffixIcon,
+  });
+
+  final TextEditingController controller;
+  final String hintText;
+  final Widget prefixIcon;
+  final bool obscureText;
+  final String? Function(String?)? validator;
+  final void Function(String)? onFieldSubmitted;
+  final Widget? suffixIcon;
+
+  @override
+  State<_WebInputField> createState() => _WebInputFieldState();
+}
+
+class _WebInputFieldState extends State<_WebInputField> {
+  final FocusNode _focusNode = FocusNode();
+  bool _isFocused = false;
+  String? _errorText;
+
+  @override
+  void initState() {
+    super.initState();
+    _focusNode.addListener(() {
+      if (mounted) {
+        setState(() {
+          _isFocused = _focusNode.hasFocus;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasError = _errorText != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC).withOpacity(0.9),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: hasError
+                  ? const Color(0xFFDC2626)
+                  : _isFocused
+                      ? const Color(0xFF8B150D)
+                      : const Color(0xFFCBD5E1),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: hasError
+                    ? const Color(0xFFDC2626).withOpacity(0.12)
+                    : _isFocused
+                        ? const Color(0xFF8B150D).withOpacity(0.18)
+                        : const Color(0xFF8B150D).withOpacity(0.04),
+                blurRadius: _isFocused || hasError ? 12 : 6,
+                spreadRadius: _isFocused || hasError ? 1 : 0,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: TextFormField(
+            controller: widget.controller,
+            focusNode: _focusNode,
+            obscureText: widget.obscureText,
+            onFieldSubmitted: widget.onFieldSubmitted,
+            validator: (value) {
+              if (widget.validator != null) {
+                final err = widget.validator!(value);
+                if (err != _errorText) {
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (mounted) setState(() => _errorText = err);
+                  });
+                }
+                return err;
+              }
+              return null;
+            },
+            style: const TextStyle(
+              fontFamily: 'Poppins',
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF1E293B),
+            ),
+            decoration: InputDecoration(
+              hintText: widget.hintText,
+              hintStyle: const TextStyle(
+                color: Color(0xFF94A3B8),
+                fontSize: 14,
+                fontWeight: FontWeight.w400,
+              ),
+              prefixIcon: widget.prefixIcon,
+              prefixIconColor: hasError
+                  ? const Color(0xFFDC2626)
+                  : _isFocused
+                      ? const Color(0xFF8B150D)
+                      : const Color(0xFF64748B),
+              suffixIcon: widget.suffixIcon,
+              suffixIconColor: hasError
+                  ? const Color(0xFFDC2626)
+                  : _isFocused
+                      ? const Color(0xFF8B150D)
+                      : const Color(0xFF64748B),
+              border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              errorBorder: InputBorder.none,
+              focusedErrorBorder: InputBorder.none,
+              errorStyle: const TextStyle(height: 0.01, fontSize: 0),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+            ),
+          ),
+        ),
+        if (hasError) ...[
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Text(
+              _errorText!,
+              style: const TextStyle(
+                color: Color(0xFFDC2626),
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
