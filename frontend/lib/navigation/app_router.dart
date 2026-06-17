@@ -321,7 +321,19 @@ List<RouteBase> _facultyRoutes() {
       redirect: (_, state) => _redirectFacultyParentOnly(state),
       routes: [
         GoRoute(path: 'dashboard', builder: (_, __) => const SizedBox.shrink()),
-        GoRoute(path: 'cohort', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'cohort',
+          builder: (_, __) => const SizedBox.shrink(),
+          routes: [
+            GoRoute(
+              path: ':sectionName',
+              builder: (_, state) {
+                final sectionName = state.pathParameters['sectionName']!;
+                return PitLeadCohortSectionDetailRoute(sectionName: sectionName);
+              },
+            ),
+          ],
+        ),
         GoRoute(
           path: 'pit-student-import',
           builder: (_, __) => const SizedBox.shrink(),

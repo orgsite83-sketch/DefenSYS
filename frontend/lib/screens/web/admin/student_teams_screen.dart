@@ -1321,16 +1321,16 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     }
 
     final columns = const [
-      'team_name',
-      'project_title',
-      'member_ids',
-      'leader_id',
+      'Team Name',
+      'PIT Project',
+      'Team Members',
     ];
-    final values = const [
-      'Team CodeLearners',
-      'Smart Campus Navigator',
-      'Carlos Reyes|Maria Santos',
-      'Carlos Reyes',
+    final rows = const [
+      ['Team CodeLearners', 'Smart Campus Navigator', 'Carlos Reyes'],
+      ['', '', 'Maria Santos'],
+      ['', '', 'Juan Dela Cruz'],
+      ['', '', 'Ana Mendoza'],
+      ['Team ByteBridge', 'Library Seat Finder', 'Darren Kim'],
     ];
 
     return DefensysCard(
@@ -1343,7 +1343,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'CSV Format',
+                  'Official PIT CSV Format',
                   style: TextStyle(
                     color: _ink,
                     fontSize: 16,
@@ -1352,7 +1352,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  'Your CSV must follow this column structure exactly. Column order matters.',
+                  'Each team can span multiple rows. The first member listed is set as the team leader.',
                   style: TextStyle(
                     color: Color(0xFF536079),
                     fontSize: 13,
@@ -1368,10 +1368,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _bulkSampleTable(columns, values),
+                _bulkSampleMultiRowTable(columns, rows),
                 const SizedBox(height: 14),
                 _infoBanner(
-                  'Use full names (First Last) for members and leader. Program is set to ${_pitLeadYear ?? "your year"} PIT automatically. Pipe-separate members.',
+                  'Official format: Team Members must use full names (First Last or Last, First). The year level will be resolved from student details. Standard DefenSYS format (one-row-per-team with pipe-separated member names) is also accepted automatically.',
                 ),
                 const SizedBox(height: 16),
                 _secondaryButton(
@@ -1967,7 +1967,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             .toList();
 
         String? warning;
-        final isClientTemplate = headers.contains('team name') && headers.contains('team members');
+        final isClientTemplate = (headers.contains('team name') || headers.contains('team_name')) &&
+            (headers.contains('team members') || headers.contains('team_members') || headers.contains('members'));
         final recognizedHeaders = {
           'team_name',
           'project_title',
@@ -1978,16 +1979,24 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           'adviser_id',
           'team name',
           'capstone project',
+          'pit project',
+          'project',
+          'project title',
           'adviser',
           'team members',
+          'members',
         };
         final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
 
         if (unrecognized.isNotEmpty) {
           warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
         } else if (!_isCapstoneAdmin) {
-          if (headers.contains('adviser_id') || headers.contains('year_level')) {
-            warning = 'Wrong template? PIT import templates should not contain "adviser_id" or "year_level" columns. These will be ignored or cleared.';
+          if (!isClientTemplate) {
+            if (headers.contains('adviser_id') || headers.contains('year_level')) {
+              warning = 'Wrong template? PIT import templates should not contain "adviser_id" or "year_level" columns. These will be ignored or cleared.';
+            } else if (!headers.contains('member_ids') || !headers.contains('leader_id')) {
+              warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
+            }
           }
         } else {
           if (!isClientTemplate) {

@@ -129,6 +129,9 @@ abstract final class FacultyRoutes {
 
   static String teamDetail(int teamId) => '/faculty/student-teams/$teamId';
 
+  static String cohortDetail(String sectionName) =>
+      '/faculty/cohort/${Uri.encodeComponent(sectionName)}';
+
   static String? sectionForLocation(String location) {
     if (location.startsWith('/faculty/dashboard')) return 'dashboard';
     if (location.startsWith('/faculty/cohort')) return 'cohort';

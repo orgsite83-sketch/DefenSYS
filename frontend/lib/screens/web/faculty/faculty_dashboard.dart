@@ -945,8 +945,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     Map<String, dynamic> roles,
   ) {
     final routerState = GoRouterState.of(context);
-    if (routerState.pathParameters.containsKey('teamId') &&
-        widget.routeChild != null) {
+    final isSubRoute = routerState.pathParameters.containsKey('teamId') ||
+        routerState.pathParameters.containsKey('sectionName');
+    if (isSubRoute && widget.routeChild != null) {
       return Container(color: Colors.white, child: widget.routeChild!);
     }
 

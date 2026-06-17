@@ -251,9 +251,13 @@ def prepare_bulk_row(
                 return None, [
                     "Wrong Template: PIT import templates should not contain 'adviser_id' or 'year_level' columns."
                 ]
-            if not pit_template.issubset(normalized_columns):
+            is_pit_legacy = pit_template.issubset(normalized_columns)
+            is_pit_client = ('team_name' in normalized_columns or 'team name' in normalized_columns) and (
+                'team_members' in normalized_columns or 'members' in normalized_columns or 'team members' in normalized_columns
+            )
+            if not (is_pit_legacy or is_pit_client):
                 return None, [
-                    "Wrong Template: PIT import templates must contain 'team_name', 'project_title', 'member_ids', and 'leader_id' columns."
+                    "Wrong Template: PIT import templates must contain 'team_name', 'project_title', 'member_ids', and 'leader_id' columns (or 'Team Name' and 'Team Members' for multi-row format)."
                 ]
         elif is_admin:
             is_client_template = 'team_name' in normalized_columns and (

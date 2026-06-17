@@ -1,8 +1,8 @@
 const teamBulkImportHeader =
-    'team_name,project_title,year_level,member_ids,leader_id,adviser_id';
+    'Team Name,Capstone Project,Adviser,Team Members';
 
 const teamBulkImportHeaderPit =
-    'team_name,project_title,member_ids,leader_id';
+    'Team Name,PIT Project,Team Members';
 
 const teamBulkImportLegacyHeader =
     'team_name,project_title,level,year_level,member_ids,leader_id,adviser_id';
@@ -17,26 +17,65 @@ String rowsToTeamCsv(
   final header = bulkImportHeaderFor(isCapstoneAdmin: isCapstoneAdmin);
   final buffer = StringBuffer('$header\n');
   for (final row in rows) {
+    final teamName = row['team_name']?.toString() ?? '';
+    final project = row['project_title']?.toString() ?? '';
+    final adviser = row['adviser_id']?.toString() ?? '';
     final members = row['member_ids'];
-    final memberText = members is List
-        ? members.map((item) => item.toString().trim()).where((item) => item.isNotEmpty).join('|')
-        : members?.toString() ?? '';
-    if (isCapstoneAdmin) {
-      buffer.writeln([
-        _csvCell(row['team_name']),
-        _csvCell(row['project_title']),
-        _csvCell(row['year_level']),
-        _csvCell(memberText),
-        _csvCell(row['leader_id']),
-        _csvCell(row['adviser_id']),
-      ].join(','));
-    } else {
-      buffer.writeln([
-        _csvCell(row['team_name']),
-        _csvCell(row['project_title']),
-        _csvCell(memberText),
-        _csvCell(row['leader_id']),
-      ].join(','));
+    final membersList = members is List
+        ? members.map((item) => item.toString().trim()).where((item) => item.isNotEmpty).toList()
+        : (members?.toString().split('|').map((item) => item.trim()).where((item) => item.isNotEmpty).toList() ?? []);
+
+    if (membersList.isEmpty) {
+      if (isCapstoneAdmin) {
+        buffer.writeln([
+          _csvCell(teamName),
+          _csvCell(project),
+          _csvCell(adviser),
+          '',
+        ].join(','));
+      } else {
+        buffer.writeln([
+          _csvCell(teamName),
+          _csvCell(project),
+          '',
+        ].join(','));
+      }
+      continue;
+    }
+
+    for (var i = 0; i < membersList.length; i++) {
+      final member = membersList[i];
+      if (isCapstoneAdmin) {
+        if (i == 0) {
+          buffer.writeln([
+            _csvCell(teamName),
+            _csvCell(project),
+            _csvCell(adviser),
+            _csvCell(member),
+          ].join(','));
+        } else {
+          buffer.writeln([
+            '',
+            '',
+            '',
+            _csvCell(member),
+          ].join(','));
+        }
+      } else {
+        if (i == 0) {
+          buffer.writeln([
+            _csvCell(teamName),
+            _csvCell(project),
+            _csvCell(member),
+          ].join(','));
+        } else {
+          buffer.writeln([
+            '',
+            '',
+            _csvCell(member),
+          ].join(','));
+        }
+      }
     }
   }
   return buffer.toString().trim();
@@ -156,6 +195,9 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
     final teamNameIdx = headers.contains('team name') ? headers.indexOf('team name') : headers.indexOf('team_name');
     
     var projectIdx = headers.indexOf('capstone project');
+    if (projectIdx == -1) projectIdx = headers.indexOf('pit project');
+    if (projectIdx == -1) projectIdx = headers.indexOf('project');
+    if (projectIdx == -1) projectIdx = headers.indexOf('project title');
     if (projectIdx == -1) projectIdx = headers.indexOf('module');
     if (projectIdx == -1) projectIdx = headers.indexOf('project_title');
     
@@ -336,16 +378,28 @@ const teamSampleYearLevels = [
 const Map<String, String> sampleTeamCsvByYear = {
   '1st Year':
       '$teamBulkImportHeader\n'
-      'Team NovaPath,Campus Wayfinder App,1st Year,James Rivera|Sofia Lim|Miguel Torres|Chloe Nguyen,James Rivera,\n',
+      'Team NovaPath,Campus Wayfinder App,,James Rivera\n'
+      ',,,Sofia Lim\n'
+      ',,,Miguel Torres\n'
+      ',,,Chloe Nguyen\n',
   '2nd Year':
       '$teamBulkImportHeader\n'
-      'Team ByteBridge,Library Seat Finder,2nd Year,Darren Kim|Isabel Cruz|Noah Ramos|Leah Fernandez,Darren Kim,\n',
+      'Team ByteBridge,Library Seat Finder,,Darren Kim\n'
+      ',,,Isabel Cruz\n'
+      ',,,Noah Ramos\n'
+      ',,,Leah Fernandez\n',
   '3rd Year':
       '$teamBulkImportHeader\n'
-      'Team CodeLearners,Smart Campus Navigator,3rd Year,Carlos Reyes|Maria Santos|Juan Dela Cruz|Ana Mendoza,Carlos Reyes,Ricardo Fontanilla\n',
+      'Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,Carlos Reyes\n'
+      ',,,Maria Santos\n'
+      ',,,Juan Dela Cruz\n'
+      ',,,Ana Mendoza\n',
   '4th Year':
       '$teamBulkImportHeader\n'
-      'Team SkyLedger,Alumni Career Tracker,4th Year,Marcus Villar|Patricia Ong|Ethan Salazar|Zoe Castillo,Marcus Villar,Ricardo Fontanilla\n',
+      'Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,Marcus Villar\n'
+      ',,,Patricia Ong\n'
+      ',,,Ethan Salazar\n'
+      ',,,Zoe Castillo\n',
 };
 
 String sampleTeamCsvForYear(
@@ -373,8 +427,11 @@ final sampleTeamCsvTemplateCapstone =
     sampleTeamCsvByYear['3rd Year']!.trim();
 
 const sampleTeamCsvTemplatePit =
-    '$teamBulkImportHeaderPit\n'
-    'Team CodeLearners,Smart Campus Navigator,Carlos Reyes|Maria Santos|Juan Dela Cruz|Ana Mendoza,Carlos Reyes\n';
+    'Team Name,PIT Project,Team Members\n'
+    'Team CodeLearners,Smart Campus Navigator,Carlos Reyes\n'
+    ',,Maria Santos\n'
+    ',,Juan Dela Cruz\n'
+    ',,Ana Mendoza\n';
 
 List<Map<String, dynamic>> trimRowsAfterImport({
   required List<Map<String, dynamic>> rows,

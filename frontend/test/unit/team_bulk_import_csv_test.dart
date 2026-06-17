@@ -71,9 +71,10 @@ Techpro,Campus Tutoring to FMCP,RAY AN J. QUIÑON,"CABANTAC, John Mike B."
         isCapstoneAdmin: true,
       );
 
-      expect(csv, contains('team_name,project_title'));
+      expect(csv, contains('Team Name,Capstone Project'));
       expect(csv, contains('Team Beta'));
-      expect(csv, contains('1|2'));
+      expect(csv, contains('1'));
+      expect(csv, contains('2'));
     });
   });
 
@@ -108,6 +109,7 @@ Team PIT,Title,3rd Year,101,101,
       );
 
       expect(csv.startsWith(teamBulkImportHeaderPit), isTrue);
+      expect(csv.contains('Adviser'), isFalse);
       expect(csv.contains('adviser_id'), isFalse);
     });
 
@@ -135,7 +137,6 @@ Team Cap,Title,3rd Year,101,101,
           isCapstoneAdmin: true,
         ));
         expect(result.rows, hasLength(1), reason: year);
-        expect(result.rows.first['year_level'], year);
         expect(result.rows.first['member_ids'], hasLength(4));
       }
     });
@@ -143,6 +144,7 @@ Team Cap,Title,3rd Year,101,101,
     test('PIT export strips year_level and adviser columns', () {
       final csv = sampleTeamCsvForYear('2nd Year', isCapstoneAdmin: false);
       expect(csv.startsWith(teamBulkImportHeaderPit), isTrue);
+      expect(csv.contains('Year Level'), isFalse);
       expect(csv.contains('year_level'), isFalse);
     });
   });

@@ -354,15 +354,128 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final crossCount = constraints.maxWidth > 900 ? 2 : 1;
+        final isDesktop = constraints.maxWidth > 950;
+
+        if (isDesktop) {
+          return ListView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _configs.length,
+            itemBuilder: (context, index) {
+              final config = _configs[index];
+              final delivs = config['deliverables'] as List? ?? [];
+              final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
+              final vaultCount = delivs.where((d) => d['deliverable_type'] == 'vault').length;
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: DefensysCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 14.0),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              config['event_name']?.toString() ?? '',
+                              style: const TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w800,
+                                color: DefensysTokens.textPrimary,
+                                fontFamily: DefensysTokens.fontFamily,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15)),
+                              ),
+                              child: Text(
+                                '${config['panel_weight']}% Panel / ${config['peer_weight']}% Peer',
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  color: DefensysTokens.maroon,
+                                  fontFamily: DefensysTokens.fontFamily,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 4,
+                        child: _buildConfigRow(
+                          icon: Icons.assignment_outlined,
+                          label: 'Panel Rubric: ',
+                          value: rubricName(config['panel_rubric_id']),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 4,
+                        child: _buildConfigRow(
+                          icon: Icons.groups_outlined,
+                          label: 'Peer Rubric: ',
+                          value: peerRubricName(config['peer_rubric_id']),
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Expanded(
+                        flex: 4,
+                        child: _buildConfigRow(
+                          icon: Icons.folder_outlined,
+                          label: 'Deliverables: ',
+                          value: '$preCount Pre-Defense, $vaultCount Vault',
+                        ),
+                      ),
+                      const SizedBox(width: 16),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _cardButton(
+                            icon: const Icon(Icons.edit_outlined, size: 14),
+                            label: 'Edit',
+                            onTap: () => _showEventDialog(config),
+                            color: DefensysTokens.textDark,
+                            borderColor: const Color(0xFFD1D5DB),
+                          ),
+                          const SizedBox(width: 8),
+                          _cardIconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                            onTap: () => _deleteConfig(config),
+                            color: DefensysTokens.danger,
+                            hoverColor: DefensysTokens.dangerBg,
+                            tooltip: 'Delete Event',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          );
+        }
+
+        // Mobile / Tablet View (Card layout)
         return GridView.builder(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: crossCount,
-            crossAxisSpacing: 20,
-            mainAxisSpacing: 20,
-            mainAxisExtent: 235,
+            crossAxisCount: constraints.maxWidth > 600 ? 2 : 1,
+            crossAxisSpacing: 16,
+            mainAxisSpacing: 16,
+            mainAxisExtent: 250,
           ),
           itemCount: _configs.length,
           itemBuilder: (context, index) {
@@ -536,6 +649,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   int _peerWeight = 20;
 
   List<Map<String, dynamic>> _deliverables = [];
+  final List<TextEditingController> _labelControllers = [];
+  final List<TextEditingController> _templateControllers = [];
 
   @override
   void initState() {
@@ -553,6 +668,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     }
     _panelWeightController = TextEditingController(text: _panelWeight.toString());
     _peerWeightController = TextEditingController(text: _peerWeight.toString());
+
+    for (final d in _deliverables) {
+      _labelControllers.add(TextEditingController(text: d['label']?.toString() ?? ''));
+      _templateControllers.add(TextEditingController(text: d['vault_file_template']?.toString() ?? ''));
+    }
   }
 
   @override
@@ -561,6 +681,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     _vaultFileTemplateController.dispose();
     _panelWeightController.dispose();
     _peerWeightController.dispose();
+    for (final ctrl in _labelControllers) {
+      ctrl.dispose();
+    }
+    for (final ctrl in _templateControllers) {
+      ctrl.dispose();
+    }
     super.dispose();
   }
 
@@ -587,12 +713,18 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'vault_note': '',
         'vault_file_template': '',
       });
+      _labelControllers.add(TextEditingController(text: ''));
+      _templateControllers.add(TextEditingController(text: ''));
     });
   }
 
   void _removeDeliverable(int index) {
     setState(() {
       _deliverables.removeAt(index);
+      final lCtrl = _labelControllers.removeAt(index);
+      final tCtrl = _templateControllers.removeAt(index);
+      lCtrl.dispose();
+      tCtrl.dispose();
     });
   }
 
@@ -1150,8 +1282,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           final isVault = d['deliverable_type'] == 'vault';
 
                           // Controllers for each item
-                          final labelCtrl = TextEditingController(text: d['label']);
-                          final templateCtrl = TextEditingController(text: d['vault_file_template']);
+                          final labelCtrl = _labelControllers[idx];
+                          final templateCtrl = _templateControllers[idx];
 
                           return Container(
                             margin: const EdgeInsets.only(bottom: 16),

@@ -249,11 +249,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               ],
             ),
           ),
-          // Right Side: Centered Form Input & Background decorative squares (40%)
+          // Right Side: Centered Form Input with clean technical grid background (40%)
           Expanded(
             flex: 4,
             child: Stack(
               children: [
+                // Clean slate background gradient
                 Positioned.fill(
                   child: Container(
                     decoration: const BoxDecoration(
@@ -261,150 +262,99 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                         colors: [
-                          Color(0xFFE2E8F0),
+                          Color(0xFFF8FAFC),
                           Color(0xFFF1F5F9),
                         ],
                       ),
                     ),
                   ),
                 ),
-                // 1. Top-Left Gold Diamond (slightly behind and to the right of the maroon one)
+                // Subtle IT technical grid lines overlay
+                Positioned.fill(
+                  child: CustomPaint(
+                    painter: const _TechnicalGridPainter(),
+                  ),
+                ),
+                // Tech Blueprint Background Elements (Option 1 - Framed Outwards)
+                // 1. Top-Left Soft Maroon Square Panel
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(-80, -210),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 110,
-                        color: const Color(0xFFD97706),
-                        opacity: 0.35,
-                        radius: 20,
+                    offset: const Offset(-230, -200),
+                    child: Container(
+                      width: 130,
+                      height: 130,
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: DefensysTokens.maroon.withOpacity(0.08),
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                // 2. Top-Left Maroon Diamond
+                // 2. Bottom-Right Soft Gold Square Panel
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(-140, -170),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 130,
-                        color: const Color(0xFF7A110A),
-                        opacity: 0.40,
-                        radius: 24,
+                    offset: const Offset(230, 200),
+                    child: Container(
+                      width: 130,
+                      height: 130,
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.gold.withOpacity(0.05),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: DefensysTokens.gold.withOpacity(0.08),
+                          width: 1.5,
+                        ),
                       ),
                     ),
                   ),
                 ),
-                // 3. Top-Right Gold Diamond
+                // 3. Top-Left Aligned Dot Grid (Maroon)
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(150, -140),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 150,
-                        color: const Color(0xFFD97706),
-                        opacity: 0.35,
-                        radius: 28,
-                      ),
+                    offset: const Offset(-260, -90),
+                    child: _buildBackgroundDotGrid(
+                      color: DefensysTokens.maroon,
+                      opacity: 0.12,
                     ),
                   ),
                 ),
-                // 4. Bottom-Left Gold Diamond
+                // 4. Bottom-Right Aligned Dot Grid (Gold)
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(-160, 160),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 140,
-                        color: const Color(0xFFD97706),
-                        opacity: 0.35,
-                        radius: 26,
-                      ),
+                    offset: const Offset(260, 90),
+                    child: _buildBackgroundDotGrid(
+                      color: DefensysTokens.gold,
+                      opacity: 0.12,
                     ),
                   ),
                 ),
-                // 5. Bottom-Right Gold Diamond (behind the maroon one)
+                // 5. Top-Right Aligned Dot Grid (Gold)
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(100, 220),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 120,
-                        color: const Color(0xFFD97706),
-                        opacity: 0.35,
-                        radius: 22,
-                      ),
+                    offset: const Offset(240, -180),
+                    child: _buildBackgroundDotGrid(
+                      color: DefensysTokens.gold,
+                      opacity: 0.12,
                     ),
                   ),
                 ),
-                // 6. Bottom-Right Maroon Diamond
+                // 6. Bottom-Left Aligned Dot Grid (Maroon)
                 Align(
                   alignment: Alignment.center,
                   child: Transform.translate(
-                    offset: const Offset(150, 180),
-                    child: Transform.rotate(
-                      angle: 0.7854,
-                      child: _backgroundTile(
-                        size: 100,
-                        color: const Color(0xFF7A110A),
-                        opacity: 0.45,
-                        radius: 18,
-                      ),
-                    ),
-                  ),
-                ),
-                // 7. Top-Left Gold Dot Grid
-                Align(
-                  alignment: Alignment.center,
-                  child: Transform.translate(
-                    offset: const Offset(-180, -80),
-                    child: _backgroundDotGrid(
-                      color: const Color(0xFFD97706),
-                      opacity: 0.45,
-                    ),
-                  ),
-                ),
-                // 8. Top-Right Maroon Dot Grid
-                Align(
-                  alignment: Alignment.center,
-                  child: Transform.translate(
-                    offset: const Offset(200, -80),
-                    child: _backgroundDotGrid(
-                      color: const Color(0xFF7A110A),
-                      opacity: 0.4,
-                    ),
-                  ),
-                ),
-                // 9. Bottom-Left Maroon Dot Grid
-                Align(
-                  alignment: Alignment.center,
-                  child: Transform.translate(
-                    offset: const Offset(-180, 240),
-                    child: _backgroundDotGrid(
-                      color: const Color(0xFF7A110A),
-                      opacity: 0.45,
-                    ),
-                  ),
-                ),
-                // 10. Bottom-Right Maroon Dot Grid
-                Align(
-                  alignment: Alignment.center,
-                  child: Transform.translate(
-                    offset: const Offset(210, 110),
-                    child: _backgroundDotGrid(
-                      color: const Color(0xFF7A110A),
-                      opacity: 0.4,
+                    offset: const Offset(-240, 180),
+                    child: _buildBackgroundDotGrid(
+                      color: DefensysTokens.maroon,
+                      opacity: 0.12,
                     ),
                   ),
                 ),
@@ -457,34 +407,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _backgroundTile({
-    required double size,
-    required Color color,
-    required double opacity,
-    required double radius,
-  }) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: color.withOpacity(opacity * 0.15),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: color.withOpacity(opacity * 0.25),
-          width: 1.0,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: color.withOpacity(opacity),
-            blurRadius: size * 0.35,
-            spreadRadius: size * 0.05,
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _backgroundDotGrid({required Color color, required double opacity}) {
+  Widget _buildBackgroundDotGrid({required Color color, required double opacity}) {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: List.generate(
@@ -598,9 +521,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Widget _webLogoMark({required double size}) {
-    final assetPath = size <= 50
-        ? 'assets/logo-login-mark-48.png'
-        : 'assets/logo-login-mark-58.png';
+    // Select the best resolution mark based on required size to prevent pixelation
+    final String assetPath;
+    if (size <= 48) {
+      assetPath = 'assets/logo-login-mark-48.png';
+    } else if (size <= 58) {
+      assetPath = 'assets/logo-login-mark-58.png';
+    } else if (size <= 74) {
+      assetPath = 'assets/logo-login-mark-74.png';
+    } else {
+      assetPath = 'assets/logo-login-mark-116.png';
+    }
 
     return SizedBox(
       width: size,
@@ -619,197 +550,212 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
+  Widget _cardLogoMark({required double size}) {
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Image.asset(
+        'assets/logo-web-mark-smooth.png',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
+        isAntiAlias: true,
+        errorBuilder: (context, error, stackTrace) {
+          return _sealLogo(size: size, framed: false, cropToMark: true);
+        },
+      ),
+    );
+  }
+
   Widget _buildWebLoginCard(AuthState authState) {
     final sessionBanner = _buildSessionBanner();
 
     return Container(
-      padding: const EdgeInsets.fromLTRB(32, 40, 32, 36),
       decoration: BoxDecoration(
-        color: Colors.white.withOpacity(0.72),
-        borderRadius: BorderRadius.circular(24),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: Colors.white.withOpacity(0.85),
-          width: 1.8,
+          color: const Color(0xFFE2E8F0),
+          width: 1.0,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.06),
-            blurRadius: 36,
-            offset: const Offset(0, 16),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 24,
+            offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            'Welcome Back',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              color: Color(0xFF1E293B),
-              fontSize: 34,
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.5,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Top Accent Bar (Maroon & Gold Gradient)
+            Container(
+              height: 4,
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    DefensysTokens.maroon,
+                    DefensysTokens.gold,
+                  ],
+                  begin: Alignment.centerLeft,
+                  end: Alignment.centerRight,
+                ),
+              ),
             ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Please log in to your account',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontFamily: 'Poppins',
-              color: Color(0xFF64748B),
-              fontSize: 15,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(height: 32),
-          if (sessionBanner != null) sessionBanner,
-          Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Username',
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 32, 32, 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Logo mark at top center (HD, no outline, no circle)
+                  Center(
+                    child: Padding(
+                      padding: const EdgeInsets.only(bottom: 16),
+                      child: _cardLogoMark(size: 64),
+                    ),
+                  ),
+                  const Text(
+                    'Welcome back',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Poppins',
-                      color: Color(0xFF334155),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                      fontSize: 28,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                _WebInputField(
-                  controller: _emailCtrl,
-                  hintText: 'Your username',
-                  prefixIcon: const Icon(Icons.person_outline, size: 22),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Enter your username'
-                      : null,
-                  onFieldSubmitted: (_) => _login(),
-                ),
-                const SizedBox(height: 20),
-                const Align(
-                  alignment: Alignment.centerLeft,
-                  child: Text(
-                    'Password',
+                  const SizedBox(height: 8),
+                  const Text(
+                    'Sign In to manage defenses, teams, and academic records.',
+                    textAlign: TextAlign.center,
                     style: TextStyle(
                       fontFamily: 'Poppins',
-                      color: Color(0xFF334155),
+                      color: Color(0xFF64748B),
                       fontSize: 14,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.w500,
+                      height: 1.35,
                     ),
                   ),
-                ),
-                const SizedBox(height: 8),
-                _WebInputField(
-                  controller: _passCtrl,
-                  obscureText: _obscure,
-                  hintText: '••••••••',
-                  prefixIcon: const Icon(Icons.lock_outline, size: 21),
-                  suffixIcon: IconButton(
-                    tooltip: _obscure ? 'Show password' : 'Hide password',
-                    icon: Icon(
-                      _obscure
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      size: 20,
+                  const SizedBox(height: 28),
+                  if (sessionBanner != null) sessionBanner,
+                  Form(
+                    key: _formKey,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        _WebInputField(
+                          controller: _emailCtrl,
+                          hintText: 'Username or Email',
+                          prefixIcon: const Icon(Icons.person_outline, size: 22),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Enter your username'
+                              : null,
+                          onFieldSubmitted: (_) => _login(),
+                        ),
+                        const SizedBox(height: 16),
+                        _WebInputField(
+                          controller: _passCtrl,
+                          obscureText: _obscure,
+                          hintText: 'Password',
+                          prefixIcon: const Icon(Icons.lock_outline, size: 21),
+                          suffixIcon: IconButton(
+                            tooltip: _obscure ? 'Show password' : 'Hide password',
+                            icon: Icon(
+                              _obscure
+                                  ? Icons.visibility_off_outlined
+                                  : Icons.visibility_outlined,
+                              size: 20,
+                            ),
+                            onPressed: () => setState(() => _obscure = !_obscure),
+                          ),
+                          validator: (v) => v == null || v.trim().isEmpty
+                              ? 'Enter your password'
+                              : null,
+                          onFieldSubmitted: (_) => _login(),
+                        ),
+                      ],
                     ),
-                    onPressed: () => setState(() => _obscure = !_obscure),
                   ),
-                  validator: (v) => v == null || v.trim().isEmpty
-                      ? 'Enter your password'
-                      : null,
-                  onFieldSubmitted: (_) => _login(),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 10),
-          Align(
-            alignment: Alignment.centerRight,
-            child: TextButton(
-              onPressed: () {},
-              child: const Text(
-                'Forgot Password?',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color(0xFF8B150D),
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 16),
-          _LoginButton(
-            onPressed: authState.isLoading ? null : _login,
-            isLoading: authState.isLoading,
-          ),
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              SizedBox(
-                width: 20,
-                height: 20,
-                child: Checkbox(
-                  value: _rememberMe,
-                  onChanged: (value) =>
-                      setState(() => _rememberMe = value ?? false),
-                  visualDensity: VisualDensity.compact,
-                  activeColor: const Color(0xFF8B150D),
-                ),
-              ),
-              const SizedBox(width: 10),
-              const Text(
-                'Remember me',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontSize: 14,
-                  color: Color(0xFF475569),
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 28),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Text(
-                "Don't have an account? ",
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  color: Color(0xFF475569),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              GestureDetector(
-                onTap: () {},
-                child: const Text(
-                  'Sign Up',
-                  style: TextStyle(
-                    fontFamily: 'Poppins',
-                    color: Color(0xFF8B150D),
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
+                  const SizedBox(height: 20),
+                  // Remember me & Forgot Password Row inline
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: Checkbox(
+                              value: _rememberMe,
+                              onChanged: (value) =>
+                                  setState(() => _rememberMe = value ?? false),
+                              visualDensity: VisualDensity.compact,
+                              activeColor: DefensysTokens.maroon,
+                              side: const BorderSide(color: Color(0xFF475569), width: 1.5),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          const Text(
+                            'Remember me',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 13,
+                              color: Color(0xFF475569),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ],
+                      ),
+                      GestureDetector(
+                        onTap: () {},
+                        child: const Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            color: DefensysTokens.maroon,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 24),
+                  _LoginButton(
+                    onPressed: authState.isLoading ? null : _login,
+                    isLoading: authState.isLoading,
+                  ),
+                  const SizedBox(height: 20),
+                  const Text(
+                    'Stay signed in only on personal devices.',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontFamily: 'Poppins',
+                      color: Color(0xFF64748B),
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1524,9 +1470,9 @@ class _LoginButtonState extends State<_LoginButton> {
               gradient: LinearGradient(
                 colors: isEnabled
                     ? [
-                        const Color(0xFF6B0B05),
-                        const Color(0xFF8B150D),
-                        const Color(0xFFB91C1C),
+                        const Color(0xFF5E0D08),
+                        const Color(0xFF7A110A),
+                        const Color(0xFF961911),
                       ]
                     : [
                         Colors.grey.shade400,
@@ -1538,7 +1484,7 @@ class _LoginButtonState extends State<_LoginButton> {
               boxShadow: _isHovered && isEnabled
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF8B150D).withOpacity(0.4),
+                        color: const Color(0xFF7A110A).withOpacity(0.4),
                         blurRadius: 18,
                         offset: const Offset(0, 6),
                       )
@@ -1633,28 +1579,25 @@ class _WebInputFieldState extends State<_WebInputField> {
         AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFC).withOpacity(0.9),
+            color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color: hasError
                   ? const Color(0xFFDC2626)
                   : _isFocused
-                      ? const Color(0xFF8B150D)
-                      : const Color(0xFFCBD5E1),
+                      ? const Color(0xFF7A110A)
+                      : const Color(0xFFE2E8F0),
               width: 1.5,
             ),
-            boxShadow: [
-              BoxShadow(
-                color: hasError
-                    ? const Color(0xFFDC2626).withOpacity(0.12)
-                    : _isFocused
-                        ? const Color(0xFF8B150D).withOpacity(0.18)
-                        : const Color(0xFF8B150D).withOpacity(0.04),
-                blurRadius: _isFocused || hasError ? 12 : 6,
-                spreadRadius: _isFocused || hasError ? 1 : 0,
-                offset: const Offset(0, 2),
-              ),
-            ],
+            boxShadow: _isFocused && !hasError
+                ? [
+                    BoxShadow(
+                      color: const Color(0xFF7A110A).withOpacity(0.08),
+                      blurRadius: 8,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
           ),
           child: TextFormField(
             controller: widget.controller,
@@ -1690,14 +1633,14 @@ class _WebInputFieldState extends State<_WebInputField> {
               prefixIconColor: hasError
                   ? const Color(0xFFDC2626)
                   : _isFocused
-                      ? const Color(0xFF8B150D)
-                      : const Color(0xFF64748B),
+                      ? const Color(0xFF7A110A)
+                      : const Color(0xFF475569),
               suffixIcon: widget.suffixIcon,
               suffixIconColor: hasError
                   ? const Color(0xFFDC2626)
                   : _isFocused
-                      ? const Color(0xFF8B150D)
-                      : const Color(0xFF64748B),
+                      ? const Color(0xFF7A110A)
+                      : const Color(0xFF475569),
               border: InputBorder.none,
               enabledBorder: InputBorder.none,
               focusedBorder: InputBorder.none,
@@ -1726,3 +1669,27 @@ class _WebInputFieldState extends State<_WebInputField> {
     );
   }
 }
+
+class _TechnicalGridPainter extends CustomPainter {
+  const _TechnicalGridPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = const Color(0xFFE2E8F0).withOpacity(0.35)
+      ..strokeWidth = 1.0;
+
+    const double step = 32.0;
+
+    for (double x = 0; x < size.width; x += step) {
+      canvas.drawLine(Offset(x, 0), Offset(x, size.height), paint);
+    }
+    for (double y = 0; y < size.height; y += step) {
+      canvas.drawLine(Offset(0, y), Offset(size.width, y), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+

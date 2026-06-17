@@ -8,6 +8,7 @@ import '../screens/web/admin/grade_center_shared.dart';
 import '../screens/web/admin/grade_center_team_detail_screen.dart';
 import '../screens/web/admin/rubric_full_page_editor.dart';
 import '../screens/web/admin/team_detail_page.dart';
+import '../screens/web/faculty/pit_lead_cohort_section_detail_screen.dart';
 import '../services/dashboard_provider.dart';
 import '../services/rubric_engine_provider.dart';
 import 'admin_route_paths.dart';
@@ -221,6 +222,20 @@ class AdminDefenseStageEditorRoute extends ConsumerWidget {
     return DefenseStageEditorScreen(
       stageId: stageId,
       onBack: () => context.pop(),
+    );
+  }
+}
+
+class PitLeadCohortSectionDetailRoute extends StatelessWidget {
+  const PitLeadCohortSectionDetailRoute({super.key, required this.sectionName});
+
+  final String sectionName;
+
+  @override
+  Widget build(BuildContext context) {
+    return PitLeadCohortSectionDetailScreen(
+      sectionName: Uri.decodeComponent(sectionName),
+      onBack: () => context.go(FacultyRoutes.cohort),
     );
   }
 }

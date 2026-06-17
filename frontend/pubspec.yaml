@@ -90,6 +90,11 @@ flutter:
     - assets/logo.png
     - assets/logo-login-mark-48.png
     - assets/logo-login-mark-58.png
+    - assets/logo-login-mark-74.png
+    - assets/logo-login-mark-116.png
+    - assets/logo-login-mark.png
+    - assets/logo-web-mark.png
+    - assets/logo-web-mark-smooth.png
     - assets/login_hero.png
     - assets/login_hero_1.png
     - assets/login_hero_2.png
