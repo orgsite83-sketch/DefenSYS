@@ -737,6 +737,24 @@ def capstone_deliverable_queryset_for_scope(scope):
     )
 
 
+def pit_deliverable_queryset_for_scope(scope):
+    if scope['scope'] not in ('admin', 'pit_lead', 'repo_assistant'):
+        return DeliverableSubmission.objects.none()
+    queryset = (
+        DeliverableSubmission.objects.select_related(
+            'team',
+            'team__semester',
+            'team__semester__school_year',
+            'uploaded_by',
+        )
+        .filter(team__level__icontains='PIT')
+        .order_by('-uploaded_at', 'file_name')
+    )
+    if scope['scope'] in ('pit_lead', 'repo_assistant') and scope.get('pit_year_level'):
+        queryset = queryset.filter(team__year_level=scope['pit_year_level'])
+    return queryset
+
+
 def _query_flag(value):
     return str(value or '').strip().lower() in ('1', 'true', 'yes')
 
@@ -759,6 +777,10 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
     entries.extend(
         capstone_entry_payload(submission, **payload_kwargs)
         for submission in capstone_deliverable_queryset_for_scope(scope)
+    )
+    entries.extend(
+        capstone_entry_payload(submission, **payload_kwargs)
+        for submission in pit_deliverable_queryset_for_scope(scope)
     )
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True), scope
 

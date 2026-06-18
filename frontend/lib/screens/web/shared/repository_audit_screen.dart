@@ -2832,16 +2832,37 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
       dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
       actionChildren.add(_repositoryActionSpacer(height: 32));
-      dataChildren.add(
-        _subsectionHeader('Digital vault', const Color(0xFFFFF7ED)),
-      );
-      actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
-      for (final row in rows) {
-        dataChildren.add(
-          _repositoryRowData(row, compactColumns: compactColumns),
-        );
-        actionChildren.add(_repositoryRowAction(row));
+
+      final preRows = rows.where((row) => row['submission_kind'] == 'pre').toList();
+      final vaultRows = rows.where((row) => row['submission_kind'] == 'vault' || row['submission_kind'] == 'pit').toList();
+
+      void addSubsection(
+        String title,
+        Color color,
+        List<Map<String, dynamic>> subRows,
+      ) {
+        if (subRows.isEmpty) return;
+        dataChildren.add(_subsectionHeader(title, color));
+        actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
+        for (final row in subRows) {
+          dataChildren.add(
+            _repositoryRowData(row, compactColumns: compactColumns),
+          );
+          actionChildren.add(_repositoryRowAction(row));
+        }
       }
+
+      addSubsection(
+        'Pre-defense deliverables',
+        const Color(0xFFEFF6FF),
+        preRows,
+      );
+      addSubsection(
+        'Digital vault',
+        const Color(0xFFFFF7ED),
+        vaultRows,
+      );
+
       dataChildren.add(const SizedBox(height: 12));
       actionChildren.add(_repositoryActionSpacer(height: 12));
     }

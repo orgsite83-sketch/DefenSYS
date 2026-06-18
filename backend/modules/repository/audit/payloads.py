@@ -142,10 +142,14 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     is_vault = submission.deliverable_type == DeliverableSubmission.TYPE_VAULT
     kind = _submission_kind_for_deliverable(submission)
 
+    is_pit = team.is_pit if team else False
+    entry_type = VaultEntry.TYPE_PIT if is_pit else VaultEntry.TYPE_CAPSTONE
+    entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
+
     payload = {
-        'id': f'capstone-{submission.id}',
+        'id': entry_id,
         'source_id': submission.id,
-        'type': VaultEntry.TYPE_CAPSTONE,
+        'type': entry_type,
         'file_name': submission.file_name,
         'file_size': submission.file_size,
         'file_url': resolve_uploaded_file_url(request, submission.file) if submission.file else '',
@@ -176,7 +180,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     payload.update(ml_fields_from(submission) if include_ml else empty_ml_fields())
     if include_audit_trail:
         payload['audit_trail'] = audit_trail(
-            VaultEntry.TYPE_CAPSTONE,
+            entry_type,
             submission.id,
             submission.file_name,
         )

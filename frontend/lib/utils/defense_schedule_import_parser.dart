@@ -92,6 +92,58 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
   }
 
   final metadata = _readMetadata(matrix.take(headerIndex).toList());
+
+  // Fallback for official client template layout (preceding rows without explicit key labels)
+  if (headerIndex >= 1) {
+    final titleRows = matrix.take(headerIndex).toList();
+    final firstCells = titleRows
+        .map((row) => row.firstWhere((cell) => cell.trim().isNotEmpty, orElse: () => ''))
+        .map((cell) => cell.trim())
+        .where((cell) => cell.isNotEmpty)
+        .toList();
+
+    if (firstCells.length >= 3) {
+      if (metadata['stage'] == null || metadata['stage']!.isEmpty) {
+        metadata['stage'] = firstCells[0];
+      }
+      if (metadata['date'] == null || metadata['date']!.isEmpty) {
+        metadata['date'] = firstCells[1];
+      }
+      if (metadata['room'] == null || metadata['room']!.isEmpty) {
+        metadata['room'] = firstCells[2];
+      }
+    } else if (firstCells.isNotEmpty) {
+      for (final cell in firstCells) {
+        final lowerCell = cell.toLowerCase();
+        final isDate = RegExp(r'\d').hasMatch(cell) && (
+            lowerCell.contains('jan') ||
+            lowerCell.contains('feb') ||
+            lowerCell.contains('mar') ||
+            lowerCell.contains('apr') ||
+            lowerCell.contains('may') ||
+            lowerCell.contains('jun') ||
+            lowerCell.contains('jul') ||
+            lowerCell.contains('aug') ||
+            lowerCell.contains('sep') ||
+            lowerCell.contains('oct') ||
+            lowerCell.contains('nov') ||
+            lowerCell.contains('dec') ||
+            cell.contains('/') ||
+            (cell.contains('-') && !lowerCell.contains('room'))
+        );
+        final isRoom = lowerCell.contains('room') || lowerCell.contains('venue') || lowerCell.contains('hall') || lowerCell.contains('lab');
+
+        if (isDate) {
+          metadata['date'] ??= cell;
+        } else if (isRoom) {
+          metadata['room'] ??= cell;
+        } else {
+          metadata['stage'] ??= cell;
+        }
+      }
+    }
+  }
+
   final headers = matrix[headerIndex].map(_normalizeHeader).toList();
   int column(List<String> aliases) {
     for (var i = 0; i < headers.length; i++) {
@@ -116,7 +168,7 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
   final documenterCol = column(['documenter', 'secretary', 'recorder']);
   final roomCol = column(['room', 'venue', 'roomvenue']);
   final dateCol = column(['date', 'defensedate', 'scheduleddate']);
-  final stageCol = column(['stage', 'defensestage']);
+  final stageCol = column(['stage', 'defensestage', 'event', 'pitevent']);
   final semesterCol = column(['semester', 'term']);
 
   final grouped = <String, _ImportGroup>{};

@@ -119,3 +119,13 @@ Documenter: 211 Cecilia Magbanua
 ```
 
 The documenter is parsed and shown in preview only. The current system does not assign documenters to schedules yet.
+
+## PIT Imports Folder (`pit_imports/`)
+
+A dedicated folder containing separated CSV templates for PIT import matching the current **Team CodeLearners** in the database:
+
+1. [user_students_import.csv](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/pit_imports/user_students_import.csv): Student cohort class list using the official enrollments template. Imports the four student members (`4081-4084`) and sets the instructor to `Maricel Suarez`.
+2. [user_faculty_import.csv](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/pit_imports/user_faculty_import.csv): Faculty account bulk import file. Sets up adviser/panelists `206-211`.
+3. [team_import.csv](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/pit_imports/team_import.csv): PIT team creation file for **Team CodeLearners** and project **Smart Campus Navigator**.
+4. [schedule_import.csv](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/pit_imports/schedule_import.csv): PIT defense schedule import file using the three-row header in-app template.
+

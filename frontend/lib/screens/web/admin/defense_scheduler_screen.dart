@@ -10,6 +10,7 @@ import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/defense_schedule_import_parser.dart';
+import '../../../utils/csv_file_io.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -2250,17 +2251,19 @@ class _DefenseSchedulerScreenState
       _showSnack(_scheduleNoticeMessage(state));
       return;
     }
-    if (_scope != 'capstone') {
-      _showSnack('Schedule import is available for Capstone stages first.');
-      return;
-    }
+
+    final importScope = _scope;
+    final isPit = importScope == 'pit';
 
     ParsedScheduleImport? parsed;
     String? fileName;
-    int? importStageId = _stageId;
+    int? importStageId = isPit ? null : _stageId;
+    String importEventName = isPit ? _eventController.text.trim() : '';
     int? panelRubricId = _rubricId;
     int? adviserRubricId = _adviserRubricId;
-    int? peerRubricId = _capstonePeerRubricId;
+    int? peerRubricId = isPit ? _peerRubricId : _capstonePeerRubricId;
+    int panelWeight = int.tryParse(_panelWeightController.text) ?? 80;
+    int peerWeight = int.tryParse(_peerWeightController.text) ?? 20;
     final dateController = TextEditingController(text: _dateController.text);
     final roomController = TextEditingController(text: _roomController.text);
     final durationController = TextEditingController(
@@ -2290,6 +2293,32 @@ class _DefenseSchedulerScreenState
       });
     }
 
+    Future<void> loadPitEventConfig(
+      String eventName,
+      void Function(void Function()) setDialogState,
+    ) async {
+      if (eventName.trim().isEmpty) {
+        return;
+      }
+      setDialogState(() => rubricLoading = true);
+      final semesterId = _asInt(state.activeSemester?['id']);
+      final config = await ref
+          .read(defenseSchedulerProvider.notifier)
+          .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+      if (!mounted) {
+        return;
+      }
+      setDialogState(() {
+        if (config != null) {
+          panelRubricId = _asInt(config['panel_rubric_id']) ?? panelRubricId;
+          peerRubricId = _asInt(config['peer_rubric_id']) ?? peerRubricId;
+          panelWeight = int.tryParse(config['panel_weight']?.toString() ?? '') ?? panelWeight;
+          peerWeight = int.tryParse(config['peer_weight']?.toString() ?? '') ?? peerWeight;
+        }
+        rubricLoading = false;
+      });
+    }
+
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
@@ -2301,7 +2330,9 @@ class _DefenseSchedulerScreenState
                 : _buildScheduleImportPreviewRows(
                     parsed!,
                     state,
+                    scope: importScope,
                     stageId: importStageId,
+                    eventName: importEventName,
                     date: dateController.text,
                     room: roomController.text,
                     fallbackDuration:
@@ -2309,6 +2340,8 @@ class _DefenseSchedulerScreenState
                     panelRubricId: panelRubricId,
                     adviserRubricId: adviserRubricId,
                     peerRubricId: peerRubricId,
+                    panelWeight: panelWeight,
+                    peerWeight: peerWeight,
                   );
             final readyRows = previewRows.where((row) => row.ready).toList();
             final issueRows = previewRows.length - readyRows.length;
@@ -2335,17 +2368,30 @@ class _DefenseSchedulerScreenState
                 bytes: bytes,
                 filename: file.name,
               );
-              final detectedStage =
-                  _matchStageId(imported.stage, state) ??
-                  _matchStageId(
-                    imported.rows
-                        .map((row) => row.stage)
-                        .firstWhere(
-                          (value) => value.isNotEmpty,
-                          orElse: () => '',
-                        ),
-                    state,
-                  );
+              final detectedStage = isPit
+                  ? null
+                  : (_matchStageId(imported.stage, state) ??
+                      _matchStageId(
+                        imported.rows
+                            .map((row) => row.stage)
+                            .firstWhere(
+                              (value) => value.isNotEmpty,
+                              orElse: () => '',
+                            ),
+                        state,
+                      ));
+              final detectedEvent = isPit
+                  ? (_matchEventName(imported.stage, state) ??
+                      _matchEventName(
+                        imported.rows
+                            .map((row) => row.stage)
+                            .firstWhere(
+                              (value) => value.isNotEmpty,
+                              orElse: () => '',
+                            ),
+                        state,
+                      ))
+                  : null;
               final detectedDate = _normalizeImportDate(
                 imported.date ??
                     imported.rows
@@ -2373,7 +2419,11 @@ class _DefenseSchedulerScreenState
                 importErrors = imported.rows.isEmpty
                     ? ['No schedule rows were detected. Check the headers.']
                     : [];
-                importStageId = detectedStage ?? importStageId;
+                if (!isPit) {
+                  importStageId = detectedStage ?? importStageId;
+                } else {
+                  importEventName = detectedEvent ?? importEventName;
+                }
                 if (detectedDate.isNotEmpty) {
                   dateController.text = detectedDate;
                 }
@@ -2384,7 +2434,11 @@ class _DefenseSchedulerScreenState
                   durationController.text = firstDuration.toString();
                 }
               });
-              if (detectedStage != null) {
+              if (isPit) {
+                if (importEventName.isNotEmpty) {
+                  await loadPitEventConfig(importEventName, setDialogState);
+                }
+              } else if (detectedStage != null) {
                 await loadStageRubrics(detectedStage, setDialogState);
               }
             }
@@ -2443,12 +2497,12 @@ class _DefenseSchedulerScreenState
                               size: 24,
                             ),
                             const SizedBox(width: 10),
-                            const Expanded(
+                            Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    'Import Defense Schedule',
+                                    isPit ? 'Import PIT Schedule' : 'Import Defense Schedule',
                                     style: TextStyle(
                                       color: AppColors.maroon,
                                       fontSize: 20,
@@ -2487,15 +2541,19 @@ class _DefenseSchedulerScreenState
                               _buildImportUploadPanel(
                                 fileName: fileName,
                                 onPickFile: pickFile,
+                                isPit: isPit,
                               ),
                               const SizedBox(height: 18),
                               _buildImportContextPanel(
                                 state,
+                                scope: importScope,
                                 stageId: importStageId,
+                                eventName: importEventName,
                                 dateController: dateController,
                                 roomController: roomController,
                                 durationController: durationController,
                                 panelRubricId: panelRubricId,
+                                peerRubricId: peerRubricId,
                                 rubricLoading: rubricLoading,
                                 rowsDetected: previewRows.length,
                                 readyRows: readyRows.length,
@@ -2508,6 +2566,16 @@ class _DefenseSchedulerScreenState
                                     peerRubricId = null;
                                   });
                                   await loadStageRubrics(value, setDialogState);
+                                },
+                                onEventChanged: (value) async {
+                                  setDialogState(() {
+                                    importEventName = value ?? '';
+                                    panelRubricId = null;
+                                    peerRubricId = null;
+                                  });
+                                  if (value != null && value.isNotEmpty) {
+                                    await loadPitEventConfig(value, setDialogState);
+                                  }
                                 },
                                 onContextChanged: () => setDialogState(() {}),
                               ),
@@ -2598,6 +2666,7 @@ class _DefenseSchedulerScreenState
   Widget _buildImportUploadPanel({
     required String? fileName,
     required Future<void> Function() onPickFile,
+    required bool isPit,
   }) {
     return Container(
       padding: const EdgeInsets.all(18),
@@ -2627,7 +2696,7 @@ class _DefenseSchedulerScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  fileName ?? 'Upload the admin schedule template',
+                  fileName ?? (isPit ? 'Upload the PIT schedule template' : 'Upload the admin schedule template'),
                   style: const TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 14,
@@ -2641,6 +2710,54 @@ class _DefenseSchedulerScreenState
                     color: AppColors.textSecondary,
                     fontSize: 12.5,
                     fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                MouseRegion(
+                  cursor: SystemMouseCursors.click,
+                  child: GestureDetector(
+                    onTap: () async {
+                      if (isPit) {
+                        await downloadTextFile(
+                          filename: 'defensys-pit-defense-schedule-template.csv',
+                          content: '3rd Year Expo,,,,,,,,,\n'
+                              'May 18, 2026,,,,,,,,,\n'
+                              'SMART ROOM,,,,,,,,,\n'
+                              'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
+                              '9:00AM-9:30AM,TechVision,Eventify,"RAY AN J. QUINON","DOMINGUEZ, Noel R.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
+                              ',,,,"DAGO-OC, Evan John S.",,,,,\n'
+                              ',,,,"PINGKIAN, El Jane",,,,,\n'
+                              ',,,,"DIU, Sciemon Jed",,,,,\n'
+                              '9:30AM-10:00AM,Techpro,Campus Tutoring to FMCP,"RAY AN J. QUINON","CABANTAC, John Mike B.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
+                              ',,,,"BLASE, Jendy D.",,,,,\n'
+                              ',,,,"NAQUIRA, Brexie Lyca D.",,,,,\n',
+                        );
+                      } else {
+                        await downloadTextFile(
+                          filename: 'defensys-capstone-defense-schedule-template.csv',
+                          content: 'REDEFENSE - Capstone Project and Research 1,,,,,,,,,\n'
+                              'May 18, 2026,,,,,,,,,\n'
+                              'SMART ROOM,,,,,,,,,\n'
+                              'Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
+                              '9:00AM-9:30AM,TechVision,Eventify,"RAY AN J. QUINON","DOMINGUEZ, Noel R.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
+                              ',,,,"DAGO-OC, Evan John S.",,,,,\n'
+                              ',,,,"PINGKIAN, El Jane",,,,,\n'
+                              ',,,,"DIU, Sciemon Jed",,,,,\n'
+                              '9:30AM-10:00AM,Techpro,Campus Tutoring to FMCP,"RAY AN J. QUINON","CABANTAC, John Mike B.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
+                              ',,,,"BLASE, Jendy D.",,,,,\n'
+                              ',,,,"NAQUIRA, Brexie Lyca D.",,,,,\n',
+                        );
+                      }
+                    },
+                    child: Text(
+                      'Download sample CSV template',
+                      style: TextStyle(
+                        color: AppColors.maroon,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -2658,18 +2775,23 @@ class _DefenseSchedulerScreenState
 
   Widget _buildImportContextPanel(
     DefenseSchedulerState state, {
+    required String scope,
     required int? stageId,
+    required String eventName,
     required TextEditingController dateController,
     required TextEditingController roomController,
     required TextEditingController durationController,
     required int? panelRubricId,
+    required int? peerRubricId,
     required bool rubricLoading,
     required int rowsDetected,
     required int readyRows,
     required int issueRows,
     required ValueChanged<int?> onStageChanged,
+    required ValueChanged<String?> onEventChanged,
     required VoidCallback onContextChanged,
   }) {
+    final isPit = scope == 'pit';
     final stageItems = state.defenseStages
         .map(
           (stage) => DropdownMenuItem<int?>(
@@ -2679,6 +2801,7 @@ class _DefenseSchedulerScreenState
         )
         .toList();
     final rubricName = _rubricName(state, panelRubricId);
+    final peerRubricName = isPit ? _peerRubricName(state, peerRubricId) : '';
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -2704,17 +2827,37 @@ class _DefenseSchedulerScreenState
             children: [
               Expanded(
                 flex: 2,
-                child: _labeledField(
-                  'Stage',
-                  DropdownButtonFormField<int?>(
-                    initialValue: stageId,
-                    decoration: _schedulerInputDecoration(
-                      hintText: 'Select stage if not detected',
-                    ),
-                    items: stageItems,
-                    onChanged: onStageChanged,
-                  ),
-                ),
+                child: isPit
+                    ? _labeledField(
+                        'PIT Event',
+                        DropdownButtonFormField<String>(
+                          value: state.pitEvents.any((e) => e['event_name'] == eventName)
+                              ? eventName
+                              : null,
+                          decoration: _schedulerInputDecoration(
+                            hintText: 'Select PIT event',
+                          ),
+                          items: state.pitEvents.map((e) {
+                            final name = e['event_name']?.toString() ?? '';
+                            return DropdownMenuItem<String>(
+                              value: name,
+                              child: Text(name),
+                            );
+                          }).toList(),
+                          onChanged: onEventChanged,
+                        ),
+                      )
+                    : _labeledField(
+                        'Stage',
+                        DropdownButtonFormField<int?>(
+                          initialValue: stageId,
+                          decoration: _schedulerInputDecoration(
+                            hintText: 'Select stage if not detected',
+                          ),
+                          items: stageItems,
+                          onChanged: onStageChanged,
+                        ),
+                      ),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -2773,6 +2916,14 @@ class _DefenseSchedulerScreenState
                     : (rubricName.isEmpty ? 'Missing' : rubricName),
                 warning: rubricName.isEmpty && !rubricLoading,
               ),
+              if (isPit)
+                _importMetric(
+                  'Peer rubric',
+                  rubricLoading
+                      ? 'Loading...'
+                      : (peerRubricName.isEmpty ? 'Missing' : peerRubricName),
+                  warning: peerRubricName.isEmpty && !rubricLoading,
+                ),
             ],
           ),
         ],
@@ -2948,14 +3099,19 @@ class _DefenseSchedulerScreenState
   List<_ScheduleImportPreviewRow> _buildScheduleImportPreviewRows(
     ParsedScheduleImport parsed,
     DefenseSchedulerState state, {
+    required String scope,
     required int? stageId,
+    required String eventName,
     required String date,
     required String room,
     required int fallbackDuration,
     required int? panelRubricId,
     required int? adviserRubricId,
     required int? peerRubricId,
+    required int panelWeight,
+    required int peerWeight,
   }) {
+    final isPit = scope == 'pit';
     return parsed.rows.map((source) {
       final issues = <String>[];
       final warnings = <String>[];
@@ -2966,7 +3122,7 @@ class _DefenseSchedulerScreenState
           ? source.room.trim()
           : room.trim();
       final duration = source.slotDuration ?? fallbackDuration;
-      final teamMatch = _matchTeam(source, state);
+      final teamMatch = _matchTeam(source, state, scope: scope);
       final panelistMatches = <_ImportNameMatch>[];
 
       final chairMatch = _matchPanelist(source.chair, state);
@@ -2977,13 +3133,25 @@ class _DefenseSchedulerScreenState
         panelistMatches.add(_matchPanelist(name, state));
       }
 
-      if (stageId == null) {
-        issues.add('Select a defense stage.');
-      }
-      if (panelRubricId == null ||
-          adviserRubricId == null ||
-          peerRubricId == null) {
-        issues.add('Stage grading rubrics are incomplete.');
+      if (isPit) {
+        if (eventName.trim().isEmpty) {
+          issues.add('Select a PIT event.');
+        }
+        if (panelRubricId == null) {
+          issues.add('Panel rubric is missing.');
+        }
+        if (peerRubricId == null) {
+          issues.add('Peer rubric is missing.');
+        }
+      } else {
+        if (stageId == null) {
+          issues.add('Select a defense stage.');
+        }
+        if (panelRubricId == null ||
+            adviserRubricId == null ||
+            peerRubricId == null) {
+          issues.add('Stage grading rubrics are incomplete.');
+        }
       }
       if (rowDate.isEmpty) {
         issues.add('Date is missing.');
@@ -3021,10 +3189,15 @@ class _DefenseSchedulerScreenState
 
       return _ScheduleImportPreviewRow(
         source: source,
+        scope: scope,
         teamId: teamMatch.id,
         panelistIds: panelistIds,
         stageId: stageId,
+        eventName: eventName,
         panelRubricId: panelRubricId,
+        peerRubricId: peerRubricId,
+        panelWeight: panelWeight,
+        peerWeight: peerWeight,
         date: rowDate,
         room: rowRoom,
         duration: duration,
@@ -3036,11 +3209,12 @@ class _DefenseSchedulerScreenState
 
   _ImportNameMatch _matchTeam(
     ParsedScheduleImportRow row,
-    DefenseSchedulerState state,
-  ) {
+    DefenseSchedulerState state, {
+    String scope = 'capstone',
+  }) {
     final name = _normalizeName(row.teamName);
     final project = _normalizeName(row.projectTitle);
-    final teams = _teamsForScope(state, 'capstone');
+    final teams = _teamsForScope(state, scope);
     final byName = teams.where((team) {
       return _normalizeName(team['name']?.toString() ?? '') == name;
     }).toList();
@@ -3118,10 +3292,42 @@ class _DefenseSchedulerScreenState
     return null;
   }
 
+  String? _matchEventName(String? rawEvent, DefenseSchedulerState state) {
+    final event = _normalizeName(rawEvent ?? '');
+    if (event.isEmpty) {
+      return null;
+    }
+    for (final item in state.pitEvents) {
+      final eventName = item['event_name']?.toString() ?? '';
+      if (_normalizeName(eventName) == event) {
+        return eventName;
+      }
+    }
+    return null;
+  }
+
   String _rubricName(DefenseSchedulerState state, int? rubricId) {
     if (rubricId == null) {
       return '';
     }
+    for (final rubric in state.rubrics) {
+      if (_asInt(rubric['id']) == rubricId) {
+        return rubric['name']?.toString() ?? '';
+      }
+    }
+    return '';
+  }
+
+  String _peerRubricName(DefenseSchedulerState state, int? rubricId) {
+    if (rubricId == null) {
+      return '';
+    }
+    for (final rubric in state.peerRubrics) {
+      if (_asInt(rubric['id']) == rubricId) {
+        return rubric['name']?.toString() ?? '';
+      }
+    }
+    // Fallback: check regular rubrics list too
     for (final rubric in state.rubrics) {
       if (_asInt(rubric['id']) == rubricId) {
         return rubric['name']?.toString() ?? '';
@@ -3139,6 +3345,10 @@ class _DefenseSchedulerScreenState
     if (parsed != null) {
       return _formatScheduleDate(parsed);
     }
+    final humanParsed = _parseHumanDate(text);
+    if (humanParsed != null) {
+      return _formatScheduleDate(humanParsed);
+    }
     final match = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{2,4})$').firstMatch(text);
     if (match == null) {
       return text;
@@ -3150,6 +3360,48 @@ class _DefenseSchedulerScreenState
       year += 2000;
     }
     return _formatScheduleDate(DateTime(year, month, day));
+  }
+
+  DateTime? _parseHumanDate(String text) {
+    final cleaned = text.trim().toLowerCase().replaceAll(',', '');
+    final months = {
+      'january': 1, 'jan': 1,
+      'february': 2, 'feb': 2,
+      'march': 3, 'mar': 3,
+      'april': 4, 'apr': 4,
+      'may': 5,
+      'june': 6, 'jun': 6,
+      'july': 7, 'jul': 7,
+      'august': 8, 'aug': 8,
+      'september': 9, 'sep': 9, 'sept': 9,
+      'october': 10, 'oct': 10,
+      'november': 11, 'nov': 11,
+      'december': 12, 'dec': 12,
+    };
+    
+    final match1 = RegExp(r'^([a-z]+)\s+(\d{1,2})\s+(\d{4})$').firstMatch(cleaned);
+    if (match1 != null) {
+      final monthStr = match1.group(1);
+      final day = int.tryParse(match1.group(2) ?? '');
+      final year = int.tryParse(match1.group(3) ?? '');
+      final month = months[monthStr];
+      if (month != null && day != null && year != null) {
+        return DateTime(year, month, day);
+      }
+    }
+
+    final match2 = RegExp(r'^(\d{1,2})\s+([a-z]+)\s+(\d{4})$').firstMatch(cleaned);
+    if (match2 != null) {
+      final day = int.tryParse(match2.group(1) ?? '');
+      final monthStr = match2.group(2);
+      final year = int.tryParse(match2.group(3) ?? '');
+      final month = months[monthStr];
+      if (month != null && day != null && year != null) {
+        return DateTime(year, month, day);
+      }
+    }
+
+    return null;
   }
 
   String _normalizeName(String value) {
@@ -4084,10 +4336,15 @@ class _DefenseSchedulerScreenState
 class _ScheduleImportPreviewRow {
   const _ScheduleImportPreviewRow({
     required this.source,
+    required this.scope,
     required this.teamId,
     required this.panelistIds,
     required this.stageId,
+    required this.eventName,
     required this.panelRubricId,
+    required this.peerRubricId,
+    required this.panelWeight,
+    required this.peerWeight,
     required this.date,
     required this.room,
     required this.duration,
@@ -4096,10 +4353,15 @@ class _ScheduleImportPreviewRow {
   });
 
   final ParsedScheduleImportRow source;
+  final String scope;
   final int? teamId;
   final List<int> panelistIds;
   final int? stageId;
+  final String eventName;
   final int? panelRubricId;
+  final int? peerRubricId;
+  final int panelWeight;
+  final int peerWeight;
   final String date;
   final String room;
   final int duration;
@@ -4128,6 +4390,22 @@ class _ScheduleImportPreviewRow {
       source.documenter.isEmpty ? '-' : source.documenter;
 
   Map<String, dynamic> toPayload() {
+    if (scope == 'pit') {
+      return {
+        'scope': 'pit',
+        'team_id': teamId,
+        'event_name': eventName,
+        'rubric_id': panelRubricId,
+        'peer_rubric_id': peerRubricId,
+        'panel_weight': panelWeight,
+        'peer_weight': peerWeight,
+        'scheduled_date': date,
+        'start_time': source.startTime,
+        'slot_duration': duration,
+        'room': room,
+        'panelist_ids': panelistIds,
+      };
+    }
     return {
       'scope': 'capstone',
       'team_id': teamId,

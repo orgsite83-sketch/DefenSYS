@@ -57,7 +57,8 @@ DEBUG = _env_bool('DJANGO_DEBUG', default=True)
 
 ALLOWED_HOSTS = _env_list(
     'DJANGO_ALLOWED_HOSTS',
-    'localhost,127.0.0.1',
+    'localhost,127.0.0.1,192.168.1.5',
+    
 )
 
 # Optional production CORS allowlist for deployments where Flutter and API are
