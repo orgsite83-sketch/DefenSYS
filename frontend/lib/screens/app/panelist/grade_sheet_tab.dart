@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 import 'panelist_models.dart';
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
@@ -16,6 +17,7 @@ class GradeSheetTab extends ConsumerStatefulWidget {
   final int selectedTeamIndex;
   final void Function(int) onTeamChanged;
   final VoidCallback? onGradesSubmitted;
+  final Future<void> Function()? onRefresh;
 
   const GradeSheetTab({
     super.key,
@@ -23,6 +25,7 @@ class GradeSheetTab extends ConsumerStatefulWidget {
     required this.selectedTeamIndex,
     required this.onTeamChanged,
     this.onGradesSubmitted,
+    this.onRefresh,
   });
 
   @override
@@ -89,7 +92,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   @override
   Widget build(BuildContext context) {
     if (widget.teams.isEmpty) {
-      return const Center(
+      final emptyContent = const Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -99,6 +102,23 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ],
         ),
       );
+
+      if (widget.onRefresh == null) return emptyContent;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return RefreshIndicator(
+            color: DefensysTokens.maroon,
+            onRefresh: widget.onRefresh!,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: emptyContent,
+              ),
+            ),
+          );
+        },
+      );
     }
 
     final team = widget.teams[widget.selectedTeamIndex];
@@ -107,7 +127,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final isLocked = team.isPosted;
     final hasValidScope = team.hasValidScope;
     final canPost =
-        hasValidScope && hasPanelRubric && _criteria.isNotEmpty && !isLocked;
+        hasValidScope && hasPanelRubric && _criteria.isNotEmpty && !isLocked && !team.isLockedByDate;
 
     final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
     final total = criteria.fold(0.0, (s, c) => s + c.score);
@@ -118,7 +138,8 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final peerWeight = team.peerWeight;
     final showAdviser = team.isCapstone && team.adviserWeight > 0;
 
-    return SingleChildScrollView(
+    final scrollContent = SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -360,7 +381,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       ),
                     )
                   else
-                    ...criteria.map((c) => _criterionRow(c, isLocked)),
+                    ...criteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
                   const Divider(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -410,7 +431,37 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       ),
                     ),
                   const SizedBox(height: 16),
-                  if (!isLocked) ...[
+                   if (team.isLockedByDate)
+                    Container(
+                      margin: const EdgeInsets.only(top: 10),
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.orange.shade50,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.orange.shade200),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(
+                            Icons.lock_clock,
+                            size: 20,
+                            color: Colors.orange,
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              'This defense is scheduled for ${team.scheduledDate != null ? DateFormat('MMMM d, yyyy').format(team.scheduledDate!) : 'scheduled date'}. Grading is not open yet.',
+                              style: TextStyle(
+                                fontSize: 13,
+                                color: Colors.orange.shade900,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else if (!isLocked) ...[
                     TextField(
                       maxLines: 3,
                       decoration: InputDecoration(
@@ -468,6 +519,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ),
         ],
       ),
+    );
+
+    if (widget.onRefresh == null) return scrollContent;
+    return RefreshIndicator(
+      color: DefensysTokens.maroon,
+      onRefresh: widget.onRefresh!,
+      child: scrollContent,
     );
   }
 

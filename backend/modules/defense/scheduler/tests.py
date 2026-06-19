@@ -720,6 +720,39 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(visible_ids(uploader), {schedule.id, other_schedule.id})
         self.assertEqual(visible_ids(plain_faculty), set())
 
+    def test_submit_grades_before_scheduled_date_is_blocked(self):
+        from django.utils import timezone
+        import datetime
+        tomorrow = timezone.localtime(timezone.now()).date() + datetime.timedelta(days=1)
+        
+        schedule = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team,
+            defense_stage=self.stage,
+            rubric=self.rubric,
+            scheduled_date=tomorrow,
+            start_time='08:00',
+            slot_duration=60,
+            room='Room 301',
+            status=DefenseSchedule.STATUS_SCHEDULED,
+            created_by=self.admin,
+        )
+        SchedulePanelist.objects.create(schedule=schedule, panelist=self.panelist, order=0)
+        
+        submit_url = '/api/defense/schedules/submit-grades/'
+        payload = {
+            'team_id': self.team.id,
+            'schedule_id': schedule.id,
+            'criteria_scores': self.criteria_scores(8),
+        }
+        
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.post(submit_url, payload, format='json')
+        
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('Grading is locked until the scheduled date', response.data['detail'])
+
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):

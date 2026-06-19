@@ -330,11 +330,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       }
     }
 
-    await fetchSchedules(
-      successMessage: created > 0
-          ? '$created imported schedule${created == 1 ? '' : 's'} saved.'
-          : null,
-    );
+    await fetchSchedules();
 
     if (errors.isNotEmpty && created == 0) {
       state = state.copyWith(error: errors.first);

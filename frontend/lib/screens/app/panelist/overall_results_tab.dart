@@ -7,6 +7,7 @@ class OverallResultsTab extends StatelessWidget {
   final bool loading;
   final String? error;
   final VoidCallback? onRetry;
+  final Future<void> Function()? onRefresh;
 
   const OverallResultsTab({
     super.key,
@@ -14,6 +15,7 @@ class OverallResultsTab extends StatelessWidget {
     this.loading = false,
     this.error,
     this.onRetry,
+    this.onRefresh,
   });
 
   @override
@@ -22,61 +24,85 @@ class OverallResultsTab extends StatelessWidget {
       return const Center(child: CircularProgressIndicator(color: DefensysTokens.maroon));
     }
 
+    Widget refreshWrapper(Widget child) {
+      if (onRefresh == null) return child;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return RefreshIndicator(
+            color: DefensysTokens.maroon,
+            onRefresh: onRefresh!,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: child,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     if (error != null && results.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.error_outline, size: 48, color: Colors.red),
-              const SizedBox(height: 16),
-              const Text(
-                'Failed to load results',
-                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                error!,
-                textAlign: TextAlign.center,
-                style: const TextStyle(color: Colors.grey),
-              ),
-              if (onRetry != null) ...[
+      return refreshWrapper(
+        Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.error_outline, size: 48, color: Colors.red),
                 const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: onRetry,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Retry'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DefensysTokens.maroon,
-                    foregroundColor: Colors.white,
-                  ),
+                const Text(
+                  'Failed to load results',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                 ),
+                const SizedBox(height: 8),
+                Text(
+                  error!,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(color: Colors.grey),
+                ),
+                if (onRetry != null) ...[
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: onRetry,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Retry'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: DefensysTokens.maroon,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       );
     }
 
     if (results.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.bar_chart, size: 48, color: Colors.grey.shade300),
-            const SizedBox(height: 12),
-            const Text('No graded teams yet.',
-                style: TextStyle(color: Colors.grey, fontSize: 15)),
-            const SizedBox(height: 8),
-            const Text('Post grades to see results here.',
-                style: TextStyle(color: Colors.grey, fontSize: 13)),
-          ],
+      return refreshWrapper(
+        Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.bar_chart, size: 48, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              const Text('No graded teams yet.',
+                  style: TextStyle(color: Colors.grey, fontSize: 15)),
+              const SizedBox(height: 8),
+              const Text('Post grades to see results here.',
+                  style: TextStyle(color: Colors.grey, fontSize: 13)),
+            ],
+          ),
         ),
       );
     }
 
-    return ListView(
+    final listContent = ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       children: [
         _sectionHeader('Overall Panel Results'),
@@ -88,6 +114,13 @@ class OverallResultsTab extends StatelessWidget {
         const SizedBox(height: 16),
         ...results.asMap().entries.map((e) => _teamCard(e.key + 1, e.value)),
       ],
+    );
+
+    if (onRefresh == null) return listContent;
+    return RefreshIndicator(
+      color: DefensysTokens.maroon,
+      onRefresh: onRefresh!,
+      child: listContent,
     );
   }
 

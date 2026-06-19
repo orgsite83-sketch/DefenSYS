@@ -47,6 +47,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     });
   }
 
+  Future<void> _refreshDashboardAndNotifications() async {
+    await Future.wait([
+      ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+      ref.read(notificationsProvider.notifier).fetchNotifications(),
+    ]);
+  }
+
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('student'));
@@ -64,8 +71,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final tabChildren = <Widget>[
       TeamTab(
         studentData: dataToPass,
-        onRefresh: () =>
-            ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+        onRefresh: _refreshDashboardAndNotifications,
       ),
       const RepositoryTab(),
       if (isPM)
@@ -87,9 +93,8 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         studentId: widget.userData?['id']?.toString() ?? '',
         teamId: dataToPass['team']?['id']?.toString() ?? '',
         peerWeight: (dataToPass['weights']?['peer'] as num?)?.toInt() ?? 20,
-        onPeerSubmitted: () {
-          ref.read(dashboardProvider('student').notifier).fetchDashboardData();
-        },
+        onPeerSubmitted: _refreshDashboardAndNotifications,
+        onRefresh: _refreshDashboardAndNotifications,
       ),
     ];
 

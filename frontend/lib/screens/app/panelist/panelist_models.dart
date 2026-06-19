@@ -12,6 +12,13 @@ class TeamData {
   final int peerWeight;
   final int adviserWeight;
   final Map<String, dynamic>? panelRubric;
+  bool get isLockedByDate {
+    if (scheduledDate == null) return false;
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return today.isBefore(scheduledDate!);
+  }
+  final DateTime? scheduledDate;
   bool isPosted;
 
   TeamData({
@@ -29,6 +36,7 @@ class TeamData {
     this.peerWeight = 20,
     this.adviserWeight = 0,
     this.panelRubric,
+    this.scheduledDate,
   });
 
   bool get hasValidScope => scope == 'capstone' || scope == 'pit';

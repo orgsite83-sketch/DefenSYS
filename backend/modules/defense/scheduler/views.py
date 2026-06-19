@@ -595,6 +595,15 @@ class PanelistGradeSubmissionView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+            if schedule:
+                from django.utils import timezone
+                current_date = timezone.localtime(timezone.now()).date()
+                if schedule.scheduled_date > current_date:
+                    return Response(
+                        {'detail': f'Grading is locked until the scheduled date: {schedule.scheduled_date.strftime("%B %d, %Y")}.'},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
             semester = team.semester or Semester.objects.filter(is_active=True).first()
             if not semester:
                 return Response(
@@ -814,6 +823,14 @@ class GuestPanelistGradeSubmissionView(APIView):
                 return Response(
                     {'detail': 'You are not assigned to grade this team.'},
                     status=status.HTTP_403_FORBIDDEN,
+                )
+
+            from django.utils import timezone
+            current_date = timezone.localtime(timezone.now()).date()
+            if schedule.scheduled_date > current_date:
+                return Response(
+                    {'detail': f'Grading is locked until the scheduled date: {schedule.scheduled_date.strftime("%B %d, %Y")}.'},
+                    status=status.HTTP_400_BAD_REQUEST,
                 )
 
             semester = team.semester or Semester.objects.filter(is_active=True).first()

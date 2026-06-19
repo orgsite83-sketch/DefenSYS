@@ -2133,14 +2133,16 @@ class _DefenseSchedulerScreenState
     final durationText = duration.text.trim();
     final roomText = room.text.trim();
 
-    event.dispose();
-    vaultFileTemplate.dispose();
-    panelWeight.dispose();
-    peerWeight.dispose();
-    date.dispose();
-    time.dispose();
-    duration.dispose();
-    room.dispose();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      event.dispose();
+      vaultFileTemplate.dispose();
+      panelWeight.dispose();
+      peerWeight.dispose();
+      date.dispose();
+      time.dispose();
+      duration.dispose();
+      room.dispose();
+    });
 
     if (!mounted || saved != true) {
       return;
@@ -2467,15 +2469,34 @@ class _DefenseSchedulerScreenState
               final errors =
                   (result['errors'] as List?)?.cast<String>() ??
                   const <String>[];
-              setDialogState(() {
-                importBusy = false;
-                importErrors = errors;
-              });
-              if (created > 0 && errors.isEmpty) {
-                if (!dialogContext.mounted) {
-                  return;
+              if (created > 0) {
+                if (errors.isEmpty) {
+                  if (dialogContext.mounted) {
+                    Navigator.of(dialogContext).pop();
+                  }
+                  if (this.context.mounted) {
+                    showSuccessToast(
+                      this.context,
+                      '$created imported schedule${created == 1 ? '' : 's'} saved.',
+                    );
+                  }
+                } else {
+                  if (this.context.mounted) {
+                    showSuccessToast(
+                      this.context,
+                      '$created imported schedule${created == 1 ? '' : 's'} saved.',
+                    );
+                  }
+                  setDialogState(() {
+                    importBusy = false;
+                    importErrors = errors;
+                  });
                 }
-                Navigator.of(dialogContext).pop();
+              } else {
+                setDialogState(() {
+                  importBusy = false;
+                  importErrors = errors;
+                });
               }
             }
 
@@ -2658,9 +2679,11 @@ class _DefenseSchedulerScreenState
       },
     );
 
-    dateController.dispose();
-    roomController.dispose();
-    durationController.dispose();
+    Future.delayed(const Duration(milliseconds: 500), () {
+      dateController.dispose();
+      roomController.dispose();
+      durationController.dispose();
+    });
   }
 
   Widget _buildImportUploadPanel({

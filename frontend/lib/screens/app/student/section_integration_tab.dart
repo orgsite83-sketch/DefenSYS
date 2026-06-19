@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../theme/defensys_tokens.dart';
 import '../../../services/student_teams_provider.dart';
+import '../../../services/dashboard_provider.dart';
 
 class SectionIntegrationTab extends ConsumerStatefulWidget {
   final Map<String, dynamic> studentData;
@@ -45,7 +46,12 @@ class _SectionIntegrationTabState extends ConsumerState<SectionIntegrationTab> {
 
     return RefreshIndicator(
       color: DefensysTokens.maroon,
-      onRefresh: () => ref.read(studentTeamsProvider.notifier).fetchTeams(),
+      onRefresh: () async {
+        await Future.wait([
+          ref.read(studentTeamsProvider.notifier).fetchTeams(),
+          ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+        ]);
+      },
       child: teamsState.isLoading && sectionTeams.isEmpty
           ? const Center(child: CircularProgressIndicator(color: DefensysTokens.maroon))
           : SingleChildScrollView(

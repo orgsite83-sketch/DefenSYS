@@ -122,6 +122,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
               ? rawScope
               : 'unknown';
           final isCapstone = scope == 'capstone';
+          final rawDate = team['scheduled_date']?.toString() ?? '';
+          final scheduledDate = DateTime.tryParse(rawDate);
           return TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
@@ -142,6 +144,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             panelRubric: team['panel_rubric'] is Map
                 ? Map<String, dynamic>.from(team['panel_rubric'] as Map)
                 : null,
+            scheduledDate: scheduledDate,
           );
         }).toList();
 
@@ -198,18 +201,21 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             _selectedTeamIndex = i;
             _selectedIndex = 1;
           }),
+          onRefresh: _loadData,
         ),
         GradeSheetTab(
           teams: _teams,
           selectedTeamIndex: _selectedTeamIndex,
           onTeamChanged: (i) => setState(() => _selectedTeamIndex = i),
           onGradesSubmitted: _loadResults,
+          onRefresh: _loadData,
         ),
         OverallResultsTab(
           results: _results,
           loading: _resultsLoading,
           error: _resultsError,
           onRetry: _loadResults,
+          onRefresh: _loadData,
         ),
       ],
     );

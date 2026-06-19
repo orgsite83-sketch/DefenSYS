@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/capstone_deliverables_provider.dart';
+import '../../../services/dashboard_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
@@ -70,9 +71,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
   }
 
   Future<void> _refresh() async {
-    await ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-          scope: widget.isCapstone ? 'capstone' : 'pit',
-        );
+    await Future.wait([
+      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+            scope: widget.isCapstone ? 'capstone' : 'pit',
+          ),
+      ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
+    ]);
   }
 
   @override

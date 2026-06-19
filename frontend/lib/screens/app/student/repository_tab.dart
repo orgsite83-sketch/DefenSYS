@@ -12,6 +12,7 @@ import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/error_banner.dart';
 import '../../../services/auth_provider.dart';
+import '../../../services/dashboard_provider.dart';
 
 
 // ── Data models ───────────────────────────────────────────────────────────────
@@ -133,9 +134,14 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   }
 
   Future<void> _refreshVault() async {
-    await ref
-        .read(digitalVaultProvider.notifier)
-        .fetchForStudent(search: _searchQuery);
+    await Future.wait([
+      ref
+          .read(digitalVaultProvider.notifier)
+          .fetchForStudent(search: _searchQuery),
+      ref
+          .read(dashboardProvider('student').notifier)
+          .fetchDashboardData(),
+    ]);
   }
 
   Widget _buildErrorPanel(String message) {

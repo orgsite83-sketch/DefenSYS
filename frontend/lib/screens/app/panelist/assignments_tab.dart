@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../../theme/defensys_tokens.dart';
 import 'panelist_models.dart';
@@ -6,17 +7,20 @@ import 'panelist_models.dart';
 class AssignmentsTab extends StatelessWidget {
   final List<TeamData> teams;
   final void Function(int teamIndex) onOpenGradeSheet;
+  final Future<void> Function()? onRefresh;
 
   const AssignmentsTab({
     super.key,
     required this.teams,
     required this.onOpenGradeSheet,
+    this.onRefresh,
   });
 
   @override
   Widget build(BuildContext context) {
+    final Widget content;
     if (teams.isEmpty) {
-      return ListView(
+      content = ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.all(16),
         children: [
@@ -47,21 +51,30 @@ class AssignmentsTab extends StatelessWidget {
           ),
         ],
       );
+    } else {
+      content = ListView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.all(16),
+        children: [
+          _sectionHeader('My Panel Assignments'),
+          const SizedBox(height: 12),
+          ...teams.asMap().entries.map((e) => _teamCard(e.key, e.value)),
+        ],
+      );
     }
 
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        _sectionHeader('My Panel Assignments'),
-        const SizedBox(height: 12),
-        ...teams.asMap().entries.map((e) => _teamCard(e.key, e.value)),
-      ],
+    if (onRefresh == null) return content;
+    return RefreshIndicator(
+      color: DefensysTokens.maroon,
+      onRefresh: onRefresh!,
+      child: content,
     );
   }
 
   Widget _teamCard(int index, TeamData t) {
     final isPosted = t.isPosted;
     final hasValidScope = t.hasValidScope;
+    final isLockedByDate = t.isLockedByDate;
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
@@ -82,7 +95,9 @@ class AssignmentsTab extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.bold),
         ),
         subtitle: Text(t.project, style: const TextStyle(fontSize: 12)),
-        trailing: _statusBadge(isPosted ? 'Posted' : 'Draft'),
+        trailing: isLockedByDate
+            ? _statusBadge('Scheduled')
+            : _statusBadge(isPosted ? 'Posted' : 'Draft'),
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
@@ -158,18 +173,24 @@ class AssignmentsTab extends StatelessWidget {
                   width: double.infinity,
                   child: ElevatedButton.icon(
                     icon: Icon(
-                      isPosted ? Icons.visibility : Icons.edit,
+                      isLockedByDate
+                          ? Icons.lock_outline
+                          : (isPosted ? Icons.visibility : Icons.edit),
                       size: 16,
                     ),
-                    label: Text(isPosted ? 'View Grades' : 'Open Grade Sheet'),
+                    label: Text(
+                      isLockedByDate
+                          ? 'Grading Locked until ${t.scheduledDate != null ? DateFormat('MMMM d, yyyy').format(t.scheduledDate!) : 'scheduled date'}'
+                          : (isPosted ? 'View Grades' : 'Open Grade Sheet'),
+                    ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: DefensysTokens.maroon,
+                      backgroundColor: isLockedByDate ? Colors.grey.shade400 : DefensysTokens.maroon,
                       foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
                     ),
-                    onPressed: hasValidScope
+                    onPressed: hasValidScope && !isLockedByDate
                         ? () => onOpenGradeSheet(index)
                         : null,
                   ),
@@ -184,29 +205,50 @@ class AssignmentsTab extends StatelessWidget {
 
   Widget _statusBadge(String label) {
     final isPosted = label == 'Posted';
+    final isScheduled = label == 'Scheduled';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: isPosted
             ? Colors.red.withValues(alpha: 0.1)
-            : Colors.blue.withValues(alpha: 0.1),
+            : isScheduled
+                ? Colors.orange.withValues(alpha: 0.1)
+                : Colors.blue.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: isPosted ? Colors.red : Colors.blue),
+        border: Border.all(
+          color: isPosted
+              ? Colors.red
+              : isScheduled
+                  ? Colors.orange
+                  : Colors.blue,
+        ),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           Icon(
-            isPosted ? Icons.lock : Icons.edit,
+            isPosted
+                ? Icons.lock
+                : isScheduled
+                    ? Icons.calendar_today
+                    : Icons.edit,
             size: 12,
-            color: isPosted ? Colors.red : Colors.blue,
+            color: isPosted
+                ? Colors.red
+                : isScheduled
+                    ? Colors.orange
+                    : Colors.blue,
           ),
           const SizedBox(width: 4),
           Text(
             label,
             style: TextStyle(
               fontSize: 11,
-              color: isPosted ? Colors.red : Colors.blue,
+              color: isPosted
+                  ? Colors.red
+                  : isScheduled
+                      ? Colors.orange
+                      : Colors.blue,
               fontWeight: FontWeight.bold,
             ),
           ),

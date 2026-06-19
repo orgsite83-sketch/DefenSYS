@@ -16,6 +16,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
   final int peerWeight;
   final List<Map<String, dynamic>> myPeerSubmissions;
   final VoidCallback? onPeerSubmitted;
+  final Future<void> Function()? onRefresh;
 
   const PeerEvalTab({
     super.key,
@@ -25,6 +26,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
     required this.peerCriteria,
     this.myPeerSubmissions = const [],
     this.onPeerSubmitted,
+    this.onRefresh,
     required this.studentId,
     required this.teamId,
     this.peerWeight = 20,
@@ -148,31 +150,55 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
   @override
   Widget build(BuildContext context) {
+    Widget refreshWrapper(Widget child) {
+      if (widget.onRefresh == null) return child;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return RefreshIndicator(
+            color: DefensysTokens.maroon,
+            onRefresh: widget.onRefresh!,
+            child: SingleChildScrollView(
+              physics: const AlwaysScrollableScrollPhysics(),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: constraints.maxHeight),
+                child: child,
+              ),
+            ),
+          );
+        },
+      );
+    }
+
     if (!widget.peerEvalAllowed) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.lock_clock, size: 64, color: Colors.grey.shade400),
-            const SizedBox(height: 16),
-            const Text('Peer evaluation is not yet open.',
-                style: TextStyle(color: Colors.grey, fontSize: 15)),
-            const SizedBox(height: 8),
-            const Text('Wait for your PIT Lead to enable it.',
-                style: TextStyle(color: Colors.grey, fontSize: 13)),
-          ],
+      return refreshWrapper(
+        Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.lock_clock, size: 64, color: Colors.grey.shade400),
+              const SizedBox(height: 16),
+              const Text('Peer evaluation is not yet open.',
+                  style: TextStyle(color: Colors.grey, fontSize: 15)),
+              const SizedBox(height: 8),
+              const Text('Wait for your PIT Lead to enable it.',
+                  style: TextStyle(color: Colors.grey, fontSize: 13)),
+            ],
+          ),
         ),
       );
     }
 
     if (widget.teammates.isEmpty) {
-      return const Center(
-        child: Text('No teammates found for peer evaluation.',
-            style: TextStyle(color: Colors.grey, fontSize: 14)),
+      return refreshWrapper(
+        const Center(
+          child: Text('No teammates found for peer evaluation.',
+              style: TextStyle(color: Colors.grey, fontSize: 14)),
+        ),
       );
     }
 
-    return SingleChildScrollView(
+    final mainContent = SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -206,6 +232,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           }),
         ],
       ),
+    );
+
+    if (widget.onRefresh == null) return mainContent;
+    return RefreshIndicator(
+      color: DefensysTokens.maroon,
+      onRefresh: widget.onRefresh!,
+      child: mainContent,
     );
   }
 
