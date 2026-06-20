@@ -438,16 +438,28 @@ def resolve_vault_file_template(
     name when *template* is empty.
     """
     template = (template or '').strip()
+    is_pit = team.is_pit if team else False
+
     if not template:
+        if is_pit:
+            return suggested_pit_file_name(team, team.year_level, semester_label, stage_label)
         return suggested_capstone_file_name(team, stage_label, semester_label)
 
     project = _project_slug(team.project_title if team else 'ProjectTitle')
     semester_key = _semester_key_from_label(semester_label)
 
-    resolved = template.replace('{year}', CAPSTONE_YEAR_PREFIX)
-    resolved = resolved.replace('{course}', CAPSTONE_DEFAULT_COURSE)
+    if is_pit:
+        prefix = PIT_PREFIX_BY_YEAR.get(team.year_level, '3rdYear')
+        course = _default_course_for_year(team.year_level)
+    else:
+        prefix = CAPSTONE_YEAR_PREFIX
+        course = CAPSTONE_DEFAULT_COURSE
+
+    resolved = template.replace('{year}', prefix)
+    resolved = resolved.replace('{course}', course)
     resolved = resolved.replace('{project}', project)
     resolved = resolved.replace('{stage}', _stage_slug(stage_label))
+    resolved = resolved.replace('{event}', _stage_slug(stage_label))
     resolved = resolved.replace('{deliverable}', _deliverable_slug(deliverable_label))
     resolved = resolved.replace('{semester}', semester_key)
 
@@ -614,13 +626,12 @@ def validate_capstone_file_name(file_name):
 
 def repository_scope(user):
     if is_admin(user):
-        capstone_open = capstone_upload_window_open()
         return {
             'scope': 'admin',
             'label': 'Admin repository audit',
             'pit_year_level': '',
             'can_upload_pit': False,
-            'can_upload_capstone': capstone_open,
+            'can_upload_capstone': False,
             'can_override': True,
             'can_export': True,
             'has_assigned_assistant': False,
@@ -628,13 +639,11 @@ def repository_scope(user):
     if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_pit_lead', False):
         pit_year = user.pit_lead_year or ''
         assistant_assigned = _has_assigned_repo_assistant(pit_year)
-        window_open = pit_upload_window_open(pit_year)
-        can_upload = bool(pit_year) and window_open and not assistant_assigned
         return {
             'scope': 'pit_lead',
             'label': 'PIT lead repository audit',
             'pit_year_level': pit_year,
-            'can_upload_pit': can_upload,
+            'can_upload_pit': False,
             'can_upload_capstone': False,
             'can_override': False,
             'can_export': True,
@@ -642,12 +651,11 @@ def repository_scope(user):
         }
     if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_repo_assistant', False):
         pit_year = getattr(user, 'repo_assistant_year', '') or ''
-        window_open = pit_upload_window_open(pit_year)
         return {
             'scope': 'repo_assistant',
             'label': 'Repository assistant PIT uploads',
             'pit_year_level': pit_year,
-            'can_upload_pit': bool(pit_year) and window_open,
+            'can_upload_pit': False,
             'can_upload_capstone': False,
             'can_override': False,
             'can_export': True,
@@ -766,21 +774,41 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         'include_ml': include_ml,
         'include_audit_trail': include_audit_trail,
     }
+    pit_submissions = list(pit_deliverable_queryset_for_scope(scope))
+    capstone_submissions = list(capstone_deliverable_queryset_for_scope(scope))
+
+    submission_keys = set()
+    for s in pit_submissions + capstone_submissions:
+        if s.team_id and s.stage_label and s.deliverable_type == DeliverableSubmission.TYPE_VAULT:
+            submission_keys.add((s.team_id, s.stage_label))
+
+    pit_legacy = []
+    for entry in pit_queryset_for_scope(scope):
+        if entry.team_id and entry.stage_label and (entry.team_id, entry.stage_label) in submission_keys:
+            continue
+        pit_legacy.append(entry)
+
+    capstone_legacy = []
+    for entry in capstone_vault_queryset_for_scope(scope):
+        if entry.team_id and entry.stage_label and (entry.team_id, entry.stage_label) in submission_keys:
+            continue
+        capstone_legacy.append(entry)
+
     entries = [
         pit_entry_payload(entry, **payload_kwargs)
-        for entry in pit_queryset_for_scope(scope)
+        for entry in pit_legacy
     ]
     entries.extend(
         capstone_vault_entry_payload(entry, **payload_kwargs)
-        for entry in capstone_vault_queryset_for_scope(scope)
+        for entry in capstone_legacy
     )
     entries.extend(
         capstone_entry_payload(submission, **payload_kwargs)
-        for submission in capstone_deliverable_queryset_for_scope(scope)
+        for submission in capstone_submissions
     )
     entries.extend(
         capstone_entry_payload(submission, **payload_kwargs)
-        for submission in pit_deliverable_queryset_for_scope(scope)
+        for submission in pit_submissions
     )
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True), scope
 

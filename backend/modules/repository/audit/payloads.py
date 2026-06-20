@@ -2,7 +2,6 @@ from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name, vault_unlocked
 from repository.entry_payloads import empty_ml_fields, ml_fields_from
 from repository.vault.models import VaultEntry
-from repository.vault.services import CAPSTONE_RESTRICTED_IDS
 
 from .trail import audit_trail
 
@@ -39,7 +38,7 @@ def _missing_capstone_entry(team, stage_label, definition, request=None):
         'status': status,
         'submission_kind': 'vault' if is_vault else 'pre',
         'deliverable_type': definition['type'],
-        'is_restricted_vault': definition['id'] in CAPSTONE_RESTRICTED_IDS,
+        'is_restricted_vault': definition.get('is_restricted', False),
         'vault_locked': locked,
         'is_missing': True,
         'uploaded_by': '',
@@ -146,6 +145,24 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     entry_type = VaultEntry.TYPE_PIT if is_pit else VaultEntry.TYPE_CAPSTONE
     entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
 
+    is_restricted_vault = False
+    if is_vault and team:
+        if is_pit:
+            from defense.scheduler.models import PitEventDeliverable
+            is_restricted_vault = PitEventDeliverable.objects.filter(
+                deliverable_id=submission.deliverable_id,
+                pit_event_config__semester=team.semester,
+                pit_event_config__event_name__iexact=submission.stage_label.strip(),
+                is_restricted=True
+            ).exists()
+        else:
+            from defense.stages.models import StageDeliverable
+            is_restricted_vault = StageDeliverable.objects.filter(
+                deliverable_id=submission.deliverable_id,
+                defense_stage__label=submission.stage_label,
+                is_restricted=True
+            ).exists()
+
     payload = {
         'id': entry_id,
         'source_id': submission.id,
@@ -168,7 +185,7 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
         'status': 'Vault Submission' if is_vault else 'Pre-Defense',
         'submission_kind': kind,
         'deliverable_type': submission.deliverable_type,
-        'is_restricted_vault': is_vault and submission.deliverable_id in CAPSTONE_RESTRICTED_IDS,
+        'is_restricted_vault': is_restricted_vault,
         'vault_locked': False,
         'is_missing': False,
         'uploaded_by': display_name(submission.uploaded_by) or 'System',

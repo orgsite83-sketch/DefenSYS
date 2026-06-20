@@ -101,6 +101,7 @@ def upsert_pit_event_config(
                 display_order = int(d.get('display_order', index))
                 vault_note = d.get('vault_note', '').strip()
                 vault_file_template = d.get('vault_file_template', '').strip()
+                is_restricted = bool(d.get('is_restricted', False))
                 
                 # Check client-provided deliverable_id (usually empty/generated)
                 provided_deliv_id = d.get('deliverable_id', '').strip()
@@ -115,6 +116,7 @@ def upsert_pit_event_config(
                         deliv.display_order = display_order
                         deliv.vault_note = vault_note
                         deliv.vault_file_template = vault_file_template
+                        deliv.is_restricted = is_restricted
                         
                         # Use provided ID if non-empty, otherwise fallback to database ID string
                         if provided_deliv_id:
@@ -133,6 +135,7 @@ def upsert_pit_event_config(
                         display_order=display_order,
                         vault_note=vault_note,
                         vault_file_template=vault_file_template,
+                        is_restricted=is_restricted,
                     )
                     # If deliverable_id is empty, use the stringified database primary key ID
                     if not deliv.deliverable_id:
@@ -154,6 +157,7 @@ def pit_event_config_payload(config):
             'display_order': d.display_order,
             'vault_note': d.vault_note,
             'vault_file_template': d.vault_file_template,
+            'is_restricted': d.is_restricted,
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
     ]

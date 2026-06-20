@@ -10,7 +10,7 @@ from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig, Sch
 from defense.stages.grading_config import get_or_create_stage_grading_config
 from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
-from repository.audit.services import repository_scope
+from repository.audit.services import repository_scope, pit_upload_window_open
 from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 from .models import GradeBreakdown, PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
 from .services import (
@@ -1007,7 +1007,8 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(self.pit_schedule.status, DefenseSchedule.STATUS_DONE)
         self.assertEqual(other_grade.status, TeamGrade.STATUS_PENDING)
         self.assertEqual(third_schedule.status, DefenseSchedule.STATUS_SCHEDULED)
-        self.assertTrue(repository_scope(self.pit_lead)['can_upload_pit'])
+        self.assertTrue(pit_upload_window_open(self.pit_lead.pit_lead_year, semester=self.semester))
+        self.assertFalse(repository_scope(self.pit_lead)['can_upload_pit'])
 
     def test_pit_lead_completion_without_assigned_year_grades_is_blocked(self):
         self._ensure_pit_event_config(event_name='PIT Expo Other Year', semester=self.semester)

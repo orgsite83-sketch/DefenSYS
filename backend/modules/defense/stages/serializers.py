@@ -15,6 +15,7 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'display_order',
             'vault_note',
             'vault_file_template',
+            'is_restricted',
         ]
 
 
@@ -132,6 +133,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 display_order=deliverable_data.get('display_order', 1),
                 vault_note=deliverable_data.get('vault_note', ''),
                 vault_file_template=deliverable_data.get('vault_file_template', ''),
+                is_restricted=bool(deliverable_data.get('is_restricted', False)),
             )
 
 

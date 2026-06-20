@@ -576,6 +576,7 @@ class _DefenseStageEditorScreenState
                             'display_order': _deliverables.length + 1,
                             'vault_note': '',
                             'vault_file_template': '',
+                            'is_restricted': false,
                           });
                         });
                         _markDirty();
@@ -756,6 +757,28 @@ class _DefenseStageEditorScreenState
             ],
           ),
           if (isVault) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Checkbox(
+                  value: item['is_restricted'] == true,
+                  onChanged: (v) {
+                    setState(() {
+                      item['is_restricted'] = v ?? false;
+                    });
+                    _markDirty();
+                  },
+                ),
+                const Text(
+                  'Restricted (Private in Vault)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.maroon,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: templateController,

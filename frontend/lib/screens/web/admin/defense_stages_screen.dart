@@ -1087,6 +1087,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     'display_order': deliverables.length + 1,
                                     'vault_note': '',
                                     'vault_file_template': '',
+                                    'is_restricted': false,
                                   });
                                 });
                               },
@@ -1371,6 +1372,27 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             ],
           ),
           if (isVault) ...[
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Checkbox(
+                  value: item['is_restricted'] == true,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      item['is_restricted'] = value ?? false;
+                    });
+                  },
+                ),
+                const Text(
+                  'Restricted (Private in Vault)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.maroon,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 12),
             TextField(
               controller: templateController,

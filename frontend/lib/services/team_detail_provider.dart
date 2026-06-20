@@ -25,6 +25,7 @@ class TeamDetailState {
   final List<String> stageOptions;
   final String? error;
   final String? message;
+  final List<Map<String, dynamic>> grades;
 
   const TeamDetailState({
     this.isLoading = false,
@@ -40,6 +41,7 @@ class TeamDetailState {
     this.stageOptions = const [],
     this.error,
     this.message,
+    this.grades = const [],
   });
 
   TeamDetailState copyWith({
@@ -59,6 +61,7 @@ class TeamDetailState {
     bool clearError = false,
     bool clearMessage = false,
     bool clearDeliverableTeam = false,
+    List<Map<String, dynamic>>? grades,
   }) {
     return TeamDetailState(
       isLoading: isLoading ?? this.isLoading,
@@ -76,6 +79,7 @@ class TeamDetailState {
       stageOptions: stageOptions ?? this.stageOptions,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
+      grades: grades ?? this.grades,
     );
   }
 }
@@ -132,7 +136,8 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
 
       final documents = await _fetchDocuments();
       final weeklyReports = await _fetchWeeklyReports();
-      final deliverableData = await _fetchDeliverableTeam();
+      final deliverableData = await _fetchDeliverableTeam(isCapstone);
+      final grades = await _fetchGrades();
 
       state = state.copyWith(
         isLoading: false,
@@ -145,6 +150,7 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
         weeklyReports: weeklyReports,
         deliverableTeam: deliverableData.$1,
         stageOptions: deliverableData.$2,
+        grades: grades,
       );
     } catch (e) {
       state = state.copyWith(isLoading: false, error: 'Connection error: $e');
@@ -249,10 +255,26 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
     return const [];
   }
 
-  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam() async {
+  Future<List<Map<String, dynamic>>> _fetchGrades() async {
     try {
       final response = await _client.get(
-        Uri.parse(ApiConfig.capstoneDeliverablesUrl),
+        Uri.parse('${ApiConfig.gradeCenterUrl}/?team_id=$_teamId'),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return _readMapList(payload['grades']);
+      }
+    } catch (_) {
+      // Empty on failure.
+    }
+    return const [];
+  }
+
+  Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(bool isCapstone) async {
+    try {
+      final scope = isCapstone ? 'capstone' : 'pit';
+      final response = await _client.get(
+        Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/?scope=$scope'),
       );
       if (response.statusCode != 200) {
         return (null, <String>[]);

@@ -113,8 +113,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           ],
           _buildVaultSummarySection(state),
           const SizedBox(height: 22),
-          _buildUploadQueueSection(state),
-          const SizedBox(height: 22),
           _repositoryTableCard(state),
         ],
       ),
@@ -441,24 +439,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (_can(state, 'can_upload_pit')) ...[
-              _secondaryButton(
-                icon: Icons.cloud_upload_outlined,
-                label: 'Upload PIT',
-                onTap: state.isSaving ? null : () => _showUploadDialog(state),
-              ),
-              const SizedBox(width: 12),
-            ],
-            if (_can(state, 'can_upload_capstone')) ...[
-              _secondaryButton(
-                icon: Icons.cloud_upload_outlined,
-                label: 'Upload Capstone',
-                onTap: state.isSaving
-                    ? null
-                    : () => _showCapstoneUploadDialog(state),
-              ),
-              const SizedBox(width: 12),
-            ],
             _primaryButton(
               icon: Icons.file_download_rounded,
               label: 'Export Vault Records',

@@ -712,6 +712,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'display_order': _deliverables.length + 1,
         'vault_note': '',
         'vault_file_template': '',
+        'is_restricted': false,
       });
       _labelControllers.add(TextEditingController(text: ''));
       _templateControllers.add(TextEditingController(text: ''));
@@ -1391,6 +1392,29 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   ],
                                 ),
                                 if (isVault) ...[
+                                  const SizedBox(height: 12),
+                                  Row(
+                                    children: [
+                                      Checkbox(
+                                        value: d['is_restricted'] == true,
+                                        activeColor: DefensysTokens.maroon,
+                                        onChanged: (val) {
+                                          setState(() {
+                                            d['is_restricted'] = val == true;
+                                          });
+                                        },
+                                      ),
+                                      const Text(
+                                        'Restricted (Private in Vault)',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w600,
+                                          fontFamily: DefensysTokens.fontFamily,
+                                          color: DefensysTokens.textPrimary,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
                                   const SizedBox(height: 12),
                                   Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,

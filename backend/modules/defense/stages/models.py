@@ -38,6 +38,10 @@ class StageDeliverable(models.Model):
         default='',
         help_text='Template for vault filename. Variables: {year}, {course}, {project}, {stage}, {deliverable}, {semester}',
     )
+    is_restricted = models.BooleanField(
+        default=False,
+        help_text='If checked, this post-defense deliverable will be hidden from the public Digital Vault.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

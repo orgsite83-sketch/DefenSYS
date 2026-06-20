@@ -329,12 +329,7 @@ class RepositoryAuditApiTests(APITestCase):
             {'files': upload_file},
             format='multipart',
         )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['created_count'], 1)
-        entry = VaultEntry.objects.get(entry_type=VaultEntry.TYPE_PIT, team=self.pit_team)
-        self.assertEqual(entry.pit_event_config_id, grade.pit_event_config_id)
-        grade.refresh_from_db()
-        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
+        self.assertEqual(response.status_code, 403)
 
     def test_upload_window_closed_for_other_year_only_event(self):
         panel = Rubric.objects.create(
@@ -395,7 +390,7 @@ class RepositoryAuditApiTests(APITestCase):
 
         self.assertIn(response.status_code, (400, 403))
 
-    def test_pit_upload_validates_filename_and_matches_team(self):
+    def test_pit_upload_is_forbidden(self):
         self._open_upload_window_for_pit_team()
         self.client.force_authenticate(user=self.pit_lead)
 
@@ -410,13 +405,7 @@ class RepositoryAuditApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['created_count'], 1)
-        self.assertEqual(len(response.data['skipped']), 1)
-        self.assertIn('bad-file.pdf', response.data['skipped'][0]['file_name'])
-        self.assertIn('format', response.data['skipped'][0]['reason'].lower())
-        entry = VaultEntry.objects.get(file_name='3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf')
-        self.assertEqual(entry.team, self.pit_team)
+        self.assertEqual(response.status_code, 403)
 
     def test_pit_lead_assigns_repository_assistant_and_revokes_previous(self):
         self.client.force_authenticate(user=self.pit_lead)
@@ -444,7 +433,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertFalse(other_assistant.is_repo_assistant)
         self.assertEqual(other_assistant.repo_assistant_year, '')
 
-    def test_multipart_pit_upload_stores_file_on_vault_entry(self):
+    def test_multipart_pit_upload_is_forbidden(self):
         self._open_upload_window_for_pit_team()
         pdf_bytes = b'%PDF-1.4 minimal test content'
         upload_file = SimpleUploadedFile(
@@ -463,18 +452,7 @@ class RepositoryAuditApiTests(APITestCase):
             format='multipart',
         )
 
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['created_count'], 1)
-        entry = VaultEntry.objects.get(
-            file_name='3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf',
-        )
-        self.assertTrue(entry.file)
-        self.assertTrue(entry.file.name)
-        self.assertTrue(
-            entry.file.name.startswith('vault_entries/pit/3rd-Year/'),
-            entry.file.name,
-        )
-        self.assertEqual(entry.status, VaultEntry.STATUS_APPROVED)
+        self.assertEqual(response.status_code, 403)
 
     def test_audit_search_matches_pdf_topics(self):
         VaultEntry.objects.filter(pk=self.pit_entry.pk).update(
@@ -489,7 +467,7 @@ class RepositoryAuditApiTests(APITestCase):
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn(self.pit_entry.file_name, file_names)
 
-    def test_assigned_assistant_can_upload_when_window_open(self):
+    def test_assigned_assistant_cannot_upload_when_window_open(self):
         self._open_upload_window_for_pit_team()
         self.client.force_authenticate(user=self.pit_lead)
         self.client.post(
@@ -502,7 +480,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.client.force_authenticate(user=self.repo_assistant_faculty)
         audit = self.client.get('/api/repository/audit/')
         self.assertEqual(audit.status_code, 200)
-        self.assertTrue(audit.data['scope']['can_upload_pit'])
+        self.assertFalse(audit.data['scope']['can_upload_pit'])
         self.assertEqual(audit.data['scope']['pit_year_level'], '3rd Year')
         self.assertEqual(audit.data['scope']['scope'], 'repo_assistant')
         self.assertEqual(audit.data['counts']['total'], 1)
@@ -514,8 +492,7 @@ class RepositoryAuditApiTests(APITestCase):
             {'file_names': ['3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf']},
             format='json',
         )
-        self.assertEqual(upload.status_code, 200)
-        self.assertEqual(upload.data['created_count'], 1)
+        self.assertEqual(upload.status_code, 403)
 
     def test_assigned_assistant_scope_excludes_other_year_queue_and_records(self):
         self._open_upload_window_for_pit_team()
@@ -653,14 +630,14 @@ class RepositoryAuditApiTests(APITestCase):
         response = self.client.get('/api/repository/audit/')
         self.assertEqual(response.status_code, 200)
         self.assertTrue(response.data['capstone_upload_window']['open'])
-        self.assertTrue(response.data['scope']['can_upload_capstone'])
+        self.assertFalse(response.data['scope']['can_upload_capstone'])
         self.assertEqual(len(response.data['capstone_upload_window']['queue']), 1)
         self.assertIn(
             'SecureVaultSearch',
             response.data['capstone_upload_window']['queue'][0]['suggested_file_name'],
         )
 
-    def test_capstone_upload_creates_vault_entry_without_publishing_grade(self):
+    def test_capstone_upload_is_forbidden(self):
         self._open_capstone_upload_window()
         self.client.force_authenticate(user=self.admin)
         file_name = '3rdYear.CAP301.SecureVaultSearch.1stSemester.pdf'
@@ -669,16 +646,7 @@ class RepositoryAuditApiTests(APITestCase):
             {'file_names': [file_name]},
             format='json',
         )
-        self.assertEqual(upload.status_code, 200)
-        self.assertEqual(upload.data['created_count'], 1)
-        entry = VaultEntry.objects.get(
-            entry_type=VaultEntry.TYPE_CAPSTONE,
-            file_name=file_name,
-        )
-        self.assertEqual(entry.team_id, self.capstone_team.id)
-        self.assertIsNotNone(entry.defense_stage_id)
-        grade = TeamGrade.objects.get(team=self.capstone_team, scope=TeamGrade.SCOPE_CAPSTONE)
-        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
+        self.assertEqual(upload.status_code, 403)
 
     def test_submission_kind_pre_excludes_vault(self):
         self.client.force_authenticate(user=self.admin)
@@ -972,10 +940,28 @@ class RepositoryAuditApiTests(APITestCase):
         config.vault_file_template = '{year}{course}{project}{semester}{event}'
         config.save()
 
-        # 3. Authenticate as PIT lead
-        self.client.force_authenticate(user=self.pit_lead)
+        # Configure the deliverable template for this PIT event
+        from defense.scheduler.models import PitEventDeliverable
+        PitEventDeliverable.objects.create(
+            pit_event_config=config,
+            deliverable_id='PIT_D1',
+            label='PIT Project Poster',
+            deliverable_type=PitEventDeliverable.TYPE_VAULT,
+            required=True,
+        )
 
-        # 4. Upload file with custom template filename format (no dots)
+        # Create student for the PIT team to resolve permissions
+        pit_student = User.objects.create_user(
+            username='pit-student-1',
+            password='pass12345',
+            role='student',
+        )
+        TeamMembership.objects.create(team=self.pit_team, student=pit_student, is_leader=True)
+
+        # 3. Authenticate as the PIT Student
+        self.client.force_authenticate(user=pit_student)
+
+        # 4. Upload file with custom template filename format
         # Expected filename is 3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf
         pdf_bytes = b'%PDF-1.4 custom template test'
         upload_file = SimpleUploadedFile(
@@ -985,24 +971,18 @@ class RepositoryAuditApiTests(APITestCase):
         )
 
         response = self.client.post(
-            '/api/repository/audit/upload-pit/',
+            '/api/repository/deliverables/upload/',
             {
-                'files': upload_file,
-                'year_level': '3rd Year',
+                'team_id': self.pit_team.id,
+                'stage_label': '3rd Year Expo',
+                'deliverable_id': 'PIT_D1',
+                'file_name': '3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf',
+                'file': upload_file,
             },
             format='multipart',
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['created_count'], 1)
-        self.assertEqual(len(response.data['skipped']), 0)
-        
-        # Verify it was successfully saved and matched to self.pit_team
-        entry = VaultEntry.objects.get(
-            file_name='3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf',
-        )
-        self.assertEqual(entry.team, self.pit_team)
-        self.assertEqual(entry.year_level, '3rd Year')
-        self.assertEqual(entry.course_code, 'PIT301')
-        self.assertEqual(entry.semester_label, '1st Semester')
+        submission = DeliverableSubmission.objects.get(deliverable_id='PIT_D1')
+        self.assertEqual(submission.file_name, '3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf')
 

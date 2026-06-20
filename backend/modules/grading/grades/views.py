@@ -78,6 +78,10 @@ def filter_grade_queryset(request, queryset):
     if status_filter:
         queryset = queryset.filter(status=status_filter)
 
+    team_id = request.query_params.get('team_id', '').strip()
+    if team_id:
+        queryset = queryset.filter(team_id=team_id)
+
     if 'scope' not in request.query_params:
         if _is_grade_center_admin(request.user):
             queryset = queryset.filter(scope=TeamGrade.SCOPE_CAPSTONE)

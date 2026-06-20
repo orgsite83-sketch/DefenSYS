@@ -64,6 +64,7 @@ def get_deliverable_definitions(stage_label):
                 'type': d.deliverable_type,
                 'vault_note': d.vault_note,
                 'vault_file_template': d.vault_file_template,
+                'is_restricted': d.is_restricted,
             }
             for d in deliverables
             if (d.deliverable_id or '').strip()
@@ -95,6 +96,7 @@ def get_deliverable_definitions_for_team(team, stage_label):
             'type': d.deliverable_type,
             'vault_note': d.vault_note,
             'vault_file_template': d.vault_file_template,
+            'is_restricted': d.is_restricted,
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
         if (d.deliverable_id or '').strip()
@@ -390,6 +392,63 @@ def team_payload(team, selected_stage=None):
         (item for item in stages if item['stage_label'] == selected),
         stage_payload(team, selected) if selected else stage_payload(team, ''),
     )
+
+    # Fetch team members list
+    members = [
+        {
+            'id': membership.student.id,
+            'username': membership.student.username,
+            'name': display_name(membership.student),
+            'role': 'leader' if team.leader == membership.student else 'member'
+        }
+        for membership in team.memberships.all()
+    ]
+
+    # Fetch grading details if TeamGrade exists for the selected stage
+    from grading.grades.models import TeamGrade, StudentPeerGrade
+
+    grade_payload = None
+    if selected:
+        if team.is_capstone:
+            grade_obj = TeamGrade.objects.filter(
+                team=team,
+                semester=team.semester,
+                scope=TeamGrade.SCOPE_CAPSTONE,
+                defense_stage__label=selected
+            ).first()
+        else:
+            grade_obj = TeamGrade.objects.filter(
+                team=team,
+                semester=team.semester,
+                scope=TeamGrade.SCOPE_PIT,
+                pit_event_config__event_name=selected
+            ).first()
+
+        if grade_obj:
+            peer_member_grades = StudentPeerGrade.objects.filter(team_grade=grade_obj)
+            peer_per_student = [
+                {
+                    'student_id': spg.student.id,
+                    'username': spg.student.username,
+                    'student_name': display_name(spg.student),
+                    'average_score': float(spg.average_score) if spg.average_score is not None else None,
+                    'max_score': float(spg.max_score) if spg.max_score is not None else 5.0,
+                    'normalized_score': float(spg.normalized_score) if spg.normalized_score is not None else None,
+                }
+                for spg in peer_member_grades
+            ]
+
+            grade_payload = {
+                'id': grade_obj.id,
+                'panel_score': float(grade_obj.panel_score) if grade_obj.panel_score is not None else None,
+                'peer_score': float(grade_obj.peer_score) if grade_obj.peer_score is not None else None,
+                'adviser_score': float(grade_obj.adviser_score) if grade_obj.adviser_score is not None else None,
+                'final_grade': float(grade_obj.final_grade) if grade_obj.final_grade is not None else None,
+                'status': grade_obj.status,
+                'result': grade_obj.result,
+                'peer_per_student': peer_per_student,
+            }
+
     return {
         'id': team.id,
         'name': team.name,
@@ -406,6 +465,8 @@ def team_payload(team, selected_stage=None):
         'leader_name': display_name(team.leader),
         'member_count': team.memberships.count(),
         'submitted_count': team.deliverable_submissions.count(),
+        'members': members,
+        'grade': grade_payload,
     }
 
 
@@ -458,6 +519,21 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             raise ValidationError({'file_name': f"Filename must match the naming convention exactly. Expected: '{suggested}'"})
 
 
+    existing = DeliverableSubmission.objects.filter(
+        team=team,
+        stage_label=stage_label,
+        deliverable_id=deliverable_id,
+    ).first()
+
+    target_file_name = file_name
+    if existing and existing.file and file is not None:
+        import os
+        target_file_name = os.path.basename(existing.file.name)
+        try:
+            existing.file.delete(save=False)
+        except Exception:
+            pass
+
     defaults = {
         'label': definition['label'],
         'deliverable_type': definition['type'],
@@ -471,9 +547,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     
     if file is not None:
         from django.core.files.base import ContentFile
-
-        uploaded_name = getattr(file, 'name', None) or file_name
-        defaults['file'] = ContentFile(file.read(), name=uploaded_name)
+        defaults['file'] = ContentFile(file.read(), name=target_file_name)
 
     submission, _ = DeliverableSubmission.objects.update_or_create(
         team=team,

@@ -90,77 +90,110 @@ class _TeamDeliverablesScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(capstoneDeliverablesProvider);
 
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables'),
-        actions: [
-          IconButton(
-            tooltip: 'Refresh',
-            onPressed: state.isSaving
-                ? null
-                : () => ref
-                      .read(capstoneDeliverablesProvider.notifier)
-                      .fetchDeliverables(),
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: RefreshIndicator(
-        onRefresh: () =>
-            ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(24),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 1220),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildHeader(state),
-                  const SizedBox(height: 20),
-                  _buildStats(state),
-                  if (state.error != null) ...[
-                    const SizedBox(height: 12),
-                    _notice(
-                      Icons.error_outline,
-                      state.error!,
-                      AppColors.danger,
-                    ),
-                  ],
-                  if (state.message != null) ...[
-                    const SizedBox(height: 12),
-                    _notice(
-                      Icons.check_circle_outline,
-                      state.message!,
-                      AppColors.success,
-                    ),
-                  ],
-                  const SizedBox(height: 20),
-                  _buildToolbar(state),
-                  if (_stageNotConfigured(state)) ...[
-                    const SizedBox(height: 12),
-                    _notice(
-                      Icons.info_outline,
-                      state.scope == 'pit'
-                          ? 'No deliverables configured for ${state.selectedStage}. '
-                            'Add them in PIT Event Settings.'
-                          : 'No deliverables configured for ${state.selectedStage}. '
-                            'Add them in Defense Stages so Required progress can be tracked.',
-                      AppColors.gold,
-                    ),
-                  ],
-                  const SizedBox(height: 16),
-                  if (state.isLoading)
-                    const Center(
-                      child: Padding(
-                        padding: EdgeInsets.all(32),
-                        child: CircularProgressIndicator(),
+    return DefaultTabController(
+      length: 2,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables'),
+          actions: [
+            IconButton(
+              tooltip: 'Refresh',
+              onPressed: state.isSaving
+                  ? null
+                  : () => ref
+                        .read(capstoneDeliverablesProvider.notifier)
+                        .fetchDeliverables(),
+              icon: const Icon(Icons.refresh),
+            ),
+          ],
+        ),
+        body: RefreshIndicator(
+          onRefresh: () =>
+              ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+          child: SingleChildScrollView(
+            physics: const AlwaysScrollableScrollPhysics(),
+            padding: const EdgeInsets.all(24),
+            child: Center(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 1220),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildHeader(state),
+                    const SizedBox(height: 20),
+                    _buildStats(state),
+                    if (state.error != null) ...[
+                      const SizedBox(height: 12),
+                      _notice(
+                        Icons.error_outline,
+                        state.error!,
+                        AppColors.danger,
                       ),
-                    )
-                  else
-                    _buildTeamList(state),
-                ],
+                    ],
+                    if (state.message != null) ...[
+                      const SizedBox(height: 12),
+                      _notice(
+                        Icons.check_circle_outline,
+                        state.message!,
+                        AppColors.success,
+                      ),
+                    ],
+                    const SizedBox(height: 20),
+                    TabBar(
+                      labelColor: AppColors.maroon,
+                      unselectedLabelColor: AppColors.textSecondary,
+                      indicatorColor: AppColors.maroon,
+                      tabs: const [
+                        Tab(text: 'Deliverables'),
+                        Tab(text: 'Teams & Grades'),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    Consumer(
+                      builder: (context, ref, _) {
+                        final tabController = DefaultTabController.of(context);
+                        return AnimatedBuilder(
+                          animation: tabController,
+                          builder: (context, _) {
+                            final index = tabController.index;
+                            if (index == 0) {
+                              return Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  _buildToolbar(state),
+                                  if (_stageNotConfigured(state)) ...[
+                                    const SizedBox(height: 12),
+                                    _notice(
+                                      Icons.info_outline,
+                                      state.scope == 'pit'
+                                          ? 'No deliverables configured for ${state.selectedStage}. '
+                                            'Add them in PIT Event Settings.'
+                                          : 'No deliverables configured for ${state.selectedStage}. '
+                                            'Add them in Defense Stages so Required progress can be tracked.',
+                                      AppColors.gold,
+                                    ),
+                                  ],
+                                  const SizedBox(height: 16),
+                                  if (state.isLoading)
+                                    const Center(
+                                      child: Padding(
+                                        padding: EdgeInsets.all(32),
+                                        child: CircularProgressIndicator(),
+                                      ),
+                                    )
+                                  else
+                                    _buildTeamList(state),
+                                ],
+                              );
+                            } else {
+                              return _buildTeamsAndGradesTab(state);
+                            }
+                          },
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -2549,6 +2582,459 @@ class _TeamDeliverablesScreenState
     } catch (e) {
       rethrow;
     }
+  }
+
+  Widget _buildTeamsAndGradesTab(CapstoneDeliverablesState state) {
+    if (state.teams.isEmpty) {
+      final emptyTitle = state.scope == 'pit' ? 'No PIT teams found' : 'No Capstone teams found';
+      return Card(
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(34),
+          child: Column(
+            children: [
+              const Icon(Icons.folder_open_outlined, size: 42, color: AppColors.textSecondary),
+              const SizedBox(height: 10),
+              Text(emptyTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final totalTeams = state.teams.length;
+    final publishedTeamsCount = state.teams.where((team) {
+      final grade = team['grade'] as Map?;
+      return grade != null && grade['status'] == 'published';
+    }).length;
+    final pendingCount = totalTeams - publishedTeamsCount;
+    final completionRate = totalTeams > 0 ? (publishedTeamsCount / totalTeams * 100).round() : 0;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(
+          spacing: 14,
+          runSpacing: 14,
+          children: [
+            _stat(
+              'Total Teams',
+              totalTeams,
+              Icons.groups_2_outlined,
+              AppColors.maroon,
+            ),
+            _stat(
+              'Published Grades',
+              publishedTeamsCount,
+              Icons.verified_outlined,
+              AppColors.success,
+            ),
+            _stat(
+              'Awaiting Publication',
+              pendingCount,
+              Icons.warning_amber_outlined,
+              AppColors.warning,
+            ),
+            _stat(
+              'Completion Rate',
+              completionRate,
+              Icons.donut_large_outlined,
+              Colors.blue,
+            ),
+          ],
+        ),
+        const SizedBox(height: 24),
+        ...state.teams.map((team) => _teamGradeCard(state, team)),
+      ],
+    );
+  }
+
+  Widget _teamGradeCard(CapstoneDeliverablesState state, Map<String, dynamic> team) {
+    final grade = team['grade'] != null ? Map<String, dynamic>.from(team['grade'] as Map) : null;
+    final status = grade?['status']?.toString() ?? 'pending';
+
+    final panelScore = grade?['panel_score'];
+    final peerScore = grade?['peer_score'];
+    final adviserScore = grade?['adviser_score'];
+    final finalGrade = grade?['final_grade'];
+    final result = grade?['result']?.toString() ?? 'pending';
+
+    Color statusBg = const Color(0xFFFEF3C7);
+    Color statusText = const Color(0xFFD97706);
+    String statusLabel = 'Pending';
+
+    if (status == 'published') {
+      statusBg = const Color(0xFFD1FAE5);
+      statusText = const Color(0xFF047857);
+      statusLabel = 'Published';
+    } else if (status == 'awaiting_peers') {
+      statusBg = const Color(0xFFDBEAFE);
+      statusText = const Color(0xFF2563EB);
+      statusLabel = 'Awaiting Peers';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: ExpansionTile(
+        key: PageStorageKey<String>('grade_${team['id']}'),
+        title: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    team['name']?.toString() ?? '',
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    team['project_title']?.toString() ?? '',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.textSecondary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                statusLabel,
+                style: TextStyle(
+                  color: statusText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        subtitle: Padding(
+          padding: const EdgeInsets.only(top: 12, bottom: 8),
+          child: Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              _gradeBadge('Panel', panelScore),
+              _gradeBadge('Peer', peerScore),
+              if (state.scope == 'capstone') _gradeBadge('Adviser', adviserScore),
+              _overallGradeBadge(finalGrade, result),
+            ],
+          ),
+        ),
+        children: [
+          Container(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const SizedBox(height: 12),
+                const Text(
+                  'TEAM ROSTER & INDIVIDUAL PEER GRADES',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textSecondary,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                _buildRosterAndIndividualGrades(team, grade),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _gradeBadge(String label, dynamic score) {
+    final hasScore = score != null;
+    final valueText = hasScore ? (score as num).toStringAsFixed(2) : 'Pending';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      decoration: BoxDecoration(
+        color: hasScore ? const Color(0xFFF3F4F6) : const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: hasScore ? const Color(0xFFE5E7EB) : const Color(0xFFFDE68A),
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$label: ',
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+            ),
+          ),
+          Text(
+            valueText,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: hasScore ? AppColors.textPrimary : const Color(0xFFB45309),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overallGradeBadge(dynamic score, String result) {
+    final hasScore = score != null;
+    final valueText = hasScore ? (score as num).toStringAsFixed(2) : 'Pending';
+
+    Color bg = const Color(0xFFF3F4F6);
+    Color border = const Color(0xFFE5E7EB);
+    Color text = AppColors.textPrimary;
+
+    if (hasScore) {
+      if (result == 'passed') {
+        bg = const Color(0xFFECFDF5);
+        border = const Color(0xFFA7F3D0);
+        text = const Color(0xFF047857);
+      } else {
+        bg = const Color(0xFFFEF2F2);
+        border = const Color(0xFFFCA5A5);
+        text = const Color(0xFFB91C1C);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: border),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Text(
+            'Overall Grade: ',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: AppColors.textPrimary,
+            ),
+          ),
+          Text(
+            valueText,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+              color: text,
+            ),
+          ),
+          if (hasScore) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              decoration: BoxDecoration(
+                color: result == 'passed' ? const Color(0xFFD1FAE5) : const Color(0xFFFEE2E2),
+                borderRadius: BorderRadius.circular(4),
+              ),
+              child: Text(
+                result == 'passed' ? 'PASSED' : 'FAILED',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: result == 'passed' ? const Color(0xFF065F46) : const Color(0xFF991B1B),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dynamic>? grade) {
+    final List<dynamic> members = team['members'] as List? ?? [];
+    final List<dynamic> peerGrades = grade?['peer_per_student'] as List? ?? [];
+
+    if (members.isEmpty) {
+      return const Text(
+        'No members assigned to this team.',
+        style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+      );
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF3F4F6)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: members.length,
+        separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
+        itemBuilder: (context, index) {
+          final member = Map<String, dynamic>.from(members[index] as Map);
+          final studentId = member['id'];
+          final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
+          final role = member['role']?.toString() ?? 'member';
+          final isLeader = role == 'leader';
+
+          final peerDetails = peerGrades.firstWhere(
+            (g) => g['student_id'] == studentId,
+            orElse: () => null,
+          );
+
+          final double? avgScore = peerDetails?['average_score'] != null
+              ? (peerDetails!['average_score'] as num).toDouble()
+              : null;
+          final double maxScore = peerDetails?['max_score'] != null
+              ? (peerDetails!['max_score'] as num).toDouble()
+              : 5.0;
+          final double? normScore = peerDetails?['normalized_score'] != null
+              ? (peerDetails!['normalized_score'] as num).toDouble()
+              : null;
+
+          final parts = name.split(' ');
+          final initials = parts.isNotEmpty
+              ? (parts.first.isNotEmpty ? parts.first[0] : '') +
+                  (parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '')
+              : '';
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                CircleAvatar(
+                  radius: 18,
+                  backgroundColor: AppColors.maroon.withValues(alpha: 0.1),
+                  child: Text(
+                    initials.toUpperCase(),
+                    style: const TextStyle(
+                      color: AppColors.maroon,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (isLeader) ...[
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.gold.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: const Text(
+                                'Leader',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: AppColors.gold,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        member['username']?.toString() ?? '',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  flex: 2,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          if (avgScore != null) ...[
+                            Text(
+                              'Peer Score: ${avgScore.toStringAsFixed(2)} / ${maxScore.toStringAsFixed(0)}',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Normalized: ${normScore?.toStringAsFixed(2)}%',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                color: AppColors.textSecondary,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ] else ...[
+                            const Text(
+                              'Peer Score: Pending',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.textSecondary,
+                                fontStyle: FontStyle.italic,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
   }
 
   int _asInt(dynamic value) {

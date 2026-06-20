@@ -7,6 +7,7 @@ import '../../../services/team_detail_provider.dart';
 import '../../../utils/pdf_viewer.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
+import 'grade_center_shared.dart';
 
 class TeamDetailPage extends ConsumerStatefulWidget {
   const TeamDetailPage({
@@ -30,8 +31,7 @@ class TeamDetailPage extends ConsumerStatefulWidget {
   ConsumerState<TeamDetailPage> createState() => _TeamDetailPageState();
 }
 
-class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
-    with SingleTickerProviderStateMixin {
+class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   static const _ink = DefensysUi.textDark;
   static const _muted = DefensysUi.steelGrey;
   static const _maroon = DefensysUi.primaryMaroon;
@@ -39,10 +39,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
   static const _red = Color(0xFFDC2626);
   static const _line = Color(0xFFE5E7EB);
 
-  late final TabController _tabController;
-
   final _nameController = TextEditingController();
   final _projectTitleController = TextEditingController();
+  final _sectionController = TextEditingController();
 
   String _status = 'Pending';
   int? _adviserId;
@@ -56,7 +55,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(teamDetailProvider(widget.teamId).notifier).load();
     });
@@ -64,15 +62,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
 
   @override
   void dispose() {
-    _tabController.dispose();
     _nameController.dispose();
     _projectTitleController.dispose();
+    _sectionController.dispose();
     super.dispose();
   }
 
   void _syncFormFromTeam(Map<String, dynamic> team, List<String> statuses) {
     _nameController.text = team['name']?.toString() ?? '';
     _projectTitleController.text = team['project_title']?.toString() ?? '';
+    _sectionController.text = team['section']?.toString() ?? '';
     _status = team['status']?.toString() ?? 'Pending';
     if (!statuses.contains(_status) && statuses.isNotEmpty) {
       _status = statuses.first;
@@ -138,43 +137,58 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
       }
     });
 
-    return Padding(
-      padding: DefensysUi.contentPadding,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(team),
-          if (detailState.error != null) ...[
-            const SizedBox(height: 12),
-            Text(detailState.error!, style: const TextStyle(color: _red)),
-          ],
-          const SizedBox(height: 16),
-          TabBar(
-            controller: _tabController,
-            labelColor: _maroon,
-            unselectedLabelColor: _muted,
-            indicatorColor: _maroon,
-            isScrollable: true,
-            tabs: const [
-              Tab(text: 'Overview'),
-              Tab(text: 'Weekly Reports'),
-              Tab(text: 'Deliverables'),
-              Tab(text: 'Team Documents'),
+    final level = team['level']?.toString() ?? '';
+    final isCapstone = level.toUpperCase().contains('CAPSTONE');
+    final tabCount = isCapstone ? 4 : 3;
+
+    return DefaultTabController(
+      length: tabCount,
+      child: Padding(
+        padding: DefensysUi.contentPadding,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _buildHeader(team),
+            if (detailState.error != null) ...[
+              const SizedBox(height: 12),
+              Text(detailState.error!, style: const TextStyle(color: _red)),
             ],
-          ),
-          const SizedBox(height: 16),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                _buildOverviewTab(detailState, team),
-                _buildWeeklyReportsTab(detailState),
-                _buildDeliverablesTab(detailState, stageOptions),
-                _buildDocumentsTab(detailState),
+            const SizedBox(height: 16),
+            TabBar(
+              labelColor: _maroon,
+              unselectedLabelColor: _muted,
+              indicatorColor: _maroon,
+              isScrollable: true,
+              tabs: [
+                const Tab(text: 'Overview'),
+                if (isCapstone) ...[
+                  const Tab(text: 'Weekly Reports'),
+                  const Tab(text: 'Deliverables'),
+                  const Tab(text: 'Team Documents'),
+                ] else ...[
+                  const Tab(text: 'Grades & Events'),
+                  const Tab(text: 'Deliverables'),
+                ],
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Expanded(
+              child: TabBarView(
+                children: [
+                  _buildOverviewTab(detailState, team),
+                  if (isCapstone) ...[
+                    _buildWeeklyReportsTab(detailState),
+                    _buildDeliverablesTab(detailState, stageOptions),
+                    _buildDocumentsTab(detailState),
+                  ] else ...[
+                    _buildGradesTab(detailState),
+                    _buildDeliverablesTab(detailState, stageOptions),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -321,6 +335,14 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
               const SizedBox(height: 16),
               _adviserHistorySection(detailState.adviserHistory),
             ],
+            if (!isCapstone) ...[
+              const SizedBox(height: 12),
+              _readOnlyField('Section', team['section']?.toString() ?? '—'),
+              const SizedBox(height: 12),
+              _readOnlyField('System Name', team['system_name']?.toString() ?? '—'),
+              const SizedBox(height: 12),
+              _readOnlyField('Project Manager', team['project_manager_name']?.toString() ?? '—'),
+            ],
             const SizedBox(height: 16),
             Text(
               'Members (${members.length}/4)',
@@ -459,6 +481,13 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
                   .toList(),
               onChanged: (value) => setState(() => _status = value ?? _status),
             ),
+            if (!isCapstone) ...[
+              const SizedBox(height: 12),
+              TextField(
+                controller: _sectionController,
+                decoration: const InputDecoration(labelText: 'Section'),
+              ),
+            ],
             if (!widget.isPitLead && isCapstone) ...[
               const SizedBox(height: 12),
               DropdownButtonFormField<int?>(
@@ -652,14 +681,18 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     TeamDetailState detailState,
     List<String> stageOptions,
   ) {
+    final level = detailState.team?['level']?.toString() ?? '';
+    final isCapstone = level.toUpperCase().contains('CAPSTONE');
     final deliverableTeam = detailState.deliverableTeam;
     if (deliverableTeam == null) {
       return _emptyTab(
-        'No capstone deliverable record for this team (non-capstone or not loaded).',
+        isCapstone
+            ? 'No capstone deliverable record for this team (non-capstone or not loaded).'
+            : 'No deliverables record for this team.',
       );
     }
     if (stageOptions.isEmpty) {
-      return _emptyTab('No defense stages configured yet.');
+      return _emptyTab(isCapstone ? 'No defense stages configured yet.' : 'No PIT events configured yet.');
     }
 
     final stages = (deliverableTeam['stages'] as List? ?? const [])
@@ -1042,6 +1075,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
       'member_ids': _selectedMembers.toList(),
       'adviser_id': adviserId,
       'status': _status,
+      'section': _sectionController.text.trim(),
       if (adviserChangeReason != null && adviserChangeReason.isNotEmpty)
         'adviser_change_reason': adviserChangeReason,
     };
@@ -1253,5 +1287,244 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage>
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  Widget _buildGradesTab(TeamDetailState detailState) {
+    final grades = detailState.grades;
+    if (grades.isEmpty) {
+      return _emptyTab('No grades or evaluation events recorded yet.');
+    }
+
+    return ListView.separated(
+      itemCount: grades.length,
+      separatorBuilder: (context, index) => const SizedBox(height: 24),
+      itemBuilder: (context, index) {
+        final grade = grades[index];
+        final breakdowns = parseBreakdowns(grade);
+        final peerGrades = parsePeerPerStudent(grade);
+
+        final panelBreakdowns = breakdowns.where((b) => b['evaluation_type'] == 'panel').toList();
+        final peerBreakdowns = breakdowns.where((b) => b['evaluation_type'] == 'peer').toList();
+
+        final finalScore = asDouble(grade['final_grade']);
+
+        return Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Event Name & Status Chip
+              Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          grade['stage_label']?.toString() ?? 'Grade Evaluation',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: _maroon,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'Formula: Panel ${weightText(grade, 'panel')}% + Peer ${weightText(grade, 'peer')}% = Final Grade',
+                          style: const TextStyle(color: _muted, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  ),
+                  gradeStatusChipWidget(grade),
+                ],
+              ),
+              const SizedBox(height: 20),
+              const Divider(color: _line),
+              const SizedBox(height: 16),
+
+              // KPI / Scores Overview Row
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildScoreStatCard(
+                      title: 'Final Grade',
+                      value: finalScore == null ? '--' : finalScore.toStringAsFixed(2),
+                      color: finalScore == null
+                          ? _muted
+                          : finalScore >= 75
+                              ? const Color(0xFF10B981)
+                              : _red,
+                      isBold: true,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildScoreStatCard(
+                      title: 'Panel Score (${weightText(grade, 'panel')}%)',
+                      value: scoreInput(grade['panel_score']).isEmpty
+                          ? 'Pending'
+                          : scoreInput(grade['panel_score']),
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _buildScoreStatCard(
+                      title: 'Peer Score (${weightText(grade, 'peer')}%)',
+                      value: scoreInput(grade['peer_score']).isEmpty
+                          ? 'Pending'
+                          : scoreInput(grade['peer_score']),
+                      color: _ink,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+
+              // Peer Scores Per Student
+              if (peerGrades.isNotEmpty) ...[
+                const Text(
+                  'Peer Scores per Student',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _ink,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _line),
+                  ),
+                  child: Column(
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              flex: 2,
+                              child: Text('STUDENT', style: DefensysUi.tableHeader),
+                            ),
+                            Expanded(
+                              child: Text('AVERAGE', style: DefensysUi.tableHeader, textAlign: TextAlign.right),
+                            ),
+                            Expanded(
+                              child: Text('PEER GRADE', style: DefensysUi.tableHeader, textAlign: TextAlign.right),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Divider(height: 1, color: _line),
+                      ...peerGrades.map((pg) {
+                        final avg = asDouble(pg['average_score']);
+                        final norm = asDouble(pg['normalized_score']);
+                        final maxS = asDouble(pg['max_score']) ?? 10.0;
+                        return Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                flex: 2,
+                                child: Text(
+                                  '${pg['student_name']} (${pg['username']})',
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13.5),
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  avg == null ? '—' : '${avg.toStringAsFixed(2)} / ${maxS.toStringAsFixed(0)}',
+                                  style: DefensysUi.tableCell,
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                              Expanded(
+                                child: Text(
+                                  norm == null ? 'Pending' : norm.toStringAsFixed(2),
+                                  style: TextStyle(
+                                    fontSize: 13.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: norm == null ? _muted : _ink,
+                                  ),
+                                  textAlign: TextAlign.right,
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 24),
+              ],
+
+              // Criterion Breakdowns
+              if (panelBreakdowns.isNotEmpty || peerBreakdowns.isNotEmpty) ...[
+                const Text(
+                  'Criterion Score Breakdowns',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                    color: _ink,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (panelBreakdowns.isNotEmpty)
+                  breakdownSectionWidget('panel', panelBreakdowns),
+                if (peerBreakdowns.isNotEmpty)
+                  breakdownSectionWidget('peer', peerBreakdowns),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildScoreStatCard({
+    required String title,
+    required String value,
+    required Color color,
+    bool isBold = false,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: _muted,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            value,
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: isBold ? FontWeight.w900 : FontWeight.w800,
+              color: color,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }

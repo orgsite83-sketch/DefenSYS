@@ -1037,6 +1037,66 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertIn(pit_team_assigned.id, team_ids)
         self.assertNotIn(pit_team_other.id, team_ids)
 
+    def test_review_submission_validation_error_returns_400(self):
+        sub = DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='Concept Proposal',
+            deliverable_id='D1',
+            label='System Concept',
+            deliverable_type=DeliverableSubmission.TYPE_PRE,
+            file_name='test.pdf',
+            uploaded_by=self.admin,
+            status=DeliverableSubmission.STATUS_PENDING,
+        )
+        from unittest.mock import patch
+        from django.core.exceptions import ValidationError
+        with patch.object(DeliverableSubmission, 'save', side_effect=ValidationError('Naming convention violation')):
+            response = self.client.post(
+                '/api/repository/deliverables/review/',
+                {
+                    'team_id': self.team.id,
+                    'stage_label': 'Concept Proposal',
+                    'deliverable_id': 'D1',
+                    'status': DeliverableSubmission.STATUS_ACCEPTED,
+                    'feedback': 'Good',
+                },
+                format='json',
+            )
+            self.assertEqual(response.status_code, 400)
+            self.assertIn('Naming convention violation', response.data['detail'])
+
+    def test_replacement_deletes_old_file_and_avoids_suffixing(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        pdf1 = SimpleUploadedFile('doc.pdf', b'content1', content_type='application/pdf')
+        pdf2 = SimpleUploadedFile('doc.pdf', b'content2', content_type='application/pdf')
+        
+        sub1 = upsert_submission(
+            self.team,
+            'Concept Proposal',
+            'D1',
+            'doc.pdf',
+            '8 bytes',
+            self.student,
+            file=pdf1
+        )
+        file_path_1 = sub1.file.name
+        
+        sub2 = upsert_submission(
+            self.team,
+            'Concept Proposal',
+            'D1',
+            'doc.pdf',
+            '8 bytes',
+            self.student,
+            file=pdf2
+        )
+        file_path_2 = sub2.file.name
+        
+        # Verify that the new file took the exact same path instead of suffixing with _1
+        self.assertEqual(file_path_1, file_path_2)
+        from django.core.files.storage import default_storage
+        self.assertTrue(default_storage.exists(file_path_2))
+
 
 
 

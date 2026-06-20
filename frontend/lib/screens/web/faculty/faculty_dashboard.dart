@@ -750,6 +750,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'deliverables',
           ),
+          _buildSidebarItem(
+            icon: Icons.groups_outlined,
+            label: 'PIT Teams',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('student_teams'),
+            ),
+            isActive: _activeSection == 'student_teams',
+          ),
         ];
       case FacultyWorkspace.repoAssistant:
         return [
@@ -990,9 +999,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: const PitStudentImportScreen(),
         );
       case 'student_teams':
+        final ws = _resolvedWorkspace(roles);
+        final mode = ws == FacultyWorkspace.pitInstructor
+            ? TeamListMode.pitInstructor
+            : TeamListMode.pitLead;
         return Container(
           color: Colors.white,
-          child: const StudentTeamsScreen(mode: TeamListMode.pitLead),
+          child: StudentTeamsScreen(mode: mode),
         );
       case 'pit_events':
         return Container(

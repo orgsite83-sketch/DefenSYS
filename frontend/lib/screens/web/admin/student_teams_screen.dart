@@ -46,6 +46,9 @@ enum TeamListMode {
 
   /// Faculty PIT Lead workspace: PIT teams for assigned year only.
   pitLead,
+
+  /// Faculty PIT Instructor workspace: PIT teams for assigned section only.
+  pitInstructor,
 }
 
 class StudentTeamsScreen extends ConsumerStatefulWidget {
@@ -103,6 +106,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   bool get _isPitLeadManager => widget.mode == TeamListMode.pitLead;
 
+  bool get _isPitInstructor => widget.mode == TeamListMode.pitInstructor;
+
   bool get _pitTermIsAudit =>
       _isPitLeadManager && ref.read(studentTeamsProvider).operatingMode == 'audit';
 
@@ -138,6 +143,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   bool _isPitContext(StudentTeamsState state) =>
       _isPitLeadManager ||
+      _isPitInstructor ||
       (_isCapstoneAdmin && _teamLevelFilter(state) == 'PIT');
 
   bool _teamIsPit(Map<String, dynamic> team) =>
@@ -170,7 +176,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   void _openTeamDetailRoute(int teamId) {
-    final route = _isPitLeadManager
+    final route = (_isPitLeadManager || _isPitInstructor)
         ? FacultyRoutes.teamDetail(teamId)
         : AdminRoutes.teamDetail(teamId);
     context.push(route);
@@ -180,7 +186,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final initialLevel = _isCapstoneAdmin ? 'Capstone' : '';
     ref.read(studentTeamsProvider.notifier).fetchTeams(
           level: initialLevel,
-          scope: _isPitLeadManager ? (scope ?? _teamListScope) : null,
+          scope: (_isPitLeadManager || _isPitInstructor) ? (scope ?? _teamListScope) : null,
         );
   }
 
@@ -194,7 +200,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isPitLeadManager) {
+    if (_isPitLeadManager || _isPitInstructor) {
       ref.watch(dashboardProvider('faculty'));
     }
     final state = ref.watch(studentTeamsProvider);
@@ -231,7 +237,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             const SizedBox(height: 14),
             _notice(state.operatingMessage!, warning: _pitTermIsAudit),
           ],
-          if (_isPitLeadManager) ...[
+          if (_isPitLeadManager || _isPitInstructor) ...[
             const SizedBox(height: 14),
             _pitTeamScopeToggle(state),
           ],
@@ -250,6 +256,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       !_isCapstoneAdmin || state.canCreateCapstoneTeams;
 
   bool _canManageTeams(StudentTeamsState state) {
+    if (_isPitInstructor) {
+      return false;
+    }
     if (_pitTermIsAudit || state.operatingMode == 'audit') {
       return false;
     }
@@ -335,6 +344,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _headerActions(StudentTeamsState state) {
+    if (_isPitInstructor) {
+      return const SizedBox.shrink();
+    }
     final canTapActions = _canTapTeamActions(state);
 
     return Row(
@@ -597,7 +609,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _levelFilter(StudentTeamsState state) {
-    if (_isPitLeadManager) {
+    if (_isPitLeadManager || _isPitInstructor) {
       return const SizedBox.shrink();
     }
 
@@ -885,7 +897,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     setState(() => _teamListScope = 'active');
                     ref.read(studentTeamsProvider.notifier).fetchTeams(
                           level: _isCapstoneAdmin ? 'Capstone' : '',
-                          scope: _isPitLeadManager ? 'active' : null,
+                          scope: (_isPitLeadManager || _isPitInstructor) ? 'active' : null,
                           search: '',
                         );
                   },

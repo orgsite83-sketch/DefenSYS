@@ -261,7 +261,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 const SizedBox(height: 8),
                 ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
                 const SizedBox(height: 20),
-                if (widget.isCapstone) ...[
+                if (vault.isNotEmpty) ...[
                   _sectionTitle('Post-Defense Vault Submissions'),
                   const SizedBox(height: 8),
                   if (selectedStage['vault_unlocked'] != true)
@@ -342,7 +342,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isRejected = status == 'rejected';
 
     // Lock file from edits/removals if endorsed OR backend lock is set OR review status is Accepted
-    final fileLocked = endorsed || item['locked'] == true || isAccepted;
+    final fileLocked = (item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted;
     final isWPR = item['id'] == 'WPR';
     final suggestedFile = item['suggested_file_name']?.toString() ?? '';
 

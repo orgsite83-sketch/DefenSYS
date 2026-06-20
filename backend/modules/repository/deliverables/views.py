@@ -281,8 +281,13 @@ class CapstoneDeliverableReviewView(APIView):
                 feedback_val=attrs.get('feedback', ''),
                 reviewer_user=request.user,
             )
-        except ValueError as exc:
-            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except (ValueError, ValidationError) as exc:
+            msg = str(exc)
+            if hasattr(exc, 'message_dict'):
+                msg = str(exc.message_dict)
+            elif hasattr(exc, 'messages'):
+                msg = ", ".join(exc.messages)
+            return Response({'detail': msg}, status=status.HTTP_400_BAD_REQUEST)
 
         return Response(
             deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
