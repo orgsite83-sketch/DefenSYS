@@ -58,8 +58,19 @@ DEBUG = _env_bool('DJANGO_DEBUG', default=True)
 ALLOWED_HOSTS = _env_list(
     'DJANGO_ALLOWED_HOSTS',
     'localhost,127.0.0.1,192.168.1.5',
-    
 )
+
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', default=not DEBUG)
+SESSION_COOKIE_SECURE = _env_bool('DJANGO_SESSION_COOKIE_SECURE', default=not DEBUG)
+CSRF_COOKIE_SECURE = _env_bool('DJANGO_CSRF_COOKIE_SECURE', default=not DEBUG)
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0' if DEBUG else '3600'))
+
+_csrf_trusted = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
+CSRF_TRUSTED_ORIGINS = [
+    origin.strip() for origin in _csrf_trusted.split(',') if origin.strip()
+]
+
 
 # Optional production CORS allowlist for deployments where Flutter and API are
 # served from different origins. Same-origin nginx deployments do not need this.
