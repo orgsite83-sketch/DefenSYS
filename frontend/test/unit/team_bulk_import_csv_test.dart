@@ -26,32 +26,32 @@ Team Alpha,Project A,3rd Year,101|102,101,201
     test('parses client multi-row template and collapses teams correctly', () {
       const csv = '''
 Team Name,Capstone Project,Adviser,Team Members
-TechVision,Eventify,RAY AN J. QUIÑON,"DOMINGUEZ, Noel R."
-,,,"DAGO-OC, Evan John S."
-,,,"PINGKIAN, El Jane"
-,,,"DIU, Sciemon Jed"
-Techpro,Campus Tutoring to FMCP,RAY AN J. QUIÑON,"CABANTAC, John Mike B."
+Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,"VILLAR, Marcus"
+,,,"ONG, Patricia"
+,,,"SALAZAR, Ethan"
+,,,"CASTILLO, Zoe"
+Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,"REYES, Carlos"
 ''';
 
       final result = parseTeamBulkCsv(csv);
 
       expect(result.rows, hasLength(2));
-      expect(result.rows[0]['team_name'], 'TechVision');
-      expect(result.rows[0]['project_title'], 'Eventify');
-      expect(result.rows[0]['adviser_id'], 'RAY AN J. QUIÑON');
+      expect(result.rows[0]['team_name'], 'Team SkyLedger');
+      expect(result.rows[0]['project_title'], 'Alumni Career Tracker');
+      expect(result.rows[0]['adviser_id'], 'Ricardo Fontanilla');
       expect(result.rows[0]['member_ids'], [
-        'DOMINGUEZ, Noel R.',
-        'DAGO-OC, Evan John S.',
-        'PINGKIAN, El Jane',
-        'DIU, Sciemon Jed',
+        'VILLAR, Marcus',
+        'ONG, Patricia',
+        'SALAZAR, Ethan',
+        'CASTILLO, Zoe',
       ]);
-      expect(result.rows[0]['leader_id'], 'DOMINGUEZ, Noel R.');
+      expect(result.rows[0]['leader_id'], 'VILLAR, Marcus');
 
-      expect(result.rows[1]['team_name'], 'Techpro');
-      expect(result.rows[1]['project_title'], 'Campus Tutoring to FMCP');
-      expect(result.rows[1]['adviser_id'], 'RAY AN J. QUIÑON');
-      expect(result.rows[1]['member_ids'], ['CABANTAC, John Mike B.']);
-      expect(result.rows[1]['leader_id'], 'CABANTAC, John Mike B.');
+      expect(result.rows[1]['team_name'], 'Team CodeLearners');
+      expect(result.rows[1]['project_title'], 'Smart Campus Navigator');
+      expect(result.rows[1]['adviser_id'], 'Ricardo Fontanilla');
+      expect(result.rows[1]['member_ids'], ['REYES, Carlos']);
+      expect(result.rows[1]['leader_id'], 'REYES, Carlos');
     });
   });
 

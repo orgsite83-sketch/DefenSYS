@@ -263,7 +263,8 @@ class _DefenseStageEditorScreenState
     final rubrics = ref.watch(rubricEngineProvider).rubrics;
     return rubrics.where((r) {
       final scopeMatch = r['scope'] == 'capstone';
-      final stageMatch = _asInt(r['defense_stage_id']) == widget.stageId;
+      final stageMatch = r['defense_stage_id'] == null ||
+          _asInt(r['defense_stage_id']) == widget.stageId;
       final semMatch = _asInt(r['semester_id']) == _semesterId;
       final evalMatch = r['evaluation_type'] == evaluationType;
       final publishedMatch = r['status'] == 'published';

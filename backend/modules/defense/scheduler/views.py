@@ -495,8 +495,8 @@ class PanelistResultsView(APIView):
             .select_related('team', 'team__leader', 'schedule')
             .prefetch_related(
                 'breakdowns',
-                'peer_member_grades',
-                'peer_member_grades__student',
+                'student_grades',
+                'student_grades__student',
                 'team__memberships',
                 'team__memberships__student',
             )
@@ -537,20 +537,39 @@ class PanelistGradeSubmissionView(APIView):
     def post(self, request):
         team_id = request.data.get('team_id')
         schedule_id = request.data.get('schedule_id')
-        criteria_scores = request.data.get('criteria_scores', [])
-        remarks = request.data.get('remarks', '')
         body_panelist_id = request.data.get('panelist_id')
+
+        submissions_payload = request.data.get('submissions')
+        if not submissions_payload:
+            criteria_scores = request.data.get('criteria_scores', [])
+            remarks = request.data.get('remarks', '')
+            if not criteria_scores:
+                return Response(
+                    {'detail': 'team_id and criteria_scores or submissions are required.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            submissions_payload = [{
+                'student_id': None,
+                'criteria_scores': criteria_scores,
+                'remarks': remarks,
+            }]
+
+        if not team_id:
+            return Response(
+                {'detail': 'team_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(submissions_payload, list) or not submissions_payload:
+            return Response(
+                {'detail': 'submissions must be a non-empty list.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if body_panelist_id is not None and str(body_panelist_id) != str(request.user.id):
             return Response(
                 {'detail': 'You do not have permission to submit grades for another panelist.'},
                 status=status.HTTP_403_FORBIDDEN,
-            )
-
-        if not all([team_id, criteria_scores]):
-            return Response(
-                {'detail': 'team_id and criteria_scores are required.'},
-                status=status.HTTP_400_BAD_REQUEST,
             )
 
         try:
@@ -632,14 +651,51 @@ class PanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            submit_panelist_grade(
-                schedule,
-                team_grade,
-                criteria_scores,
-                panelist=panelist,
-                remarks=remarks,
-            )
+            is_individual = False
+            if schedule and schedule.rubric:
+                is_individual = (schedule.rubric.target_type == 'individual')
 
+            memberships = list(team.memberships.select_related('student').all())
+            team_student_ids = {m.student_id for m in memberships}
+
+            from django.db import transaction
+            with transaction.atomic():
+                for item in submissions_payload:
+                    student_id = item.get('student_id')
+                    student = None
+                    if is_individual:
+                        if student_id in (None, ''):
+                            return Response(
+                                {'detail': 'student_id is required for individual rubric grading.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        try:
+                            student_id_int = int(student_id)
+                        except (TypeError, ValueError):
+                            return Response(
+                                {'detail': 'student_id must be an integer.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        if student_id_int not in team_student_ids:
+                            return Response(
+                                {'detail': f'Student with ID {student_id} is not a member of this team.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        student = next(m.student for m in memberships if m.student_id == student_id_int)
+
+                    item_criteria_scores = item.get('criteria_scores', [])
+                    item_remarks = item.get('remarks', '')
+
+                    submit_panelist_grade(
+                        schedule,
+                        team_grade,
+                        item_criteria_scores,
+                        panelist=panelist,
+                        remarks=item_remarks,
+                        student=student,
+                    )
+
+            team_grade.refresh_from_db()
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',
@@ -719,8 +775,8 @@ class GuestPanelistResultsView(APIView):
             .select_related('team', 'team__leader', 'schedule')
             .prefetch_related(
                 'breakdowns',
-                'peer_member_grades',
-                'peer_member_grades__student',
+                'student_grades',
+                'student_grades__student',
                 'team__memberships',
                 'team__memberships__student',
             )
@@ -778,12 +834,31 @@ class GuestPanelistGradeSubmissionView(APIView):
         principal = request.user
         team_id = request.data.get('team_id')
         schedule_id = request.data.get('schedule_id')
-        criteria_scores = request.data.get('criteria_scores', [])
-        remarks = request.data.get('remarks', '')
 
-        if not all([team_id, criteria_scores]):
+        submissions_payload = request.data.get('submissions')
+        if not submissions_payload:
+            criteria_scores = request.data.get('criteria_scores', [])
+            remarks = request.data.get('remarks', '')
+            if not criteria_scores:
+                return Response(
+                    {'detail': 'team_id and criteria_scores or submissions are required.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            submissions_payload = [{
+                'student_id': None,
+                'criteria_scores': criteria_scores,
+                'remarks': remarks,
+            }]
+
+        if not team_id:
             return Response(
-                {'detail': 'team_id and criteria_scores are required.'},
+                {'detail': 'team_id is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if not isinstance(submissions_payload, list) or not submissions_payload:
+            return Response(
+                {'detail': 'submissions must be a non-empty list.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -856,14 +931,51 @@ class GuestPanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            submit_panelist_grade(
-                schedule,
-                team_grade,
-                criteria_scores,
-                guest=principal,
-                remarks=remarks,
-            )
+            is_individual = False
+            if schedule and schedule.rubric:
+                is_individual = (schedule.rubric.target_type == 'individual')
 
+            memberships = list(team.memberships.select_related('student').all())
+            team_student_ids = {m.student_id for m in memberships}
+
+            from django.db import transaction
+            with transaction.atomic():
+                for item in submissions_payload:
+                    student_id = item.get('student_id')
+                    student = None
+                    if is_individual:
+                        if student_id in (None, ''):
+                            return Response(
+                                {'detail': 'student_id is required for individual rubric grading.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        try:
+                            student_id_int = int(student_id)
+                        except (TypeError, ValueError):
+                            return Response(
+                                {'detail': 'student_id must be an integer.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        if student_id_int not in team_student_ids:
+                            return Response(
+                                {'detail': f'Student with ID {student_id} is not a member of this team.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+                        student = next(m.student for m in memberships if m.student_id == student_id_int)
+
+                    item_criteria_scores = item.get('criteria_scores', [])
+                    item_remarks = item.get('remarks', '')
+
+                    submit_panelist_grade(
+                        schedule,
+                        team_grade,
+                        item_criteria_scores,
+                        guest=principal,
+                        remarks=item_remarks,
+                        student=student,
+                    )
+
+            team_grade.refresh_from_db()
             return Response({
                 'success': True,
                 'message': 'Grades submitted successfully',

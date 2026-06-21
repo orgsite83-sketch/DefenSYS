@@ -405,7 +405,7 @@ def team_payload(team, selected_stage=None):
     ]
 
     # Fetch grading details if TeamGrade exists for the selected stage
-    from grading.grades.models import TeamGrade, StudentPeerGrade
+    from grading.grades.models import TeamGrade, StudentStageGrade
 
     grade_payload = None
     if selected:
@@ -425,17 +425,17 @@ def team_payload(team, selected_stage=None):
             ).first()
 
         if grade_obj:
-            peer_member_grades = StudentPeerGrade.objects.filter(team_grade=grade_obj)
+            student_grades = StudentStageGrade.objects.filter(team_grade=grade_obj)
             peer_per_student = [
                 {
-                    'student_id': spg.student.id,
-                    'username': spg.student.username,
-                    'student_name': display_name(spg.student),
-                    'average_score': float(spg.average_score) if spg.average_score is not None else None,
-                    'max_score': float(spg.max_score) if spg.max_score is not None else 5.0,
-                    'normalized_score': float(spg.normalized_score) if spg.normalized_score is not None else None,
+                    'student_id': sg.student.id,
+                    'username': sg.student.username,
+                    'student_name': display_name(sg.student),
+                    'average_score': float(sg.peer_score) if sg.peer_score is not None else None,
+                    'max_score': 100.0,
+                    'normalized_score': float(sg.peer_score) if sg.peer_score is not None else None,
                 }
-                for spg in peer_member_grades
+                for sg in student_grades
             ]
 
             grade_payload = {

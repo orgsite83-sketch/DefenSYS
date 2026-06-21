@@ -19,6 +19,15 @@ Demo CSV files for bulk import. Default password for imported users is the same 
 | `demo_teams_capstone_import.csv` | Same 3rd-year cohort as capstone, for Admin in 2nd semester |
 | `demo_admin_defense_schedule_import.csv` | Defense Scheduler import sample matching the 3rd-year capstone demo team |
 
+## Year-Specific Sample Folders
+
+For convenience, sample files are organized into directories by academic year:
+
+* **[1st_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/1st_Year)**: Contains student and team import templates for 1st Year.
+* **[2nd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/2nd_Year)**: Contains student and team import templates for 2nd Year.
+* **[3rd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/3rd_Year)**: Contains student, team, and capstone team import templates for 3rd Year.
+* **[4th_Year_Capstone](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/4th_Year_Capstone)**: Contains student and team import templates for 4th Year Capstone.
+
 ## Student Id Number Ranges
 
 | Year | IDs | Leader in team CSV |

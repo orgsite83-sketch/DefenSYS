@@ -228,7 +228,7 @@ class StudentAcademicRecordsNotifier
     }
   }
 
-  Future<bool> fetchRolloverPreview() async {
+  Future<bool> fetchRolloverPreview({List<Map<String, dynamic>>? students}) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -236,10 +236,17 @@ class StudentAcademicRecordsNotifier
     );
 
     try {
-      final response = await _client.get(
-        Uri.parse('$baseUrl/rollover-preview/'),
-        
-      );
+      final http.Response response;
+      if (students != null) {
+        response = await _client.post(
+          Uri.parse('$baseUrl/rollover-preview/'),
+          body: jsonEncode({'students': students}),
+        );
+      } else {
+        response = await _client.get(
+          Uri.parse('$baseUrl/rollover-preview/'),
+        );
+      }
 
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));

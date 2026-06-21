@@ -109,6 +109,22 @@ class TeamGrade(models.Model):
 
     @property
     def is_complete(self):
+        is_individual_panel = False
+        if self.schedule and self.schedule.rubric:
+            is_individual_panel = (self.schedule.rubric.target_type == 'individual')
+        elif self.pit_event_config and self.pit_event_config.panel_rubric:
+            is_individual_panel = (self.pit_event_config.panel_rubric.target_type == 'individual')
+
+        if is_individual_panel:
+            memberships = self.team.memberships.all()
+            if not memberships.exists():
+                return False
+            sg_by_student = {sg.student_id: sg for sg in self.student_grades.all()}
+            for membership in memberships:
+                sg = sg_by_student.get(membership.student_id)
+                if not sg or sg.panel_score is None:
+                    return False
+
         return all(getattr(self, field) is not None for field in self.required_score_fields)
 
     @property
@@ -189,6 +205,22 @@ class TeamGrade(models.Model):
         self.full_clean()
         super().save(*args, **kwargs)
 
+        try:
+            from .peer_eval import recalculate_student_grade
+            memberships = list(self.team.memberships.select_related('student').all())
+            for membership in memberships:
+                sg, _ = StudentStageGrade.objects.get_or_create(team_grade=self, student=membership.student)
+                sg.adviser_score = self.adviser_score
+                is_individual_panel = False
+                if self.schedule and self.schedule.rubric:
+                    is_individual_panel = (self.schedule.rubric.target_type == 'individual')
+                if not is_individual_panel:
+                    sg.panel_score = self.panel_score
+                sg.save()
+                recalculate_student_grade(sg)
+        except Exception:
+            pass
+
     def __str__(self):
         return f'{self.team} - {self.stage_label}'
 
@@ -205,6 +237,13 @@ class GradeBreakdown(models.Model):
     )
 
     team_grade = models.ForeignKey(TeamGrade, related_name='breakdowns', on_delete=models.CASCADE)
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='grade_breakdowns',
+    )
     rubric = models.ForeignKey(
         'grading.Rubric',
         related_name='grade_breakdowns',
@@ -266,6 +305,13 @@ class PanelistGradeSubmission(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
     )
+    student = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.CASCADE,
+        related_name='panelist_student_submissions',
+    )
     guest_code_id = models.CharField(max_length=64, null=True, blank=True)
     guest_code = models.CharField(max_length=64, blank=True)
     guest_name = models.CharField(max_length=160, blank=True)
@@ -280,13 +326,23 @@ class PanelistGradeSubmission(models.Model):
         constraints = [
             models.UniqueConstraint(
                 fields=['team_grade', 'schedule', 'panelist'],
-                condition=Q(panelist__isnull=False),
+                condition=Q(panelist__isnull=False, student__isnull=True),
                 name='unique_panel_submission_per_panelist',
             ),
             models.UniqueConstraint(
+                fields=['team_grade', 'schedule', 'panelist', 'student'],
+                condition=Q(panelist__isnull=False, student__isnull=False),
+                name='unique_panel_submission_per_panelist_student',
+            ),
+            models.UniqueConstraint(
                 fields=['team_grade', 'schedule', 'guest_code_id'],
-                condition=Q(guest_code_id__isnull=False),
+                condition=Q(guest_code_id__isnull=False, student__isnull=True),
                 name='unique_panel_submission_per_guest',
+            ),
+            models.UniqueConstraint(
+                fields=['team_grade', 'schedule', 'guest_code_id', 'student'],
+                condition=Q(guest_code_id__isnull=False, student__isnull=False),
+                name='unique_panel_submission_per_guest_student',
             ),
         ]
         indexes = [
@@ -364,49 +420,45 @@ class PanelistCriterionScore(models.Model):
         return f'{self.submission} - {self.criterion_name_snapshot}'
 
 
-class StudentPeerGrade(models.Model):
-    team_grade = models.ForeignKey(TeamGrade, related_name='peer_member_grades', on_delete=models.CASCADE)
+class StudentStageGrade(models.Model):
+    team_grade = models.ForeignKey(TeamGrade, related_name='student_grades', on_delete=models.CASCADE)
     student = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='received_peer_grade_summaries',
+        related_name='received_stage_grade_summaries',
         on_delete=models.CASCADE,
     )
-    average_score = models.DecimalField(max_digits=6, decimal_places=2)
-    max_score = models.DecimalField(max_digits=6, decimal_places=2, default=5)
+    panel_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    adviser_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    peer_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    final_grade = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         app_label = 'grading'
-        db_table = 'grade_center_studentpeergrade'
+        db_table = 'grade_center_studentstagegrade'
         ordering = ['student__last_name', 'student__first_name', 'student__username']
         constraints = [
             models.UniqueConstraint(
                 fields=['team_grade', 'student'],
-                name='unique_peer_grade_per_student_grade_context',
+                name='unique_student_stage_grade',
             ),
         ]
 
-    @property
-    def normalized_score(self):
-        if self.max_score <= 0:
-            return Decimal('0.00')
-        return (self.average_score / self.max_score * Decimal('100')).quantize(Decimal('0.01'))
-
     def clean(self):
         if getattr(self.student, 'role', None) != 'student':
-            raise ValidationError({'student': 'Peer grade summaries must point to student users.'})
-        if self.max_score <= 0:
-            raise ValidationError({'max_score': 'Max score must be greater than 0.'})
-        if self.average_score < 0 or self.average_score > self.max_score:
-            raise ValidationError({'average_score': 'Average score must be between 0 and max score.'})
+            raise ValidationError({'student': 'Stage grade summaries must point to student users.'})
+        for field in ['panel_score', 'adviser_score', 'peer_score', 'final_grade']:
+            value = getattr(self, field)
+            if value is not None and (value < 0 or value > 100):
+                raise ValidationError({field: 'Score must be between 0 and 100.'})
 
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
 
     def __str__(self):
-        return f'{self.student} peer score for {self.team_grade}'
+        return f'{self.student} grade summary for {self.team_grade}'
 
 
 class PeerEvaluationSubmission(models.Model):

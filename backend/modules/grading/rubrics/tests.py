@@ -190,6 +190,41 @@ class RubricEngineApiTests(APITestCase):
         names = [r['name'] for r in response.data['rubrics']]
         self.assertIn('Listed PIT Rubric', names)
 
+    def test_list_rubrics_by_term_context(self):
+        # Create a rubric in the active semester
+        self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Active Rubric'), format='json')
+
+        # Create a historical semester
+        historical_sy = SchoolYear.objects.create(label='2025-2026')
+        historical_sem = Semester.objects.create(
+            school_year=historical_sy,
+            label=Semester.SECOND,
+            is_active=False,
+        )
+        # Create a rubric in the historical semester
+        self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Historical Rubric', semester_id=historical_sem.id), format='json')
+
+        # List active only
+        response_active = self.client.get('/api/grading/rubrics/?term_context=active')
+        self.assertEqual(response_active.status_code, 200)
+        names_active = [r['name'] for r in response_active.data['rubrics']]
+        self.assertIn('Active Rubric', names_active)
+        self.assertNotIn('Historical Rubric', names_active)
+
+        # List history only
+        response_history = self.client.get('/api/grading/rubrics/?term_context=history')
+        self.assertEqual(response_history.status_code, 200)
+        names_history = [r['name'] for r in response_history.data['rubrics']]
+        self.assertNotIn('Active Rubric', names_history)
+        self.assertIn('Historical Rubric', names_history)
+
+        # List all (no term_context passed)
+        response_all = self.client.get('/api/grading/rubrics/')
+        self.assertEqual(response_all.status_code, 200)
+        names_all = [r['name'] for r in response_all.data['rubrics']]
+        self.assertIn('Active Rubric', names_all)
+        self.assertIn('Historical Rubric', names_all)
+
     def test_pit_rubric_without_event_name_is_valid(self):
         self.client.force_authenticate(user=self._pit_lead_user('pit-lead-create'))
         response = self.client.post(

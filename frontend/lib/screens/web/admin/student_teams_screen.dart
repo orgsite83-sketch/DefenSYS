@@ -721,6 +721,82 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     Map<String, dynamic> team, {
     required bool hideAdviser,
   }) {
+    final leaderName = team['leader_name']?.toString() ?? '-';
+    final members = team['members'] as List? ?? const [];
+    final leaderId = team['leader_id'];
+    final leaderMember = members.firstWhere(
+      (m) => m is Map && m['id'] == leaderId,
+      orElse: () => null,
+    );
+    final leaderEnrolled = leaderMember == null || leaderMember['is_enrolled'] == true;
+    final hasUnenrolled = members.any((m) => m is Map && m['is_enrolled'] == false);
+
+    Widget leaderWidget;
+    if (!leaderEnrolled && leaderName != '-') {
+      leaderWidget = Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 6,
+        children: [
+          Text(
+            leaderName,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEE2E2),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: const Color(0xFFFCA5A5)),
+            ),
+            child: const Text(
+              'Not Enrolled',
+              style: TextStyle(
+                color: Color(0xFFB91C1C),
+                fontSize: 9,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      );
+    } else {
+      leaderWidget = _bodyText(leaderName);
+    }
+
+    Widget membersWidget;
+    final memberCountStr = '${team['member_count'] ?? 0}';
+    if (hasUnenrolled) {
+      membersWidget = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            memberCountStr,
+            style: const TextStyle(
+              color: _ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Tooltip(
+            message: 'Contains non-enrolled members',
+            child: Icon(
+              Icons.warning_amber_rounded,
+              color: Color(0xFFD97706),
+              size: 16,
+            ),
+          ),
+        ],
+      );
+    } else {
+      membersWidget = _bodyText(memberCountStr);
+    }
+
     return Container(
       constraints: const BoxConstraints(minHeight: 58),
       decoration: const BoxDecoration(
@@ -748,7 +824,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           ),
           _tableCell(_bodyText(_defenseContext(team)), flex: 1.42),
           _tableCell(
-            _bodyText(team['leader_name']?.toString() ?? '-'),
+            leaderWidget,
             flex: 0.78,
           ),
           if (!hideAdviser)
@@ -756,7 +832,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
               _bodyText(team['adviser_name']?.toString() ?? '-'),
               flex: 0.85,
             ),
-          _tableCell(_bodyText('${team['member_count'] ?? 0}'), flex: 0.98),
+          _tableCell(membersWidget, flex: 0.98),
           _tableCell(_rowActions(state, team), flex: 0.55),
         ],
       ),
@@ -996,11 +1072,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     await downloadTextFile(
       filename: 'defensys-official-capstone-template.csv',
       content: 'Team Name,Capstone Project,Adviser,Team Members\n'
-          'TechVision,Eventify,RAY AN J. QUIÑON,DOMINGUEZ, Noel R.\n'
-          ',,,DAGO-OC, Evan John S.\n'
-          ',,,PINGKIAN, El Jane\n'
-          ',,,DIU, Sciemon Jed\n'
-          'Techpro,Campus Tutoring to FMCP,RAY AN J. QUIÑON,CABANTAC, John Mike B.\n',
+          'Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,"VILLAR, Marcus"\n'
+          ',,,"ONG, Patricia"\n'
+          ',,,"SALAZAR, Ethan"\n'
+          ',,,"CASTILLO, Zoe"\n',
     );
   }
 
@@ -1271,11 +1346,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         'Team Members',
       ];
       final rows = const [
-        ['TechVision', 'Eventify', 'RAY AN J. QUIÑON', 'DOMINGUEZ, Noel R.'],
-        ['', '', '', 'DAGO-OC, Evan John S.'],
-        ['', '', '', 'PINGKIAN, El Jane'],
-        ['', '', '', 'DIU, Sciemon Jed'],
-        ['Techpro', 'Campus Tutoring to FMCP', 'RAY AN J. QUIÑON', 'CABANTAC, John Mike B.'],
+        ['Team SkyLedger', 'Alumni Career Tracker', 'Ricardo Fontanilla', 'VILLAR, Marcus'],
+        ['', '', '', 'ONG, Patricia'],
+        ['', '', '', 'SALAZAR, Ethan'],
+        ['', '', '', 'CASTILLO, Zoe'],
       ];
 
       return DefensysCard(

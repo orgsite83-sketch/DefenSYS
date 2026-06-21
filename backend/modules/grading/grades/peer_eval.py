@@ -5,7 +5,7 @@ from django.db import transaction
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam, TeamMembership
 
-from .models import PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
+from .models import PeerEvaluationSubmission, StudentStageGrade, TeamGrade
 from .services import (
     GradeContextService,
     display_name,
@@ -112,8 +112,28 @@ def peer_completion_summary(grade):
     }
 
 
-def _build_peer_rows_for_complete_grade(grade, memberships, max_scale):
-    peer_rows = []
+def recalculate_student_grade(sg):
+    team_grade = sg.team_grade
+    has_panel = (team_grade.panel_weight == 0 or sg.panel_score is not None)
+    has_peer = (team_grade.peer_weight == 0 or sg.peer_score is not None)
+    has_adviser = (team_grade.adviser_weight == 0 or sg.adviser_score is not None)
+    
+    if has_panel and has_peer and has_adviser:
+        total = Decimal('0.00')
+        if team_grade.panel_weight > 0:
+            total += sg.panel_score * Decimal(team_grade.panel_weight)
+        if team_grade.peer_weight > 0:
+            total += sg.peer_score * Decimal(team_grade.peer_weight)
+        if team_grade.adviser_weight > 0:
+            total += sg.adviser_score * Decimal(team_grade.adviser_weight)
+        sg.final_grade = (total / Decimal('100')).quantize(Decimal('0.01'))
+    else:
+        sg.final_grade = None
+    sg.save()
+
+
+def _build_peer_scores_for_complete_grade(grade, memberships):
+    peer_scores = {}
     normalized_total = Decimal('0.00')
 
     for membership in memberships:
@@ -127,32 +147,25 @@ def _build_peer_rows_for_complete_grade(grade, memberships, max_scale):
             if submission.max_score <= 0:
                 continue
             ratio = submission.total_score / submission.max_score
-            averages.append(ratio * max_scale)
+            averages.append(ratio * Decimal('100'))
 
         if not averages:
             return None
 
         average = (sum(averages) / Decimal(len(averages))).quantize(Decimal('0.01'))
-        peer_rows.append(
-            StudentPeerGrade(
-                team_grade=grade,
-                student=evaluatee,
-                average_score=average,
-                max_score=max_scale,
-            )
-        )
-        normalized_total += average / max_scale * Decimal('100')
+        peer_scores[evaluatee.id] = average
+        normalized_total += average
 
-    if not peer_rows:
-        return None
-
-    return peer_rows, normalized_total
+    return peer_scores, normalized_total
 
 
 @transaction.atomic
 def sync_peer_summaries(grade):
     memberships = list(grade.team.memberships.select_related('student').all())
-    StudentPeerGrade.objects.filter(team_grade=grade).delete()
+    
+    # Pre-create/ensure StudentStageGrade records exist
+    for membership in memberships:
+        StudentStageGrade.objects.get_or_create(team_grade=grade, student=membership.student)
 
     if not memberships:
         grade.peer_score = None
@@ -160,26 +173,37 @@ def sync_peer_summaries(grade):
         return
 
     if not is_team_peer_eval_complete(grade):
+        StudentStageGrade.objects.filter(team_grade=grade).update(peer_score=None)
         grade.peer_score = None
         grade.save()
-        from .services import maybe_auto_finalize_passed_grade
+        
+        for sg in StudentStageGrade.objects.filter(team_grade=grade):
+            recalculate_student_grade(sg)
 
+        from .services import maybe_auto_finalize_passed_grade
         maybe_auto_finalize_passed_grade(grade)
         return
 
-    max_scale = _peer_max_score(grade)
-    built = _build_peer_rows_for_complete_grade(grade, memberships, max_scale)
+    built = _build_peer_scores_for_complete_grade(grade, memberships)
     if built is None:
+        StudentStageGrade.objects.filter(team_grade=grade).update(peer_score=None)
         grade.peer_score = None
         grade.save()
+        
+        for sg in StudentStageGrade.objects.filter(team_grade=grade):
+            recalculate_student_grade(sg)
         return
 
-    peer_rows, normalized_total = built
-    StudentPeerGrade.objects.bulk_create(peer_rows)
-    grade.peer_score = (normalized_total / Decimal(len(peer_rows))).quantize(Decimal('0.01'))
+    peer_scores, normalized_total = built
+    for student_id, score in peer_scores.items():
+        sg = StudentStageGrade.objects.get(team_grade=grade, student_id=student_id)
+        sg.peer_score = score
+        sg.save()
+        recalculate_student_grade(sg)
+
+    grade.peer_score = (normalized_total / Decimal(len(peer_scores))).quantize(Decimal('0.01'))
     grade.save()
     from .services import maybe_auto_finalize_passed_grade
-
     maybe_auto_finalize_passed_grade(grade)
 
 

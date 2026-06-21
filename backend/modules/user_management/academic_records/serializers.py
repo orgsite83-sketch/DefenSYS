@@ -128,8 +128,14 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
 
 
 class RolloverActionSerializer(serializers.Serializer):
-    record_id = serializers.IntegerField()
-    action = serializers.ChoiceField(choices=['promote', 'retain', 'drop'])
+    record_id = serializers.IntegerField(required=False, allow_null=True)
+    username = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    first_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    last_name = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    email = serializers.EmailField(required=False, allow_blank=True, allow_null=True)
+    action = serializers.ChoiceField(choices=['promote', 'retain', 'drop', 'create'])
+    year_level = serializers.CharField(required=False, allow_blank=True, allow_null=True)
+    section = serializers.CharField(required=False, allow_blank=True, allow_null=True)
 
 
 class AcademicRecordsOptionsSerializer(serializers.Serializer):

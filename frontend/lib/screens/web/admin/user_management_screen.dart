@@ -5149,7 +5149,45 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       );
     }
 
-    final metadata = <String, dynamic>{};
+    String? csvSchoolYear;
+    String? csvSemester;
+    final schoolYearRegex = RegExp(r'\b(\d{4}-\d{4})\b');
+    final semesterRegex = RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
+
+    final limit = rows.length < 10 ? rows.length : 10;
+    for (var i = 0; i < limit; i++) {
+      for (final cell in rows[i]) {
+        final trimmed = cell.trim();
+        if (trimmed.isEmpty) continue;
+
+        if (csvSchoolYear == null) {
+          final syMatch = schoolYearRegex.firstMatch(trimmed);
+          if (syMatch != null) {
+            csvSchoolYear = syMatch.group(1);
+          }
+        }
+
+        if (csvSemester == null) {
+          final semMatch = semesterRegex.firstMatch(trimmed);
+          if (semMatch != null) {
+            final rawSem = semMatch.group(1)!.toLowerCase();
+            if (rawSem.contains('1st')) {
+              csvSemester = '1st Semester';
+            } else if (rawSem.contains('2nd')) {
+              csvSemester = '2nd Semester';
+            } else if (rawSem.contains('summer')) {
+              csvSemester = 'Summer';
+            }
+          }
+        }
+      }
+      if (csvSchoolYear != null && csvSemester != null) break;
+    }
+
+    final metadata = <String, dynamic>{
+      if (csvSchoolYear != null) 'school_year': csvSchoolYear,
+      if (csvSemester != null) 'semester': csvSemester,
+    };
     var headerIndex = -1;
 
     for (var i = 0; i < rows.length; i++) {

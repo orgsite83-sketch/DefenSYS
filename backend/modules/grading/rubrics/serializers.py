@@ -63,6 +63,7 @@ class RubricSerializer(serializers.ModelSerializer):
             'event_name',
             'context_label',
             'evaluation_type',
+            'target_type',
             'scale',
             'status',
             'is_locked',
@@ -117,6 +118,7 @@ class RubricWriteSerializer(serializers.Serializer):
     defense_stage_id = serializers.IntegerField(required=False, allow_null=True)
     event_name = serializers.CharField(required=False, allow_blank=True, max_length=120)
     evaluation_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.EVALUATION_TYPE_CHOICES])
+    target_type = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.TARGET_CHOICES], default=Rubric.TARGET_TEAM)
     scale = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.SCALE_CHOICES], default=Rubric.SCALE_10)
     status = serializers.ChoiceField(choices=[choice[0] for choice in Rubric.STATUS_CHOICES], default=Rubric.STATUS_DRAFT)
     panel_weight = serializers.IntegerField(required=False, min_value=0, max_value=100)
@@ -161,13 +163,18 @@ class RubricWriteSerializer(serializers.Serializer):
             attrs['adviser_weight'] = 0
             attrs['peer_weight'] = 0
         else:
-            if attrs['defense_stage'] is None:
-                raise serializers.ValidationError({'defense_stage_id': 'Capstone rubrics require a defense stage.'})
             attrs['event_name'] = ''
-            stage_weights = weights_for_capstone_stage(attrs['defense_stage'], attrs['semester'])
-            attrs['panel_weight'] = stage_weights['panel_weight']
-            attrs['adviser_weight'] = stage_weights['adviser_weight']
-            attrs['peer_weight'] = stage_weights['peer_weight']
+            if attrs['defense_stage'] is not None:
+                stage_weights = weights_for_capstone_stage(attrs['defense_stage'], attrs['semester'])
+                attrs['panel_weight'] = stage_weights['panel_weight']
+                attrs['adviser_weight'] = stage_weights['adviser_weight']
+                attrs['peer_weight'] = stage_weights['peer_weight']
+            else:
+                attrs['panel_weight'] = attrs.get('panel_weight') if attrs.get('panel_weight') is not None else 50
+                attrs['adviser_weight'] = attrs.get('adviser_weight') if attrs.get('adviser_weight') is not None else 30
+                attrs['peer_weight'] = attrs.get('peer_weight') if attrs.get('peer_weight') is not None else 20
+                if attrs['panel_weight'] + attrs['adviser_weight'] + attrs['peer_weight'] != 100:
+                    raise serializers.ValidationError({'weights': 'Panel, adviser, and peer weights must total 100%.'})
 
         self._validate_duplicate(attrs)
         attrs['criteria'] = self._normalized_criteria(attrs['criteria'])
@@ -183,6 +190,7 @@ class RubricWriteSerializer(serializers.Serializer):
             defense_stage=validated_data.get('defense_stage'),
             event_name=validated_data.get('event_name', ''),
             evaluation_type=validated_data['evaluation_type'],
+            target_type=validated_data.get('target_type', Rubric.TARGET_TEAM),
             scale=validated_data.get('scale', Rubric.SCALE_10),
             status=validated_data.get('status', Rubric.STATUS_DRAFT),
             panel_weight=validated_data['panel_weight'],
@@ -202,6 +210,7 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.defense_stage = validated_data.get('defense_stage')
         instance.event_name = validated_data.get('event_name', '')
         instance.evaluation_type = validated_data['evaluation_type']
+        instance.target_type = validated_data.get('target_type', instance.target_type)
         instance.scale = validated_data.get('scale', Rubric.SCALE_10)
         instance.status = validated_data.get('status', instance.status)
         instance.panel_weight = validated_data['panel_weight']

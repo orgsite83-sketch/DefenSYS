@@ -36,10 +36,24 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   List<Criterion> _criteria = [];
   int _lastTeamIndex = -1;
 
+  final Map<String, List<Criterion>> _studentCriteria = {};
+  final Map<String, TextEditingController> _studentRemarksControllers = {};
+  TextEditingController _teamRemarksController = TextEditingController();
+  int _selectedStudentIndex = 0;
+
   @override
   void initState() {
     super.initState();
     _syncRubricForCurrentTeam();
+  }
+
+  @override
+  void dispose() {
+    for (var controller in _studentRemarksControllers.values) {
+      controller.dispose();
+    }
+    _teamRemarksController.dispose();
+    super.dispose();
   }
 
   @override
@@ -51,37 +65,48 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
   }
 
-  void _loadCriteriaFromRubricMap(Map<String, dynamic> rubric) {
-    final criteriaList = (rubric['criteria'] as List? ?? []).map((c) {
+  List<Criterion> _parseCriteriaFromRubricMap(Map<String, dynamic> rubric) {
+    return (rubric['criteria'] as List? ?? []).map((c) {
       return Criterion(
         (c['name'] ?? 'Criterion').toString(),
         ((c['max_score'] as num?) ?? 10).toDouble(),
         id: int.tryParse(c['id']?.toString() ?? ''),
       );
     }).toList();
-
-    setState(() {
-      _criteria = criteriaList;
-    });
   }
 
   void _syncRubricForCurrentTeam() {
     if (widget.teams.isEmpty) {
       return;
     }
-    if (_lastTeamIndex == widget.selectedTeamIndex && _criteria.isNotEmpty) {
-      return;
-    }
-    _lastTeamIndex = widget.selectedTeamIndex;
 
     final team = widget.teams[widget.selectedTeamIndex];
-    final embedded = team.panelRubric;
-    if (embedded != null) {
-      _loadCriteriaFromRubricMap(embedded);
-    } else {
-      setState(() {
+
+    if (_lastTeamIndex != widget.selectedTeamIndex) {
+      _lastTeamIndex = widget.selectedTeamIndex;
+      _selectedStudentIndex = 0;
+
+      _studentCriteria.clear();
+      for (var controller in _studentRemarksControllers.values) {
+        controller.dispose();
+      }
+      _studentRemarksControllers.clear();
+      _teamRemarksController.dispose();
+      _teamRemarksController = TextEditingController();
+
+      final embedded = team.panelRubric;
+      if (embedded != null) {
+        if (team.isIndividualTarget) {
+          for (var member in team.memberDetails) {
+            _studentCriteria[member.id] = _parseCriteriaFromRubricMap(embedded);
+            _studentRemarksControllers[member.id] = TextEditingController();
+          }
+        } else {
+          _criteria = _parseCriteriaFromRubricMap(embedded);
+        }
+      } else {
         _criteria = [];
-      });
+      }
     }
   }
 
@@ -126,10 +151,19 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final hasPanelRubric = team.panelRubric != null;
     final isLocked = team.isPosted;
     final hasValidScope = team.hasValidScope;
-    final canPost =
-        hasValidScope && hasPanelRubric && _criteria.isNotEmpty && !isLocked && !team.isLockedByDate;
+    
+    final isIndividual = team.isIndividualTarget;
+    final canPost = hasValidScope &&
+        hasPanelRubric &&
+        (isIndividual ? _studentCriteria.isNotEmpty : _criteria.isNotEmpty) &&
+        !isLocked &&
+        !team.isLockedByDate;
 
-    final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
+    final criteria = isIndividual
+        ? (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length
+            ? (_studentCriteria[team.memberDetails[_selectedStudentIndex].id] ?? [])
+            : <Criterion>[])
+        : (_criteria.isNotEmpty ? _criteria : team.criteria);
     final total = criteria.fold(0.0, (s, c) => s + c.score);
     final maxTotal = criteria.fold(0.0, (s, c) => s + c.maxScore);
     final panelPct = maxTotal > 0 ? (total / maxTotal * 100) : 0;
@@ -198,6 +232,15 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                 ),
               ],
             ),
+          ],
+          if (isIndividual) ...[
+            const SizedBox(height: 12),
+            const Text(
+              'Grade by Individual Student',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+            ),
+            const SizedBox(height: 6),
+            _buildStudentSelector(team),
           ],
           const SizedBox(height: 12),
           Card(
@@ -463,9 +506,16 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     )
                   else if (!isLocked) ...[
                     TextField(
+                      controller: isIndividual
+                          ? (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length
+                              ? _studentRemarksControllers[team.memberDetails[_selectedStudentIndex].id]
+                              : null)
+                          : _teamRemarksController,
                       maxLines: 3,
                       decoration: InputDecoration(
-                        labelText: 'Remarks / Feedback',
+                        labelText: isIndividual
+                            ? 'Remarks / Feedback for ${team.memberDetails[_selectedStudentIndex].name}'
+                            : 'Remarks / Feedback',
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(10),
                         ),
@@ -576,15 +626,39 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       duration: const Duration(seconds: 30),
     );
 
-    final criteriaScores = _criteria
-        .map((c) => {'criterion_id': c.id, 'score': c.score})
-        .toList();
+    final isIndividual = team.isIndividualTarget;
+    final Map<String, dynamic> payload;
 
-    final payload = <String, dynamic>{
-      'team_id': int.tryParse(team.teamId) ?? team.teamId,
-      'criteria_scores': criteriaScores,
-      'remarks': '',
-    };
+    if (isIndividual) {
+      final submissions = <Map<String, dynamic>>[];
+      for (var member in team.memberDetails) {
+        final memberCriteria = _studentCriteria[member.id] ?? [];
+        final criteriaScores = memberCriteria
+            .map((c) => {'criterion_id': c.id, 'score': c.score})
+            .toList();
+        final remarks = _studentRemarksControllers[member.id]?.text ?? '';
+        submissions.add({
+          'student_id': int.tryParse(member.id) ?? member.id,
+          'criteria_scores': criteriaScores,
+          'remarks': remarks,
+        });
+      }
+      payload = <String, dynamic>{
+        'team_id': int.tryParse(team.teamId) ?? team.teamId,
+        'submissions': submissions,
+      };
+    } else {
+      final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
+      final criteriaScores = criteria
+          .map((c) => {'criterion_id': c.id, 'score': c.score})
+          .toList();
+      payload = <String, dynamic>{
+        'team_id': int.tryParse(team.teamId) ?? team.teamId,
+        'criteria_scores': criteriaScores,
+        'remarks': _teamRemarksController.text,
+      };
+    }
+
     if (team.scheduleId.isNotEmpty) {
       payload['schedule_id'] = int.tryParse(team.scheduleId) ?? team.scheduleId;
     }
@@ -771,6 +845,41 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildStudentSelector(TeamData team) {
+    return SizedBox(
+      height: 40,
+      child: ListView.builder(
+        scrollDirection: Axis.horizontal,
+        itemCount: team.memberDetails.length,
+        itemBuilder: (context, index) {
+          final member = team.memberDetails[index];
+          final isSelected = index == _selectedStudentIndex;
+
+          return Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: ChoiceChip(
+              label: Text(member.name),
+              selected: isSelected,
+              selectedColor: DefensysTokens.maroon,
+              backgroundColor: Colors.grey.shade100,
+              labelStyle: TextStyle(
+                color: isSelected ? Colors.white : Colors.black,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+              ),
+              onSelected: (selected) {
+                if (selected) {
+                  setState(() {
+                    _selectedStudentIndex = index;
+                  });
+                }
+              },
+            ),
+          );
+        },
+      ),
     );
   }
 }

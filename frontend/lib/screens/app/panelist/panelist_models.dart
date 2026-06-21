@@ -1,5 +1,11 @@
 import 'package:flutter/material.dart';
 
+class TeamMember {
+  final String id;
+  final String name;
+  const TeamMember({required this.id, required this.name});
+}
+
 class TeamData {
   final String name, project, defenseDate;
   final String teamId;
@@ -7,6 +13,7 @@ class TeamData {
   final String scope;
   final bool isCapstone;
   final List<String> members;
+  final List<TeamMember> memberDetails;
   final List<Criterion> criteria;
   final int panelWeight;
   final int peerWeight;
@@ -30,6 +37,7 @@ class TeamData {
     required this.scope,
     required this.isCapstone,
     required this.members,
+    required this.memberDetails,
     required this.criteria,
     required this.isPosted,
     this.panelWeight = 50,
@@ -45,6 +53,9 @@ class TeamData {
     if (scope == 'pit') return 'PIT';
     return 'Scope missing';
   }
+
+  String get targetType => panelRubric?['target_type']?.toString() ?? 'team';
+  bool get isIndividualTarget => targetType == 'individual';
 }
 
 class Criterion {

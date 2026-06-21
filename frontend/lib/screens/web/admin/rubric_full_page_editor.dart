@@ -79,7 +79,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late String _scope;
   late String _evaluationType;
   late int? _semesterId;
-  late int? _defenseStageId;
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
   bool _isDirty = false;
@@ -150,7 +149,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     setState(() {
       _scope = scope;
       if (scope == 'pit') {
-        _defenseStageId = null;
         if (_evaluationType == 'adviser') {
           _evaluationType = 'panel';
         }
@@ -205,13 +203,19 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         widget.initialEvaluationType ??
         'panel';
     _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
-    _defenseStageId = _asInt(r?['defense_stage_id']);
     _criteria = _buildCriterionDrafts(r, _scales);
     if (_scope == 'pit' && _evaluationType == 'adviser') {
       _evaluationType = 'panel';
     }
     _name.addListener(_markDirty);
     _attachCriteriaListeners();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final s = ref.read(rubricEngineProvider);
+      if (s.rubrics.isEmpty) {
+        ref.read(rubricEngineProvider.notifier).fetchRubrics();
+      }
+    });
   }
 
   @override
@@ -219,6 +223,106 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     _name.dispose();
     _disposeCriteriaList(_criteria);
     super.dispose();
+  }
+
+  String _evaluationLabel(String? value) {
+    return switch (value) {
+      'adviser' => 'Adviser',
+      'peer' => 'Peer',
+      _ => 'Panel',
+    };
+  }
+
+  void _cloneFromRubric(Map<String, dynamic> sourceRubric) {
+    setState(() {
+      _name.text = '${sourceRubric['name']} (Copy)';
+      _scope = sourceRubric['scope'] ?? _scope;
+      _evaluationType = sourceRubric['evaluation_type'] ?? _evaluationType;
+
+      _disposeCriteriaList(_criteria);
+      final clonedCriteria = sourceRubric['criteria'];
+      if (clonedCriteria is List) {
+        _criteria = clonedCriteria
+            .whereType<Map>()
+            .map((item) => RubricCriterionDraft.fromMap(item, _scales))
+            .toList();
+      } else {
+        _criteria = [RubricCriterionDraft(scales: _scales)];
+      }
+      _attachCriteriaListeners();
+    });
+    _markDirty();
+    showSuccessToast(context, 'Rubric criteria and details cloned.');
+  }
+
+  Widget _buildCloneDropdown(RubricEngineState state) {
+    if (_editing || widget.readOnly) return const SizedBox.shrink();
+
+    final user = ref.read(authProvider).user;
+    final isPitLead = _isPitLeadOnly(user);
+
+    final availableRubrics = state.rubrics.where((r) {
+      if (isPitLead) {
+        return r['scope'] == 'pit';
+      }
+      return true;
+    }).toList();
+
+    if (availableRubrics.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _labeledControl(
+          'CLONE FROM EXISTING RUBRIC (OPTIONAL)',
+          DropdownButtonFormField<int?>(
+            key: const ValueKey('clone-rubric-dropdown'),
+            initialValue: null,
+            isExpanded: true,
+            style: _dropdownFieldStyle,
+            decoration: _outlineInputDec(
+              hint: '— Select a rubric to copy criteria —',
+            ),
+            items: [
+              const DropdownMenuItem<int?>(
+                value: null,
+                child: Text('— Select a rubric to copy criteria —'),
+              ),
+              ...availableRubrics.map((r) {
+                final displaySem = r['display_semester']?.toString() ?? '';
+                final semesterLabel = displaySem.isNotEmpty ? ' ($displaySem)' : '';
+                final scopeLabel = r['scope'] == 'pit' ? ' [PIT]' : ' [Capstone]';
+                final evalTypeLabel = ' · ${_evaluationLabel(r['evaluation_type']?.toString())}';
+                return DropdownMenuItem<int?>(
+                  value: _asInt(r['id']),
+                  child: Text(
+                    '${r['name']}$scopeLabel$evalTypeLabel$semesterLabel',
+                    style: TextStyle(
+                      fontFamily: DefensysUi.fontFamily,
+                      fontSize: _bodySize,
+                      color: DefensysUi.textDark,
+                    ),
+                  ),
+                );
+              }),
+            ],
+            onChanged: (rubricId) {
+              if (rubricId != null) {
+                final source = availableRubrics.firstWhere(
+                  (r) => _asInt(r['id']) == rubricId,
+                );
+                _cloneFromRubric(source);
+              }
+            },
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+        const SizedBox(height: 16),
+      ],
+    );
   }
 
   static const _fieldLabelSize = 10.0;
@@ -518,9 +622,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     if (_semesterId == null) {
       return 'Select a semester.';
     }
-    if (_scope == 'capstone' && _defenseStageId == null) {
-      return 'Select a defense stage.';
-    }
     if (_criteria.isEmpty) {
       return 'Add at least one criterion.';
     }
@@ -552,7 +653,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       'name': _name.text.trim(),
       'scope': _scope,
       'semester_id': _semesterId,
-      'defense_stage_id': _scope == 'capstone' ? _defenseStageId : null,
+      'defense_stage_id': null,
       'event_name': '',
       'evaluation_type': _evaluationType,
       'scale': _rubricLevelScale(),
@@ -728,6 +829,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
+                      _buildCloneDropdown(state),
                       _labeledControl(
                         'RUBRIC NAME',
                         TextField(
@@ -860,53 +962,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                           ),
                         ],
                       ),
-                      if (_scope == 'capstone') ...[
-                        const SizedBox(height: 14),
-                        _labeledControl(
-                          'DEFENSE STAGE',
-                          DropdownButtonFormField<int?>(
-                            key: ValueKey('dst-$_defenseStageId'),
-                            initialValue: _defenseStageId,
-                            isExpanded: true,
-                            style: _dropdownFieldStyle,
-                            decoration: _outlineInputDec(
-                              hint: '— Select defense stage —',
-                            ),
-                            items: [
-                              DropdownMenuItem<int?>(
-                                value: null,
-                                child: Text(
-                                  '— Select defense stage —',
-                                  style: TextStyle(
-                                    fontFamily: DefensysUi.fontFamily,
-                                    color: const Color(0xFF9CA3AF),
-                                    fontSize: _bodySize,
-                                  ),
-                                ),
-                              ),
-                              ...state.defenseStages.map(
-                                (stage) => DropdownMenuItem<int?>(
-                                  value: _asInt(stage['id']),
-                                  child: Text(
-                                    stage['label']?.toString() ?? '',
-                                    style: TextStyle(
-                                      fontFamily: DefensysUi.fontFamily,
-                                      fontSize: _bodySize,
-                                      color: DefensysUi.textDark,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            onChanged: canEdit
-                                ? (v) {
-                                    setState(() => _defenseStageId = v);
-                                    _markDirty();
-                                  }
-                                : null,
-                          ),
-                        ),
-                      ],
                       if (_scope == 'pit') ...[
                         const SizedBox(height: 12),
                         Text(

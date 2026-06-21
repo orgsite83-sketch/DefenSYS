@@ -636,13 +636,13 @@ Issues
 Example row:
 
 ```text
-Ready | 9:00 AM - 9:30 AM | TechVision | Eventify | Ray An J. Quinon | Daga-ang | Neri, Undag, Ocampo | Camarista | AVR 1 | -
+Ready | 9:00 AM - 9:30 AM | Team SkyLedger | Alumni Career Tracker | Ricardo Fontanilla | Suarez | Beltran, Corpuz, Villanueva | Magbanua | AVR 1 | -
 ```
 
 Rows with problems should stay visible and editable:
 
 ```text
-Needs attention | 10:00 AM - 10:30 AM | Innovatrix | Egg | Arnel F. Mangga | Daga-ang | Badiang, Ocampo, Borata | Habagat | AVR 1 | Panelist "Badiang" matched multiple faculty
+Needs attention | 10:00 AM - 10:30 AM | Team ByteBridge | Library Seat Finder | Eduardo Padilla | Suarez | Suarez, Corpuz, Macasaet | Buenaventura | AVR 1 | Panelist "Suarez" matched multiple faculty
 ```
 
 ### Row Fixing Behavior
@@ -747,14 +747,14 @@ Import ready teams
 The preview should group members under each team:
 
 ```text
-TechVision
-Project: Eventify
-Adviser: Ray An J. Quinon
+Team SkyLedger
+Project: Alumni Career Tracker
+Adviser: Ricardo Fontanilla
 Members:
-- Dominguez, Noel R.
-- Dago-oc, Evan John S.
-- Pingkian, El Jane
-- Diu, Sciemon Jed
+- Villar, Marcus
+- Ong, Patricia
+- Salazar, Ethan
+- Castillo, Zoe
 Leader: needs selection
 ```
 

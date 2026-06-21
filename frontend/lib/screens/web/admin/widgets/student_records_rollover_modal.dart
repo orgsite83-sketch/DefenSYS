@@ -25,6 +25,10 @@ class StudentRecordsRolloverModal extends StatelessWidget {
     required this.rolloverHasTarget,
     required this.rolloverResult,
     required this.asInt,
+    required this.hasCsvUploaded,
+    required this.onUploadCsv,
+    required this.onClearCsv,
+    required this.hasValidationErrors,
   });
 
   final bool useWarningChrome;
@@ -34,18 +38,23 @@ class StudentRecordsRolloverModal extends StatelessWidget {
   final String searchQuery;
   final List<Map<String, dynamic>> filtered;
   final TextEditingController rolloverSearchCtrl;
-  final Map<int, String> actions;
+  final Map<String, String> actions;
   final VoidCallback onPromoteAll;
   final VoidCallback onRetainAll;
   final ValueChanged<String> onSearchChanged;
   final VoidCallback onSearchClear;
-  final void Function(int recordId, String? value) onActionChanged;
+  final void Function(String recordId, String? value) onActionChanged;
   final VoidCallback onClose;
   final VoidCallback onConfirm;
   final int nonDropCount;
   final bool Function(Map<String, dynamic> row, String action) rolloverHasTarget;
   final String Function(Map<String, dynamic> row, String action) rolloverResult;
   final int? Function(dynamic v) asInt;
+
+  final bool hasCsvUploaded;
+  final VoidCallback onUploadCsv;
+  final VoidCallback? onClearCsv;
+  final bool hasValidationErrors;
 
   static const _muted = DefensysUi.steelGrey;
   static const _maroon = DefensysUi.primaryMaroon;
@@ -123,6 +132,23 @@ class StudentRecordsRolloverModal extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (onClearCsv != null) ...[
+          OutlinedButton.icon(
+            onPressed: onClearCsv,
+            icon: const Icon(Icons.upload_file_rounded, size: 16),
+            label: const Text('Change File'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: _maroon,
+              side: const BorderSide(color: _maroon),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              textStyle: const TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+        ],
         FilledButton(
           onPressed: onPromoteAll,
           style: FilledButton.styleFrom(
@@ -155,23 +181,25 @@ class StudentRecordsRolloverModal extends StatelessWidget {
   }
 
   Widget _actionDropdown(
-    int recordId,
+    String recordKeyId,
     String action,
     Color actionColor,
+    bool isNewStudent,
+    bool notInCsv,
   ) {
     return Align(
       alignment: Alignment.centerLeft,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
         decoration: BoxDecoration(
-          color: action == 'promote'
+          color: action == 'promote' || action == 'create'
               ? _rolloverPromoteChipBg
               : action == 'retain'
                   ? Colors.white
                   : const Color(0xFFFEF2F2),
           borderRadius: BorderRadius.circular(7),
           border: Border.all(
-            color: action == 'promote'
+            color: action == 'promote' || action == 'create'
                 ? _rolloverPromoteChipFg.withValues(alpha: 0.35)
                 : action == 'retain'
                     ? _blue.withValues(alpha: 0.45)
@@ -194,13 +222,51 @@ class StudentRecordsRolloverModal extends StatelessWidget {
               size: 18,
               color: actionColor,
             ),
-            items: const [
-              DropdownMenuItem(value: 'promote', child: Text('Promote')),
-              DropdownMenuItem(value: 'retain', child: Text('Retain')),
-              DropdownMenuItem(value: 'drop', child: Text('Drop')),
+            items: [
+              if (isNewStudent)
+                const DropdownMenuItem(value: 'create', child: Text('Create'))
+              else ...[
+                const DropdownMenuItem(value: 'promote', child: Text('Promote')),
+                const DropdownMenuItem(value: 'retain', child: Text('Retain')),
+              ],
+              const DropdownMenuItem(value: 'drop', child: Text('Drop')),
             ],
-            onChanged: (value) => onActionChanged(recordId, value),
+            onChanged: (value) => onActionChanged(recordKeyId, value),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _typeBadge(bool isNew, bool notInCsv) {
+    final label = isNew
+        ? 'New Student'
+        : notInCsv
+            ? 'Not Enrolled'
+            : 'Enrolled';
+    final bg = isNew
+        ? const Color(0xFFF3E8FF)
+        : notInCsv
+            ? const Color(0xFFF3F4F6)
+            : const Color(0xFFD1FAE5);
+    final fg = isNew
+        ? const Color(0xFF6B21A8)
+        : notInCsv
+            ? const Color(0xFF4B5563)
+            : const Color(0xFF065F46);
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(6),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );
@@ -218,8 +284,8 @@ class StudentRecordsRolloverModal extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         clipBehavior: Clip.antiAlias,
         child: SizedBox(
-          width: 940,
-          height: 600,
+          width: 960,
+          height: 620,
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -232,11 +298,9 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            useWarningChrome
-                                ? 'Rollover Preview'
-                                : 'Semester Rollover',
-                            style: const TextStyle(
+                          const Text(
+                            'Semester Rollover & Promotion',
+                            style: TextStyle(
                               fontSize: 22,
                               fontWeight: FontWeight.w800,
                               color: _rolloverInk,
@@ -244,60 +308,35 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          if (useWarningChrome)
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.rotate_right_rounded,
-                                  size: 16,
-                                  color: _muted,
-                                ),
-                                const SizedBox(width: 6),
-                                Expanded(
-                                  child: Text(
-                                    'Target semester: $activeLabel',
-                                    style: const TextStyle(
-                                      color: _muted,
-                                      fontSize: 12.5,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.rotate_right_rounded,
+                                size: 16,
+                                color: _muted,
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  'Target semester: $activeLabel',
+                                  style: const TextStyle(
+                                    color: _muted,
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w600,
                                   ),
                                 ),
+                              ),
+                              if (hasCsvUploaded)
                                 Text(
-                                  '$totalCount student${totalCount == 1 ? '' : 's'} total',
+                                  '$totalCount student${totalCount == 1 ? '' : 's'} in preview',
                                   style: const TextStyle(
                                     color: _muted,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
-                              ],
-                            )
-                          else
-                            Text.rich(
-                              TextSpan(
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  height: 1.45,
-                                  color: _rolloverSecondary,
-                                  fontFamily: DefensysUi.fontFamily,
-                                ),
-                                children: [
-                                  const TextSpan(text: 'Rolling over to: '),
-                                  TextSpan(
-                                    text: activeLabel,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w800,
-                                      color: _rolloverInk,
-                                    ),
-                                  ),
-                                  TextSpan(
-                                    text:
-                                        ' · $totalCount student${totalCount == 1 ? '' : 's'} found',
-                                  ),
-                                ],
-                              ),
-                            ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
@@ -310,7 +349,82 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                   ],
                 ),
               ),
-              if (!useWarningChrome) ...[
+              if (!hasCsvUploaded)
+                Expanded(
+                  child: Center(
+                    child: Container(
+                      width: 540,
+                      padding: const EdgeInsets.all(36),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _line),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withValues(alpha: 0.03),
+                            blurRadius: 14,
+                            offset: const Offset(0, 4),
+                          )
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(20),
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF9FAFB),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.cloud_upload_outlined,
+                              size: 44,
+                              color: _maroon,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          const Text(
+                            'Upload Official Class List',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              color: _rolloverInk,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          const Text(
+                            'Select the official enrollment CSV file (containing student rows and class metadata) for the target semester. The system will match registered student IDs to promote them, and skip those who did not enroll.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 13,
+                              color: _rolloverSecondary,
+                              height: 1.5,
+                            ),
+                          ),
+                          const SizedBox(height: 26),
+                          ElevatedButton.icon(
+                            onPressed: onUploadCsv,
+                            icon: const Icon(Icons.file_open_rounded, size: 18, color: Colors.white),
+                            label: const Text('Select CSV File'),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: _maroon,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(28),
+                              ),
+                              textStyle: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                )
+              else ...[
                 const SizedBox(height: 14),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
@@ -325,19 +439,19 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: _rolloverLegendBorder),
                     ),
-                    child: Row(
+                    child: const Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.info_outline_rounded,
                           size: 18,
                           color: _rolloverLegendText,
                         ),
-                        const SizedBox(width: 10),
+                        SizedBox(width: 10),
                         Expanded(
                           child: Text.rich(
                             TextSpan(
-                              style: const TextStyle(
+                              style: TextStyle(
                                 fontSize: 13,
                                 height: 1.45,
                                 color: _rolloverLegendText,
@@ -345,26 +459,12 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                               ),
                               children: [
                                 TextSpan(
-                                  text: 'Promote',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
+                                  text: 'Verify the promotion list. ',
+                                  style: TextStyle(fontWeight: FontWeight.w600),
                                 ),
-                                const TextSpan(text: ' → next semester. '),
-                                TextSpan(
-                                  text: 'Retain',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const TextSpan(text: ' → same level. '),
-                                TextSpan(
-                                  text: 'Drop',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                                const TextSpan(text: ' → excluded.'),
+                                TextSpan(text: 'Promoted/Create → new academic records in target semester. '),
+                                TextSpan(text: 'Retain → same level. '),
+                                TextSpan(text: 'Drop → excluded (their record will not be rolled over).'),
                               ],
                             ),
                           ),
@@ -373,252 +473,275 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                     ),
                   ),
                 ),
-              ],
-              const SizedBox(height: 16),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Expanded(child: _searchField()),
-                    const SizedBox(width: 10),
-                    _bulkActions(),
-                  ],
-                ),
-              ),
-              if (searchQuery.isEmpty && useWarningChrome) ...[
-                const SizedBox(height: 8),
+                const SizedBox(height: 14),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    '$totalCount student${totalCount == 1 ? '' : 's'}',
-                    style: const TextStyle(
-                      color: _muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
-                    ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      Expanded(child: _searchField()),
+                      const SizedBox(width: 12),
+                      _bulkActions(),
+                    ],
                   ),
                 ),
-              ],
-              if (searchQuery.isNotEmpty) ...[
-                const SizedBox(height: 6),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Text(
-                    'Showing ${filtered.length} of $totalCount students',
-                    style: const TextStyle(
-                      color: _muted,
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w500,
+                if (searchQuery.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Text(
+                      'Showing ${filtered.length} of $totalCount students',
+                      style: const TextStyle(
+                        color: _muted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                      ),
                     ),
                   ),
-                ),
-              ],
-              if (useWarningChrome) ...[
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 14,
-                      vertical: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: _warningBannerBg,
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Color(0xFFF87171)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: _red,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            '$missingCount student${missingCount == 1 ? '' : 's'} cannot be promoted — '
-                            'the target semester does not exist in Academic Periods. '
-                            'Create it first, then re-open this preview.',
-                            style: const TextStyle(
-                              color: _red,
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w600,
-                              height: 1.4,
+                ],
+                if (hasValidationErrors) ...[
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
+                    child: Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: _warningBannerBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF87171)),
+                      ),
+                      child: const Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            Icons.warning_amber_rounded,
+                            color: _red,
+                            size: 18,
+                          ),
+                          SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              'Some rows contain validation warnings (e.g. missing name for user creation). Correct the details in the CSV file and re-upload before confirming.',
+                              style: TextStyle(
+                                color: _red,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                height: 1.4,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
                   ),
-                ),
-              ],
-              const SizedBox(height: 10),
-              Expanded(
-                child: filtered.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.search_off_rounded,
-                              size: 36,
-                              color: _muted,
-                            ),
-                            const SizedBox(height: 8),
-                            Text(
-                              'No students match "$searchQuery"',
-                              style: const TextStyle(
+                ],
+                const SizedBox(height: 10),
+                Expanded(
+                  child: filtered.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.search_off_rounded,
+                                size: 36,
                                 color: _muted,
-                                fontSize: 13,
                               ),
-                            ),
-                          ],
-                        ),
-                      )
-                    : Scrollbar(
-                        thumbVisibility: true,
-                        child: ListView(
-                          padding: EdgeInsets.zero,
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 24,
-                                vertical: 12,
-                              ),
-                              decoration: const BoxDecoration(
-                                color: _rowStripe,
-                                border: Border(
-                                  bottom: BorderSide(color: _line),
+                              const SizedBox(height: 8),
+                              Text(
+                                'No students match "$searchQuery"',
+                                style: const TextStyle(
+                                  color: _muted,
+                                  fontSize: 13,
                                 ),
                               ),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    flex: 22,
-                                    child: Text('Student', style: _colHdr),
-                                  ),
-                                  Expanded(
-                                    flex: 10,
-                                    child: Text('Student ID', style: _colHdr),
-                                  ),
-                                  Expanded(
-                                    flex: 18,
-                                    child: Text('Current', style: _colHdr),
-                                  ),
-                                  Expanded(
-                                    flex: 12,
-                                    child: Text('Action', style: _colHdr),
-                                  ),
-                                  Expanded(
-                                    flex: 20,
-                                    child: Text('Result', style: _colHdr),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            ...filtered.asMap().entries.map((e) {
-                              final index = e.key;
-                              final row = e.value;
-                              final record = Map<String, dynamic>.from(
-                                row['record'] as Map,
-                              );
-                              final recordId = asInt(record['id'])!;
-                              final action = actions[recordId] ?? 'promote';
-                              final actionColor = switch (action) {
-                                'retain' => _blue,
-                                'drop' => _red,
-                                _ => _rolloverPromoteChipFg,
-                              };
-                              final resultText = rolloverResult(row, action);
-                              final ok = action == 'drop' ||
-                                  rolloverHasTarget(row, action);
-                              final resultColor = action == 'drop'
-                                  ? _red
-                                  : ok
-                                      ? _rolloverResultGreen
-                                      : _red;
-                              final stripe =
-                                  index.isEven ? Colors.white : _rowStripe;
-                              return Container(
-                                decoration: BoxDecoration(
-                                  color: stripe,
-                                  border: const Border(
+                            ],
+                          ),
+                        )
+                      : Scrollbar(
+                          thumbVisibility: true,
+                          child: ListView(
+                            padding: EdgeInsets.zero,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 24,
+                                  vertical: 12,
+                                ),
+                                decoration: const BoxDecoration(
+                                  color: _rowStripe,
+                                  border: Border(
                                     bottom: BorderSide(color: _line),
                                   ),
                                 ),
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 24,
-                                  vertical: 14,
-                                ),
                                 child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Expanded(
-                                      flex: 22,
-                                      child: Text(
-                                        record['student_name']?.toString() ??
-                                            '-',
-                                        style: const TextStyle(
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 14,
-                                          color: _rolloverInk,
-                                        ),
-                                      ),
+                                      flex: 20,
+                                      child: Text('Student', style: _colHdr),
                                     ),
                                     Expanded(
                                       flex: 10,
-                                      child: Text(
-                                        record['student_username']
-                                                ?.toString() ??
-                                            '-',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: _rolloverInk,
-                                        ),
-                                      ),
+                                      child: Text('ID Number', style: _colHdr),
+                                    ),
+                                    Expanded(
+                                      flex: 10,
+                                      child: Text('Type', style: _colHdr),
                                     ),
                                     Expanded(
                                       flex: 18,
-                                      child: Text(
-                                        '${record['year_level'] ?? '-'} | ${record['semester'] ?? '-'}',
-                                        style: const TextStyle(
-                                          fontSize: 13,
-                                          color: _rolloverInk,
-                                        ),
-                                      ),
+                                      child: Text('Current', style: _colHdr),
                                     ),
                                     Expanded(
                                       flex: 12,
-                                      child: _actionDropdown(
-                                        recordId,
-                                        action,
-                                        actionColor,
-                                      ),
+                                      child: Text('Action', style: _colHdr),
                                     ),
                                     Expanded(
                                       flex: 20,
-                                      child: Text(
-                                        resultText.replaceAll(' · ', ' | '),
-                                        style: TextStyle(
-                                          color: resultColor,
-                                          fontWeight: FontWeight.w700,
-                                          fontSize: 13,
-                                          height: 1.35,
-                                        ),
-                                      ),
+                                      child: Text('Target Result', style: _colHdr),
                                     ),
                                   ],
                                 ),
-                              );
-                            }),
-                          ],
+                              ),
+                              ...filtered.asMap().entries.map((e) {
+                                final index = e.key;
+                                final row = e.value;
+                                final record = Map<String, dynamic>.from(
+                                  row['record'] as Map,
+                                );
+                                final isNew = row['is_new_student'] == true;
+                                final notInCsv = row['not_in_csv'] == true;
+                                
+                                final recordKeyId = record['id'] != null 
+                                    ? record['id'].toString() 
+                                    : record['student_username'].toString();
+
+                                final action = actions[recordKeyId] ?? row['action_default'] ?? 'promote';
+                                final actionColor = switch (action) {
+                                  'retain' => _blue,
+                                  'drop' => _red,
+                                  _ => _rolloverPromoteChipFg,
+                                };
+
+                                final valError = row['validation_error']?.toString();
+                                final hasErr = valError != null && valError.isNotEmpty;
+
+                                final resultText = rolloverResult(row, action);
+                                final ok = action == 'drop' || (rolloverHasTarget(row, action) && !hasErr);
+                                final resultColor = action == 'drop'
+                                    ? _red
+                                    : ok
+                                        ? _rolloverResultGreen
+                                        : _red;
+                                final stripe =
+                                    index.isEven ? Colors.white : _rowStripe;
+
+                                return Container(
+                                  decoration: BoxDecoration(
+                                    color: stripe,
+                                    border: const Border(
+                                      bottom: BorderSide(color: _line),
+                                    ),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 24,
+                                    vertical: 14,
+                                  ),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 20,
+                                        child: Text(
+                                          record['student_name']?.toString() ??
+                                              '-',
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                            color: _rolloverInk,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 10,
+                                        child: Text(
+                                          record['student_username']
+                                                  ?.toString() ??
+                                              '-',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: _rolloverInk,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 10,
+                                        child: _typeBadge(isNew, notInCsv),
+                                      ),
+                                      Expanded(
+                                        flex: 18,
+                                        child: Text(
+                                          record['id'] != null
+                                              ? '${record['year_level'] ?? '-'} | ${record['semester'] ?? '-'}'
+                                              : 'No records yet',
+                                          style: const TextStyle(
+                                            fontSize: 13,
+                                            color: _rolloverSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 12,
+                                        child: _actionDropdown(
+                                          recordKeyId,
+                                          action,
+                                          actionColor,
+                                          isNew,
+                                          notInCsv,
+                                        ),
+                                      ),
+                                      Expanded(
+                                        flex: 20,
+                                        child: hasErr
+                                            ? Row(
+                                                children: [
+                                                  const Icon(Icons.error_outline_rounded, color: _red, size: 16),
+                                                  const SizedBox(width: 4),
+                                                  Expanded(
+                                                    child: Text(
+                                                      valError,
+                                                      style: const TextStyle(
+                                                        color: _red,
+                                                        fontWeight: FontWeight.w600,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              )
+                                            : Text(
+                                                resultText.replaceAll(' · ', ' | '),
+                                                style: TextStyle(
+                                                  color: resultColor,
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 13,
+                                                  height: 1.35,
+                                                ),
+                                              ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+                            ],
+                          ),
                         ),
-                      ),
-              ),
+                ),
+              ],
               const Divider(height: 1, thickness: 1, color: _line),
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
@@ -642,48 +765,50 @@ class StudentRecordsRolloverModal extends StatelessWidget {
                         ),
                       ),
                     ),
-                    const SizedBox(width: 12),
-                    ElevatedButton(
-                      onPressed: onConfirm,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: _rolloverActionMaroon,
-                        foregroundColor: Colors.white,
-                        disabledForegroundColor: Colors.white70,
-                        elevation: 2,
-                        shadowColor: Colors.black26,
-                        textStyle: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.w700,
-                          fontSize: 14,
-                        ),
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 24,
-                          vertical: 14,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.check_circle_outline_rounded,
-                            size: 22,
+                    if (hasCsvUploaded) ...[
+                      const SizedBox(width: 12),
+                      ElevatedButton(
+                        onPressed: hasValidationErrors ? null : onConfirm,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _rolloverActionMaroon,
+                          foregroundColor: Colors.white,
+                          disabledForegroundColor: Colors.white70,
+                          elevation: 2,
+                          shadowColor: Colors.black26,
+                          textStyle: const TextStyle(
                             color: Colors.white,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 14,
                           ),
-                          const SizedBox(width: 10),
-                          Text(
-                            'Create Rollover Records ($nonDropCount)',
-                            style: const TextStyle(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 24,
+                            vertical: 14,
+                          ),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(28),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(
+                              Icons.check_circle_outline_rounded,
+                              size: 22,
                               color: Colors.white,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 14,
                             ),
-                          ),
-                        ],
+                            const SizedBox(width: 10),
+                            Text(
+                              'Create Rollover Records ($nonDropCount)',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w700,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

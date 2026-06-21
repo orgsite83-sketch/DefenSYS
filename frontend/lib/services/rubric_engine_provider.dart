@@ -26,6 +26,7 @@ class RubricEngineState {
   final String status;
   /// API query `evaluation_type`; empty means no filter (show all types).
   final String evaluationType;
+  final String termContext;
   final String? error;
   final String? message;
 
@@ -44,6 +45,7 @@ class RubricEngineState {
     this.scope = '',
     this.status = '',
     this.evaluationType = '',
+    this.termContext = '',
     this.error,
     this.message,
   });
@@ -63,6 +65,7 @@ class RubricEngineState {
     String? scope,
     String? status,
     String? evaluationType,
+    String? termContext,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -86,6 +89,7 @@ class RubricEngineState {
       scope: scope ?? this.scope,
       status: status ?? this.status,
       evaluationType: evaluationType ?? this.evaluationType,
+      termContext: termContext ?? this.termContext,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -105,12 +109,14 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     String? scope,
     String? status,
     String? evaluationType,
+    String? termContext,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextScope = scope ?? state.scope;
     final nextStatus = status ?? state.status;
     final nextEvaluationType = evaluationType ?? state.evaluationType;
+    final nextTermContext = termContext ?? state.termContext;
 
     state = state.copyWith(
       isLoading: state.rubrics.isEmpty,
@@ -119,6 +125,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
       scope: nextScope,
       status: nextStatus,
       evaluationType: nextEvaluationType,
+      termContext: nextTermContext,
       clearError: true,
       clearMessage: true,
     );
@@ -131,6 +138,8 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextEvaluationType.isNotEmpty)
             'evaluation_type': nextEvaluationType,
+          if (nextTermContext.isNotEmpty)
+            'term_context': nextTermContext,
         },
       );
       final response = await _client.get(uri);

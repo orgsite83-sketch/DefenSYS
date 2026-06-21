@@ -159,6 +159,7 @@ def filter_rubrics(request, queryset=None, *, apply_evaluation_type=True):
     scope = request.query_params.get('scope', '').strip()
     status_filter = request.query_params.get('status', '').strip()
     evaluation_type = request.query_params.get('evaluation_type', '').strip()
+    term_context = request.query_params.get('term_context', '').strip().lower()
 
     if search:
         queryset = queryset.filter(
@@ -174,6 +175,18 @@ def filter_rubrics(request, queryset=None, *, apply_evaluation_type=True):
         queryset = queryset.filter(status=status_filter)
     if apply_evaluation_type and evaluation_type:
         queryset = queryset.filter(evaluation_type=evaluation_type)
+
+    if term_context == 'active':
+        active = active_semester()
+        if active:
+            queryset = queryset.filter(semester=active)
+        else:
+            queryset = queryset.none()
+    elif term_context == 'history':
+        active = active_semester()
+        if active:
+            queryset = queryset.exclude(semester=active)
+
     return queryset
 
 

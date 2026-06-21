@@ -302,11 +302,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         team['adviser_name']?.toString() ??
         _adviserLabel(_asInt(team['adviser_id']), detailState.advisers);
 
-    final memberIds = _readIntList(team['member_ids']);
-    final leaderId = _asInt(team['leader_id']);
-    final members = detailState.students
-        .where((s) => memberIds.contains(_asInt(s['id'])))
+    final members = (team['members'] as List? ?? const [])
+        .map((m) => Map<String, dynamic>.from(m))
         .toList();
+    final leaderId = _asInt(team['leader_id']);
 
     return SingleChildScrollView(
       child: Container(
@@ -374,12 +373,40 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              '${student['name']} (${student['username']})',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.w600,
-                                fontSize: 13.5,
-                              ),
+                            Wrap(
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              spacing: 8,
+                              children: [
+                                Text(
+                                  '${student['name']} (${student['username']})',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                  ),
+                                ),
+                                if (student['is_enrolled'] == false)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 6,
+                                      vertical: 2,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFEE2E2),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: const Color(0xFFFCA5A5),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      'Not Enrolled',
+                                      style: TextStyle(
+                                        color: Color(0xFFB91C1C),
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                             if (isLeader)
                               const Text(

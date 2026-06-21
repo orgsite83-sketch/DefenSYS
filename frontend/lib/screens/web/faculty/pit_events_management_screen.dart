@@ -971,8 +971,35 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
-    final panelRubrics = state.rubrics.where((r) => r['scope'] == 'pit' && r['evaluation_type'] == 'panel').toList();
-    final peerRubrics = state.peerRubrics.where((r) => r['scope'] == 'pit' && r['evaluation_type'] == 'peer').toList();
+
+    // Find rubrics already assigned to other PIT event configs in the active semester
+    final otherConfigs = state.pitEvents.where((c) {
+      if (widget.config == null) return true;
+      return c['id']?.toString() != widget.config!['id']?.toString();
+    });
+
+    final assignedPanelIds = otherConfigs
+        .map((c) => int.tryParse(c['panel_rubric_id']?.toString() ?? ''))
+        .whereType<int>()
+        .toSet();
+    final assignedPeerIds = otherConfigs
+        .map((c) => int.tryParse(c['peer_rubric_id']?.toString() ?? ''))
+        .whereType<int>()
+        .toSet();
+
+    final panelRubrics = state.rubrics.where((r) {
+      final scopeMatch = r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
+      final rubricId = int.tryParse(r['id']?.toString() ?? '');
+      final isAssignedToOther = rubricId != null && assignedPanelIds.contains(rubricId);
+      return scopeMatch && !isAssignedToOther;
+    }).toList();
+
+    final peerRubrics = state.peerRubrics.where((r) {
+      final scopeMatch = r['scope'] == 'pit' && r['evaluation_type'] == 'peer';
+      final rubricId = int.tryParse(r['id']?.toString() ?? '');
+      final isAssignedToOther = rubricId != null && assignedPeerIds.contains(rubricId);
+      return scopeMatch && !isAssignedToOther;
+    }).toList();
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1034,7 +1061,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             ),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
-                                return 'Event Name is required.';
+                                  return 'Event Name is required.';
                               }
                               return null;
                             },
@@ -1048,12 +1075,25 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   initialValue: _panelRubricId,
                                   decoration: _dialogInputDecoration(labelText: 'Panel Rubric (Required)'),
                                   style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14, color: DefensysTokens.textPrimary),
-                                  items: panelRubrics.map((r) {
-                                    return DropdownMenuItem<int>(
-                                      value: int.tryParse(r['id']?.toString() ?? ''),
-                                      child: Text(r['name']?.toString() ?? ''),
-                                    );
-                                  }).toList(),
+                                  items: () {
+                                    final list = panelRubrics.map((r) {
+                                      return DropdownMenuItem<int>(
+                                        value: int.tryParse(r['id']?.toString() ?? ''),
+                                        child: Text(r['name']?.toString() ?? ''),
+                                      );
+                                    }).toList();
+                                    if (_panelRubricId != null && !panelRubrics.any((r) => int.tryParse(r['id']?.toString() ?? '') == _panelRubricId)) {
+                                      final currentRubric = state.rubrics.firstWhere(
+                                        (r) => int.tryParse(r['id']?.toString() ?? '') == _panelRubricId,
+                                        orElse: () => const {},
+                                      );
+                                      list.add(DropdownMenuItem<int>(
+                                        value: _panelRubricId,
+                                        child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
+                                      ));
+                                    }
+                                    return list;
+                                  }(),
                                   onChanged: (value) {
                                     setState(() => _panelRubricId = value);
                                   },
@@ -1065,12 +1105,25 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   initialValue: _peerRubricId,
                                   decoration: _dialogInputDecoration(labelText: 'Peer Rubric (Required)'),
                                   style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14, color: DefensysTokens.textPrimary),
-                                  items: peerRubrics.map((r) {
-                                    return DropdownMenuItem<int>(
-                                      value: int.tryParse(r['id']?.toString() ?? ''),
-                                      child: Text(r['name']?.toString() ?? ''),
-                                    );
-                                  }).toList(),
+                                  items: () {
+                                    final list = peerRubrics.map((r) {
+                                      return DropdownMenuItem<int>(
+                                        value: int.tryParse(r['id']?.toString() ?? ''),
+                                        child: Text(r['name']?.toString() ?? ''),
+                                      );
+                                    }).toList();
+                                    if (_peerRubricId != null && !peerRubrics.any((r) => int.tryParse(r['id']?.toString() ?? '') == _peerRubricId)) {
+                                      final currentRubric = state.peerRubrics.firstWhere(
+                                        (r) => int.tryParse(r['id']?.toString() ?? '') == _peerRubricId,
+                                        orElse: () => const {},
+                                      );
+                                      list.add(DropdownMenuItem<int>(
+                                        value: _peerRubricId,
+                                        child: Text(currentRubric['name']?.toString() ?? 'Selected Rubric'),
+                                      ));
+                                    }
+                                    return list;
+                                  }(),
                                   onChanged: (value) {
                                     setState(() => _peerRubricId = value);
                                   },

@@ -40,6 +40,14 @@ class Rubric(models.Model):
         (STATUS_PUBLISHED, 'Published'),
     )
 
+    TARGET_TEAM = 'team'
+    TARGET_INDIVIDUAL = 'individual'
+
+    TARGET_CHOICES = (
+        (TARGET_TEAM, 'Team'),
+        (TARGET_INDIVIDUAL, 'Individual'),
+    )
+
     name = models.CharField(max_length=160)
     scope = models.CharField(max_length=20, choices=SCOPE_CHOICES, default=SCOPE_CAPSTONE)
     semester = models.ForeignKey(
@@ -56,6 +64,7 @@ class Rubric(models.Model):
     )
     event_name = models.CharField(max_length=120, blank=True)
     evaluation_type = models.CharField(max_length=20, choices=EVALUATION_TYPE_CHOICES)
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES, default=TARGET_TEAM)
     scale = models.CharField(max_length=30, choices=SCALE_CHOICES, default=SCALE_10)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     is_locked = models.BooleanField(default=False)
@@ -93,8 +102,6 @@ class Rubric(models.Model):
 
     def clean(self):
         errors = {}
-        if self.scope == self.SCOPE_CAPSTONE and not self.defense_stage_id:
-            errors['defense_stage'] = 'Capstone rubrics require a defense stage.'
         if self.scope == self.SCOPE_PIT:
             if self.evaluation_type == self.EVAL_ADVISER:
                 errors['evaluation_type'] = 'PIT rubrics do not support adviser evaluation.'

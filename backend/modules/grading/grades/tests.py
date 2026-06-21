@@ -12,7 +12,7 @@ from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
 from repository.audit.services import repository_scope, pit_upload_window_open
 from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
-from .models import GradeBreakdown, PeerEvaluationSubmission, StudentPeerGrade, TeamGrade
+from .models import GradeBreakdown, PeerEvaluationSubmission, StudentStageGrade, TeamGrade
 from .services import (
     find_matching_rubric,
     rebuild_component_breakdown,
@@ -1170,14 +1170,14 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         grade.refresh_from_db()
         self.assertIsNone(grade.peer_score)
-        self.assertFalse(StudentPeerGrade.objects.filter(team_grade=grade).exists())
+        self.assertFalse(StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).exists())
 
     def test_full_peer_submission_sets_peer_score(self):
         grade = self._capstone_grade()
         self._submit_all_capstone_peer_evaluations()
         grade.refresh_from_db()
         self.assertIsNotNone(grade.peer_score)
-        self.assertEqual(StudentPeerGrade.objects.filter(team_grade=grade).count(), 2)
+        self.assertEqual(StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).count(), 2)
 
     def test_grade_detail_does_not_refresh_peer_summaries(self):
         grade = self._capstone_grade()
@@ -1203,7 +1203,7 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         grade.refresh_from_db()
         self.assertIsNone(grade.peer_score)
-        self.assertFalse(StudentPeerGrade.objects.filter(team_grade=grade).exists())
+        self.assertFalse(StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).exists())
 
     def test_pit_close_blocked_when_peer_grading_open_and_incomplete(self):
         self.pit_team.semester = self.semester
@@ -1331,7 +1331,7 @@ class GradeCenterApiTests(APITestCase):
         grade.peer_score = None
         grade.save(update_fields=['status', 'peer_score', 'updated_at'])
         PeerEvaluationSubmission.objects.filter(team_grade=grade).delete()
-        StudentPeerGrade.objects.filter(team_grade=grade).delete()
+        StudentStageGrade.objects.filter(team_grade=grade).update(peer_score=None)
         self.client.force_authenticate(user=self.student)
         self.client.post(
             '/api/grading/grades/peer-evaluations/',
@@ -1438,7 +1438,7 @@ class GradeCenterApiTests(APITestCase):
         grade.refresh_from_db()
         self.assertIsNone(grade.peer_score)
         self.assertFalse(
-            StudentPeerGrade.objects.filter(team_grade=grade).exists(),
+            StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).exists(),
         )
 
     def test_peer_submit_uses_evaluatee_id_when_names_duplicate(self):
@@ -1642,7 +1642,7 @@ class GradeCenterApiTests(APITestCase):
         )
         self.assertFalse(PeerEvaluationSubmission.objects.filter(team_grade=stale).exists())
         self.assertFalse(
-            StudentPeerGrade.objects.filter(team_grade=canonical).exists(),
+            StudentStageGrade.objects.filter(team_grade=canonical).exclude(peer_score=None).exists(),
         )
         self.assertIsNone(canonical.peer_score)
 
@@ -1691,6 +1691,6 @@ class GradeCenterApiTests(APITestCase):
         )
         self.assertFalse(TeamGrade.objects.filter(pk=stale.pk).exists())
         self.assertFalse(
-            StudentPeerGrade.objects.filter(team_grade=canonical).exists(),
+            StudentStageGrade.objects.filter(team_grade=canonical).exclude(peer_score=None).exists(),
         )
         self.assertIsNone(canonical.peer_score)

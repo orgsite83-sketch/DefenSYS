@@ -64,13 +64,30 @@ class TeamMemberSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='student.username', read_only=True)
     name = serializers.SerializerMethodField()
     email = serializers.EmailField(source='student.email', read_only=True)
+    is_enrolled = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamMembership
-        fields = ['id', 'username', 'name', 'email', 'is_leader', 'order']
+        fields = ['id', 'username', 'name', 'email', 'is_leader', 'order', 'is_enrolled']
 
     def get_name(self, obj):
         return display_name(obj.student)
+
+    def get_is_enrolled(self, obj):
+        context = self.context
+        if 'enrolled_student_ids' not in context:
+            from .term_scope import get_active_semester
+            active = get_active_semester()
+            if active:
+                enrolled_ids = set(
+                    StudentAcademicRecord.objects.filter(semester=active)
+                    .values_list('student_id', flat=True)
+                )
+            else:
+                enrolled_ids = set()
+            context['enrolled_student_ids'] = enrolled_ids
+
+        return obj.student_id in context['enrolled_student_ids']
 
 
 class StudentTeamSerializer(serializers.ModelSerializer):

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/student_academic_records_provider.dart';
+import '../../../utils/csv_file_io.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 import 'widgets/student_records_rollover_modal.dart';
@@ -1033,35 +1034,25 @@ class _StudentAcademicRecordsScreenState
   }
 
   Future<void> _showRolloverDialog() async {
-    final loaded = await ref
-        .read(studentAcademicRecordsProvider.notifier)
-        .fetchRolloverPreview();
-    if (!mounted || !loaded) {
-      return;
-    }
-
-    final state = ref.read(studentAcademicRecordsProvider);
-    if (state.rolloverRows.isEmpty) {
-      showValidationToast(context, 'No records available for rollover.');
-      return;
-    }
-
-    final actions = <int, String>{
-      for (final row in state.rolloverRows)
-        if (_asInt((row['record'] as Map?)?['id']) != null)
-          _asInt((row['record'] as Map?)?['id'])!: 'promote',
-    };
-
-    // Declare outside builder so it isn't recreated on each setState
     final rolloverSearchCtrl = TextEditingController();
 
-    final confirmed = await showDialog<bool>(
+    // Clear previous preview state
+    ref.read(studentAcademicRecordsProvider.notifier).fetchRolloverPreview(students: []);
+
+    final Map<String, String>? dialogActions = await showDialog<Map<String, String>>(
       context: context,
       builder: (dialogContext) {
         String searchQuery = '';
+        String? uploadedCsv;
+        final actions = <String, String>{};
 
         return StatefulBuilder(
           builder: (context, setDialogState) {
+            final state = ref.watch(studentAcademicRecordsProvider);
+            final activeLabel =
+                state.activeSemester?['display_name'] ?? 'Not configured';
+            final hasCsv = uploadedCsv != null;
+
             final filtered = state.rolloverRows.where((row) {
               if (searchQuery.isEmpty) return true;
               final record = row['record'] as Map? ?? {};
@@ -1073,8 +1064,6 @@ class _StudentAcademicRecordsScreenState
               return name.contains(q) || username.contains(q);
             }).toList();
 
-            final activeLabel =
-                state.activeSemester?['display_name'] ?? 'Not configured';
             final totalCount = state.rolloverRows.length;
             final nonDropCount =
                 actions.values.where((a) => a != 'drop').length;
@@ -1083,6 +1072,19 @@ class _StudentAcademicRecordsScreenState
                 .where((row) => !_rolloverHasTarget(row, 'promote'))
                 .length;
             final useWarningChrome = missingCount > 0;
+
+            bool hasValidationErrors = false;
+            for (final row in state.rolloverRows) {
+              final rec = row['record'] as Map? ?? {};
+              final recordKeyId = rec['id'] != null 
+                  ? rec['id'].toString() 
+                  : rec['student_username'].toString();
+              final action = actions[recordKeyId] ?? row['action_default'] ?? 'promote';
+              if (action != 'drop' && row['validation_error'] != null) {
+                hasValidationErrors = true;
+                break;
+              }
+            }
 
             return StudentRecordsRolloverModal(
               useWarningChrome: useWarningChrome,
@@ -1094,10 +1096,23 @@ class _StudentAcademicRecordsScreenState
               rolloverSearchCtrl: rolloverSearchCtrl,
               actions: actions,
               onPromoteAll: () => setDialogState(() {
-                actions.updateAll((key, value) => 'promote');
+                for (final row in state.rolloverRows) {
+                  final rec = row['record'] as Map? ?? {};
+                  final isNew = row['is_new_student'] == true;
+                  final recordKeyId = rec['id'] != null 
+                      ? rec['id'].toString() 
+                      : rec['student_username'].toString();
+                  actions[recordKeyId] = isNew ? 'create' : 'promote';
+                }
               }),
               onRetainAll: () => setDialogState(() {
-                actions.updateAll((key, value) => 'retain');
+                for (final row in state.rolloverRows) {
+                  final rec = row['record'] as Map? ?? {};
+                  final recordKeyId = rec['id'] != null 
+                      ? rec['id'].toString() 
+                      : rec['student_username'].toString();
+                  actions[recordKeyId] = 'retain';
+                }
               }),
               onSearchChanged: (v) => setDialogState(() => searchQuery = v),
               onSearchClear: () {
@@ -1107,12 +1122,84 @@ class _StudentAcademicRecordsScreenState
               onActionChanged: (id, value) => setDialogState(() {
                 actions[id] = value ?? 'promote';
               }),
-              onClose: () => Navigator.pop(dialogContext, false),
-              onConfirm: () => Navigator.pop(dialogContext, true),
+              onClose: () => Navigator.pop(dialogContext, null),
+              onConfirm: () => Navigator.pop(dialogContext, actions),
               nonDropCount: nonDropCount,
               rolloverHasTarget: _rolloverHasTarget,
               rolloverResult: _rolloverResult,
               asInt: _asInt,
+              hasCsvUploaded: hasCsv,
+              hasValidationErrors: hasValidationErrors,
+              onUploadCsv: () async {
+                try {
+                  final csv = await pickCsvTextFile();
+                  if (csv == null) return;
+                  if (!context.mounted) return;
+
+                  final parsed = _parseOfficialClassListCsv(csv);
+                  if (parsed.validationError != null) {
+                    showValidationToast(context, parsed.validationError!);
+                    return;
+                  }
+                  if (parsed.students.isEmpty) {
+                    showValidationToast(
+                      context,
+                      'Selected file has no valid student records or header is invalid.',
+                    );
+                    return;
+                  }
+
+                  final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
+                  if (activeSem == null) {
+                    showValidationToast(context, 'No active target semester is configured.');
+                    return;
+                  }
+
+                  final targetSchoolYear = activeSem['school_year']?.toString().trim();
+                  final targetSemester = activeSem['label']?.toString().trim();
+
+                  final csvSchoolYear = parsed.metadata['school_year']?.toString().trim();
+                  final csvSemester = parsed.metadata['semester']?.toString().trim();
+
+                  if (csvSchoolYear != targetSchoolYear || csvSemester != targetSemester) {
+                    showValidationToast(
+                      context,
+                      'Semester mismatch: The CSV is for $csvSemester A.Y. $csvSchoolYear, but the target semester is $targetSemester A.Y. $targetSchoolYear.',
+                    );
+                    return;
+                  }
+
+                  final ok = await ref
+                      .read(studentAcademicRecordsProvider.notifier)
+                      .fetchRolloverPreview(students: parsed.students);
+                  if (!context.mounted) return;
+                  if (ok) {
+                    final updatedState = ref.read(studentAcademicRecordsProvider);
+                    setDialogState(() {
+                      uploadedCsv = csv;
+                      actions.clear();
+                      for (final row in updatedState.rolloverRows) {
+                        final rec = row['record'] as Map? ?? {};
+                        final recordKeyId = rec['id'] != null 
+                            ? rec['id'].toString() 
+                            : rec['student_username'].toString();
+                        actions[recordKeyId] = row['action_default']?.toString() ?? 'promote';
+                      }
+                    });
+                  }
+                } catch (e) {
+                  if (context.mounted) {
+                    showErrorToast(context, 'Failed to process CSV file: $e');
+                  }
+                }
+              },
+              onClearCsv: () => setDialogState(() {
+                uploadedCsv = null;
+                actions.clear();
+                ref
+                    .read(studentAcademicRecordsProvider.notifier)
+                    .fetchRolloverPreview(students: []);
+              }),
             );
           },
         );
@@ -1121,19 +1208,50 @@ class _StudentAcademicRecordsScreenState
 
     rolloverSearchCtrl.dispose();
 
-    if (!mounted || confirmed != true) {
+    if (!mounted || dialogActions == null) {
       return;
+    }
+
+    final state = ref.read(studentAcademicRecordsProvider);
+    final List<Map<String, dynamic>> confirmActions = [];
+
+    for (final row in state.rolloverRows) {
+      final rec = row['record'] as Map? ?? {};
+      final recordId = _asInt(rec['id']);
+      final username = rec['student_username']?.toString() ?? '';
+      final recordKeyId = recordId != null ? recordId.toString() : username;
+
+      final action = dialogActions[recordKeyId] ?? row['action_default'] ?? 'promote';
+      final isNew = row['is_new_student'] == true;
+
+      final pr = row['promote_result'] ?? {};
+      final targetYear = pr['year_level']?.toString() ?? '';
+      final targetSection = pr['section']?.toString() ?? '';
+
+      if (isNew) {
+        confirmActions.add({
+          'username': username,
+          'first_name': rec['first_name']?.toString() ?? '',
+          'last_name': rec['last_name']?.toString() ?? '',
+          'email': rec['student_email']?.toString() ?? '',
+          'action': action,
+          'year_level': targetYear,
+          'section': targetSection,
+        });
+      } else {
+        confirmActions.add({
+          'record_id': recordId,
+          'username': username,
+          'action': action,
+          'year_level': targetYear,
+          'section': targetSection,
+        });
+      }
     }
 
     await ref
         .read(studentAcademicRecordsProvider.notifier)
-        .confirmRollover(
-          actions.entries
-              .map(
-                (entry) => {'record_id': entry.key, 'action': entry.value},
-              )
-              .toList(),
-        );
+        .confirmRollover(confirmActions);
   }
 
   Future<void> _confirmDelete(int recordId, String studentName) async {
@@ -1169,20 +1287,250 @@ class _StudentAcademicRecordsScreenState
     if (action == 'drop') {
       return 'Excluded';
     }
+    if (action == 'create') {
+      final pr = row['promote_result'] ?? {};
+      return '${pr['year_level']} · ${pr['section']}';
+    }
     final key = action == 'retain' ? 'retain_result' : 'promote_result';
     final result = Map<String, dynamic>.from(row[key] as Map);
     final hasTarget = result['target_semester_id'] != null;
+    final sectionStr = result['section'] != null && result['section'].toString().isNotEmpty ? ' · ${result['section']}' : '';
     if (!hasTarget && action == 'promote') {
-      return '${result['year_level']} · ${result['semester']} (semester not found)';
+      return '${result['year_level']}$sectionStr (semester not found)';
     }
-    return '${result['year_level']} · ${result['semester']}';
+    return '${result['year_level']}$sectionStr';
   }
 
   bool _rolloverHasTarget(Map<String, dynamic> row, String action) {
-    if (action == 'drop' || action == 'retain') return true;
+    if (action == 'drop' || action == 'retain' || action == 'create') return true;
     final result = row['promote_result'];
     if (result is! Map) return false;
     return result['target_semester_id'] != null;
+  }
+
+  _OfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
+    final rows = csv
+        .split(RegExp(r'\r?\n'))
+        .map(_splitCsvLine)
+        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+        .toList();
+    if (rows.isEmpty) {
+      return const _OfficialClassListParseResult(
+        metadata: {},
+        students: [],
+        validationError: 'Selected file is empty.',
+      );
+    }
+
+    String? csvSchoolYear;
+    String? csvSemester;
+    final schoolYearRegex = RegExp(r'\b(\d{4}-\d{4})\b');
+    final semesterRegex = RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
+
+    final limit = rows.length < 10 ? rows.length : 10;
+    for (var i = 0; i < limit; i++) {
+      for (final cell in rows[i]) {
+        final trimmed = cell.trim();
+        if (trimmed.isEmpty) continue;
+
+        if (csvSchoolYear == null) {
+          final syMatch = schoolYearRegex.firstMatch(trimmed);
+          if (syMatch != null) {
+            csvSchoolYear = syMatch.group(1);
+          }
+        }
+
+        if (csvSemester == null) {
+          final semMatch = semesterRegex.firstMatch(trimmed);
+          if (semMatch != null) {
+            final rawSem = semMatch.group(1)!.toLowerCase();
+            if (rawSem.contains('1st')) {
+              csvSemester = '1st Semester';
+            } else if (rawSem.contains('2nd')) {
+              csvSemester = '2nd Semester';
+            } else if (rawSem.contains('summer')) {
+              csvSemester = 'Summer';
+            }
+          }
+        }
+      }
+      if (csvSchoolYear != null && csvSemester != null) break;
+    }
+
+    if (csvSchoolYear == null || csvSemester == null) {
+      return const _OfficialClassListParseResult(
+        metadata: {},
+        students: [],
+        validationError: 'Missing school year/semester header in the CSV (e.g., "2026-2027 1st Semester").',
+      );
+    }
+
+    final metadata = <String, dynamic>{
+      'school_year': csvSchoolYear,
+      'semester': csvSemester,
+    };
+    var headerIndex = -1;
+
+    for (var i = 0; i < rows.length; i++) {
+      final normalized = rows[i].map(_normalizeHeader).toList();
+
+      void readMeta(String key, List<String> labels) {
+        if (metadata[key]?.toString().trim().isNotEmpty == true) return;
+        for (final label in labels) {
+          final index = normalized.indexWhere((cell) => cell == label);
+          if (index == -1) continue;
+          final value = _nextCell(rows[i], index);
+          if (value.isNotEmpty) metadata[key] = value;
+          return;
+        }
+      }
+
+      readMeta('faculty', ['faculty', 'instructor']);
+      readMeta('section', ['class section', 'section']);
+      readMeta('year_level', ['year level', 'level']);
+
+      final hasStudentNumber = normalized.any(
+        (cell) =>
+            cell.contains('student') &&
+            (cell.contains('number') ||
+                cell.contains('no') ||
+                cell == 'student n'),
+      );
+      final hasFullName = normalized.contains('full name');
+      if (hasStudentNumber && hasFullName) {
+        headerIndex = i;
+        break;
+      }
+    }
+
+    if (metadata['year_level'] != null) {
+      metadata['year_level'] = _normalizeYearLevel(
+        metadata['year_level'].toString(),
+      );
+    }
+    if (headerIndex == -1) {
+      return _OfficialClassListParseResult(
+        metadata: metadata,
+        students: const [],
+      );
+    }
+
+    final headers = rows[headerIndex].map(_normalizeHeader).toList();
+    int findHeader(bool Function(String value) matches) =>
+        headers.indexWhere(matches);
+    final idIndex = findHeader(
+      (value) =>
+          value.contains('student') &&
+          (value.contains('number') ||
+              value.contains('no') ||
+              value == 'student n'),
+    );
+    final nameIndex = findHeader((value) => value == 'full name');
+    final levelIndex = findHeader((value) => value == 'level');
+    final emailIndex = findHeader((value) => value == 'email');
+    final section = metadata['section']?.toString() ?? '';
+    final yearLevel = metadata['year_level']?.toString() ?? '';
+    final students = <Map<String, dynamic>>[];
+
+    for (final row in rows.skip(headerIndex + 1)) {
+      String read(int index) =>
+          index >= 0 && index < row.length ? row[index].trim() : '';
+      final id = read(idIndex);
+      final name = read(nameIndex);
+      if (id.isEmpty || name.isEmpty) continue;
+      final splitName = _splitOfficialFullName(name);
+      final rowYear = levelIndex != -1
+          ? _normalizeYearLevel(read(levelIndex))
+          : yearLevel;
+      students.add({
+        'id_number': id,
+        'first_name': splitName.firstName,
+        'last_name': splitName.lastName,
+        'email': emailIndex == -1 ? '' : read(emailIndex),
+        'role': 'student',
+        if (rowYear.isNotEmpty) 'year_level': rowYear,
+        if (section.isNotEmpty) 'section': section,
+      });
+    }
+
+    return _OfficialClassListParseResult(
+      metadata: metadata,
+      students: students,
+    );
+  }
+
+  List<String> _splitCsvLine(String line) {
+    final values = <String>[];
+    final buffer = StringBuffer();
+    var quoted = false;
+    for (var i = 0; i < line.length; i++) {
+      final char = line[i];
+      if (char == '"') {
+        if (quoted && i + 1 < line.length && line[i + 1] == '"') {
+          buffer.write('"');
+          i++;
+        } else {
+          quoted = !quoted;
+        }
+      } else if (char == ',' && !quoted) {
+        values.add(buffer.toString().trim());
+        buffer.clear();
+      } else {
+        buffer.write(char);
+      }
+    }
+    values.add(buffer.toString().trim());
+    return values;
+  }
+
+  String _nextCell(List<String> row, int index) {
+    for (var i = index + 1; i < row.length; i++) {
+      final value = row[i].trim();
+      if (value.isNotEmpty) return value;
+    }
+    return '';
+  }
+
+  String _normalizeHeader(String value) => value
+      .trim()
+      .replaceFirst('\ufeff', '')
+      .toLowerCase()
+      .replaceAll(RegExp(r'[^a-z0-9]+'), ' ')
+      .trim();
+
+  String _normalizeYearLevel(String value) {
+    final cleaned = value.trim().toLowerCase();
+    if (cleaned.contains('1') || cleaned.contains('first')) {
+      return '1st Year';
+    }
+    if (cleaned.contains('2') || cleaned.contains('second')) {
+      return '2nd Year';
+    }
+    if (cleaned.contains('3') || cleaned.contains('third')) {
+      return '3rd Year';
+    }
+    if (cleaned.contains('4') || cleaned.contains('fourth')) {
+      return '4th Year';
+    }
+    return value;
+  }
+
+  _OfficialNameParts _splitOfficialFullName(String value) {
+    final clean = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (clean.contains(',')) {
+      final parts = clean.split(',');
+      final lastName = parts.first.trim();
+      final firstName = parts.skip(1).join(',').trim();
+      return _OfficialNameParts(firstName: firstName, lastName: lastName);
+    }
+    final parts = clean.split(' ');
+    if (parts.length == 1) {
+      return _OfficialNameParts(firstName: clean, lastName: '');
+    }
+    return _OfficialNameParts(
+      firstName: parts.first,
+      lastName: parts.skip(1).join(' '),
+    );
   }
 
   List<Map<String, dynamic>> _semestersForYear(
@@ -1325,4 +1673,23 @@ class _ColumnSpec {
   final double flex;
 
   const _ColumnSpec(this.label, this.flex);
+}
+
+class _OfficialClassListParseResult {
+  final Map<String, dynamic> metadata;
+  final List<Map<String, dynamic>> students;
+  final String? validationError;
+
+  const _OfficialClassListParseResult({
+    required this.metadata,
+    required this.students,
+    this.validationError,
+  });
+}
+
+class _OfficialNameParts {
+  final String firstName;
+  final String lastName;
+
+  const _OfficialNameParts({required this.firstName, required this.lastName});
 }

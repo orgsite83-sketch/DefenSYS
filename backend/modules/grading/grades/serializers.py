@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from grading.rubrics.models import Rubric
-from .models import GradeBreakdown, StudentPeerGrade, TeamGrade
+from .models import GradeBreakdown, StudentStageGrade, TeamGrade
 from .services import display_name
 
 
@@ -24,22 +24,22 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
         ]
 
 
-class StudentPeerGradeSerializer(serializers.ModelSerializer):
+class StudentStageGradeSerializer(serializers.ModelSerializer):
     student_id = serializers.IntegerField(source='student.id', read_only=True)
     username = serializers.CharField(source='student.username', read_only=True)
     student_name = serializers.SerializerMethodField()
-    normalized_score = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
 
     class Meta:
-        model = StudentPeerGrade
+        model = StudentStageGrade
         fields = [
             'id',
             'student_id',
             'username',
             'student_name',
-            'average_score',
-            'max_score',
-            'normalized_score',
+            'panel_score',
+            'adviser_score',
+            'peer_score',
+            'final_grade',
         ]
 
     def get_student_name(self, obj):
@@ -67,7 +67,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     result = serializers.CharField(read_only=True)
     panelists = serializers.SerializerMethodField()
     breakdowns = GradeBreakdownSerializer(many=True, read_only=True)
-    peer_per_student = StudentPeerGradeSerializer(source='peer_member_grades', many=True, read_only=True)
+    peer_per_student = StudentStageGradeSerializer(source='student_grades', many=True, read_only=True)
     published_by_name = serializers.SerializerMethodField()
     peer_eval_complete = serializers.SerializerMethodField()
     peer_submissions_submitted = serializers.SerializerMethodField()
@@ -79,6 +79,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     adviser_required = serializers.SerializerMethodField()
     grading_ready = serializers.SerializerMethodField()
     missing_components = serializers.SerializerMethodField()
+    rubric_target_type = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamGrade
@@ -122,11 +123,17 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'adviser_required',
             'grading_ready',
             'missing_components',
+            'rubric_target_type',
             'published_by_name',
             'published_at',
             'created_at',
             'updated_at',
         ]
+
+    def get_rubric_target_type(self, obj):
+        if obj.schedule and obj.schedule.rubric:
+            return obj.schedule.rubric.target_type
+        return 'team'
 
     def get_adviser_name(self, obj):
         return display_name(obj.team.adviser)

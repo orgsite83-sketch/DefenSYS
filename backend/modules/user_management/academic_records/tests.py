@@ -140,6 +140,11 @@ class StudentAcademicRecordApiTests(APITestCase):
             year_level=StudentAcademicRecord.FIRST_YEAR,
         )
 
+        self.first_semester.is_active = False
+        self.first_semester.save(update_fields=['is_active'])
+        self.second_semester.is_active = True
+        self.second_semester.save(update_fields=['is_active'])
+
         preview = self.client.get('/api/users/academic-records/rollover-preview/')
         response = self.client.post(
             '/api/users/academic-records/rollover/',

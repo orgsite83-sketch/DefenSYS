@@ -7,6 +7,7 @@ import '../../../services/defense_stages_provider.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
 
@@ -1178,10 +1179,24 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     child: const Text('Cancel'),
                   ),
                   ElevatedButton.icon(
-                    onPressed: label.text.trim().isEmpty ||
-                            (!editing && (total != 100 || semesterId == null))
-                        ? null
-                        : () => Navigator.pop(dialogContext, true),
+                    onPressed: () {
+                      final stageName = label.text.trim();
+                      if (stageName.isEmpty) {
+                        showValidationToast(context, 'Enter a stage name.');
+                        return;
+                      }
+                      if (!editing) {
+                        if (semesterId == null) {
+                          showValidationToast(context, 'Select a semester.');
+                          return;
+                        }
+                        if (total != 100) {
+                          showValidationToast(context, 'Panel, Adviser, and Peer weights must total 100%.');
+                          return;
+                        }
+                      }
+                      Navigator.pop(dialogContext, true);
+                    },
                     icon: const Icon(Icons.save, size: 18),
                     label: Text(editing ? 'Save Changes' : 'Add Stage'),
                     style: ElevatedButton.styleFrom(

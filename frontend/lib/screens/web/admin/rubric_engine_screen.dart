@@ -45,6 +45,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       final user = ref.read(authProvider).user;
       ref.read(rubricEngineProvider.notifier).fetchRubrics(
             scope: _isPitLeadOnly(user) ? 'pit' : null,
+            termContext: 'active',
           );
       _updateTableScrollHint();
     });
@@ -403,6 +404,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
           Row(
             children: [
               Expanded(child: _searchField(state)),
+              const SizedBox(width: 16),
+              _termFilter(state),
               if (!isPitLeadOnly) ...[
                 const SizedBox(width: 16),
                 _scopeFilter(state),
@@ -517,6 +520,44 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                   ref
                       .read(rubricEngineProvider.notifier)
                       .fetchRubrics(scope: value ?? '');
+                },
+        ),
+      ),
+    );
+  }
+
+  Widget _termFilter(RubricEngineState state) {
+    return Container(
+      width: 168,
+      height: 43,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: state.termContext == 'history' ? 'history' : 'active',
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+          style: const TextStyle(
+            color: DefensysUi.textDark,
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+          items: const [
+            DropdownMenuItem(value: 'active', child: Text('Current Term')),
+            DropdownMenuItem(value: 'history', child: Text('History')),
+          ],
+          onChanged: state.isSaving
+              ? null
+              : (value) {
+                  if (value == null) return;
+                  ref
+                      .read(rubricEngineProvider.notifier)
+                      .fetchRubrics(termContext: value);
                 },
         ),
       ),

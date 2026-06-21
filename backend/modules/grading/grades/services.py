@@ -17,7 +17,7 @@ from .models import (
     PanelistCriterionScore,
     PanelistGradeSubmission,
     PeerEvaluationSubmission,
-    StudentPeerGrade,
+    StudentStageGrade,
     TeamGrade,
 )
 
@@ -136,37 +136,34 @@ def panelist_result_payload(team_grade, panelist_key):
     peer_w = team_grade.peer_weight
 
     member_grades = []
-    panel_contrib = None
-    if team_grade.panel_score is not None:
-        panel_contrib = float(
-            (team_grade.panel_score * Decimal(panel_w) / Decimal('100')).quantize(Decimal('0.01'))
-        )
-
-    peer_by_student = {
-        pg.student_id: pg for pg in team_grade.peer_member_grades.select_related('student')
+    sg_by_student = {
+        sg.student_id: sg for sg in team_grade.student_grades.select_related('student')
     }
+
     for membership in team.memberships.select_related('student').order_by('order', 'id'):
         student = membership.student
-        peer_row = peer_by_student.get(student.id)
-        peer_score = float(peer_row.average_score) if peer_row else None
-        peer_max = float(peer_row.max_score) if peer_row else None
-        final_grade = None
-        if team_grade.final_grade is not None and peer_row:
-            panel_norm = team_grade.panel_score or Decimal('0')
-            peer_norm = peer_row.normalized_score
-            final_grade = float(
-                (
-                    panel_norm * Decimal(panel_w) / Decimal('100')
-                    + peer_norm * Decimal(peer_w) / Decimal('100')
-                ).quantize(Decimal('0.01'))
+        sg_row = sg_by_student.get(student.id)
+
+        peer_score = float(sg_row.peer_score) if sg_row and sg_row.peer_score is not None else None
+        peer_max = 100.0 if peer_score is not None else None
+
+        member_panel_score = sg_row.panel_score if sg_row and sg_row.panel_score is not None else team_grade.panel_score
+        member_panel_contrib = None
+        if member_panel_score is not None:
+            member_panel_contrib = float(
+                (member_panel_score * Decimal(panel_w) / Decimal('100')).quantize(Decimal('0.01'))
             )
+
+        final_grade = None
+        if sg_row and sg_row.final_grade is not None:
+            final_grade = float(sg_row.final_grade)
         elif team_grade.final_grade is not None:
             final_grade = float(team_grade.final_grade)
 
         member_grades.append({
             'name': display_name(student),
             'isLeader': membership.is_leader,
-            'panelContrib': panel_contrib,
+            'panelContrib': member_panel_contrib,
             'peerScore': peer_score,
             'peerMax': peer_max,
             'finalGrade': final_grade,
@@ -202,31 +199,79 @@ def panelist_result_payload(team_grade, panelist_key):
 def recompute_panel_score(team_grade):
     """
     Set team_grade.panel_score to the arithmetic mean of each panelist's percentage.
-
-    panel_score = mean(panelist_i percentage), where each panelist_i percentage is
-    sum(criterion scores) / sum(criterion max scores) * 100 from their GradeBreakdown rows.
+    Also syncs and updates individual student stage grades if target_type is individual.
     """
+    from .models import StudentStageGrade
+    from .peer_eval import recalculate_student_grade
+
+    memberships = list(team_grade.team.memberships.select_related('student').all())
+    for membership in memberships:
+        StudentStageGrade.objects.get_or_create(team_grade=team_grade, student=membership.student)
+
+    is_individual = False
+    if team_grade.schedule and team_grade.schedule.rubric:
+        is_individual = (team_grade.schedule.rubric.target_type == 'individual')
+
     submissions = list(
         team_grade.panelist_submissions.prefetch_related('criterion_scores').all()
     )
+
     if submissions:
-        percentages = []
-        for submission in submissions:
-            pct = panelist_percentage_from_criterion_scores(
-                submission.criterion_scores.all()
-            )
-            if pct is not None:
-                percentages.append(pct)
+        if is_individual:
+            student_panel_scores = []
+            for membership in memberships:
+                student = membership.student
+                student_subs = [s for s in submissions if s.student_id == student.id]
+                percentages = []
+                for sub in student_subs:
+                    pct = panelist_percentage_from_criterion_scores(sub.criterion_scores.all())
+                    if pct is not None:
+                        percentages.append(pct)
+                
+                sg = StudentStageGrade.objects.get(team_grade=team_grade, student=student)
+                if percentages:
+                    sg.panel_score = (sum(percentages, Decimal('0')) / Decimal(len(percentages))).quantize(Decimal('0.01'))
+                    student_panel_scores.append(sg.panel_score)
+                else:
+                    sg.panel_score = None
+                sg.adviser_score = team_grade.adviser_score
+                sg.save()
+                recalculate_student_grade(sg)
 
-        if not percentages:
-            team_grade.panel_score = None
+            if student_panel_scores:
+                team_grade.panel_score = (sum(student_panel_scores, Decimal('0')) / Decimal(len(student_panel_scores))).quantize(Decimal('0.01'))
+            else:
+                team_grade.panel_score = None
+            team_grade.save()
+            return team_grade.panel_score
         else:
-            team_grade.panel_score = (
-                sum(percentages, Decimal('0')) / Decimal(len(percentages))
-            ).quantize(Decimal('0.01'))
-        team_grade.save()
-        return team_grade.panel_score
+            percentages = []
+            team_subs = [s for s in submissions if s.student_id is None]
+            if not team_subs:
+                team_subs = submissions
+            for sub in team_subs:
+                pct = panelist_percentage_from_criterion_scores(sub.criterion_scores.all())
+                if pct is not None:
+                    percentages.append(pct)
 
+            if not percentages:
+                team_grade.panel_score = None
+            else:
+                team_grade.panel_score = (
+                    sum(percentages, Decimal('0')) / Decimal(len(percentages))
+                ).quantize(Decimal('0.01'))
+            team_grade.save()
+
+            for membership in memberships:
+                sg = StudentStageGrade.objects.get(team_grade=team_grade, student=membership.student)
+                sg.panel_score = team_grade.panel_score
+                sg.adviser_score = team_grade.adviser_score
+                sg.save()
+                recalculate_student_grade(sg)
+
+            return team_grade.panel_score
+
+    # Fallback to breakdowns
     breakdowns = list(
         team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
             'display_order', 'id'
@@ -237,25 +282,69 @@ def recompute_panel_score(team_grade):
         team_grade.save()
         return team_grade.panel_score
 
-    by_panelist = {}
-    for row in breakdowns:
-        key = _panelist_key_from_breakdown_remarks(row.remarks)
-        by_panelist.setdefault(key, []).append(row)
+    if is_individual:
+        student_panel_scores = []
+        for membership in memberships:
+            student = membership.student
+            student_breakdowns = [b for b in breakdowns if b.student_id == student.id]
+            by_panelist = {}
+            for row in student_breakdowns:
+                key = _panelist_key_from_breakdown_remarks(row.remarks)
+                by_panelist.setdefault(key, []).append(row)
 
-    percentages = []
-    for rows in by_panelist.values():
-        pct = panelist_percentage_from_breakdowns(rows)
-        if pct is not None:
-            percentages.append(pct)
+            percentages = []
+            for rows in by_panelist.values():
+                pct = panelist_percentage_from_breakdowns(rows)
+                if pct is not None:
+                    percentages.append(pct)
 
-    if not percentages:
-        team_grade.panel_score = None
+            sg = StudentStageGrade.objects.get(team_grade=team_grade, student=student)
+            if percentages:
+                sg.panel_score = (sum(percentages, Decimal('0')) / Decimal(len(percentages))).quantize(Decimal('0.01'))
+                student_panel_scores.append(sg.panel_score)
+            else:
+                sg.panel_score = None
+            sg.adviser_score = team_grade.adviser_score
+            sg.save()
+            recalculate_student_grade(sg)
+
+        if student_panel_scores:
+            team_grade.panel_score = (sum(student_panel_scores, Decimal('0')) / Decimal(len(student_panel_scores))).quantize(Decimal('0.01'))
+        else:
+            team_grade.panel_score = None
+        team_grade.save()
+        return team_grade.panel_score
     else:
-        team_grade.panel_score = (
-            sum(percentages, Decimal('0')) / Decimal(len(percentages))
-        ).quantize(Decimal('0.01'))
-    team_grade.save()
-    return team_grade.panel_score
+        by_panelist = {}
+        team_breakdowns = [b for b in breakdowns if b.student_id is None]
+        if not team_breakdowns:
+            team_breakdowns = breakdowns
+        for row in team_breakdowns:
+            key = _panelist_key_from_breakdown_remarks(row.remarks)
+            by_panelist.setdefault(key, []).append(row)
+
+        percentages = []
+        for rows in by_panelist.values():
+            pct = panelist_percentage_from_breakdowns(rows)
+            if pct is not None:
+                percentages.append(pct)
+
+        if not percentages:
+            team_grade.panel_score = None
+        else:
+            team_grade.panel_score = (
+                sum(percentages, Decimal('0')) / Decimal(len(percentages))
+            ).quantize(Decimal('0.01'))
+        team_grade.save()
+
+        for membership in memberships:
+            sg = StudentStageGrade.objects.get(team_grade=team_grade, student=membership.student)
+            sg.panel_score = team_grade.panel_score
+            sg.adviser_score = team_grade.adviser_score
+            sg.save()
+            recalculate_student_grade(sg)
+
+        return team_grade.panel_score
 
 
 def _submitted_criterion_id(item):
@@ -375,20 +464,24 @@ def _submission_identity_kwargs(panelist=None, guest=None):
 
 
 @transaction.atomic
-def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks=''):
+def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=None, guest=None, remarks='', student=None):
     if bool(panelist) == bool(guest):
         raise ValidationError({'panelist': 'Use either a panelist or a guest identity.'})
 
     rows = _validated_panel_criterion_rows(schedule, criteria_scores)
     identity = _submission_identity_kwargs(panelist=panelist, guest=guest)
+    
+    lookup = identity['lookup'].copy()
+    lookup['student'] = student
+    defaults = identity['defaults'].copy()
+    defaults['student'] = student
+    defaults['remarks'] = remarks or ''
+
     submission, _created = PanelistGradeSubmission.objects.update_or_create(
         team_grade=team_grade,
         schedule=schedule,
-        **identity['lookup'],
-        defaults={
-            **identity['defaults'],
-            'remarks': remarks or '',
-        },
+        **lookup,
+        defaults=defaults,
     )
 
     PanelistCriterionScore.objects.filter(submission=submission).delete()
@@ -407,12 +500,14 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
     remark = f"{identity['remark_key']}\n{remarks or ''}"
     GradeBreakdown.objects.filter(
         team_grade=team_grade,
+        student=student,
         evaluation_type=GradeBreakdown.EVAL_PANEL,
         remarks__startswith=identity['remark_key'],
     ).delete()
     GradeBreakdown.objects.bulk_create([
         GradeBreakdown(
             team_grade=team_grade,
+            student=student,
             rubric=schedule.rubric,
             evaluation_type=GradeBreakdown.EVAL_PANEL,
             criterion_name=row['criterion'].name,
@@ -478,8 +573,8 @@ def grade_queryset():
         .prefetch_related(
             'breakdowns',
             'breakdowns__rubric',
-            'peer_member_grades',
-            'peer_member_grades__student',
+            'student_grades',
+            'student_grades__student',
             'team__memberships',
             'team__memberships__student',
             'schedule__panel_assignments',
@@ -520,7 +615,7 @@ def _grade_has_score_data(grade):
         or grade.adviser_score is not None
         or grade.peer_score is not None
         or grade.breakdowns.exists()
-        or grade.peer_member_grades.exists()
+        or grade.student_grades.exists()
         or grade.peer_evaluation_submissions.exists()
     )
 
@@ -560,8 +655,29 @@ def _merge_stale_grade(stale, canonical):
         canonical.published_at = stale.published_at
 
     stale.breakdowns.update(team_grade=canonical)
-    stale.peer_member_grades.update(team_grade=canonical)
-    stale.peer_evaluation_submissions.update(team_grade=canonical)
+    
+    from .models import StudentStageGrade
+    for stale_sg in list(stale.student_grades.all()):
+        canonical_sg, _ = StudentStageGrade.objects.get_or_create(team_grade=canonical, student=stale_sg.student)
+        for field in ('panel_score', 'adviser_score', 'peer_score', 'final_grade'):
+            stale_val = getattr(stale_sg, field)
+            canonical_val = getattr(canonical_sg, field)
+            if stale_val is not None and canonical_val is None:
+                setattr(canonical_sg, field, stale_val)
+        canonical_sg.save()
+        stale_sg.delete()
+
+    for stale_pes in list(stale.peer_evaluation_submissions.all()):
+        exists = canonical.peer_evaluation_submissions.filter(
+            evaluator=stale_pes.evaluator,
+            evaluatee=stale_pes.evaluatee,
+        ).exists()
+        if exists:
+            stale_pes.delete()
+        else:
+            stale_pes.team_grade = canonical
+            stale_pes.save()
+
     stale.delete()
     canonical.save()
 
@@ -1502,7 +1618,23 @@ def team_grading_readiness(grade, semester, scope, config=None):
     from .peer_eval import is_team_peer_eval_complete, peer_completion_summary
 
     config = _grading_config_for_grade(grade, semester, scope, config)
-    panel_complete = grade.panel_score is not None
+    
+    is_individual_panel = False
+    if grade.schedule and grade.schedule.rubric:
+        is_individual_panel = (grade.schedule.rubric.target_type == 'individual')
+    elif grade.pit_event_config and grade.pit_event_config.panel_rubric:
+        is_individual_panel = (grade.pit_event_config.panel_rubric.target_type == 'individual')
+
+    if is_individual_panel:
+        memberships = grade.team.memberships.all()
+        sg_by_student = {sg.student_id: sg for sg in grade.student_grades.all()}
+        panel_complete = memberships.exists() and all(
+            m.student_id in sg_by_student and sg_by_student[m.student_id].panel_score is not None
+            for m in memberships
+        )
+    else:
+        panel_complete = grade.panel_score is not None
+
     peer_required = peer_required_for_grade(grade, semester, scope, config=config)
     peer_complete = is_team_peer_eval_complete(grade) if peer_required else True
     adviser_required = adviser_required_for_grade(grade, semester)

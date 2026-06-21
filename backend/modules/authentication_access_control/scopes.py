@@ -180,8 +180,8 @@ def grade_records_for(user):
         .prefetch_related(
             'breakdowns',
             'breakdowns__rubric',
-            'peer_member_grades',
-            'peer_member_grades__student',
+            'student_grades',
+            'student_grades__student',
             'team__memberships',
             'team__memberships__student',
             'schedule__panel_assignments',

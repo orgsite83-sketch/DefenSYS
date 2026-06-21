@@ -190,15 +190,13 @@ def generate_team_grade_pdf(team_grade, generated_by_user):
         story.append(Spacer(1, 0.3*inch))
         
     # 5. Peer Evaluation Breakdown
-    peer_grades = list(team_grade.peer_member_grades.all().select_related('student'))
+    peer_grades = list(team_grade.student_grades.all().select_related('student'))
     if peer_grades:
         story.append(Paragraph("Individual Peer Evaluation Summaries", styles['SectionHeader']))
         story.append(Spacer(1, 0.05*inch))
         
         peer_headers = [
             Paragraph("<b>Student Name</b>", styles['TableHeader']),
-            Paragraph("<b>Average Peer Rating</b>", styles['TableHeader']),
-            Paragraph("<b>Max Value</b>", styles['TableHeader']),
             Paragraph("<b>Normalized Peer Grade</b>", styles['TableHeader'])
         ]
         
@@ -206,12 +204,10 @@ def generate_team_grade_pdf(team_grade, generated_by_user):
         for pg in peer_grades:
             peer_rows.append([
                 Paragraph(pg.student.get_full_name() or pg.student.username, styles['TableCell']),
-                Paragraph(f"{pg.average_score:.2f}", styles['TableCell']),
-                Paragraph(f"{pg.max_score:.2f}", styles['TableCell']),
-                Paragraph(f"<b>{pg.normalized_score:.2f}%</b>", styles['TableCellBold'])
+                Paragraph(f"<b>{pg.peer_score:.2f}%</b>" if pg.peer_score is not None else "Pending", styles['TableCellBold'])
             ])
             
-        peer_table = Table(peer_rows, colWidths=[3.0*inch, 1.5*inch, 1.0*inch, 1.5*inch])
+        peer_table = Table(peer_rows, colWidths=[4.0*inch, 3.0*inch])
         peer_table.setStyle(defensys_table_style())
         story.append(peer_table)
         story.append(Spacer(1, 0.3*inch))

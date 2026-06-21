@@ -11,13 +11,13 @@ REDEFENSE - Capstone Project and Research 1,,,,,,,,,
 "May 18, 2026",,,,,,,,,
 SMART ROOM,,,,,,,,,
 Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter
-9:00AM-9:30AM,TechVision,Eventify,"RAY AN J. QUINON","DOMINGUEZ, Noel R.",Daga-ang,Neri,Undag,Ocampo,Camarista
-,,,,"DAGO-OC, Evan John S.",,,,,
-,,,,"PINGKIAN, El Jane",,,,,
-,,,,"DIU, Sciemon Jed",,,,,
-9:30AM-10:00AM,Techpro,Campus Tutoring to FMCP,"RAY AN J. QUINON","CABANTAC, John Mike B.",Daga-ang,Neri,Undag,Ocampo,Camarista
-,,,,"BLASE, Jendy D.",,,,,
-,,,,"NAQUIRA, Brexie Lyca D.",,,,,
+9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua
+,,,,"ONG, Patricia",,,,,
+,,,,"SALAZAR, Ethan",,,,,
+,,,,"CASTILLO, Zoe",,,,,
+9:30AM-10:00AM,Team CodeLearners,Smart Campus Navigator,"Ricardo Fontanilla","REYES, Carlos",Suarez,Beltran,Corpuz,Villanueva,Magbanua
+,,,,"SANTOS, Maria",,,,,
+,,,,"DELA CRUZ, Juan",,,,,
 ''';
 
       final bytes = Uint8List.fromList(utf8.encode(csv));
@@ -30,26 +30,26 @@ Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel 
       expect(result.rows, hasLength(2));
 
       final row1 = result.rows[0];
-      expect(row1.teamName, equals('TechVision'));
-      expect(row1.projectTitle, equals('Eventify'));
-      expect(row1.adviser, equals('RAY AN J. QUINON'));
+      expect(row1.teamName, equals('Team SkyLedger'));
+      expect(row1.projectTitle, equals('Alumni Career Tracker'));
+      expect(row1.adviser, equals('Ricardo Fontanilla'));
       expect(row1.members, equals([
-        'DOMINGUEZ, Noel R.',
-        'DAGO-OC, Evan John S.',
-        'PINGKIAN, El Jane',
-        'DIU, Sciemon Jed',
+        'VILLAR, Marcus',
+        'ONG, Patricia',
+        'SALAZAR, Ethan',
+        'CASTILLO, Zoe',
       ]));
-      expect(row1.chair, equals('Daga-ang'));
-      expect(row1.panelMembers, equals(['Neri', 'Undag', 'Ocampo']));
-      expect(row1.documenter, equals('Camarista'));
+      expect(row1.chair, equals('Suarez'));
+      expect(row1.panelMembers, equals(['Beltran', 'Corpuz', 'Villanueva']));
+      expect(row1.documenter, equals('Magbanua'));
 
       final row2 = result.rows[1];
-      expect(row2.teamName, equals('Techpro'));
-      expect(row2.projectTitle, equals('Campus Tutoring to FMCP'));
+      expect(row2.teamName, equals('Team CodeLearners'));
+      expect(row2.projectTitle, equals('Smart Campus Navigator'));
       expect(row2.members, equals([
-        'CABANTAC, John Mike B.',
-        'BLASE, Jendy D.',
-        'NAQUIRA, Brexie Lyca D.',
+        'REYES, Carlos',
+        'SANTOS, Maria',
+        'DELA CRUZ, Juan',
       ]));
     });
 

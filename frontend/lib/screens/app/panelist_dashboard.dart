@@ -136,6 +136,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             members: (team['members'] as List? ?? [])
                 .map((m) => (m['name'] ?? m['username'] ?? 'Member').toString())
                 .toList(),
+            memberDetails: (team['members'] as List? ?? [])
+                .map((m) => TeamMember(
+                      id: (m['id'] ?? '').toString(),
+                      name: (m['name'] ?? m['username'] ?? 'Member').toString(),
+                    ))
+                .toList(),
             criteria: [],
             isPosted: false,
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,

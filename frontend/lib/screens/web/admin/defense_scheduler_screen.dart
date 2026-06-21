@@ -2747,13 +2747,10 @@ class _DefenseSchedulerScreenState
                               'May 18, 2026,,,,,,,,,\n'
                               'SMART ROOM,,,,,,,,,\n'
                               'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
-                              '9:00AM-9:30AM,TechVision,Eventify,"RAY AN J. QUINON","DOMINGUEZ, Noel R.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
-                              ',,,,"DAGO-OC, Evan John S.",,,,,\n'
-                              ',,,,"PINGKIAN, El Jane",,,,,\n'
-                              ',,,,"DIU, Sciemon Jed",,,,,\n'
-                              '9:30AM-10:00AM,Techpro,Campus Tutoring to FMCP,"RAY AN J. QUINON","CABANTAC, John Mike B.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
-                              ',,,,"BLASE, Jendy D.",,,,,\n'
-                              ',,,,"NAQUIRA, Brexie Lyca D.",,,,,\n',
+                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua\n'
+                              ',,,,"ONG, Patricia",,,,,\n'
+                              ',,,,"SALAZAR, Ethan",,,,,\n'
+                              ',,,,"CASTILLO, Zoe",,,,,\n',
                         );
                       } else {
                         await downloadTextFile(
@@ -2762,13 +2759,10 @@ class _DefenseSchedulerScreenState
                               'May 18, 2026,,,,,,,,,\n'
                               'SMART ROOM,,,,,,,,,\n'
                               'Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
-                              '9:00AM-9:30AM,TechVision,Eventify,"RAY AN J. QUINON","DOMINGUEZ, Noel R.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
-                              ',,,,"DAGO-OC, Evan John S.",,,,,\n'
-                              ',,,,"PINGKIAN, El Jane",,,,,\n'
-                              ',,,,"DIU, Sciemon Jed",,,,,\n'
-                              '9:30AM-10:00AM,Techpro,Campus Tutoring to FMCP,"RAY AN J. QUINON","CABANTAC, John Mike B.",Daga-ang,Neri,Undag,Ocampo,Camarista\n'
-                              ',,,,"BLASE, Jendy D.",,,,,\n'
-                              ',,,,"NAQUIRA, Brexie Lyca D.",,,,,\n',
+                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua\n'
+                              ',,,,"ONG, Patricia",,,,,\n'
+                              ',,,,"SALAZAR, Ethan",,,,,\n'
+                              ',,,,"CASTILLO, Zoe",,,,,\n',
                         );
                       }
                     },

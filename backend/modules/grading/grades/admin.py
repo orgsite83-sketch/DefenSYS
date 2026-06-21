@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import GradeBreakdown, StudentPeerGrade, TeamGrade
+from .models import GradeBreakdown, StudentStageGrade, TeamGrade
 
 
 class GradeBreakdownInline(admin.TabularInline):
@@ -8,8 +8,8 @@ class GradeBreakdownInline(admin.TabularInline):
     extra = 0
 
 
-class StudentPeerGradeInline(admin.TabularInline):
-    model = StudentPeerGrade
+class StudentStageGradeInline(admin.TabularInline):
+    model = StudentStageGrade
     extra = 0
 
 
@@ -29,4 +29,4 @@ class TeamGradeAdmin(admin.ModelAdmin):
     )
     list_filter = ('scope', 'status', 'semester', 'defense_stage', 'pit_event_config')
     search_fields = ('team__name', 'team__project_title', 'stage_label')
-    inlines = [GradeBreakdownInline, StudentPeerGradeInline]
+    inlines = [GradeBreakdownInline, StudentStageGradeInline]

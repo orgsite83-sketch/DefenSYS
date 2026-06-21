@@ -334,6 +334,8 @@ int _findHeaderIndex(List<List<String>> matrix) {
 
 Map<String, String> _readMetadata(List<List<String>> rows) {
   final result = <String, String>{};
+  final semesterRegex = RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
+
   for (final row in rows) {
     for (var i = 0; i < row.length; i++) {
       final cell = row[i].trim();
@@ -347,20 +349,34 @@ Map<String, String> _readMetadata(List<List<String>> rows) {
           ? inlineParts.sublist(1).join(':').trim()
           : '';
       final value = inlineValue.isNotEmpty ? inlineValue : next;
-      if (value.isEmpty) {
-        continue;
+
+      if (value.isNotEmpty) {
+        if (['stage', 'defensestage'].contains(normalized)) {
+          result['stage'] = value;
+        }
+        if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
+          result['date'] = value;
+        }
+        if (['semester', 'term'].contains(normalized)) {
+          result['semester'] = value;
+        }
+        if (['room', 'venue', 'roomvenue'].contains(normalized)) {
+          result['room'] = value;
+        }
       }
-      if (['stage', 'defensestage'].contains(normalized)) {
-        result['stage'] = value;
-      }
-      if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
-        result['date'] = value;
-      }
-      if (['semester', 'term'].contains(normalized)) {
-        result['semester'] = value;
-      }
-      if (['room', 'venue', 'roomvenue'].contains(normalized)) {
-        result['room'] = value;
+
+      if (result['semester'] == null || result['semester']!.isEmpty) {
+        final semMatch = semesterRegex.firstMatch(cell);
+        if (semMatch != null) {
+          final rawSem = semMatch.group(1)!.toLowerCase();
+          if (rawSem.contains('1st')) {
+            result['semester'] = '1st Semester';
+          } else if (rawSem.contains('2nd')) {
+            result['semester'] = '2nd Semester';
+          } else if (rawSem.contains('summer')) {
+            result['semester'] = 'Summer';
+          }
+        }
       }
     }
   }

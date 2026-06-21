@@ -141,31 +141,64 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
   var section = '';
   var systemName = '';
   var projectManager = '';
-  var lineIndex = 0;
 
-  while (lineIndex < rawLines.length) {
-    final line = rawLines[lineIndex];
-    if (line.isEmpty) {
-      lineIndex++;
-      continue;
-    }
-    final cols = _parseCsvLine(line);
-    if (cols.isEmpty) {
-      lineIndex++;
-      continue;
-    }
-    final key = cols[0].trim().toLowerCase().replaceFirst('\ufeff', '');
-    if (key == 'section') {
-      section = cols.length > 1 ? cols[1].trim() : '';
-      lineIndex++;
-    } else if (key == 'system name' || key == 'system_name') {
-      systemName = cols.length > 1 ? cols[1].trim() : '';
-      lineIndex++;
-    } else if (key == 'project manager' || key == 'project_manager' || key == 'pm') {
-      projectManager = cols.length > 1 ? cols[1].trim() : '';
-      lineIndex++;
-    } else {
+  final matrix = rawLines.map(_parseCsvLine).toList();
+  var lineIndex = -1;
+
+  for (var i = 0; i < matrix.length; i++) {
+    final row = matrix[i];
+    final headers = row
+        .map((cell) => cell.trim().toLowerCase().replaceFirst('\ufeff', ''))
+        .toSet();
+    final hasTeamName = headers.contains('team name') || headers.contains('team_name');
+    final hasMembers = headers.contains('team members') ||
+        headers.contains('team_members') ||
+        headers.contains('members') ||
+        headers.contains('member_ids');
+    if (hasTeamName && hasMembers) {
+      lineIndex = i;
       break;
+    }
+  }
+
+  if (lineIndex == -1) {
+    return const ParsedBulkCsvResult(rows: [], csvColumns: []);
+  }
+
+  String nextCell(List<String> row, int index) {
+    for (var i = index + 1; i < row.length; i++) {
+      final val = row[i].trim();
+      if (val.isNotEmpty) return val;
+    }
+    return '';
+  }
+
+  for (var i = 0; i < lineIndex; i++) {
+    final row = matrix[i];
+    final normalized = row
+        .map((cell) => cell.trim().toLowerCase().replaceFirst('\ufeff', ''))
+        .toList();
+
+    void readMeta(List<String> labels, void Function(String val) setVal) {
+      for (final label in labels) {
+        final idx = normalized.indexOf(label);
+        if (idx == -1) continue;
+        final val = nextCell(row, idx);
+        if (val.isNotEmpty) {
+          setVal(val);
+          break;
+        }
+      }
+    }
+
+    if (section.isEmpty) {
+      readMeta(const ['section'], (val) => section = val);
+    }
+    if (systemName.isEmpty) {
+      readMeta(const ['system name', 'system_name'], (val) => systemName = val);
+    }
+    if (projectManager.isEmpty) {
+      readMeta(const ['project manager', 'project_manager', 'pm'], (val) => projectManager = val);
     }
   }
 
