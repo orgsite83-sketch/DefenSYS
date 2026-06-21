@@ -839,7 +839,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
       return 'Capstone 1 intake — peer evaluation and adviser grading apply to this term.';
     }
     if (mode == 'capstone_2_continue') {
-      return 'Capstone 2 term — manage existing teams; new capstone team creation is closed.';
+      return 'Capstone 2 term — manage existing teams.';
     }
     return 'All uploads, evaluations, and peer rubrics are routing to this period.';
   }

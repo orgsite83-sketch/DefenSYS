@@ -73,7 +73,7 @@ class CapstoneModeTests(APITestCase):
         )
         info = capstone_operating_mode(first)
         self.assertEqual(info['mode'], MODE_CAPSTONE_2_CONTINUE)
-        self.assertFalse(info['can_create_capstone_teams'])
+        self.assertTrue(info['can_create_capstone_teams'])
 
     def test_create_semester_applies_capstone_defaults(self):
         admin = User.objects.create_user(
@@ -137,7 +137,7 @@ class CapstoneModeTests(APITestCase):
             derive_capstone_program_phase(first),
             Semester.PHASE_CAPSTONE_2,
         )
-        self.assertFalse(derive_capstone_team_creation_enabled(first))
+        self.assertTrue(derive_capstone_team_creation_enabled(first))
 
     def test_normalize_second_semester(self):
         school_year = SchoolYear.objects.create(label='2026-2027')

@@ -1448,11 +1448,11 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             'BSIT-3A / 3rd Year / 4081',
           ]
         : const [
-            '2024-0001',
-            'Juan',
-            'Dela Cruz',
-            'juan@ustp.edu.ph',
-            'student',
+            'FAC-0001',
+            'Ada',
+            'Lovelace',
+            'ada@ustp.edu.ph',
+            'faculty',
           ];
 
     return Container(

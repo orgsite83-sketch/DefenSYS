@@ -1412,3 +1412,74 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['student']['is_project_manager'], True)
         self.assertEqual(response.data['student']['managed_section'], 'BSIT-2A')
 
+    def test_admin_create_team_during_capstone_2_validates_cohort_year(self):
+        self.first_semester.is_active = True
+        self.first_semester.capstone_program_phase = Semester.PHASE_CAPSTONE_2
+        self.first_semester.capstone_team_creation_enabled = True
+        self.first_semester.save()
+
+        # Create a dummy rolled over 4th Year team to activate PHASE_CAPSTONE_2 dynamically
+        dummy_leader = User.objects.create_user(
+            username='2024-dummy',
+            password='pass12345',
+            role='student',
+        )
+        StudentAcademicRecord.objects.create(
+            student=dummy_leader,
+            semester=self.first_semester,
+            year_level='4th Year',
+        )
+        StudentTeam.objects.create(
+            name='Dummy Rolled Over Team',
+            level=StudentTeam.LEVEL_4_CAPSTONE,
+            year_level='4th Year',
+            semester=self.first_semester,
+            leader=dummy_leader,
+        )
+
+        student_4th = User.objects.create_user(
+            username='2024-0004',
+            password='pass12345',
+            role='student',
+        )
+        StudentAcademicRecord.objects.create(
+            student=student_4th,
+            semester=self.first_semester,
+            year_level='4th Year',
+        )
+
+        response = self.client.post(
+            '/api/teams/',
+            {
+                'name': 'Valid Capstone 2 Team',
+                'leader_id': student_4th.id,
+                'member_ids': [student_4th.id],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['team']['level'], StudentTeam.LEVEL_4_CAPSTONE)
+
+        student_3rd = User.objects.create_user(
+            username='2024-0005',
+            password='pass12345',
+            role='student',
+        )
+        StudentAcademicRecord.objects.create(
+            student=student_3rd,
+            semester=self.first_semester,
+            year_level='3rd Year',
+        )
+        response_invalid = self.client.post(
+            '/api/teams/',
+            {
+                'name': 'Invalid Capstone 2 Team',
+                'leader_id': student_3rd.id,
+                'member_ids': [student_3rd.id],
+            },
+            format='json',
+        )
+        self.assertEqual(response_invalid.status_code, 400)
+        self.assertIn('level', response_invalid.data)
+        self.assertIn('Only 4th Year Capstone teams can be created during Capstone 2', response_invalid.data['level'][0])
+
