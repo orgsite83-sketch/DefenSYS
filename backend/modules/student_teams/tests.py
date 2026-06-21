@@ -832,6 +832,54 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['error_count'], 1)
         self.assertFalse(StudentTeam.objects.filter(name='Team Mixed Years').exists())
 
+    def test_bulk_import_during_capstone_2_with_fourth_year_students(self):
+        self.second_semester.is_active = False
+        self.second_semester.save(update_fields=['is_active'])
+        self.first_semester.is_active = True
+        self.first_semester.save(update_fields=['is_active'])
+
+        StudentAcademicRecord.objects.filter(semester=self.first_semester).delete()
+        StudentAcademicRecord.objects.create(
+            student=self.student_1,
+            semester=self.first_semester,
+            year_level='4th Year',
+        )
+        StudentAcademicRecord.objects.create(
+            student=self.student_2,
+            semester=self.first_semester,
+            year_level='4th Year',
+        )
+
+        from academic_period_management.capstone_mode import normalize_capstone_flags
+        normalize_capstone_flags(self.first_semester)
+        self.first_semester.save()
+
+        self.assertEqual(self.first_semester.capstone_program_phase, Semester.PHASE_CAPSTONE_2)
+
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team Capstone 2',
+                        'project_title': 'Capstone 2 Project',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                        'adviser_id': 'Ada Lovelace',
+                        'year_level': '',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        self.assertEqual(response.data['error_count'], 0)
+        team = StudentTeam.objects.get(name='Team Capstone 2')
+        self.assertEqual(team.level, StudentTeam.LEVEL_4_CAPSTONE)
+        self.assertEqual(team.year_level, '4th Year')
+
     def test_admin_create_team_without_level_infers_capstone(self):
         self._activate_capstone_intake_semester()
         response = self.client.post(

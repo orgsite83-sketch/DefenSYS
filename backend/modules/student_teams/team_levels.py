@@ -167,26 +167,32 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
     if user_is_admin(user):
         if explicit_level and 'PIT' in explicit_level.upper():
             raise ValueError('Admins can only manage capstone teams.')
-        if explicit_level and 'CAPSTONE' in explicit_level.upper():
-            resolved = explicit_level
-            year = level_year(resolved)
-        else:
-            if not year:
-                year, issues = infer_year_level_from_members(
-                    member_ids,
-                    semester,
-                    leader_id=leader_id,
-                )
-                if issues:
-                    raise ValueError(issues[0])
-            resolved = f'{year} Capstone'
+
+        inferred_year = None
+        if member_ids:
+            inferred_year, issues = infer_year_level_from_members(
+                member_ids,
+                semester,
+                leader_id=leader_id,
+            )
+            if issues:
+                raise ValueError(issues[0])
+
+        if inferred_year:
+            year = inferred_year
+        elif explicit_level and 'CAPSTONE' in explicit_level.upper():
+            year = level_year(explicit_level)
+        elif not year:
+            year = DEFAULT_CAPSTONE_YEAR
+
+        resolved = f'{year} Capstone'
 
         # Restrict new teams created/imported during Capstone 2 to only use 4th Year students.
         active = _active_semester(semester)
         if active:
             from academic_period_management.capstone_mode import derive_capstone_program_phase
             phase = derive_capstone_program_phase(active)
-            if phase == Semester.PHASE_CAPSTONE_2 and year != '4th Year':
+            if phase == Semester.PHASE_CAPSTONE_2 and year != '4th Year' and member_ids is not None:
                 raise ValueError('Only 4th Year Capstone teams can be created during Capstone 2.')
 
     elif user_is_pit_lead_only(user):
