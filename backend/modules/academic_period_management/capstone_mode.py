@@ -29,20 +29,36 @@ def _fourth_year_capstone_teams_on_semester(semester):
     ).exists()
 
 
+def _fourth_year_students_enrolled_on_semester(semester):
+    if semester.pk is None:
+        return False
+
+    from user_management.academic_records.models import StudentAcademicRecord
+
+    return StudentAcademicRecord.objects.filter(
+        semester=semester,
+        year_level=StudentAcademicRecord.FOURTH_YEAR,
+    ).exists()
+
+
 def derive_capstone_program_phase(semester):
     """
     Calendar-driven capstone phase (no admin toggle).
 
     - 2nd Semester: Capstone 1 intake (3rd Year, 2nd Sem).
-    - 1st Semester: Capstone 2 when 4th-year capstone teams exist on this term (post-rollover).
+    - 1st Semester: Capstone 2 when 4th-year capstone teams or enrolled students exist on this term.
     """
     if semester.label == Semester.SECOND:
         return Semester.PHASE_CAPSTONE_1
     if semester.label == Semester.FIRST:
-        if _fourth_year_capstone_teams_on_semester(semester):
+        if (
+            _fourth_year_capstone_teams_on_semester(semester)
+            or _fourth_year_students_enrolled_on_semester(semester)
+        ):
             return Semester.PHASE_CAPSTONE_2
         return Semester.PHASE_NONE
     return Semester.PHASE_NONE
+
 
 
 def derive_capstone_team_creation_enabled(semester):
