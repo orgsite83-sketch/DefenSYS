@@ -370,6 +370,7 @@ def _panel_rubric_payload(rubric, grade_weights):
         'scope': rubric.scope,
         'context_label': rubric.context_label,
         'display_semester': rubric.semester.display_name,
+        'target_type': rubric.target_type,
         'criteria': [
             {
                 'id': criterion.id,
