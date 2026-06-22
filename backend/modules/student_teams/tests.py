@@ -116,6 +116,13 @@ class StudentTeamApiTests(APITestCase):
         )
 
     def test_create_team_blocked_during_capstone_off_season(self):
+        self.first_semester.is_active = False
+        self.first_semester.save(update_fields=['is_active'])
+        summer = Semester.objects.create(
+            school_year=self.school_year,
+            label=Semester.SUMMER,
+            is_active=True,
+        )
         response = self.client.post(
             '/api/teams/',
             {
@@ -161,9 +168,22 @@ class StudentTeamApiTests(APITestCase):
         response = self.client.get('/api/teams/?level=Capstone')
 
         self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['capstone_mode'], 'capstone_2_continue')
+        self.assertTrue(response.data['can_create_capstone_teams'])
+        self.assertIn('capstone_mode_message', response.data)
+
+        # Test off mode with a Summer semester
+        self.first_semester.is_active = False
+        self.first_semester.save(update_fields=['is_active'])
+        summer = Semester.objects.create(
+            school_year=self.school_year,
+            label=Semester.SUMMER,
+            is_active=True,
+        )
+        response = self.client.get('/api/teams/?level=Capstone')
+        self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['capstone_mode'], 'off')
         self.assertFalse(response.data['can_create_capstone_teams'])
-        self.assertIn('capstone_mode_message', response.data)
 
     def test_duplicate_name_level_is_rejected(self):
         self._activate_capstone_intake_semester()
@@ -191,12 +211,13 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
 
     def test_update_team_members_and_status(self):
+        self._activate_capstone_intake_semester()
         team = StudentTeam.objects.create(
             name='Team Alpha',
             project_title='Alpha Project',
             level=StudentTeam.LEVEL_3_CAPSTONE,
             year_level='3rd Year',
-            semester=self.first_semester,
+            semester=self.second_semester,
             leader=self.student_1,
             adviser=self.adviser,
         )
@@ -207,9 +228,9 @@ class StudentTeamApiTests(APITestCase):
             {
                 'name': 'Team Alpha',
                 'project_title': 'Alpha Project Updated',
-                'level': StudentTeam.LEVEL_4_CAPSTONE,
-                'year_level': '4th Year',
-                'semester_id': self.first_semester.id,
+                'level': StudentTeam.LEVEL_3_CAPSTONE,
+                'year_level': '3rd Year',
+                'semester_id': self.second_semester.id,
                 'leader_id': self.student_2.id,
                 'member_ids': [self.student_2.id],
                 'adviser_id': self.adviser.id,
@@ -225,12 +246,13 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(team.memberships.count(), 1)
 
     def test_reassign_adviser_records_history_and_preserves_team(self):
+        self._activate_capstone_intake_semester()
         team = StudentTeam.objects.create(
             name='Team Reassign',
             project_title='Reassign Project',
             level=StudentTeam.LEVEL_3_CAPSTONE,
             year_level='3rd Year',
-            semester=self.first_semester,
+            semester=self.second_semester,
             leader=self.student_1,
             adviser=self.adviser,
         )
@@ -244,7 +266,7 @@ class StudentTeamApiTests(APITestCase):
                 'project_title': team.project_title,
                 'level': team.level,
                 'year_level': team.year_level,
-                'semester_id': self.first_semester.id,
+                'semester_id': self.second_semester.id,
                 'leader_id': self.student_1.id,
                 'member_ids': [self.student_1.id],
                 'adviser_id': self.adviser_b.id,

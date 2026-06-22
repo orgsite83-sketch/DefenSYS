@@ -22,14 +22,14 @@ User = get_user_model()
 class CapstoneModeTests(APITestCase):
     def test_default_flags_for_first_and_second_semester(self):
         creation, phase = default_capstone_flags_for_label(Semester.FIRST)
-        self.assertFalse(creation)
-        self.assertEqual(phase, Semester.PHASE_NONE)
+        self.assertTrue(creation)
+        self.assertEqual(phase, Semester.PHASE_CAPSTONE_2)
 
         creation, phase = default_capstone_flags_for_label(Semester.SECOND)
         self.assertTrue(creation)
         self.assertEqual(phase, Semester.PHASE_CAPSTONE_1)
 
-    def test_operating_mode_off_on_first_semester_without_teams(self):
+    def test_operating_mode_capstone_2_on_first_semester_without_teams(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
         semester = Semester.objects.create(
             school_year=school_year,
@@ -37,8 +37,8 @@ class CapstoneModeTests(APITestCase):
             is_active=True,
         )
         info = capstone_operating_mode(semester)
-        self.assertEqual(info['mode'], MODE_OFF)
-        self.assertFalse(info['can_create_capstone_teams'])
+        self.assertEqual(info['mode'], MODE_CAPSTONE_2_CONTINUE)
+        self.assertTrue(info['can_create_capstone_teams'])
 
     def test_operating_mode_capstone_1_intake(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
@@ -90,8 +90,8 @@ class CapstoneModeTests(APITestCase):
             format='json',
         )
         self.assertEqual(first.status_code, 201)
-        self.assertFalse(first.data['semester']['capstone_team_creation_enabled'])
-        self.assertEqual(first.data['semester']['capstone_program_phase'], Semester.PHASE_NONE)
+        self.assertTrue(first.data['semester']['capstone_team_creation_enabled'])
+        self.assertEqual(first.data['semester']['capstone_program_phase'], Semester.PHASE_CAPSTONE_2)
 
         second = self.client.post(
             f'/api/academic-periods/{school_year.id}/semesters/',

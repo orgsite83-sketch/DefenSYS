@@ -602,7 +602,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
-                    'Auto-derived when 2nd Semester is active.',
+                    'Auto-derived based on active semester: Capstone 1 in 2nd Sem, Capstone 2 in 1st Sem.',
                     style: TextStyle(color: _muted, fontSize: 12, height: 1.35),
                   ),
                 ),

@@ -12,33 +12,8 @@ def default_capstone_flags_for_label(label):
     if label == Semester.SECOND:
         return True, Semester.PHASE_CAPSTONE_1
     if label == Semester.FIRST:
-        return False, Semester.PHASE_NONE
+        return True, Semester.PHASE_CAPSTONE_2
     return False, Semester.PHASE_NONE
-
-
-def _fourth_year_capstone_teams_on_semester(semester):
-    if semester.pk is None:
-        return False
-
-    from student_teams.models import StudentTeam
-
-    return StudentTeam.objects.filter(
-        semester=semester,
-        year_level='4th Year',
-        level__icontains='Capstone',
-    ).exists()
-
-
-def _fourth_year_students_enrolled_on_semester(semester):
-    if semester.pk is None:
-        return False
-
-    from user_management.academic_records.models import StudentAcademicRecord
-
-    return StudentAcademicRecord.objects.filter(
-        semester=semester,
-        year_level=StudentAcademicRecord.FOURTH_YEAR,
-    ).exists()
 
 
 def derive_capstone_program_phase(semester):
@@ -46,17 +21,12 @@ def derive_capstone_program_phase(semester):
     Calendar-driven capstone phase (no admin toggle).
 
     - 2nd Semester: Capstone 1 intake (3rd Year, 2nd Sem).
-    - 1st Semester: Capstone 2 when 4th-year capstone teams or enrolled students exist on this term.
+    - 1st Semester: Capstone 2 continuation (4th Year, 1st Sem).
     """
     if semester.label == Semester.SECOND:
         return Semester.PHASE_CAPSTONE_1
     if semester.label == Semester.FIRST:
-        if (
-            _fourth_year_capstone_teams_on_semester(semester)
-            or _fourth_year_students_enrolled_on_semester(semester)
-        ):
-            return Semester.PHASE_CAPSTONE_2
-        return Semester.PHASE_NONE
+        return Semester.PHASE_CAPSTONE_2
     return Semester.PHASE_NONE
 
 
