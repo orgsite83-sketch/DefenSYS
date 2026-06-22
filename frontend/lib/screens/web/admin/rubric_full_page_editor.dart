@@ -206,6 +206,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         widget.initialEvaluationType ??
         'panel';
     _targetType = r?['target_type']?.toString() ?? 'team';
+    if (_evaluationType == 'peer') {
+      _targetType = 'individual';
+    }
     _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
     _criteria = _buildCriterionDrafts(r, _scales);
     if (_scope == 'pit' && _evaluationType == 'adviser') {
@@ -243,6 +246,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _scope = sourceRubric['scope'] ?? _scope;
       _evaluationType = sourceRubric['evaluation_type'] ?? _evaluationType;
       _targetType = sourceRubric['target_type'] ?? _targetType;
+      if (_evaluationType == 'peer') {
+        _targetType = 'individual';
+      }
 
       _disposeCriteriaList(_criteria);
       final clonedCriteria = sourceRubric['criteria'];
@@ -1041,8 +1047,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                 onChanged: canEdit
                                     ? (v) {
                                         setState(
-                                          () => _evaluationType =
-                                              v ?? _evaluationType,
+                                          () {
+                                            _evaluationType =
+                                                v ?? _evaluationType;
+                                            if (_evaluationType == 'peer') {
+                                              _targetType = 'individual';
+                                            }
+                                          },
                                         );
                                         _markDirty();
                                       }
@@ -1085,7 +1096,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               ),
                             ),
                           ],
-                          onChanged: canEdit
+                          onChanged: canEdit && _evaluationType != 'peer'
                               ? (v) {
                                   setState(() => _targetType = v ?? 'team');
                                   _markDirty();
@@ -1093,6 +1104,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               : null,
                         ),
                       ),
+                      if (_evaluationType == 'peer') ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          'Peer evaluations are always scored individually per student.',
+                          style: TextStyle(
+                            fontFamily: DefensysUi.fontFamily,
+                            fontSize: _helperSize,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysUi.primaryMaroon,
+                          ),
+                        ),
+                      ],
                       if (_scope == 'pit') ...[
                         const SizedBox(height: 12),
                         Text(

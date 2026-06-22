@@ -101,6 +101,9 @@ class Rubric(models.Model):
         return self.criteria.count()
 
     def clean(self):
+        if self.evaluation_type == self.EVAL_PEER:
+            self.target_type = self.TARGET_INDIVIDUAL
+
         errors = {}
         if self.scope == self.SCOPE_PIT:
             if self.evaluation_type == self.EVAL_ADVISER:

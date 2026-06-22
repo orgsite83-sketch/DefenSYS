@@ -154,6 +154,9 @@ class RubricWriteSerializer(serializers.Serializer):
         attrs['defense_stage'] = self._resolve_defense_stage(attrs, scope)
         attrs['event_name'] = (attrs.get('event_name') or '').strip()
 
+        if attrs.get('evaluation_type') == Rubric.EVAL_PEER:
+            attrs['target_type'] = Rubric.TARGET_INDIVIDUAL
+
         if scope == Rubric.SCOPE_PIT:
             if attrs['evaluation_type'] == Rubric.EVAL_ADVISER:
                 raise serializers.ValidationError({'evaluation_type': 'PIT rubrics do not support adviser evaluation.'})
