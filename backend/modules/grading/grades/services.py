@@ -1332,6 +1332,7 @@ def assigned_adviser_rubric_payload(grade):
             'assigned_adviser_rubric_id': None,
             'assigned_adviser_rubric_name': None,
             'assigned_adviser_rubric_scale': None,
+            'assigned_adviser_rubric_target_type': 'team',
             'assigned_adviser_criteria': [],
         }
     criteria = [
@@ -1347,6 +1348,7 @@ def assigned_adviser_rubric_payload(grade):
         'assigned_adviser_rubric_id': rubric.id,
         'assigned_adviser_rubric_name': rubric.name,
         'assigned_adviser_rubric_scale': rubric.scale,
+        'assigned_adviser_rubric_target_type': rubric.target_type,
         'assigned_adviser_criteria': criteria,
     }
 
