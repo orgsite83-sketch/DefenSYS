@@ -5,6 +5,7 @@ import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
+import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
@@ -82,6 +83,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
   bool _isDirty = false;
+  bool _checking = false;
 
   void _markDirty() {
     if (widget.readOnly || _isDirty) return;
@@ -648,7 +650,91 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       return;
     }
 
+    setState(() {
+      _checking = true;
+    });
+
+    final state = ref.read(rubricEngineProvider);
     final notifier = ref.read(rubricEngineProvider.notifier);
+
+    List<Map<String, dynamic>> existing = [];
+    try {
+      existing = await notifier.checkExistingRubrics();
+    } catch (_) {}
+
+    if (mounted) {
+      setState(() {
+        _checking = false;
+      });
+    }
+
+    Map<String, dynamic>? duplicate;
+    for (final item in existing) {
+      final itemId = _asInt(item['id']);
+      final itemSemId = _asInt(item['semester_id']);
+      final itemScope = item['scope']?.toString();
+      final itemEvalType = item['evaluation_type']?.toString();
+
+      if (itemSemId == _semesterId &&
+          itemScope == _scope &&
+          itemEvalType == _evaluationType) {
+        if (!_editing || itemId != _asInt(widget.rubric!['id'])) {
+          duplicate = item;
+          break;
+        }
+      }
+    }
+
+    String title = '';
+    String message = '';
+    String confirmLabel = '';
+
+    final evalLabel = _evaluationLabel(_evaluationType);
+    String semesterLabel = 'the selected semester';
+    for (final semester in state.semesters) {
+      if (_asInt(semester['id']) == _semesterId) {
+        semesterLabel = semester['display_name']?.toString() ?? 'the selected semester';
+        break;
+      }
+    }
+    final scopeLabel = _scope == 'pit' ? 'PIT' : 'Capstone';
+
+    if (status == 'published') {
+      title = 'Publish Rubric?';
+      confirmLabel = 'Publish & Lock';
+      if (duplicate != null) {
+        final duplicateName = duplicate['name']?.toString() ?? 'Unnamed';
+        final isPublished = duplicate['status']?.toString() == 'published';
+        if (isPublished) {
+          message = 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'$duplicateName\'). Published rubrics are locked and cannot be deleted. Saving this may result in duplicate rubrics.\n\nAre you sure you want to publish and lock this rubric?';
+        } else {
+          message = 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'$duplicateName\').\n\nAre you sure you want to publish and lock this rubric?';
+        }
+      } else {
+        message = 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited or deleted.';
+      }
+    } else {
+      title = 'Save Rubric Draft?';
+      confirmLabel = 'Save Draft';
+      if (duplicate != null) {
+        final duplicateName = duplicate['name']?.toString() ?? 'Unnamed';
+        message = 'Warning: A rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'$duplicateName\').\n\nAre you sure you want to save this rubric draft?';
+      } else {
+        message = 'Are you sure you want to save this rubric as a draft?';
+      }
+    }
+
+    if (!mounted) return;
+    final confirmed = await showConfirmDialog(
+      context,
+      title: title,
+      message: message,
+      confirmLabel: confirmLabel,
+      cancelLabel: 'Cancel',
+    );
+
+    if (!confirmed) return;
+
     final payload = {
       'name': _name.text.trim(),
       'scope': _scope,
@@ -722,7 +808,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final user = ref.watch(authProvider).user;
     final isPitLeadOnly = _isPitLeadOnly(user);
     final isCapstoneOnlyManager = _isCapstoneOnlyManager(user);
-    final saving = state.isSaving;
+    final saving = state.isSaving || _checking;
     final canEdit = !widget.readOnly && !saving;
 
     final evalItems = [

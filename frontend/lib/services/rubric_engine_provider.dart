@@ -312,6 +312,22 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
     }
   }
 
+  Future<List<Map<String, dynamic>>> checkExistingRubrics() async {
+    try {
+      final response = await _client.get(Uri.parse(baseUrl));
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        if (payload['rubrics'] is List) {
+          return (payload['rubrics'] as List)
+              .whereType<Map>()
+              .map((item) => Map<String, dynamic>.from(item))
+              .toList();
+        }
+      }
+    } catch (_) {}
+    return [];
+  }
+
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
 

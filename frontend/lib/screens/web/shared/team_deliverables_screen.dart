@@ -115,7 +115,7 @@ class _TeamDeliverablesScreenState
             padding: const EdgeInsets.all(24),
             child: Center(
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1220),
+                constraints: const BoxConstraints(maxWidth: 1440),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -139,14 +139,42 @@ class _TeamDeliverablesScreenState
                       ),
                     ],
                     const SizedBox(height: 20),
-                    TabBar(
-                      labelColor: AppColors.maroon,
-                      unselectedLabelColor: AppColors.textSecondary,
-                      indicatorColor: AppColors.maroon,
-                      tabs: const [
-                        Tab(text: 'Deliverables'),
-                        Tab(text: 'Teams & Grades'),
-                      ],
+                    Container(
+                      height: 48,
+                      padding: const EdgeInsets.all(4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: TabBar(
+                        labelColor: Colors.white,
+                        unselectedLabelColor: AppColors.textSecondary,
+                        indicatorSize: TabBarIndicatorSize.tab,
+                        indicator: BoxDecoration(
+                          borderRadius: BorderRadius.circular(8),
+                          color: AppColors.maroon,
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.maroon.withValues(alpha: 0.20),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        labelStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                        unselectedLabelStyle: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
+                        ),
+                        dividerColor: Colors.transparent,
+                        tabs: const [
+                          Tab(text: 'Deliverables'),
+                          Tab(text: 'Teams & Grades'),
+                        ],
+                      ),
                     ),
                     const SizedBox(height: 20),
                     Consumer(
@@ -276,33 +304,66 @@ class _TeamDeliverablesScreenState
 
   Widget _stat(String label, int count, IconData icon, Color color) {
     return Container(
-      width: 185,
+      width: 220,
       padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
       child: Row(
         children: [
           _iconBox(icon, color),
-          const SizedBox(width: 12),
+          const SizedBox(width: 14),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   count.toString(),
                   style: const TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    color: AppColors.textPrimary,
                   ),
                 ),
                 Text(
                   label,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: AppColors.textSecondary),
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textSecondary,
+                  ),
                 ),
               ],
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  InputDecoration _toolbarInputDec({required String label, IconData? prefixIcon}) {
+    return InputDecoration(
+      labelText: label,
+      prefixIcon: prefixIcon != null ? Icon(prefixIcon, size: 20) : null,
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      labelStyle: const TextStyle(
+        color: Color(0xFF64748B),
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(10),
+        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
       ),
     );
   }
@@ -320,86 +381,123 @@ class _TeamDeliverablesScreenState
           ]
         : state.statuses;
 
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
-            SizedBox(
-              width: 300,
-              child: TextField(
-                controller: _searchController,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  labelText: 'Search team, project, adviser',
-                ),
-                onSubmitted: (value) => ref
-                    .read(capstoneDeliverablesProvider.notifier)
-                    .fetchDeliverables(search: value),
+    return Container(
+      decoration: _cardDecoration(),
+      padding: const EdgeInsets.all(16),
+      child: Wrap(
+        spacing: 16,
+        runSpacing: 16,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          SizedBox(
+            width: 300,
+            child: TextField(
+              controller: _searchController,
+              decoration: _toolbarInputDec(
+                label: 'Search team, project, adviser',
+                prefixIcon: Icons.search,
               ),
-            ),
-            SizedBox(
-              width: 220,
-              child: DropdownButtonFormField<String>(
-                initialValue: selectedStage,
-                decoration: InputDecoration(labelText: state.scope == 'pit' ? 'PIT Event' : 'Stage View'),
-                hint: Text(
-                  stageOptions.isEmpty
-                      ? (state.scope == 'pit' ? 'No events configured' : 'No stages configured')
-                      : 'Select stage',
-                ),
-                items: stageOptions
-                    .map(
-                      (stage) =>
-                          DropdownMenuItem(value: stage, child: Text(stage)),
-                    )
-                    .toList(),
-                onChanged: stageOptions.isEmpty
-                    ? null
-                    : (value) => ref
-                          .read(capstoneDeliverablesProvider.notifier)
-                          .fetchDeliverables(
-                            selectedStage: value ?? selectedStage ?? '',
-                          ),
+              style: const TextStyle(
+                fontSize: 13,
               ),
+              onSubmitted: (value) => ref
+                  .read(capstoneDeliverablesProvider.notifier)
+                  .fetchDeliverables(search: value),
             ),
-            SizedBox(
-              width: 240,
-              child: DropdownButtonFormField<String>(
-                initialValue: state.status,
-                decoration: const InputDecoration(labelText: 'Status'),
-                isExpanded: true,
-                items: statuses
-                    .map(
-                      (item) => DropdownMenuItem(
-                        value: item['value']?.toString() ?? '',
-                        child: Text(
-                          item['label']?.toString() ?? '',
-                          overflow: TextOverflow.ellipsis,
+          ),
+          SizedBox(
+            width: 220,
+            child: DropdownButtonFormField<String>(
+              initialValue: selectedStage,
+              decoration: _toolbarInputDec(
+                label: state.scope == 'pit' ? 'PIT Event' : 'Stage View',
+              ),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+              hint: Text(
+                stageOptions.isEmpty
+                    ? (state.scope == 'pit' ? 'No events configured' : 'No stages configured')
+                    : 'Select stage',
+                style: const TextStyle(fontSize: 13),
+              ),
+              items: stageOptions
+                  .map(
+                    (stage) => DropdownMenuItem(
+                      value: stage,
+                      child: Text(
+                        stage,
+                        style: const TextStyle(
+                          fontSize: 13,
                         ),
                       ),
-                    )
-                    .toList(),
-                onChanged: (value) => ref
-                    .read(capstoneDeliverablesProvider.notifier)
-                    .fetchDeliverables(status: value ?? ''),
+                    ),
+                  )
+                  .toList(),
+              onChanged: stageOptions.isEmpty
+                  ? null
+                  : (value) => ref
+                        .read(capstoneDeliverablesProvider.notifier)
+                        .fetchDeliverables(
+                          selectedStage: value ?? selectedStage ?? '',
+                        ),
+            ),
+          ),
+          SizedBox(
+            width: 240,
+            child: DropdownButtonFormField<String>(
+              initialValue: state.status,
+              decoration: _toolbarInputDec(label: 'Status'),
+              style: const TextStyle(
+                fontSize: 13,
+                color: AppColors.textPrimary,
+              ),
+              isExpanded: true,
+              items: statuses
+                  .map(
+                    (item) => DropdownMenuItem(
+                      value: item['value']?.toString() ?? '',
+                      child: Text(
+                        item['label']?.toString() ?? '',
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 13,
+                        ),
+                      ),
+                    ),
+                  )
+                  .toList(),
+              onChanged: (value) => ref
+                  .read(capstoneDeliverablesProvider.notifier)
+                  .fetchDeliverables(status: value ?? ''),
+            ),
+          ),
+          OutlinedButton.icon(
+            onPressed: () {
+              _searchController.clear();
+              ref
+                  .read(capstoneDeliverablesProvider.notifier)
+                  .fetchDeliverables(search: '', status: '');
+            },
+            icon: const Icon(Icons.clear_all_rounded, size: 18),
+            label: const Text(
+              'Clear Filters',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
               ),
             ),
-            OutlinedButton.icon(
-              onPressed: () {
-                _searchController.clear();
-                ref
-                    .read(capstoneDeliverablesProvider.notifier)
-                    .fetchDeliverables(search: '', status: '');
-              },
-              icon: const Icon(Icons.refresh),
-              label: const Text('Clear'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF64748B),
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
+              ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
@@ -421,11 +519,11 @@ class _TeamDeliverablesScreenState
       final emptySubtitle = state.scope == 'pit'
           ? 'Assign PIT teams first.'
           : 'Assign Capstone teams and advisers first.';
-      return Card(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(34),
-          child: Column(
+      return Container(
+        decoration: _cardDecoration(),
+        width: double.infinity,
+        padding: const EdgeInsets.all(34),
+        child: Column(
             children: [
               const Icon(
                 Icons.folder_open_outlined,
@@ -444,7 +542,6 @@ class _TeamDeliverablesScreenState
               ),
             ],
           ),
-        ),
       );
     }
 
@@ -464,13 +561,26 @@ class _TeamDeliverablesScreenState
     final endorsed = selectedStage['endorsed'] == true;
     final canEndorse = configured && complete && !endorsed;
 
-    return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
       child: Padding(
-        padding: const EdgeInsets.all(18),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // Top Section: Team details & status badge
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -481,16 +591,20 @@ class _TeamDeliverablesScreenState
                       Text(
                         team['name']?.toString() ?? '',
                         style: const TextStyle(
-                          fontSize: 17,
+                          fontSize: 18,
                           fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         team['project_title']?.toString() ?? '',
-                        style: const TextStyle(color: AppColors.textSecondary),
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 14,
+                        ),
                       ),
-                      const SizedBox(height: 10),
+                      const SizedBox(height: 12),
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -515,20 +629,70 @@ class _TeamDeliverablesScreenState
                 _statusChip(complete, endorsed),
               ],
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: [
-                Expanded(
+            
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Divider(color: Color(0xFFF1F5F9), height: 1),
+            ),
+            
+            // Progress blocks layout (Two columns wrapped in Row/Wrap)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final useVerticalLayout = constraints.maxWidth < 600;
+                
+                final reqBlock = Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
                   child: _requiredProgressBlock(
                     configured: configured,
                     done: requiredUploaded,
                     total: requiredTotal,
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(child: _vaultProgressBlock(selectedStage)),
-                const SizedBox(width: 12),
-                if (canEndorse)
+                );
+                
+                final vaultBlock = Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: _vaultProgressBlock(selectedStage),
+                );
+
+                if (useVerticalLayout) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      reqBlock,
+                      const SizedBox(height: 12),
+                      vaultBlock,
+                    ],
+                  );
+                }
+                
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: reqBlock),
+                    const SizedBox(width: 14),
+                    Expanded(child: vaultBlock),
+                  ],
+                );
+              },
+            ),
+            
+            const SizedBox(height: 18),
+            
+            // Action buttons row
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (canEndorse) ...[
                   ElevatedButton.icon(
                     onPressed: state.isSaving
                         ? null
@@ -570,20 +734,47 @@ class _TeamDeliverablesScreenState
                                   );
                             }
                           },
-                    icon: const Icon(Icons.verified_outlined),
-                    label: const Text('Endorse'),
+                    icon: const Icon(Icons.verified_outlined, size: 16),
+                    label: const Text(
+                      'Endorse Team',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                      ),
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.success,
                       foregroundColor: Colors.white,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
                     ),
                   ),
-                const SizedBox(width: 8),
+                  const SizedBox(width: 10),
+                ],
                 ElevatedButton.icon(
                   onPressed: state.isSaving
                       ? null
                       : () => _showTeamDialog(team),
-                  icon: const Icon(Icons.folder_open_outlined),
-                  label: const Text('Manage Files'),
+                  icon: const Icon(Icons.folder_open_outlined, size: 16),
+                  label: const Text(
+                    'Manage Files',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.maroon,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -661,15 +852,16 @@ class _TeamDeliverablesScreenState
           Text(
             emptyLabel ?? '$label — Not configured',
             style: const TextStyle(
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
+              fontSize: 13,
               color: AppColors.textSecondary,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 8),
           ClipRRect(
             borderRadius: BorderRadius.circular(999),
             child: LinearProgressIndicator(
-              minHeight: 8,
+              minHeight: 10,
               value: 0,
               color: color.withValues(alpha: 0.35),
               backgroundColor: color.withValues(alpha: 0.12),
@@ -687,18 +879,29 @@ class _TeamDeliverablesScreenState
           children: [
             Expanded(
               child: Text(
-                '$label $done/$total',
-                style: const TextStyle(fontWeight: FontWeight.w800),
+                '$label ($done/$total)',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: AppColors.textPrimary,
+                ),
               ),
             ),
-            Text('${(pct * 100).round()}%'),
+            Text(
+              '${(pct * 100).round()}%',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 13,
+                color: color,
+              ),
+            ),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         ClipRRect(
           borderRadius: BorderRadius.circular(999),
           child: LinearProgressIndicator(
-            minHeight: 8,
+            minHeight: 10,
             value: pct,
             color: color,
             backgroundColor: color.withValues(alpha: 0.12),
@@ -1852,9 +2055,16 @@ class _TeamDeliverablesScreenState
 
   BoxDecoration _cardDecoration() {
     return BoxDecoration(
-      color: AppColors.surface,
+      color: Colors.white,
       borderRadius: BorderRadius.circular(16),
-      border: Border.all(color: const Color(0xFFE5E7EB)),
+      border: Border.all(color: const Color(0xFFE2E8F0)),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withValues(alpha: 0.02),
+          blurRadius: 10,
+          offset: const Offset(0, 4),
+        ),
+      ],
     );
   }
 
@@ -2673,8 +2883,10 @@ class _TeamDeliverablesScreenState
       statusLabel = 'Awaiting Peers';
     }
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
+      decoration: _cardDecoration(),
+      clipBehavior: Clip.antiAlias,
       child: ExpansionTile(
         key: PageStorageKey<String>('grade_${team['id']}'),
         title: Row(
@@ -2767,8 +2979,9 @@ class _TeamDeliverablesScreenState
   }
 
   Widget _gradeBadge(String label, dynamic score) {
-    final hasScore = score != null;
-    final valueText = hasScore ? (score as num).toStringAsFixed(2) : 'Pending';
+    final parsedScore = _asDouble(score);
+    final hasScore = parsedScore != null;
+    final valueText = hasScore ? parsedScore.toStringAsFixed(2) : 'Pending';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       decoration: BoxDecoration(
@@ -2803,8 +3016,9 @@ class _TeamDeliverablesScreenState
   }
 
   Widget _overallGradeBadge(dynamic score, String result) {
-    final hasScore = score != null;
-    final valueText = hasScore ? (score as num).toStringAsFixed(2) : 'Pending';
+    final parsedScore = _asDouble(score);
+    final hasScore = parsedScore != null;
+    final valueText = hasScore ? parsedScore.toStringAsFixed(2) : 'Pending';
 
     Color bg = const Color(0xFFF3F4F6);
     Color border = const Color(0xFFE5E7EB);
@@ -2872,6 +3086,8 @@ class _TeamDeliverablesScreenState
   }
 
   Widget _buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dynamic>? grade) {
+    debugPrint('DefenSYS Debug: _buildRosterAndIndividualGrades team=$team');
+    debugPrint('DefenSYS Debug: _buildRosterAndIndividualGrades grade=$grade');
     final List<dynamic> members = team['members'] as List? ?? [];
     final List<dynamic> peerGrades = grade?['peer_per_student'] as List? ?? [];
 
@@ -2894,28 +3110,25 @@ class _TeamDeliverablesScreenState
         itemCount: members.length,
         separatorBuilder: (_, __) => const Divider(height: 1, color: Color(0xFFE5E7EB)),
         itemBuilder: (context, index) {
-          final member = Map<String, dynamic>.from(members[index] as Map);
+          final rawMember = members[index];
+          if (rawMember is! Map) return const SizedBox.shrink();
+          final member = Map<String, dynamic>.from(rawMember);
           final studentId = member['id'];
           final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
           final role = member['role']?.toString() ?? 'member';
           final isLeader = role == 'leader';
 
           final peerDetails = peerGrades.firstWhere(
-            (g) => g['student_id'] == studentId,
+            (g) => g is Map && g['student_id'] == studentId,
             orElse: () => null,
           );
 
-          final double? avgScore = peerDetails?['average_score'] != null
-              ? (peerDetails!['average_score'] as num).toDouble()
-              : null;
-          final double maxScore = peerDetails?['max_score'] != null
-              ? (peerDetails!['max_score'] as num).toDouble()
-              : 5.0;
-          final double? normScore = peerDetails?['normalized_score'] != null
-              ? (peerDetails!['normalized_score'] as num).toDouble()
-              : null;
+          final double? avgScore = _asDouble(peerDetails?['average_score']);
+          final double maxScore = _asDouble(peerDetails?['max_score']) ?? 5.0;
+          final double? normScore = _asDouble(peerDetails?['normalized_score']);
 
-          final parts = name.split(' ');
+          final sanitizedName = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+          final parts = sanitizedName.split(' ');
           final initials = parts.isNotEmpty
               ? (parts.first.isNotEmpty ? parts.first[0] : '') +
                   (parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '')
@@ -3038,8 +3251,24 @@ class _TeamDeliverablesScreenState
   }
 
   int _asInt(dynamic value) {
+    if (value == null) return 0;
     if (value is int) return value;
+    if (value is double) return value.toInt();
     if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
+    if (value is String) {
+      return int.tryParse(value) ?? 0;
+    }
+    return 0;
+  }
+
+  double? _asDouble(dynamic value) {
+    if (value == null) return null;
+    if (value is double) return value;
+    if (value is int) return value.toDouble();
+    if (value is num) return value.toDouble();
+    if (value is String) {
+      return double.tryParse(value);
+    }
+    return null;
   }
 }
