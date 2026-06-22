@@ -79,6 +79,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late final TextEditingController _name;
   late String _scope;
   late String _evaluationType;
+  late String _targetType;
   late int? _semesterId;
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
@@ -204,6 +205,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     _evaluationType = r?['evaluation_type']?.toString() ??
         widget.initialEvaluationType ??
         'panel';
+    _targetType = r?['target_type']?.toString() ?? 'team';
     _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
     _criteria = _buildCriterionDrafts(r, _scales);
     if (_scope == 'pit' && _evaluationType == 'adviser') {
@@ -240,6 +242,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _name.text = '${sourceRubric['name']} (Copy)';
       _scope = sourceRubric['scope'] ?? _scope;
       _evaluationType = sourceRubric['evaluation_type'] ?? _evaluationType;
+      _targetType = sourceRubric['target_type'] ?? _targetType;
 
       _disposeCriteriaList(_criteria);
       final clonedCriteria = sourceRubric['criteria'];
@@ -742,6 +745,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       'defense_stage_id': null,
       'event_name': '',
       'evaluation_type': _evaluationType,
+      'target_type': _targetType,
       'scale': _rubricLevelScale(),
       'status': status,
       'criteria': _criteria.map((d) => d.toPayload()).toList(),
@@ -1047,6 +1051,47 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                             ),
                           ),
                         ],
+                      ),
+                      const SizedBox(height: 14),
+                      _labeledControl(
+                        'SCORING TARGET',
+                        DropdownButtonFormField<String>(
+                          key: ValueKey('target-$_targetType'),
+                          initialValue: _targetType,
+                          isExpanded: true,
+                          style: _dropdownFieldStyle,
+                          decoration: _outlineInputDec(),
+                          items: [
+                            DropdownMenuItem(
+                              value: 'team',
+                              child: Text(
+                                'Team (Entire team shares the grade)',
+                                style: TextStyle(
+                                  fontFamily: DefensysUi.fontFamily,
+                                  fontSize: _bodySize,
+                                  color: DefensysUi.textDark,
+                                ),
+                              ),
+                            ),
+                            DropdownMenuItem(
+                              value: 'individual',
+                              child: Text(
+                                'Individual (Students graded individually)',
+                                style: TextStyle(
+                                  fontFamily: DefensysUi.fontFamily,
+                                  fontSize: _bodySize,
+                                  color: DefensysUi.textDark,
+                                ),
+                              ),
+                            ),
+                          ],
+                          onChanged: canEdit
+                              ? (v) {
+                                  setState(() => _targetType = v ?? 'team');
+                                  _markDirty();
+                                }
+                              : null,
+                        ),
                       ),
                       if (_scope == 'pit') ...[
                         const SizedBox(height: 12),
