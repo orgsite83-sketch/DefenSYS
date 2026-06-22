@@ -116,6 +116,8 @@ class TeamGrade(models.Model):
             is_individual_panel = (self.pit_event_config.panel_rubric.target_type == 'individual')
 
         if is_individual_panel:
+            if not self.pk:
+                return False
             memberships = self.team.memberships.all()
             if not memberships.exists():
                 return False
