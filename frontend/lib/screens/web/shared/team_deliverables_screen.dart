@@ -2886,94 +2886,84 @@ class _TeamDeliverablesScreenState
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: _cardDecoration(),
-      clipBehavior: Clip.antiAlias,
-      child: ExpansionTile(
-        key: PageStorageKey<String>('grade_${team['id']}'),
-        title: Row(
-          crossAxisAlignment: CrossAxisAlignment.center,
+      child: Padding(
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    team['name']?.toString() ?? '',
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    team['project_title']?.toString() ?? '',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: AppColors.textSecondary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: 16),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-              decoration: BoxDecoration(
-                color: statusBg,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                statusLabel,
-                style: TextStyle(
-                  color: statusText,
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        ),
-        subtitle: Padding(
-          padding: const EdgeInsets.only(top: 12, bottom: 8),
-          child: Wrap(
-            spacing: 16,
-            runSpacing: 12,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              _gradeBadge('Panel', panelScore),
-              _gradeBadge('Peer', peerScore),
-              if (state.scope == 'capstone') _gradeBadge('Adviser', adviserScore),
-              _overallGradeBadge(finalGrade, result),
-            ],
-          ),
-        ),
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 20),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
-            ),
-            child: Column(
+            Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const SizedBox(height: 12),
-                const Text(
-                  'TEAM ROSTER & INDIVIDUAL PEER GRADES',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textSecondary,
-                    letterSpacing: 1.1,
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        team['name']?.toString() ?? '',
+                        style: const TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w800,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        team['project_title']?.toString() ?? '',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                const SizedBox(height: 12),
-                _buildRosterAndIndividualGrades(team, grade),
+                const SizedBox(width: 16),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: statusBg,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    statusLabel,
+                    style: TextStyle(
+                      color: statusText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 16,
+              runSpacing: 12,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                _gradeBadge('Panel', panelScore),
+                _gradeBadge('Peer', peerScore),
+                if (state.scope == 'capstone') _gradeBadge('Adviser', adviserScore),
+                _overallGradeBadge(finalGrade, result),
+              ],
+            ),
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 18),
+              child: Divider(color: Color(0xFFF1F5F9), height: 1),
+            ),
+            const Text(
+              'TEAM ROSTER & INDIVIDUAL PEER GRADES',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textSecondary,
+                letterSpacing: 1.1,
+              ),
+            ),
+            const SizedBox(height: 12),
+            _buildRosterAndIndividualGrades(team, grade),
+          ],
+        ),
       ),
     );
   }
@@ -3086,8 +3076,6 @@ class _TeamDeliverablesScreenState
   }
 
   Widget _buildRosterAndIndividualGrades(Map<String, dynamic> team, Map<String, dynamic>? grade) {
-    debugPrint('DefenSYS Debug: _buildRosterAndIndividualGrades team=$team');
-    debugPrint('DefenSYS Debug: _buildRosterAndIndividualGrades grade=$grade');
     final List<dynamic> members = team['members'] as List? ?? [];
     final List<dynamic> peerGrades = grade?['peer_per_student'] as List? ?? [];
 
