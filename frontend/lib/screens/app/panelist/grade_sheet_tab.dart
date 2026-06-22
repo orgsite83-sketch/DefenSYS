@@ -594,9 +594,28 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       );
       return;
     }
-    if (_criteria.isEmpty) {
-      showValidationToast(context, 'Score all criteria before posting.');
-      return;
+
+    if (team.isIndividualTarget) {
+      if (team.memberDetails.isEmpty) {
+        showValidationToast(context, 'This team has no members to grade.');
+        return;
+      }
+      for (var member in team.memberDetails) {
+        final memberCriteria = _studentCriteria[member.id] ?? [];
+        if (memberCriteria.isEmpty) {
+          showValidationToast(
+            context,
+            'Score all criteria for ${member.name} before posting.',
+          );
+          return;
+        }
+      }
+    } else {
+      final criteria = _criteria.isNotEmpty ? _criteria : team.criteria;
+      if (criteria.isEmpty) {
+        showValidationToast(context, 'Score all criteria before posting.');
+        return;
+      }
     }
 
     final confirmed = await confirmDestructive(

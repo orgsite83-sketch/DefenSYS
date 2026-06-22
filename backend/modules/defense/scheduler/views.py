@@ -456,6 +456,7 @@ class PanelistAssignmentsView(APIView):
                 'panel_rubric': panel_rubric,
                 'members': [
                     {
+                        'id': m.student_id,
                         'name': f'{m.student.first_name} {m.student.last_name}'.strip() or m.student.username,
                         'username': m.student.username,
                     }
@@ -742,6 +743,7 @@ def _team_assignment_payload(schedule):
         'panel_rubric': panel_rubric,
         'members': [
             {
+                'id': m.student_id,
                 'name': f'{m.student.first_name} {m.student.last_name}'.strip() or m.student.username,
                 'username': m.student.username,
             }
