@@ -164,16 +164,8 @@ def _impact_counts(current_semester):
             peer_grading_enabled=True,
         ).count(),
         'incomplete_official_workflows': incomplete_official_workflows,
-        'open_archive_queues': _calculate_open_archive_queues(current_semester),
+        'open_archive_queues': 0,
     }
-
-
-def _calculate_open_archive_queues(semester):
-    from repository.audit.services import capstone_vault_upload_queue, pit_vault_upload_queue
-    count = len(capstone_vault_upload_queue(semester=semester))
-    for year_level in ['1st Year', '2nd Year', '3rd Year', '4th Year']:
-        count += len(pit_vault_upload_queue(year_level, semester=semester))
-    return count
 
 
 def _transition_issues(current_semester, counts):
@@ -243,15 +235,6 @@ def _transition_issues(current_semester, counts):
         message='official completion workflows are still incomplete',
         action_label='Review completion',
         route=f'/admin/grade-center?semester={semester_id}&official=incomplete',
-    )
-    _append_count_issue(
-        issues,
-        key='open_archive_queues',
-        count=counts['open_archive_queues'],
-        blocking=True,
-        message='archive/upload queues are still waiting',
-        action_label='Open repository queue',
-        route=f'/admin/repository-audit?semester={semester_id}&queue=open',
     )
     return issues
 
