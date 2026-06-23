@@ -10,6 +10,26 @@ PASS_GRADE_THRESHOLD = Decimal('75.00')
 
 
 def get_ready_teams(semester, stage):
+    scheduled_progress = TeamStageProgress.objects.filter(
+        semester=semester,
+        defense_stage=stage,
+        status=TeamStageProgress.STATUS_SCHEDULED,
+    )
+    if scheduled_progress.exists():
+        from defense.scheduler.models import DefenseSchedule
+        active_scheduled_team_ids = set(
+            DefenseSchedule.objects.filter(
+                scope=DefenseSchedule.SCOPE_CAPSTONE,
+                semester=semester,
+                defense_stage=stage,
+                status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+            ).values_list('team_id', flat=True)
+        )
+        for progress in scheduled_progress:
+            if progress.team_id not in active_scheduled_team_ids:
+                progress.status = TeamStageProgress.STATUS_READY
+                progress.save(update_fields=['status', 'updated_at'])
+
     ready_ids = TeamStageProgress.objects.filter(
         semester=semester,
         defense_stage=stage,
@@ -30,7 +50,23 @@ def get_stage_progress(team, stage):
 
 def is_stage_ready(team, stage):
     progress = get_stage_progress(team, stage)
-    return bool(progress and progress.status == TeamStageProgress.STATUS_READY)
+    if not progress:
+        return False
+    if progress.status == TeamStageProgress.STATUS_READY:
+        return True
+    if progress.status == TeamStageProgress.STATUS_SCHEDULED:
+        from defense.scheduler.models import DefenseSchedule
+        has_active = DefenseSchedule.objects.filter(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=team,
+            defense_stage=stage,
+            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+        ).exists()
+        if not has_active:
+            progress.status = TeamStageProgress.STATUS_READY
+            progress.save(update_fields=['status', 'updated_at'])
+            return True
+    return False
 
 
 # Statuses that indicate endorsement already happened (ready or any later stage).
