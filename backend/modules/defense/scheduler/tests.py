@@ -252,6 +252,45 @@ class DefenseSchedulerApiTests(APITestCase):
         progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
         self.assertEqual(progress.status, TeamStageProgress.STATUS_SCHEDULED)
 
+    def test_delete_schedule_reverts_stage_progress_to_ready(self):
+        # Create a scheduled defense
+        schedule = self.create_scheduled_defense()
+        progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
+        # Update progress to scheduled since we just manually created schedule
+        from student_teams.services import mark_stage_scheduled
+        mark_stage_scheduled(self.team, self.stage)
+        progress.refresh_from_db()
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_SCHEDULED)
+
+        # Delete the schedule
+        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
+        self.assertEqual(response.status_code, 200)
+
+        # Verify progress reverted to ready
+        progress.refresh_from_db()
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
+
+    def test_cancel_schedule_reverts_stage_progress_to_ready(self):
+        # Create a scheduled defense
+        schedule = self.create_scheduled_defense()
+        progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
+        from student_teams.services import mark_stage_scheduled
+        mark_stage_scheduled(self.team, self.stage)
+        progress.refresh_from_db()
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_SCHEDULED)
+
+        # Cancel the schedule
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/',
+            {'status': DefenseSchedule.STATUS_CANCELLED},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Verify progress reverted to ready
+        progress.refresh_from_db()
+        self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
+
     def test_manual_schedule_create_rejects_duplicate_active_context(self):
         first = self.client.post(
             '/api/defense/schedules/',

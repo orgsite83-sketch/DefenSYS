@@ -122,12 +122,75 @@ class DefenseSchedule(models.Model):
             raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
+        is_new = self.pk is None
+        old_status = None
+        if not is_new:
+            try:
+                old_status = DefenseSchedule.objects.filter(pk=self.pk).values_list('status', flat=True).first()
+            except Exception:
+                pass
+
         if self.scope == self.SCOPE_PIT:
             self.defense_stage = None
         else:
             self.event_name = ''
         self.full_clean()
         super().save(*args, **kwargs)
+
+        # Sync TeamStageProgress status for Capstone schedules
+        if self.scope == self.SCOPE_CAPSTONE and self.defense_stage:
+            from student_teams.models import StudentTeam, TeamStageProgress
+            if StudentTeam.objects.filter(pk=self.team.pk).exists():
+                if self.status == self.STATUS_SCHEDULED:
+                    from student_teams.services import mark_stage_scheduled
+                    mark_stage_scheduled(self.team, self.defense_stage, user=self.created_by)
+                elif old_status == self.STATUS_SCHEDULED and self.status in [self.STATUS_CANCELLED, self.STATUS_ARCHIVED]:
+                    # Revert to ready if no other active/scheduled schedules exist
+                    progress = TeamStageProgress.objects.filter(
+                        team=self.team,
+                        semester=self.semester,
+                        defense_stage=self.defense_stage
+                    ).first()
+                    if progress and progress.status == TeamStageProgress.STATUS_SCHEDULED:
+                        has_other = DefenseSchedule.objects.filter(
+                            scope=self.SCOPE_CAPSTONE,
+                            team=self.team,
+                            defense_stage=self.defense_stage,
+                            status__in=[self.STATUS_SCHEDULED, self.STATUS_DONE]
+                        ).exclude(pk=self.pk).exists()
+                        if not has_other:
+                            from student_teams.services import mark_stage_ready
+                            mark_stage_ready(self.team, self.defense_stage)
+
+    def delete(self, *args, **kwargs):
+        team = self.team
+        stage = self.defense_stage
+        scope = self.scope
+        semester = self.semester
+        status = self.status
+        pk = self.pk
+
+        result = super().delete(*args, **kwargs)
+
+        if scope == self.SCOPE_CAPSTONE and stage:
+            from student_teams.models import StudentTeam, TeamStageProgress
+            if StudentTeam.objects.filter(pk=team.pk).exists():
+                progress = TeamStageProgress.objects.filter(
+                    team=team,
+                    semester=semester,
+                    defense_stage=stage
+                ).first()
+                if progress and progress.status == TeamStageProgress.STATUS_SCHEDULED:
+                    has_other = DefenseSchedule.objects.filter(
+                        scope=self.SCOPE_CAPSTONE,
+                        team=team,
+                        defense_stage=stage,
+                        status__in=[self.STATUS_SCHEDULED, self.STATUS_DONE]
+                    ).exclude(pk=pk).exists()
+                    if not has_other:
+                        from student_teams.services import mark_stage_ready
+                        mark_stage_ready(team, stage)
+        return result
 
     def __str__(self):
         return f'{self.team} - {self.stage_label} on {self.scheduled_date}'
