@@ -43,13 +43,7 @@ class RepositoryAuditApiTests(APITestCase):
             is_pit_lead=True,
             pit_lead_year='2nd Year',
         )
-        self.repo_assistant_faculty = User.objects.create_user(
-            username='repo-assist',
-            password='pass12345',
-            role='faculty',
-            first_name='Repo',
-            last_name='Assistant',
-        )
+
         self.student = User.objects.create_user(
             username='2024-0001',
             password='pass12345',
@@ -407,32 +401,6 @@ class RepositoryAuditApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 403)
 
-    def test_pit_lead_assigns_repository_assistant_and_revokes_previous(self):
-        self.client.force_authenticate(user=self.pit_lead)
-        other_assistant = User.objects.create_user(
-            username='old-assist',
-            password='pass12345',
-            role='faculty',
-            is_repo_assistant=True,
-            is_uploader=True,
-            repo_assistant_year='3rd Year',
-        )
-
-        response = self.client.post(
-            '/api/dashboards/pit-lead/repository-assistant/',
-            {'faculty_id': self.repo_assistant_faculty.id},
-            format='json',
-        )
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['assigned']['id'], self.repo_assistant_faculty.id)
-        self.repo_assistant_faculty.refresh_from_db()
-        other_assistant.refresh_from_db()
-        self.assertTrue(self.repo_assistant_faculty.is_repo_assistant)
-        self.assertEqual(self.repo_assistant_faculty.repo_assistant_year, '3rd Year')
-        self.assertFalse(other_assistant.is_repo_assistant)
-        self.assertEqual(other_assistant.repo_assistant_year, '')
-
     def test_multipart_pit_upload_is_forbidden(self):
         self._open_upload_window_for_pit_team()
         pdf_bytes = b'%PDF-1.4 minimal test content'
@@ -466,102 +434,6 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn(self.pit_entry.file_name, file_names)
-
-    def test_assigned_assistant_cannot_upload_when_window_open(self):
-        self._open_upload_window_for_pit_team()
-        self.client.force_authenticate(user=self.pit_lead)
-        self.client.post(
-            '/api/dashboards/pit-lead/repository-assistant/',
-            {'faculty_id': self.repo_assistant_faculty.id},
-            format='json',
-        )
-
-        self.repo_assistant_faculty.refresh_from_db()
-        self.client.force_authenticate(user=self.repo_assistant_faculty)
-        audit = self.client.get('/api/repository/audit/')
-        self.assertEqual(audit.status_code, 200)
-        self.assertFalse(audit.data['scope']['can_upload_pit'])
-        self.assertEqual(audit.data['scope']['pit_year_level'], '3rd Year')
-        self.assertEqual(audit.data['scope']['scope'], 'repo_assistant')
-        self.assertEqual(audit.data['counts']['total'], 1)
-        self.assertEqual(audit.data['entries'][0]['type'], 'pit')
-        self.assertEqual(audit.data['entries'][0]['year_level'], '3rd Year')
-
-        upload = self.client.post(
-            '/api/repository/audit/upload-pit/',
-            {'file_names': ['3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf']},
-            format='json',
-        )
-        self.assertEqual(upload.status_code, 403)
-
-    def test_assigned_assistant_scope_excludes_other_year_queue_and_records(self):
-        self._open_upload_window_for_pit_team()
-        other_student = User.objects.create_user(
-            username='2024-0002',
-            password='pass12345',
-            role='student',
-        )
-        other_team = StudentTeam.objects.create(
-            name='Team Other PIT',
-            project_title='OtherPITSystem',
-            level=StudentTeam.LEVEL_2_PIT,
-            year_level='2nd Year',
-            semester=self.semester,
-            leader=other_student,
-            status=StudentTeam.STATUS_APPROVED,
-        )
-        config = PitEventGradingConfig.objects.get(event_name='3rd Year Expo')
-        TeamGrade.objects.create(
-            team=other_team,
-            semester=self.semester,
-            scope=TeamGrade.SCOPE_PIT,
-            stage_label=config.event_name,
-            pit_event_config=config,
-            status=TeamGrade.STATUS_PENDING,
-            final_grade=Decimal('88.00'),
-            panel_score=Decimal('90.00'),
-            peer_score=Decimal('80.00'),
-            panel_weight=80,
-            peer_weight=20,
-            adviser_weight=0,
-        )
-        self.client.force_authenticate(user=self.pit_lead)
-        self.client.post(
-            '/api/dashboards/pit-lead/repository-assistant/',
-            {'faculty_id': self.repo_assistant_faculty.id},
-            format='json',
-        )
-
-        self.repo_assistant_faculty.refresh_from_db()
-        self.client.force_authenticate(user=self.repo_assistant_faculty)
-        response = self.client.get('/api/repository/audit/', {'type': ''})
-        file_names = [entry['file_name'] for entry in response.data['entries']]
-        queue_team_ids = [
-            item['team_id']
-            for item in response.data['upload_window']['queue']
-        ]
-
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['scope']['scope'], 'repo_assistant')
-        self.assertEqual(response.data['scope']['pit_year_level'], '3rd Year')
-        self.assertIn(self.pit_entry.file_name, file_names)
-        self.assertNotIn('2ndYear.PIT201.CampusSocialNetwork.1stSemester.pdf', file_names)
-        self.assertNotIn('Team_Cipher_D1.pdf', file_names)
-        self.assertIn(self.pit_team.id, queue_team_ids)
-        self.assertNotIn(other_team.id, queue_team_ids)
-
-    def test_pit_lead_cannot_upload_when_assistant_assigned(self):
-        self._open_upload_window_for_pit_team()
-        self.client.force_authenticate(user=self.pit_lead)
-        self.client.post(
-            '/api/dashboards/pit-lead/repository-assistant/',
-            {'faculty_id': self.repo_assistant_faculty.id},
-            format='json',
-        )
-
-        audit = self.client.get('/api/repository/audit/')
-        self.assertFalse(audit.data['scope']['can_upload_pit'])
-        self.assertTrue(audit.data['scope']['has_assigned_assistant'])
 
     def test_admin_override_update_pit_status_and_logs(self):
         self.client.force_authenticate(user=self.pit_lead)

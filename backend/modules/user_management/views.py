@@ -5,7 +5,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import status
+from rest_framework import serializers, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -22,7 +22,7 @@ from authentication_access_control.guest_tokens import (
 )
 from authentication_access_control.models import SystemAuditLog
 from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
-from .permissions import IsPitLead, IsPitLeadOrAdmin, IsSystemAdmin
+from .permissions import IsFacultyRole, IsPitLead, IsPitLeadOrAdmin, IsSystemAdmin
 from student_teams.models import TeamAdviserAssignment
 from student_teams.serializers import TeamAdviserAssignmentSerializer
 
@@ -117,8 +117,8 @@ class UserListCreateView(APIView):
             users = users.filter(role__in=['faculty', 'admin'], is_pit_lead=True)
         elif role == 'adviser':
             users = users.filter(role__in=['faculty', 'admin'], is_adviser=True)
-        elif role == 'repo_assistant':
-            users = users.filter(role__in=['faculty', 'admin'], is_repo_assistant=True)
+        elif role == 'documenter':
+            users = users.filter(role__in=['faculty', 'admin'], is_documenter=True)
         elif role in dict(User.ROLE_CHOICES):
             users = users.filter(role=role)
 
@@ -861,3 +861,59 @@ class GuestCodeExchangeView(APIView):
             'access': access,
             'user': guest_user_payload(guest_code),
         })
+
+
+class ESignatureUploadSerializer(serializers.Serializer):
+    e_signature = serializers.ImageField(required=False)
+    file = serializers.ImageField(required=False)
+
+    def validate(self, attrs):
+        if not attrs.get('e_signature') and not attrs.get('file'):
+            raise serializers.ValidationError("Either 'e_signature' or 'file' is required.")
+        return attrs
+
+
+class UserESignatureView(APIView):
+    permission_classes = [IsFacultyRole]
+
+    def post(self, request):
+        serializer = ESignatureUploadSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        uploaded_file = serializer.validated_data.get('e_signature') or serializer.validated_data.get('file')
+        user = request.user
+
+        # Delete old e-signature if exists to avoid orphans
+        if user.e_signature:
+            try:
+                user.e_signature.delete(save=False)
+            except Exception:
+                pass
+
+        user.e_signature = uploaded_file
+        user.save()
+
+        return Response({
+            'message': 'E-signature uploaded successfully.',
+            'e_signature': user.e_signature.url if user.e_signature else None
+        }, status=status.HTTP_200_OK)
+
+    def delete(self, request):
+        user = request.user
+        if not user.e_signature:
+            return Response({
+                'message': 'No e-signature found to remove.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user.e_signature.delete(save=False)
+        except Exception:
+            pass
+
+        user.e_signature = None
+        user.save()
+
+        return Response({
+            'message': 'E-signature removed successfully.'
+        }, status=status.HTTP_200_OK)
+

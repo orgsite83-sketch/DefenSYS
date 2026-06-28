@@ -52,13 +52,13 @@ class FacultyRoleAssignment(models.Model):
     ROLE_PANELIST = 'panelist'
     ROLE_PIT_LEAD = 'pit_lead'
     ROLE_ADVISER = 'adviser'
-    ROLE_REPO_ASSISTANT = 'repo_assistant'
+    ROLE_DOCUMENTER = 'documenter'
 
     ROLE_KEY_CHOICES = (
         (ROLE_PANELIST, 'Defense Panelist'),
         (ROLE_PIT_LEAD, 'PIT Lead'),
         (ROLE_ADVISER, 'Project Adviser'),
-        (ROLE_REPO_ASSISTANT, 'Repository Assistant'),
+        (ROLE_DOCUMENTER, 'Documenter'),
     )
 
     ACTION_ASSIGNED = 'assigned'

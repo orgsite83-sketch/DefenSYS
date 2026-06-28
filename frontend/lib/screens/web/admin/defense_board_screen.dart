@@ -5,6 +5,7 @@ import '../../../services/defense_board_provider.dart';
 import '../../../theme/app_theme.dart';
 import 'defense_scheduler_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
+import '../faculty/minutes_form_screen.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
   const DefenseBoardScreen({super.key});
@@ -15,6 +16,7 @@ class DefenseBoardScreen extends ConsumerStatefulWidget {
 
 class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final TextEditingController _searchController = TextEditingController();
+  int? _selectedMinutesScheduleId;
 
   @override
   void initState() {
@@ -32,6 +34,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   @override
   Widget build(BuildContext context) {
+    if (_selectedMinutesScheduleId != null) {
+      return MinutesFormScreen(
+        scheduleId: _selectedMinutesScheduleId!,
+        onBack: () {
+          setState(() {
+            _selectedMinutesScheduleId = null;
+          });
+          ref.read(defenseBoardProvider.notifier).fetchBoard();
+        },
+      );
+    }
+
     final state = ref.watch(defenseBoardProvider);
 
     final cp = DefensysUi.contentPadding;
@@ -483,6 +497,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               _HeaderCell('Time', flex: 1),
               _HeaderCell('Room', flex: 1),
               _HeaderCell('Panel', flex: 2),
+              _HeaderCell('Minutes', flex: 1),
               _HeaderCell('Status', flex: 1),
               _HeaderCell('Action', flex: 1),
             ],
@@ -535,6 +550,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       _panelistNames(schedule),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  _BodyCell(
+                    flex: 1,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _minutesStatusChip(schedule),
                     ),
                   ),
                   _BodyCell(
@@ -606,6 +628,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 Row(
                   children: [
                     _statusChip(schedule['status']?.toString() ?? ''),
+                    if (schedule['scope'] == 'capstone') ...[
+                      const SizedBox(width: 8),
+                      _minutesStatusChip(schedule),
+                    ],
                     const Spacer(),
                     _deleteAction(state, schedule),
                   ],
@@ -847,6 +873,67 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '');
+  }
+
+  Widget _minutesStatusChip(Map<String, dynamic> schedule) {
+    final status = schedule['minutes_status']?.toString();
+    final scheduleId = _asInt(schedule['id']);
+    if (scheduleId == null || schedule['scope'] != 'capstone') {
+      return const Text('-');
+    }
+
+    String label = 'No Minutes';
+    Color bg = Colors.grey.shade100;
+    Color fg = Colors.grey.shade700;
+
+    if (status == 'draft') {
+      label = 'Draft';
+      bg = const Color(0xFFFFF3CD);
+      fg = const Color(0xFF856404);
+    } else if (status == 'submitted') {
+      label = 'Submitted';
+      bg = const Color(0xFFCCE5FF);
+      fg = const Color(0xFF004085);
+    } else if (status == 'adviser_signed') {
+      label = 'Adviser Signed';
+      bg = const Color(0xFFE2E3E5);
+      fg = const Color(0xFF383D41);
+    } else if (status == 'completed') {
+      label = 'Completed';
+      bg = const Color(0xFFD4EDDA);
+      fg = const Color(0xFF155724);
+    }
+
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _selectedMinutesScheduleId = scheduleId;
+        });
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                color: fg,
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.open_in_new, size: 10, color: fg),
+          ],
+        ),
+      ),
+    );
   }
 }
 

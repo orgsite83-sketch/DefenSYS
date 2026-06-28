@@ -39,7 +39,7 @@ Existing flows that must remain intact:
 - Admin assignment of PIT Lead by year level
 - Admin assignment of Defense Panelist capability
 - Admin assignment of Project Adviser
-- Admin assignment of Repository Assistant
+- Admin assignment of Documenter capability
 - PIT Lead year-level team import
 - PIT Lead year-level team management
 - PIT Lead scheduling and panel selection from eligible panelists
@@ -104,7 +104,7 @@ Admin controls broad system authority:
 - Assign PIT Lead
 - Assign Defense Panelist capability
 - Assign Project Adviser
-- Assign Repository Assistant
+- Assign Documenter capability
 
 PIT Lead uses assigned authority inside the PIT year level:
 
@@ -423,7 +423,7 @@ It should not show global role toggles such as:
 - Defense Panelist
 - PIT Lead
 - Project Adviser
-- Repository Assistant
+- Documenter
 
 Those remain Admin-managed global capabilities.
 
@@ -452,7 +452,7 @@ Suggested rules:
 - A PIT Lead can assign PIT Instructor only inside assigned year levels.
 - A PIT Lead can select only existing eligible Defense Panelists for PIT schedules/events.
 - A PIT Lead cannot grant Defense Panelist capability.
-- A PIT Lead cannot grant PIT Lead, Project Adviser, or Repository Assistant.
+- A PIT Lead cannot grant PIT Lead, Project Adviser, or Documenter.
 - Admin can import or manage PIT teams for all year levels.
 - Inactive assignments should not grant access.
 - Team access should update when team section changes.

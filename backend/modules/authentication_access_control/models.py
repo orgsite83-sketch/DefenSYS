@@ -27,9 +27,14 @@ class User(AbstractUser):
     pit_lead_year = models.CharField(max_length=50, blank=True, null=True)
     is_adviser = models.BooleanField(default=False)
     adviser_phase = models.CharField(max_length=50, blank=True, null=True)
-    is_repo_assistant = models.BooleanField(default=False)
-    repo_assistant_year = models.CharField(max_length=50, blank=True, default='')
+    is_documenter = models.BooleanField(default=False)
     is_uploader = models.BooleanField(default=False)
+    e_signature = models.ImageField(
+        upload_to='e_signatures/',
+        null=True,
+        blank=True,
+        help_text='Uploaded e-signature image (PNG/JPG) for document signing.',
+    )
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.username})"

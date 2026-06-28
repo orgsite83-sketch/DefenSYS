@@ -29,7 +29,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'name', 'role',
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
-            'is_repo_assistant', 'repo_assistant_year', 'is_uploader', 'facultyRoles',
+            'is_documenter', 'is_uploader', 'e_signature', 'facultyRoles',
             'is_project_manager', 'managed_section',
         ]
 
@@ -43,8 +43,7 @@ class UserSerializer(serializers.ModelSerializer):
             'pitLead': obj.is_pit_lead,
             'pitLeadYear': obj.pit_lead_year,
             'adviser': obj.is_adviser,
-            'repoAssistant': obj.is_repo_assistant,
-            'repoAssistantYear': getattr(obj, 'repo_assistant_year', '') or '',
+            'documenter': obj.is_documenter,
             'uploader': obj.is_uploader,
         }
 

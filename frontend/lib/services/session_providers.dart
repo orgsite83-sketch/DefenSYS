@@ -12,13 +12,13 @@ import 'defense_stages_provider.dart';
 import 'digital_vault_provider.dart';
 import 'grade_center_provider.dart';
 import 'pit_lead_cohort_provider.dart';
-import 'pit_repository_assistant_provider.dart';
 import 'repository_audit_provider.dart';
 import 'rubric_engine_provider.dart';
 import 'student_academic_records_provider.dart';
 import 'student_teams_provider.dart';
 import 'user_management_provider.dart';
 import 'weekly_progress_provider.dart';
+import 'documenter_provider.dart';
 
 /// Clears cached API state when the session ends so disposed screens do not rebuild.
 void invalidateSessionProviders(Ref ref) {
@@ -37,8 +37,8 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(capstoneDeliverablesProvider);
   ref.invalidate(adviserGradingProvider);
   ref.invalidate(pitLeadCohortProvider);
-  ref.invalidate(pitRepositoryAssistantProvider);
   ref.invalidate(weeklyProgressProvider);
   ref.invalidate(digitalVaultProvider);
   ref.invalidate(dashboardProvider);
+  ref.invalidate(documenterProvider);
 }

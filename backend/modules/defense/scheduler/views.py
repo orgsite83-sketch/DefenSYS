@@ -34,6 +34,7 @@ from .serializers import (
     ConfirmSchedulePlanSerializer,
     DefenseScheduleSerializer,
     DefenseScheduleStatusSerializer,
+    DefenseSchedulePatchSerializer,
     DefenseScheduleWriteSerializer,
     GenerateSchedulePlanSerializer,
     active_semester,
@@ -308,7 +309,7 @@ class DefenseScheduleDetailView(APIView):
     def patch(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
         old_status = schedule.status
-        serializer = DefenseScheduleStatusSerializer(
+        serializer = DefenseSchedulePatchSerializer(
             data=request.data,
             context={'schedule': schedule},
         )

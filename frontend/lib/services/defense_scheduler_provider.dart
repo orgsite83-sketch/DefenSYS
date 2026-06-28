@@ -19,6 +19,7 @@ class DefenseSchedulerState {
   final List<Map<String, dynamic>> rubrics;
   final List<Map<String, dynamic>> peerRubrics;
   final List<Map<String, dynamic>> panelists;
+  final List<Map<String, dynamic>> documenters;
   final List<Map<String, dynamic>> generatedSlots;
   final List<String> statuses;
   final Map<String, dynamic> counts;
@@ -45,6 +46,7 @@ class DefenseSchedulerState {
     this.rubrics = const [],
     this.peerRubrics = const [],
     this.panelists = const [],
+    this.documenters = const [],
     this.generatedSlots = const [],
     this.statuses = const [],
     this.counts = const {},
@@ -72,6 +74,7 @@ class DefenseSchedulerState {
     List<Map<String, dynamic>>? rubrics,
     List<Map<String, dynamic>>? peerRubrics,
     List<Map<String, dynamic>>? panelists,
+    List<Map<String, dynamic>>? documenters,
     List<Map<String, dynamic>>? generatedSlots,
     List<String>? statuses,
     Map<String, dynamic>? counts,
@@ -102,6 +105,7 @@ class DefenseSchedulerState {
       rubrics: rubrics ?? this.rubrics,
       peerRubrics: peerRubrics ?? this.peerRubrics,
       panelists: panelists ?? this.panelists,
+      documenters: documenters ?? this.documenters,
       generatedSlots: generatedSlots ?? this.generatedSlots,
       statuses: statuses ?? this.statuses,
       counts: counts ?? this.counts,
@@ -529,6 +533,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       rubrics: _readMapList(payload['rubrics']),
       peerRubrics: _readMapList(payload['peer_rubrics']),
       panelists: _readMapList(payload['panelists']),
+      documenters: _readMapList(payload['documenters']),
       pitEvents: _readMapList(payload['pit_events']),
       statuses: _readStringList(payload['statuses']),
       counts: payload['counts'] is Map

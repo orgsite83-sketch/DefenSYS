@@ -7,7 +7,7 @@ ROLE_LABELS = {
     FacultyRoleAssignment.ROLE_PANELIST: 'Defense Panelist',
     FacultyRoleAssignment.ROLE_PIT_LEAD: 'PIT Lead',
     FacultyRoleAssignment.ROLE_ADVISER: 'Project Adviser',
-    FacultyRoleAssignment.ROLE_REPO_ASSISTANT: 'Repository Assistant',
+    FacultyRoleAssignment.ROLE_DOCUMENTER: 'Documenter',
 }
 
 DISPLAY_ROLE_PRIORITY = [
@@ -15,7 +15,7 @@ DISPLAY_ROLE_PRIORITY = [
   ('pit_lead', 'PIT Lead', 'pit_lead'),
   ('adviser', 'Adviser', 'adviser'),
   ('panelist', 'Panelist', 'panelist'),
-  ('repo_assistant', 'Repository Assistant', 'repo_assistant'),
+  ('documenter', 'Documenter', 'documenter'),
 ]
 
 
@@ -28,7 +28,7 @@ def snapshot_role_flags(user):
         FacultyRoleAssignment.ROLE_PANELIST: user.is_panelist,
         FacultyRoleAssignment.ROLE_PIT_LEAD: user.is_pit_lead,
         FacultyRoleAssignment.ROLE_ADVISER: user.is_adviser,
-        FacultyRoleAssignment.ROLE_REPO_ASSISTANT: user.is_repo_assistant,
+        FacultyRoleAssignment.ROLE_DOCUMENTER: user.is_documenter,
     }
 
 
@@ -41,8 +41,6 @@ def role_detail_for(user, role_key):
 def year_level_for(user, role_key):
     if role_key == FacultyRoleAssignment.ROLE_PIT_LEAD:
         return user.pit_lead_year or None
-    if role_key == FacultyRoleAssignment.ROLE_REPO_ASSISTANT:
-        return getattr(user, 'repo_assistant_year', None) or None
     return None
 
 
@@ -132,11 +130,11 @@ def compute_display_role(user):
         return {'key': 'adviser', 'label': 'Adviser', 'tone': 'adviser'}
     if user.is_panelist:
         return {'key': 'panelist', 'label': 'Panelist', 'tone': 'panelist'}
-    if user.is_repo_assistant:
+    if user.is_documenter:
         return {
-            'key': 'repo_assistant',
-            'label': 'Repository Assistant',
-            'tone': 'repo_assistant',
+            'key': 'documenter',
+            'label': 'Documenter',
+            'tone': 'documenter',
         }
 
     return {'key': 'faculty', 'label': 'Faculty Member', 'tone': 'faculty'}

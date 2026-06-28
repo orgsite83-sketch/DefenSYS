@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
 import '../admin/widgets/defensys_admin_shell.dart';
-import 'pit_repository_assistant_card.dart';
 
 class PitLeadDashboardContent extends StatelessWidget {
   final Map<String, dynamic>? data;
@@ -104,8 +103,6 @@ class PitLeadDashboardContent extends StatelessWidget {
             Expanded(child: _pitTeamsCard(recentTeams)),
           ],
         ),
-        const SizedBox(height: 20),
-        const PitRepositoryAssistantCard(),
         const SizedBox(height: 20),
         _cohortPreviewCard(cohortPreview, pitYear),
         const SizedBox(height: 20),

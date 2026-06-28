@@ -209,12 +209,11 @@ class SystemAuditLogApiTests(APITestCase):
             is_pit_lead=True,
             pit_lead_year='3rd Year',
         )
-        self.repo_assistant = User.objects.create_user(
-            username='audit-repo-assistant',
+        self.documenter = User.objects.create_user(
+            username='audit-documenter',
             password='pass12345',
             role='faculty',
-            is_repo_assistant=True,
-            repo_assistant_year='3rd Year',
+            is_documenter=True,
         )
         self.client.force_authenticate(user=self.admin)
 
@@ -415,8 +414,8 @@ class SystemAuditLogApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(actions, ['schedule.status_change'])
 
-    def test_repository_assistant_cannot_review_audit_trail(self):
-        self.client.force_authenticate(user=self.repo_assistant)
+    def test_documenter_cannot_review_audit_trail(self):
+        self.client.force_authenticate(user=self.documenter)
 
         response = self.client.get('/api/audit-logs/')
 

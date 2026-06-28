@@ -792,6 +792,248 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('Grading is locked until the scheduled date', response.data['detail'])
 
+    def test_documenter_validation_rules(self):
+        from .serializers import display_name
+
+        # 1. Create a valid documenter
+        documenter = User.objects.create_user(
+            username='doc-user',
+            password='pass12345',
+            role='faculty',
+            first_name='Margaret',
+            last_name='Hamilton',
+            is_documenter=True,
+        )
+
+        # 2. Test successful creation with documenter
+        payload = self.schedule_payload(documenter_id=documenter.id, team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['schedule']['documenter'], documenter.id)
+        self.assertEqual(response.data['schedule']['documenter_name'], display_name(documenter))
+
+        # Clean up schedule to restore team ready state
+        schedule_id = response.data['schedule']['id']
+        DefenseSchedule.objects.get(id=schedule_id).delete()
+
+        # 3. Test validation error: documenter cannot be a student
+        student_doc = User.objects.create_user(
+            username='student-doc',
+            password='pass12345',
+            role='student',
+            is_documenter=True,
+        )
+        payload = self.schedule_payload(documenter_id=student_doc.id, team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+
+        # 4. Test validation error: must have is_documenter = True
+        non_doc = User.objects.create_user(
+            username='non-doc',
+            password='pass12345',
+            role='faculty',
+            is_documenter=False,
+        )
+        payload = self.schedule_payload(documenter_id=non_doc.id, team_id=self.team.id)
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+
+        # 5. Test validation error: documenter cannot be the team's adviser
+        payload = self.schedule_payload(documenter_id=self.adviser.id, team_id=self.team.id)
+        self.adviser.is_documenter = True
+        self.adviser.save()
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+        # Restore adviser
+        self.adviser.is_documenter = False
+        self.adviser.save()
+
+        # 6. Test validation error: documenter cannot be a panelist
+        payload = self.schedule_payload(documenter_id=self.panelist.id, team_id=self.team.id)
+        self.panelist.is_documenter = True
+        self.panelist.save()
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+        # Restore panelist
+        self.panelist.is_documenter = False
+        self.panelist.save()
+
+        # 7. Test validation error: documenter cannot be assigned on PIT schedules
+        pit_panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric Temp',
+            scope=Rubric.SCOPE_PIT,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+        pit_peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric Temp',
+            scope=Rubric.SCOPE_PIT,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_PEER,
+            status=Rubric.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo',
+            panel_rubric=pit_panel_rubric,
+            peer_rubric=pit_peer_rubric,
+            panel_weight=75,
+            peer_weight=25,
+        )
+        pit_student = User.objects.create_user(
+            username='pit-std-1',
+            password='pass12345',
+            role='student',
+        )
+        pit_team = StudentTeam.objects.create(
+            name='PIT Team Delta',
+            project_title='PIT Project',
+            level=StudentTeam.LEVEL_2_PIT,
+            year_level='2nd Year',
+            semester=self.semester,
+            leader=pit_student,
+        )
+        TeamMembership.objects.create(team=pit_team, student=pit_student, is_leader=True, order=0)
+        
+        pit_payload = {
+            'scope': DefenseSchedule.SCOPE_PIT,
+            'semester_id': self.semester.id,
+            'event_name': '2nd Year PIT Expo',
+            'rubric_id': pit_panel_rubric.id,
+            'peer_rubric_id': pit_peer_rubric.id,
+            'panel_weight': 75,
+            'peer_weight': 25,
+            'scheduled_date': '2026-05-20',
+            'start_time': '09:00',
+            'slot_duration': 60,
+            'room': 'Room 201',
+            'panelist_ids': [self.panelist.id],
+            'documenter_id': documenter.id,
+            'team_id': pit_team.id,
+        }
+        response = self.client.post('/api/defense/schedules/', pit_payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+
+    def test_schedule_panelist_chair_validation(self):
+        from django.core.exceptions import ValidationError
+        schedule = self.create_scheduled_defense()
+        sp1 = SchedulePanelist.objects.get(schedule=schedule, panelist=self.panelist)
+        sp2 = SchedulePanelist.objects.get(schedule=schedule, panelist=self.second_panelist)
+        self.assertFalse(sp1.is_chair)
+        self.assertFalse(sp2.is_chair)
+
+        # Mark sp1 as chair
+        sp1.is_chair = True
+        sp1.save()
+
+        # Attempt to mark sp2 as chair
+        sp2.is_chair = True
+        with self.assertRaises(ValidationError):
+            sp2.save()
+
+        # Ensure we can save sp1 again (updating other things or just saving) without validation error
+        sp1.order = 5
+        sp1.save()
+
+    def test_schedule_panelist_chair_serializer(self):
+        schedule = self.create_scheduled_defense()
+        sp1 = SchedulePanelist.objects.get(schedule=schedule, panelist=self.panelist)
+        sp1.is_chair = True
+        sp1.save()
+
+        response = self.client.get('/api/defense/schedules/')
+        self.assertEqual(response.status_code, 200)
+        schedules = response.data.get('schedules', [])
+        match = next(s for s in schedules if s['id'] == schedule.id)
+        panelists = match['panelists']
+        self.assertTrue(any(p['is_chair'] is True for p in panelists))
+        self.assertTrue(any(p['is_chair'] is False for p in panelists))
+
+    def test_create_schedule_with_documenter(self):
+        documenter = User.objects.create_user(
+            username='doc-1',
+            password='pass12345',
+            role='faculty',
+            is_documenter=True,
+        )
+        payload = self.schedule_payload(documenter_id=documenter.id, team_id=self.team.id)
+        
+        from notifications.models import Notification
+        Notification.objects.all().delete()
+        
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        schedule = DefenseSchedule.objects.get(pk=response.data['schedule']['id'])
+        self.assertEqual(schedule.documenter_id, documenter.id)
+        
+        notifications = Notification.objects.filter(recipient=documenter)
+        self.assertEqual(notifications.count(), 1)
+        notif = notifications.first()
+        self.assertEqual(notif.title, "Documenter Assignment")
+        self.assertEqual(notif.message, "You have been assigned as documenter for Team VaultSync's Project Proposal defense on May 15, 2026 at 8:00 AM")
+
+    def test_patch_schedule_status_and_documenter(self):
+        schedule = self.create_scheduled_defense()
+        documenter = User.objects.create_user(
+            username='doc-2',
+            password='pass12345',
+            role='faculty',
+            is_documenter=True,
+        )
+        
+        from notifications.models import Notification
+        Notification.objects.all().delete()
+        
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/',
+            {'documenter_id': documenter.id},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        schedule.refresh_from_db()
+        self.assertEqual(schedule.documenter_id, documenter.id)
+        
+        notifications = Notification.objects.filter(recipient=documenter)
+        self.assertEqual(notifications.count(), 1)
+        
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/',
+            {'documenter_id': None},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 200)
+        schedule.refresh_from_db()
+        self.assertIsNone(schedule.documenter_id)
+
+    def test_patch_schedule_invalid_documenter(self):
+        schedule = self.create_scheduled_defense()
+        
+        adviser_user = self.adviser
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/',
+            {'documenter_id': adviser_user.id},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+        
+        panelist_user = self.panelist
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/',
+            {'documenter_id': panelist_user.id},
+            format='json'
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('documenter_id', response.data)
+
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):
@@ -1393,4 +1635,5 @@ class PitEventGradingConfigTests(APITestCase):
         payload = self.pit_payload(event_name='2nd Year PIT Expo Open', team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201)
+
 

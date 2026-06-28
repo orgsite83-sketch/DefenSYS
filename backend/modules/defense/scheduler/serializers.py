@@ -110,7 +110,7 @@ class SchedulePanelistSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = SchedulePanelist
-        fields = ['id', 'username', 'name', 'email', 'order']
+        fields = ['id', 'username', 'name', 'email', 'order', 'is_chair']
 
     def get_name(self, obj):
         return display_name(obj.panelist)
@@ -132,6 +132,10 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     panelists = SchedulePanelistSerializer(source='panel_assignments', many=True, read_only=True)
     panelist_ids = serializers.SerializerMethodField()
     created_by_name = serializers.SerializerMethodField()
+    documenter = serializers.IntegerField(source='documenter.id', read_only=True, allow_null=True)
+    documenter_name = serializers.SerializerMethodField()
+    minutes_status = serializers.SerializerMethodField()
+    minutes_id = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseSchedule
@@ -160,6 +164,10 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'panelists',
             'panelist_ids',
             'created_by_name',
+            'documenter',
+            'documenter_name',
+            'minutes_status',
+            'minutes_id',
             'created_at',
             'updated_at',
         ]
@@ -175,6 +183,25 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return display_name(obj.created_by)
+
+    def get_documenter_name(self, obj):
+        return display_name(obj.documenter)
+
+    def get_minutes_status(self, obj):
+        try:
+            if hasattr(obj, 'minutes') and obj.minutes is not None:
+                return obj.minutes.status
+        except Exception:
+            pass
+        return None
+
+    def get_minutes_id(self, obj):
+        try:
+            if hasattr(obj, 'minutes') and obj.minutes is not None:
+                return obj.minutes.id
+        except Exception:
+            pass
+        return None
 
 
 class ScheduleBaseSerializer(serializers.Serializer):
@@ -194,6 +221,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     room = serializers.CharField(max_length=120)
     panelist_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
     vault_file_template = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    documenter_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, attrs):
         request = self.context.get('request')
@@ -208,6 +236,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
         attrs['defense_stage'] = self._resolve_defense_stage(attrs)
         attrs['panelists'] = self._resolve_panelists(attrs['panelist_ids'])
         attrs['rubric'] = self._resolve_rubric(attrs)
+        attrs['documenter'] = self._resolve_documenter(attrs)
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
             attrs = self._validate_pit_event_setup(attrs)
         else:
@@ -392,6 +421,23 @@ class ScheduleBaseSerializer(serializers.Serializer):
         panelists.sort(key=lambda item: unique_ids.index(item.id))
         return panelists
 
+    def _resolve_documenter(self, attrs):
+        doc_id = attrs.get('documenter_id')
+        if not doc_id:
+            return None
+        try:
+            doc = User.objects.get(pk=doc_id, is_active=True)
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError({'documenter_id': 'Documenter does not exist.'}) from exc
+
+        if attrs.get('scope') == DefenseSchedule.SCOPE_PIT:
+            raise serializers.ValidationError({'documenter_id': 'PIT schedules cannot have a documenter.'})
+        if doc.role not in ['faculty', 'admin']:
+            raise serializers.ValidationError({'documenter_id': 'Documenter must be a faculty or admin user.'})
+        if not doc.is_documenter:
+            raise serializers.ValidationError({'documenter_id': 'Assigned faculty must be an eligible documenter (is_documenter=True).'})
+        return doc
+
     def _resolve_rubric(self, attrs):
         rubric_id = attrs.get('rubric_id')
         if not rubric_id:
@@ -487,6 +533,14 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     def validate(self, attrs):
         attrs = super().validate(attrs)
         attrs['team'] = self._resolve_team(attrs)
+
+        doc = attrs.get('documenter')
+        if doc:
+            if attrs['team'].adviser_id == doc.id:
+                raise serializers.ValidationError({'documenter_id': "Documenter cannot be the team's adviser."})
+            if doc in attrs['panelists']:
+                raise serializers.ValidationError({'documenter_id': 'Documenter cannot be one of the panelists assigned to this schedule.'})
+
         self._validate_duplicate(attrs)
         slot_intervals = [self._slot_interval(attrs)]
         self._validate_room_overlap(attrs, slot_intervals)
@@ -503,10 +557,13 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         )
         self._sync_panelists(schedule, panelists)
         self._sync_grade_row(schedule)
+        if schedule.documenter:
+            send_documenter_assignment_notification(schedule)
         return schedule
 
     def _pop_schedule_meta(self, validated_data):
         validated_data.pop('panelist_ids', None)
+        validated_data.pop('documenter_id', None)
         validated_data.pop('defense_stage_id', None)
         validated_data.pop('rubric_id', None)
         validated_data.pop('peer_rubric_id', None)
@@ -683,6 +740,15 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             if existing.exists():
                 raise serializers.ValidationError({'slots': f'{team.name} already has a scheduled or completed defense for this stage or event.'})
 
+        doc = attrs.get('documenter')
+        if doc:
+            if doc in attrs['panelists']:
+                raise serializers.ValidationError({'documenter_id': 'Documenter cannot be one of the panelists assigned to this schedule.'})
+            for team_id in team_ids:
+                team = team_map[team_id]
+                if team.adviser_id == doc.id:
+                    raise serializers.ValidationError({'slots': f"Documenter cannot be the adviser of team {team.name}."})
+
         attrs['teams'] = [team_map[team_id] for team_id in team_ids]
         slot_intervals = [
             self._slot_interval(attrs, index)
@@ -708,6 +774,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 defense_stage=attrs.get('defense_stage'),
                 event_name=attrs.get('event_name', ''),
                 rubric=attrs.get('rubric'),
+                documenter=attrs.get('documenter'),
                 scheduled_date=attrs['scheduled_date'],
                 start_time=minutes_to_time(start_minutes + attrs['slot_duration'] * index),
                 slot_duration=attrs['slot_duration'],
@@ -731,6 +798,8 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                     grade=grade,
                     user=getattr(self.context.get('request'), 'user', None),
                 )
+            if schedule.documenter:
+                send_documenter_assignment_notification(schedule)
         return schedules
 
 
@@ -766,6 +835,132 @@ class DefenseScheduleStatusSerializer(serializers.Serializer):
         schedule = self.context['schedule']
         schedule.status = self.validated_data['status']
         schedule.save()
+        return schedule
+
+
+def send_documenter_assignment_notification(schedule):
+    if not schedule.documenter:
+        return
+    from notifications.models import Notification
+
+    stage = schedule.defense_stage.label if schedule.defense_stage else schedule.event_name or 'defense'
+    date_str = schedule.scheduled_date.strftime('%B %d, %Y')
+    time_str = schedule.start_time.strftime('%I:%M %p').lstrip('0')
+
+    team_name = schedule.team.name if schedule.team else 'your team'
+
+    title = "Documenter Assignment"
+    message = f"You have been assigned as documenter for {team_name}'s {stage} defense on {date_str} at {time_str}"
+
+    Notification.objects.create(
+        recipient=schedule.documenter,
+        title=title,
+        message=message,
+        sender=schedule.created_by,
+    )
+
+
+class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
+    status = serializers.ChoiceField(
+        choices=[choice[0] for choice in DefenseSchedule.STATUS_CHOICES],
+        required=False,
+    )
+    documenter_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+    )
+
+    class Meta:
+        model = DefenseSchedule
+        fields = ['status', 'documenter_id']
+
+    @property
+    def schedule_instance(self):
+        if self.instance:
+            return self.instance
+        return self.context.get('schedule')
+
+    def validate_status(self, value):
+        current = self.schedule_instance.status
+        if value == current:
+            return value
+        allowed = DefenseScheduleStatusSerializer.VALID_TRANSITIONS.get(current, [])
+        if value not in allowed:
+            raise serializers.ValidationError(
+                f'Cannot change status from "{current}" to "{value}".'
+            )
+        return value
+
+    def validate_documenter_id(self, value):
+        schedule = self.schedule_instance
+        if value is None:
+            return None
+
+        try:
+            doc = User.objects.get(pk=value, is_active=True)
+        except User.DoesNotExist as exc:
+            raise serializers.ValidationError('Documenter does not exist.')
+
+        if schedule.scope == DefenseSchedule.SCOPE_PIT:
+            raise serializers.ValidationError('PIT schedules cannot have a documenter.')
+
+        if doc.role not in ['faculty', 'admin']:
+            raise serializers.ValidationError('Documenter must be a faculty or admin user.')
+
+        if not doc.is_documenter:
+            raise serializers.ValidationError('Assigned faculty must be an eligible documenter (is_documenter=True).')
+
+        # Check if adviser of the team
+        if schedule.team and schedule.team.adviser_id == doc.id:
+            raise serializers.ValidationError("Documenter cannot be the team's adviser.")
+
+        # Check if panelist
+        if schedule.panelists.filter(pk=doc.id).exists():
+            raise serializers.ValidationError('Documenter cannot be one of the panelists assigned to this schedule.')
+
+        return value
+
+    def save(self, **kwargs):
+        schedule = self.schedule_instance
+        validated_data = self.validated_data
+
+        has_documenter_change = False
+        new_doc_id = validated_data.get('documenter_id', 'not_provided')
+
+        if new_doc_id != 'not_provided':
+            old_doc_id = schedule.documenter_id
+            if new_doc_id != old_doc_id:
+                has_documenter_change = True
+
+        # Perform updates
+        if 'status' in validated_data:
+            schedule.status = validated_data['status']
+
+        if new_doc_id != 'not_provided':
+            schedule.documenter_id = new_doc_id
+
+        schedule.save()
+
+        # Trigger notifications and reset/update minutes on documenter reassignment
+        if has_documenter_change:
+            from defense.minutes.models import DefenseMinutes
+            minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
+            if minutes:
+                minutes.status = DefenseMinutes.STATUS_DRAFT
+                minutes.documenter_name = schedule.documenter.get_full_name() if schedule.documenter else ''
+                minutes.documenter_signed_at = None
+                minutes.documenter_signed_by = None
+                minutes.adviser_signed_at = None
+                minutes.adviser_signed_by = None
+                minutes.chairman_signed_at = None
+                minutes.chairman_signed_by = None
+                if minutes.pdf_file:
+                    minutes.pdf_file.delete(save=False)
+                minutes.save()
+
+            if schedule.documenter:
+                send_documenter_assignment_notification(schedule)
+
         return schedule
 
 
@@ -827,6 +1022,7 @@ def schedule_options_payload(user=None):
         rubrics = rubrics.filter(scope=Rubric.SCOPE_PIT)
         peer_rubrics = peer_rubrics.filter(scope=Rubric.SCOPE_PIT)
     panelists = User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True, is_active=True).order_by('last_name', 'first_name', 'username')
+    documenters = User.objects.filter(role__in=['faculty', 'admin'], is_documenter=True, is_active=True).order_by('last_name', 'first_name', 'username')
     teams = visible_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
     if semester:
         teams = teams.filter(semester=semester)
@@ -856,6 +1052,7 @@ def schedule_options_payload(user=None):
         'rubrics': RubricSerializer(rubrics, many=True).data,
         'peer_rubrics': RubricSerializer(peer_rubrics, many=True).data,
         'panelists': PanelistOptionSerializer(panelists, many=True).data,
+        'documenters': PanelistOptionSerializer(documenters, many=True).data,
         'teams': ScheduleTeamSerializer(teams, many=True).data,
         'pit_events': pit_events_data,
         'scopes': [

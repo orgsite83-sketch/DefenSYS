@@ -194,12 +194,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final year = state.scope['pit_year_level']?.toString() ?? '';
     switch (scope) {
       case 'pit_lead':
-        if (state.scope['has_assigned_assistant'] == true) {
-          return 'Monitor PIT vault entries for $year. Your assigned Repository Assistant handles uploads.';
-        }
         return 'Vault passed PIT projects for $year after the event is officially complete in Grade Center.';
-      case 'repo_assistant':
-        return 'Upload passed PIT project files for $year after the PIT lead marks the event officially complete.';
       default:
         return 'Browse pre-defense uploads and digital vault items by team or deliverable (e.g. D1 across all teams).';
     }
@@ -207,7 +202,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   bool _showUploadQueue(RepositoryAuditState state) {
     final scope = _scopeKey(state);
-    if (scope != 'pit_lead' && scope != 'repo_assistant') {
+    if (scope != 'pit_lead') {
       return false;
     }
     final queue = state.uploadWindow['queue'];
@@ -216,7 +211,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
   Widget _buildEmptyQueueBanner(RepositoryAuditState state) {
     final scope = _scopeKey(state);
-    if (scope != 'pit_lead' && scope != 'repo_assistant') {
+    if (scope != 'pit_lead') {
       return const SizedBox.shrink();
     }
     final open = state.uploadWindow['open'] == true;
@@ -277,18 +272,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (open || hasQueue) {
       return const SizedBox.shrink();
     }
-    final hasAssistant = state.scope['has_assigned_assistant'] == true;
-    String message;
-    if (scope == 'pit_lead' && hasAssistant) {
-      message =
-          'Uploads are handled by your Repository Assistant. Mark events officially complete in Grade Center, then ask them to post passed team files.';
-    } else if (scope == 'repo_assistant') {
-      message =
-          'Uploads open after the PIT lead marks your year\'s PIT event officially complete in Grade Center (passed teams become ready to upload).';
-    } else {
-      message =
-          'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after vault save.';
-    }
+    final message =
+        'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after vault save.';
     return _notice(
       Icons.info_outline_rounded,
       message,
@@ -421,18 +406,6 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                   fontWeight: FontWeight.w500,
                 ),
               ),
-              if (_scopeKey(state) == 'pit_lead' &&
-                  state.scope['has_assigned_assistant'] != true) ...[
-                const SizedBox(height: 8),
-                Text(
-                  'Assign a Repository Assistant on your dashboard to delegate uploads.',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: const Color(0xFF6B7280),
-                    fontSize: 12.5,
-                    fontStyle: FontStyle.italic,
-                  ),
-                ),
-              ],
             ],
           ),
         ),

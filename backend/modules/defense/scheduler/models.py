@@ -65,6 +65,14 @@ class DefenseSchedule(models.Model):
         blank=True,
         on_delete=models.SET_NULL,
     )
+    documenter = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='documenter_defense_schedules',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        help_text='Faculty assigned as documenter for this capstone defense.',
+    )
     panelists = models.ManyToManyField(
         settings.AUTH_USER_MODEL,
         related_name='panel_defense_schedules',
@@ -117,6 +125,23 @@ class DefenseSchedule(models.Model):
                 errors['rubric'] = 'Rubric scope must match the schedule scope.'
             if self.scope == self.SCOPE_CAPSTONE and self.rubric.defense_stage_id != self.defense_stage_id:
                 errors['rubric'] = 'Rubric defense stage must match the schedule stage.'
+
+        if self.documenter_id:
+            if self.scope == self.SCOPE_PIT:
+                errors['documenter'] = 'PIT schedules cannot have a documenter.'
+            else:
+                role = getattr(self.documenter, 'role', None)
+                is_doc = getattr(self.documenter, 'is_documenter', False)
+                if role not in ['faculty', 'admin']:
+                    errors['documenter'] = 'Documenter must be a faculty or admin user.'
+                elif not is_doc:
+                    errors['documenter'] = 'Assigned faculty must be an eligible documenter (is_documenter=True).'
+
+                if self.team_id and self.team.adviser_id == self.documenter_id:
+                    errors['documenter'] = "Documenter cannot be the team's adviser."
+
+                if self.pk and self.panelists.filter(pk=self.documenter_id).exists():
+                    errors['documenter'] = 'Documenter cannot be one of the panelists assigned to this schedule.'
 
         if errors:
             raise ValidationError(errors)
@@ -208,6 +233,7 @@ class SchedulePanelist(models.Model):
         on_delete=models.CASCADE,
     )
     order = models.PositiveSmallIntegerField(default=0)
+    is_chair = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -223,6 +249,15 @@ class SchedulePanelist(models.Model):
             is_faculty = getattr(self.panelist, 'role', None) in ['faculty', 'admin']
             if not is_faculty or not getattr(self.panelist, 'is_panelist', False):
                 raise ValidationError({'panelist': 'Schedule panelists must be assigned faculty panelists.'})
+            if self.schedule_id and self.panelist_id == self.schedule.documenter_id:
+                raise ValidationError({'panelist': 'A panelist cannot be assigned as the documenter for this schedule.'})
+
+        if self.is_chair and self.schedule_id:
+            qs = SchedulePanelist.objects.filter(schedule=self.schedule, is_chair=True)
+            if self.pk:
+                qs = qs.exclude(pk=self.pk)
+            if qs.exists():
+                raise ValidationError({'is_chair': 'At most one panelist per schedule can be marked as chair.'})
 
     def save(self, *args, **kwargs):
         self.full_clean()

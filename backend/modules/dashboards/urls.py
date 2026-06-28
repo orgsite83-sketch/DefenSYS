@@ -6,7 +6,6 @@ from .views import (
     PitLeadCohortView,
     PitLeadCohortRolloverConfirmView,
     PitLeadCohortRolloverPreviewView,
-    PitLeadRepositoryAssistantView,
     StudentDashboardView,
 )
 
@@ -22,11 +21,6 @@ urlpatterns = [
         'pit-lead/cohort/rollover/',
         PitLeadCohortRolloverConfirmView.as_view(),
         name='dashboard_pit_lead_cohort_rollover',
-    ),
-    path(
-        'pit-lead/repository-assistant/',
-        PitLeadRepositoryAssistantView.as_view(),
-        name='dashboard_pit_lead_repository_assistant',
     ),
     path('faculty/', FacultyDashboardView.as_view(), name='dashboard_faculty'),
     path('student/', StudentDashboardView.as_view(), name='dashboard_student'),

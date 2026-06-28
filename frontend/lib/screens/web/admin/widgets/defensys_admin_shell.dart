@@ -6,6 +6,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/offline_banner.dart';
 import '../../../../services/notifications_provider.dart';
 import '../../../../widgets/notifications_modal.dart';
+import '../../faculty/e_signature_upload_dialog.dart';
 
 export '../../../../widgets/status_badge.dart';
 
@@ -720,6 +721,27 @@ class _UserProfileCard extends StatelessWidget {
               ],
             ),
           ),
+          Material(
+            color: Colors.transparent,
+            child: IconButton(
+              icon: const Icon(
+                Icons.draw_rounded,
+                color: Color(0xFFD1D5DB),
+                size: 18,
+              ),
+              tooltip: 'E-Signature',
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (context) => const ESignatureUploadDialog(),
+                );
+              },
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(6),
+              splashRadius: 20,
+            ),
+          ),
+          const SizedBox(width: 4),
           Material(
             color: Colors.transparent,
             child: IconButton(

@@ -14,7 +14,6 @@ files = [
     'lib/services/user_management_provider.dart',
     'lib/services/capstone_deliverables_provider.dart',
     'lib/services/team_detail_provider.dart',
-    'lib/services/pit_repository_assistant_provider.dart',
     'lib/services/student_teams_provider.dart',
     'lib/services/academic_period_provider.dart',
     'lib/services/curriculum_analytics_provider.dart',

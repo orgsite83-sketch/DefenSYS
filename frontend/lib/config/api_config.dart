@@ -143,6 +143,8 @@ class ApiConfig {
   static String get defenseSchedulesUrl => '$baseUrl/defense/schedules';
   static String get defenseBoardUrl => '$baseUrl/defense/board';
   static String get dashboardsUrl => '$baseUrl/dashboards';
+  static String get defenseMinutesUrl => '$baseUrl/defense/minutes';
+  static String get userSignatureUrl => '$baseUrl/users/e-signature';
 
   /// WebSocket for live grading-flag updates (Daphne / ASGI).
   static Uri webSocketGradingUri(String accessToken) {

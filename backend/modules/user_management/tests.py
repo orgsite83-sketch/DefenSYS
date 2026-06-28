@@ -136,7 +136,7 @@ class UserManagementApiTests(APITestCase):
                 'is_panelist': True,
                 'is_pit_lead': True,
                 'pit_lead_year': '4th Year',
-                'is_repo_assistant': True,
+                'is_documenter': True,
             },
             format='json',
         )
@@ -146,7 +146,7 @@ class UserManagementApiTests(APITestCase):
         self.assertTrue(faculty.is_panelist)
         self.assertTrue(faculty.is_pit_lead)
         self.assertEqual(faculty.pit_lead_year, '4th Year')
-        self.assertTrue(response.data['user']['facultyRoles']['repoAssistant'])
+        self.assertTrue(response.data['user']['facultyRoles']['documenter'])
 
     def test_update_user_clears_legacy_adviser_phase(self):
         faculty = User.objects.create_user(
@@ -929,3 +929,81 @@ class UserManagementApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(wrong_team.status_code, 403)
+
+    def test_e_signature_upload_and_delete(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        faculty = User.objects.create_user(
+            username='faculty-member',
+            password='pass12345',
+            role='faculty',
+        )
+        self.client.force_authenticate(user=faculty)
+        
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04'
+            b'\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02'
+            b'\x02\x4c\x01\x00\x3b'
+        )
+        sig_file = SimpleUploadedFile('sig.gif', small_gif, content_type='image/gif')
+        
+        response = self.client.post(
+            '/api/users/e-signature/',
+            {'e_signature': sig_file},
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('e_signature', response.data)
+        self.assertIn('uploaded successfully', response.data['message'])
+        
+        faculty.refresh_from_db()
+        self.assertTrue(faculty.e_signature)
+        
+        delete_response = self.client.delete('/api/users/e-signature/')
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertIn('removed successfully', delete_response.data['message'])
+        
+        faculty.refresh_from_db()
+        self.assertFalse(faculty.e_signature)
+
+    def test_e_signature_upload_invalid_file(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        faculty = User.objects.create_user(
+            username='faculty-member-2',
+            password='pass12345',
+            role='faculty',
+        )
+        self.client.force_authenticate(user=faculty)
+        
+        txt_file = SimpleUploadedFile('sig.txt', b'not an image', content_type='text/plain')
+        response = self.client.post(
+            '/api/users/e-signature/',
+            {'e_signature': txt_file},
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, 400)
+        
+    def test_e_signature_unauthorized_for_student(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        student = User.objects.create_user(
+            username='student-user-sig',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04'
+            b'\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02'
+            b'\x02\x4c\x01\x00\x3b'
+        )
+        sig_file = SimpleUploadedFile('sig.gif', small_gif, content_type='image/gif')
+        
+        response = self.client.post(
+            '/api/users/e-signature/',
+            {'e_signature': sig_file},
+            format='multipart'
+        )
+        self.assertEqual(response.status_code, 403)
+        
+        delete_response = self.client.delete('/api/users/e-signature/')
+        self.assertEqual(delete_response.status_code, 403)

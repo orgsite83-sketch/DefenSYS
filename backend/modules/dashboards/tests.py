@@ -42,7 +42,7 @@ class DashboardApiTests(APITestCase):
             is_panelist=True,
             is_pit_lead=True,
             pit_lead_year='3rd Year',
-            is_repo_assistant=True,
+            is_documenter=True,
         )
 
         self.client.force_authenticate(user=faculty)
@@ -52,7 +52,7 @@ class DashboardApiTests(APITestCase):
         self.assertTrue(response.data['roles']['panelist'])
         self.assertTrue(response.data['roles']['pit_lead'])
         self.assertEqual(response.data['roles']['pit_lead_year'], '3rd Year')
-        self.assertTrue(response.data['roles']['repo_assistant'])
+        self.assertTrue(response.data['roles']['documenter'])
         self.assertEqual(response.data['advised_teams'], [])
         self.assertIsNotNone(response.data['pit_lead_overview'])
         self.assertIn('stats', response.data['pit_lead_overview'])

@@ -110,10 +110,10 @@ Root routing: [`backend/defensys_backend/urls.py`](../backend/defensys_backend/u
 | `is_pit_lead` + `pit_lead_year` | PIT lead for a year level | teams, defense-schedules, defense-board, grade-center, rubrics |
 | `is_adviser` | Project adviser capability | capstone-deliverables, weekly-progress (read), adviser-grades |
 | `is_panelist` | Defense panelist | panelist-assignments, submit-grades (mobile) |
-| `is_repo_assistant` | Repository assistant | repository-audit upload/classify |
+| `is_documenter` | Documenter | defense/minutes (GET/PATCH/POST) |
 | `is_uploader` | Document uploader | teams GET, documents upload |
 
-**Display role priority** (admin UI badge): admin → PIT lead → adviser → panelist → repo assistant (`user_management/role_assignments.py`).
+**Display role priority** (admin UI badge): admin → PIT lead → adviser → panelist → documenter (`user_management/role_assignments.py`).
 
 ### 2.3 Two separate “adviser” concepts
 
@@ -647,7 +647,7 @@ flowchart LR
 | `digital_vault_provider` | `/api/repository/vault/` | repository.vault |
 | `repository_audit_provider` | `/api/repository/audit/` | repository.audit |
 | `pit_lead_cohort_provider` | `/api/dashboards/pit-lead/cohort/` | dashboards |
-| `pit_repository_assistant_provider` | `/api/dashboards/pit-lead/repository-assistant/` | dashboards |
+| `documenter_provider` | `/api/defense/minutes/my-assignments/` | defense.minutes |
 | `curriculum_analytics_provider` | `/api/curriculum-analytics/` | curriculum_analytics |
 | `dashboard_provider` | `/api/dashboards/{role}/` | dashboards |
 | `weekly_progress_provider` | `/api/teams/weekly-progress/` | student_teams.weekly_progress |

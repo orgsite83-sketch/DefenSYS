@@ -11,7 +11,6 @@ Repository Vault should cover both Capstone and PIT:
 
 - Admin users see the global view across Capstone, PIT, and all records.
 - PIT leaders see only PIT records for the year level they handle.
-- Repository Assistants follow the same PIT year-level scope assigned to them.
 
 Audit Trail should remain separate from the Repository Vault upload workflow. Admins can review all audit records, while PIT leaders can review Audit Trail records for their assigned PIT year level.
 
@@ -43,8 +42,8 @@ Suggested changes:
 
 - Admin repository sidebar label: **Repository Vault**
 - Faculty/PIT lead repository sidebar label: **Repository Vault**
-- Repository Assistant sidebar label: **Repository Vault**
 - Admin audit sidebar label: **Audit Trail**
+
 - PIT lead audit sidebar label: **Audit Trail**
 - Repository page title: **Repository Vault**
 - Repository page internal section title: **Repository Vault Records**
@@ -74,11 +73,6 @@ PIT leader view:
 - Does not show unrelated Capstone records.
 - Does not show PIT records from other year levels.
 
-Repository Assistant view:
-
-- Uses the assigned `repo_assistant_year`.
-- Shows only upload queues and vault records for that assigned PIT year.
-
 Implementation note:
 
 The current repository audit screen already uses scope values like `pit_lead` and `pit_year_level`. Reuse those rules for Repository Vault instead of creating a separate permission system.
@@ -89,7 +83,6 @@ Audit Trail should reuse the same PIT year-level boundary for PIT leaders:
 - PIT leaders can review Audit Trail records only for their assigned PIT year level.
 - PIT leaders should not see unrelated Capstone audit records.
 - PIT leaders should not see PIT audit records from other year levels.
-- Repository Assistant audit access should be added only if a later phase explicitly requires it.
 
 ## Phase 3: Repository Vault Records
 
@@ -172,7 +165,7 @@ Possible responsibilities:
 - Actor, target, before/after metadata.
 - Review notes.
 - Admin global filtering.
-- Scoped filtering for PIT leaders, advisers, and repository assistants if Audit Trail access expands beyond admins and PIT leaders.
+- Scoped filtering for PIT leaders and advisers if Audit Trail access expands beyond admins and PIT leaders.
 
 Do not move Repository Vault upload logic into this future module. Uploads and vault records should stay in repository. The shared audit module should store audit events, evidence review status, and review notes only.
 
@@ -185,7 +178,6 @@ Recommended tests:
 - Admin can see Capstone, PIT, and All records.
 - PIT leader only sees assigned year-level PIT records.
 - PIT leader cannot see another year level's PIT records.
-- Repository Assistant only sees assigned year-level upload queue and vault records.
 - Capstone records do not appear in PIT leader scoped views.
 - The **All records** chip respects the user's scope.
 - Existing repository upload tests still pass.
@@ -198,7 +190,7 @@ Recommended tests:
 
 1. Rename labels and titles so Repository Vault and Audit Trail are separate.
 2. Change **All files** to **All records**.
-3. Verify admin/PIT leader/repository assistant scoped repository views.
+3. Verify admin/PIT leader scoped repository views.
 4. Improve the audit review page title and category layout.
 5. Add PIT leader scoped Audit Trail review.
 6. Add evidence review filters/cards.

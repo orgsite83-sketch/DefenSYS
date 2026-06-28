@@ -1,8 +1,25 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:user/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:user/services/notifications_provider.dart';
 
 import '../helpers/pump_app.dart';
+
+class FakeNotificationsNotifier extends NotificationsNotifier {
+  @override
+  NotificationsState build() {
+    return const NotificationsState(
+      notifications: [],
+      unreadCount: 0,
+    );
+  }
+
+  @override
+  Future<void> fetchNotifications() async {
+    // No-op to prevent timer creation in tests
+  }
+}
 
 void main() {
   testWidgets('DefensysAdminShell renders sidebar and child content at wide viewport', (
@@ -21,6 +38,9 @@ void main() {
         onLogout: () {},
         child: const Center(child: Text('Shell child content')),
       ),
+      overrides: [
+        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+      ],
     );
 
     expect(find.text('Shell child content'), findsOneWidget);
@@ -44,6 +64,9 @@ void main() {
         onLogout: () {},
         child: const Center(child: Text('Narrow shell content')),
       ),
+      overrides: [
+        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+      ],
     );
 
     expect(find.text('Narrow shell content'), findsOneWidget);
@@ -77,6 +100,9 @@ void main() {
         onLogout: () {},
         child: const Center(child: Text('Compact content')),
       ),
+      overrides: [
+        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+      ],
     );
 
     expect(find.byType(SingleChildScrollView), findsOneWidget);

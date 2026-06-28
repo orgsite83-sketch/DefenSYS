@@ -34,7 +34,7 @@ else:
         print(f"Is Uploader: {user.is_uploader}")
         print(f"Is Adviser: {user.is_adviser}")
         print(f"Is PIT Lead: {user.is_pit_lead}")
-        print(f"Is Repo Assistant: {user.is_repo_assistant}")
+        print(f"Is Documenter: {user.is_documenter}")
         print(f"Is Panelist: {user.is_panelist}")
         
         # Check if ONLY uploader
@@ -42,7 +42,7 @@ else:
             user.is_uploader and
             not user.is_adviser and
             not user.is_pit_lead and
-            not user.is_repo_assistant
+            not user.is_documenter
         )
         
         if is_only_uploader:

@@ -27,7 +27,6 @@ Web Admin (HTML/JS) ↔ Python Bridge Server (port 8080) ↔ Flutter Mobile (Dar
 | **PIT Lead** | `faculty` + `pitLead` flag | PIT teams for assigned year level (1st–3rd Year 1st Sem) |
 | **Adviser** | `faculty` + `adviser` flag | Advised Capstone teams only |
 | **Panelist** | `faculty` + `panelist` flag | Grade Center, assigned teams |
-| **Repo Assistant** | `faculty` + `repoAssistant` flag | Document upload only |
 | **Student** | `student` | Mobile app only (Team, Repository, Peer Eval) |
 | **Guest Panelist** | Guest code | Temporary panelist access via `DEF-XXXXXX` code |
 | **Unassigned Faculty** | `faculty` (no flags) | Overview + Digital Vault only |

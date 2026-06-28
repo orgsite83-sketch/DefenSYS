@@ -117,8 +117,9 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'is_pit_lead',
             'pit_lead_year',
             'is_adviser',
-            'is_repo_assistant',
+            'is_documenter',
             'is_uploader',
+            'e_signature',
             'facultyRoles',
             'displayRole',
             'password',
@@ -142,7 +143,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'pitLead': obj.is_pit_lead,
             'pitLeadYear': obj.pit_lead_year,
             'adviser': obj.is_adviser,
-            'repoAssistant': obj.is_repo_assistant,
+            'documenter': obj.is_documenter,
             'uploader': obj.is_uploader,
         }
 
@@ -198,12 +199,12 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             attrs['is_pit_lead'] = False
             attrs['pit_lead_year'] = None
             attrs['is_adviser'] = False
-            attrs['is_repo_assistant'] = False
+            attrs['is_documenter'] = False
             attrs['is_uploader'] = False
 
         if not attrs.get('is_pit_lead', getattr(instance, 'is_pit_lead', False)):
             attrs['pit_lead_year'] = None
-            attrs['is_repo_assistant'] = False
+            attrs['is_documenter'] = False
 
 
 class BulkUserRowSerializer(serializers.Serializer):

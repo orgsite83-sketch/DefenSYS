@@ -297,7 +297,7 @@ PIT Lead cannot:
 
 - Import faculty/general users.
 - Create global faculty accounts from class-list text.
-- Assign panelist, adviser, PIT Lead, repository assistant, or admin-level roles.
+- Assign panelist, adviser, PIT Lead, documenter, or admin-level roles.
 - Import or manage students outside their assigned PIT year.
 - Override admin source-of-truth controls.
 

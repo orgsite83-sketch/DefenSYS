@@ -45,7 +45,6 @@ from student_teams.term_scope import (
     pit_lead_operating_mode,
     pit_roster_student_ids,
 )
-from .pit_repository_assistant import current_repo_assistant_for_year
 
 
 User = get_user_model()
@@ -108,8 +107,7 @@ def _faculty_roles(user):
         'pit_lead_year': user.pit_lead_year,
         'pit_instructor': is_pit_instructor,
         'adviser': user.is_adviser,
-        'repo_assistant': user.is_repo_assistant,
-        'repo_assistant_year': getattr(user, 'repo_assistant_year', '') or '',
+        'documenter': user.is_documenter,
         'uploader': user.is_uploader,
     }
 
@@ -127,8 +125,8 @@ def _active_role_labels(user):
         labels.append('PIT Instructor')
     if user.is_adviser:
         labels.append('Project Adviser')
-    if user.is_repo_assistant:
-        labels.append('Repository Assistant')
+    if user.is_documenter:
+        labels.append('Documenter')
     if user.is_uploader:
         labels.append('Document Uploader')
     return labels
@@ -796,11 +794,7 @@ class FacultyDashboardView(APIView):
         else:
             pit_teams = _pit_teams_queryset(user)
         pit_lead_overview = _pit_lead_overview_payload(user)
-        pit_assistant = (
-            current_repo_assistant_for_year(user.pit_lead_year)
-            if user.is_pit_lead and user.pit_lead_year
-            else None
-        )
+        pit_assistant = None  # Repository assistant feature removed
 
         return Response({
             'faculty': _user_payload(user),
@@ -812,34 +806,9 @@ class FacultyDashboardView(APIView):
             'pit_lead_year': user.pit_lead_year if user.is_pit_lead else None,
             'pit_lead_overview': pit_lead_overview,
             'active_semester': _active_semester_label(),
-            'is_repo_assistant': user.is_repo_assistant,
-            'repo_assistant_year': getattr(user, 'repo_assistant_year', '') or '',
-            'repository_assistant': (
-                {
-                    'id': pit_assistant.id,
-                    'name': _display_name(pit_assistant),
-                    'email': pit_assistant.email,
-                }
-                if pit_assistant
-                else None
-            ),
+            'is_documenter': user.is_documenter,
         })
 
-
-class PitLeadRepositoryAssistantView(APIView):
-    permission_classes = [IsAuthenticated, IsPitLead]
-
-    def get(self, request):
-        from .pit_repository_assistant import repository_assistant_assignment_payload
-
-        return Response(repository_assistant_assignment_payload(request.user))
-
-    def post(self, request):
-        from .pit_repository_assistant import assign_repository_assistant
-
-        faculty_id = request.data.get('faculty_id')
-        payload = assign_repository_assistant(request.user, faculty_id)
-        return Response(payload)
 
 
 class StudentDashboardView(APIView):

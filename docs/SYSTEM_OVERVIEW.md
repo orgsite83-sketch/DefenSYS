@@ -79,7 +79,7 @@ flowchart LR
 `authentication_access_control.User` extends Django `AbstractUser` with:
 
 - **role:** `admin` | `faculty` | `student`
-- **Faculty flags:** `is_panelist`, `is_pit_lead`, `is_adviser`, `is_repo_assistant`, `is_uploader`, etc.
+- **Faculty flags:** `is_panelist`, `is_pit_lead`, `is_adviser`, `is_documenter`, `is_uploader`, etc.
 
 Custom permission classes (e.g. `IsSystemAdmin`, `CanManageTeams`, `CanManageSchedules`) are used across views; not all list endpoints use the same policy (see audit below).
 

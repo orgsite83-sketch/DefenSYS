@@ -82,7 +82,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
   bool _acPanelist = false;
   bool _acPitLead = false;
   bool _acAdviser = false;
-  bool _acRepoAssistant = false;
+  bool _acDocumenter = false;
   String? _acPitLeadYear;
   List<Map<String, dynamic>> _roleAssignments = [];
   bool _roleAssignmentsLoading = false;
@@ -744,8 +744,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             DropdownMenuItem(value: 'pit_lead', child: Text('PIT Lead')),
             DropdownMenuItem(value: 'adviser', child: Text('Adviser')),
             DropdownMenuItem(
-              value: 'repo_assistant',
-              child: Text('Repo Assistant'),
+              value: 'documenter',
+              child: Text('Documenter'),
             ),
             DropdownMenuItem(value: 'student', child: Text('Student')),
           ],
@@ -898,7 +898,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'adviser' => const Color(0xFFECFDF5),
       'panelist' => const Color(0xFFF3E8FF),
       'pit_lead' => const Color(0xFFEFF6FF),
-      'repo_assistant' => const Color(0xFFFFEDD5),
+      'documenter' => const Color(0xFFFFEDD5),
       'faculty' => const Color(0xFFFFEDD5),
       _ => const Color(0xFFEFF6FF),
     };
@@ -907,7 +907,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'adviser' => const Color(0xFF047857),
       'panelist' => const Color(0xFF7E22CE),
       'pit_lead' => const Color(0xFF1D4ED8),
-      'repo_assistant' => const Color(0xFFEA580C),
+      'documenter' => const Color(0xFFEA580C),
       'faculty' => const Color(0xFFEA580C),
       _ => const Color(0xFF1E40AF),
     };
@@ -916,7 +916,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'adviser' => Icons.school_outlined,
       'panelist' => Icons.groups_2_outlined,
       'pit_lead' => Icons.flag_outlined,
-      'repo_assistant' => Icons.inventory_2_outlined,
+      'documenter' => Icons.assignment_outlined,
       'faculty' => Icons.co_present_rounded,
       _ => Icons.school_rounded,
     };
@@ -3304,8 +3304,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     _acPanelist = user['is_panelist'] == true;
     _acPitLead = user['is_pit_lead'] == true;
     _acAdviser = user['is_adviser'] == true;
-    _acRepoAssistant =
-        (user['is_repo_assistant'] == true) || (user['is_uploader'] == true);
+    _acDocumenter = user['is_documenter'] == true;
     _acPitLeadYear = _normalizePitLeadYear(user['pit_lead_year']?.toString());
   }
 
@@ -3359,8 +3358,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'is_pit_lead': isFaculty && _acPitLead,
       'pit_lead_year': isFaculty && _acPitLead ? _acPitLeadYear : null,
       'is_adviser': isFaculty && _acAdviser,
-      'is_repo_assistant': isFaculty && _acRepoAssistant,
-      'is_uploader': isFaculty && _acRepoAssistant,
+      'is_documenter': isFaculty && _acDocumenter,
+      'is_uploader': isFaculty && (u['is_uploader'] == true),
     };
   }
 
@@ -3661,7 +3660,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                         setState(() {
                                           _acPitLead = v;
                                           if (!_acPitLead) {
-                                            _acRepoAssistant = false;
                                             _acPitLeadYear = null;
                                           }
                                         });
@@ -3744,19 +3742,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                                       color: _line,
                                     ),
                                     _accessRoleCard(
-                                      accent: const Color(0xFFEA580C),
-                                      icon: Icons.inventory_2_outlined,
-                                      title: 'Repository Assistant',
+                                      accent: const Color(0xFF0284C7),
+                                      icon: Icons.assignment_outlined,
+                                      title: 'Documenter',
                                       subtitle:
-                                          'Assists with PIT repository tasks and '
-                                          'file uploads. Requires PIT Lead.',
-                                      value: _acRepoAssistant,
-                                      enabled: !state.isSaving && _acPitLead,
-                                      onChanged: _acPitLead
-                                          ? (v) => setState(
-                                              () => _acRepoAssistant = v,
-                                            )
-                                          : null,
+                                          'Records minutes of defense for capstone teams.',
+                                      value: _acDocumenter,
+                                      enabled: !state.isSaving,
+                                      onChanged: (v) => setState(
+                                        () => _acDocumenter = v,
+                                      ),
                                       flatInTable: true,
                                     ),
                                   ],
@@ -4221,7 +4216,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         'is_pit_lead': false,
         'pit_lead_year': null,
         'is_adviser': false,
-        'is_repo_assistant': false,
+        'is_documenter': false,
         'is_uploader': false,
         if (password != null && password.isNotEmpty) 'password': password,
       };
@@ -4239,10 +4234,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ? _normalizePitLeadYear(user['pit_lead_year']?.toString())
           : null,
       'is_adviser': user['is_adviser'] == true,
-      'is_repo_assistant':
-          (user['is_repo_assistant'] == true) || (user['is_uploader'] == true),
-      'is_uploader':
-          (user['is_repo_assistant'] == true) || (user['is_uploader'] == true),
+      'is_documenter': user['is_documenter'] == true,
+      'is_uploader': user['is_uploader'] == true,
       if (password != null && password.isNotEmpty) 'password': password,
     };
   }
@@ -4589,7 +4582,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             payload['is_pit_lead'] = false;
             payload['pit_lead_year'] = null;
             payload['is_adviser'] = false;
-            payload['is_repo_assistant'] = false;
+            payload['is_documenter'] = false;
             payload['is_uploader'] = false;
           } else {
             payload['is_panelist'] = _acPanelist;
@@ -4600,8 +4593,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 ? _acPitLeadYear
                 : null;
             payload['is_adviser'] = _acAdviser;
-            payload['is_repo_assistant'] = _acRepoAssistant;
-            payload['is_uploader'] = _acRepoAssistant;
+            payload['is_documenter'] = _acDocumenter;
+            payload['is_uploader'] = u['is_uploader'] == true;
           }
           if (pwd.isNotEmpty) {
             payload['password'] = pwd;
@@ -4657,8 +4650,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     var isPanelist = user?['is_panelist'] == true;
     var isPitLead = user?['is_pit_lead'] == true;
     var isAdviser = user?['is_adviser'] == true;
-    var isRepoAssistant =
-        (user?['is_repo_assistant'] == true) || (user?['is_uploader'] == true);
+    var isDocumenter = user?['is_documenter'] == true;
     var isActive = user?['is_active'] != false;
     String? pitLeadYear = _normalizePitLeadYear(
       user?['pit_lead_year']?.toString(),
@@ -4779,7 +4771,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             setDialogState(() {
                               isPitLead = value ?? false;
                               if (!isPitLead) {
-                                isRepoAssistant = false;
                                 pitLeadYear = null;
                               }
                             });
@@ -4826,18 +4817,16 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                         ),
                         CheckboxListTile(
                           contentPadding: EdgeInsets.zero,
-                          title: const Text('Repository Assistant'),
+                          title: const Text('Documenter'),
                           subtitle: const Text(
-                            'Repository tasks and uploads. Requires PIT Lead.',
+                            'Records minutes of defense for capstone teams.',
                           ),
-                          value: isRepoAssistant,
-                          onChanged: isPitLead
-                              ? (value) {
-                                  setDialogState(() {
-                                    isRepoAssistant = value ?? false;
-                                  });
-                                }
-                              : null,
+                          value: isDocumenter,
+                          onChanged: (value) {
+                            setDialogState(() {
+                              isDocumenter = value ?? false;
+                            });
+                          },
                         ),
                       ],
                     ],
@@ -4880,8 +4869,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       'is_pit_lead': isPitLead,
       'pit_lead_year': isPitLead ? pitLeadYear : null,
       'is_adviser': isAdviser,
-      'is_repo_assistant': isRepoAssistant,
-      'is_uploader': isRepoAssistant,
+      'is_documenter': isDocumenter,
+      'is_uploader': user?['is_uploader'] == true,
       if (password.text.trim().isNotEmpty) 'password': password.text.trim(),
     };
 

@@ -81,15 +81,6 @@ def is_admin(user):
     return getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
 
 
-def _has_assigned_repo_assistant(year_level):
-    if not year_level:
-        return False
-    return User.objects.filter(
-        is_repo_assistant=True,
-        repo_assistant_year=year_level,
-        is_active=True,
-    ).exists()
-
 
 def pit_event_matches_year_level(event_name, year_level):
     if not year_level:
@@ -359,7 +350,7 @@ def upload_window_payload(year_level, semester=None):
         'open': open_window,
         'completed_events': completed,
         'queue': queue,
-        'has_assigned_assistant': _has_assigned_repo_assistant(year_level),
+        'has_assigned_assistant': False,
         'diagnostics': diagnostics,
     }
 
@@ -638,7 +629,6 @@ def repository_scope(user):
         }
     if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_pit_lead', False):
         pit_year = user.pit_lead_year or ''
-        assistant_assigned = _has_assigned_repo_assistant(pit_year)
         return {
             'scope': 'pit_lead',
             'label': 'PIT lead repository audit',
@@ -647,21 +637,9 @@ def repository_scope(user):
             'can_upload_capstone': False,
             'can_override': False,
             'can_export': True,
-            'has_assigned_assistant': assistant_assigned,
-        }
-    if getattr(user, 'role', None) == 'faculty' and getattr(user, 'is_repo_assistant', False):
-        pit_year = getattr(user, 'repo_assistant_year', '') or ''
-        return {
-            'scope': 'repo_assistant',
-            'label': 'Repository assistant PIT uploads',
-            'pit_year_level': pit_year,
-            'can_upload_pit': False,
-            'can_upload_capstone': False,
-            'can_override': False,
-            'can_export': True,
             'has_assigned_assistant': False,
         }
-    raise PermissionDenied('Repository audit is available to admins, PIT leads, and repository assistants.')
+    raise PermissionDenied('Repository audit is available to admins and PIT leads.')
 
 
 def active_academic_year_label():
@@ -715,7 +693,7 @@ def pit_queryset_for_scope(scope):
     queryset = VaultEntry.objects.select_related('team', 'uploaded_by').filter(
         entry_type=VaultEntry.TYPE_PIT,
     )
-    if scope['scope'] in ('pit_lead', 'repo_assistant') and scope.get('pit_year_level'):
+    if scope['scope'] == 'pit_lead' and scope.get('pit_year_level'):
         queryset = queryset.filter(year_level=scope['pit_year_level'])
     return queryset
 
@@ -746,7 +724,7 @@ def capstone_deliverable_queryset_for_scope(scope):
 
 
 def pit_deliverable_queryset_for_scope(scope):
-    if scope['scope'] not in ('admin', 'pit_lead', 'repo_assistant'):
+    if scope['scope'] not in ('admin', 'pit_lead'):
         return DeliverableSubmission.objects.none()
     queryset = (
         DeliverableSubmission.objects.select_related(
@@ -758,7 +736,7 @@ def pit_deliverable_queryset_for_scope(scope):
         .filter(team__level__icontains='PIT')
         .order_by('-uploaded_at', 'file_name')
     )
-    if scope['scope'] in ('pit_lead', 'repo_assistant') and scope.get('pit_year_level'):
+    if scope['scope'] == 'pit_lead' and scope.get('pit_year_level'):
         queryset = queryset.filter(team__year_level=scope['pit_year_level'])
     return queryset
 
@@ -1201,8 +1179,6 @@ def upload_pit_files(user, file_names=None, uploaded_files=None, year_level=None
         raise PermissionDenied('You do not have permission to upload PIT entries.')
     selected_year = year_level or scope['pit_year_level']
     if scope['scope'] == 'pit_lead':
-        selected_year = scope['pit_year_level']
-    if scope['scope'] == 'repo_assistant':
         selected_year = scope['pit_year_level']
     if selected_year not in PIT_PREFIX_BY_YEAR:
         raise ValidationError('Select a PIT year level before uploading.')

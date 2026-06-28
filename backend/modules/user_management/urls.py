@@ -12,6 +12,7 @@ from .views import (
     PitLeadStudentImportView,
     UserAdviserAssignmentHistoryView,
     UserDetailView,
+    UserESignatureView,
     UserListCreateView,
     UserRoleAssignmentHistoryView,
 )
@@ -37,6 +38,7 @@ urlpatterns = [
     path('guest-codes/<int:code_id>/', GuestPanelistCodeDetailView.as_view(), name='guest_code_detail'),
     path('guest-codes/exchange/', GuestCodeExchangeView.as_view(), name='guest_code_exchange'),
     path('guest-codes/validate/<str:code>/', GuestCodeValidateView.as_view(), name='guest_code_validate'),
+    path('e-signature/', UserESignatureView.as_view(), name='user_e_signature'),
     path(
         '<int:user_id>/adviser-assignments/',
         UserAdviserAssignmentHistoryView.as_view(),

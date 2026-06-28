@@ -1834,6 +1834,7 @@ class _DefenseSchedulerScreenState
     final duration = TextEditingController(text: _durationController.text);
     final room = TextEditingController(text: _roomController.text);
     final panelIds = <int>{..._selectedPanelistIds};
+    int? documenterId;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -1915,6 +1916,7 @@ class _DefenseSchedulerScreenState
                                   adviserRubricId = null;
                                   capstonePeerRubricId = null;
                                   peerRubricId = null;
+                                  documenterId = null;
                                 });
                               },
                             ),
@@ -1946,7 +1948,7 @@ class _DefenseSchedulerScreenState
                         ],
                       ),
                       const SizedBox(height: 12),
-                      if (scope == 'capstone')
+                      if (scope == 'capstone') ...[
                         DropdownButtonFormField<int?>(
                           initialValue: stageId,
                           decoration: const InputDecoration(
@@ -1968,7 +1970,36 @@ class _DefenseSchedulerScreenState
                               capstonePeerRubricId = null;
                             });
                           },
-                        )
+                        ),
+                        const SizedBox(height: 12),
+                        DropdownButtonFormField<int?>(
+                          initialValue: documenterId,
+                          decoration: const InputDecoration(
+                            labelText: 'Documenter',
+                            hintText: 'Select Documenter (Optional)',
+                          ),
+                          dropdownColor: Colors.white,
+                          items: [
+                            const DropdownMenuItem<int?>(
+                              value: null,
+                              child: Text('— Select Documenter (Optional) —'),
+                            ),
+                            ...state.documenters
+                                .where((doc) => !panelIds.contains(_asInt(doc['id'])))
+                                .map(
+                                  (doc) => DropdownMenuItem<int?>(
+                                    value: _asInt(doc['id']),
+                                    child: Text(doc['name']?.toString() ?? ''),
+                                  ),
+                                ),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              documenterId = value;
+                            });
+                          },
+                        ),
+                      ]
                       else ...[
                         DropdownButtonFormField<String>(
                           value: state.pitEvents.any((e) => e['event_name'] == event.text)
@@ -2097,6 +2128,9 @@ class _DefenseSchedulerScreenState
                                     setDialogState(() {
                                       if (value) {
                                         panelIds.add(id);
+                                        if (documenterId == id) {
+                                          documenterId = null;
+                                        }
                                       } else {
                                         panelIds.remove(id);
                                       }
@@ -2184,6 +2218,7 @@ class _DefenseSchedulerScreenState
       'slot_duration': int.tryParse(durationText) ?? 60,
       'room': roomText,
       'panelist_ids': panelIds.toList(),
+      if (scope == 'capstone') 'documenter_id': documenterId,
     };
     if (scope == 'pit') {
       schedulePayload['peer_rubric_id'] = peerRubricId;

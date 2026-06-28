@@ -28,8 +28,11 @@ import 'pit_instructor_assignment_screen.dart';
 import 'adviser_dashboard_content.dart';
 import 'pit_events_management_screen.dart';
 import 'pit_instructor_dashboard_content.dart';
+import 'e_signature_upload_dialog.dart';
+import 'documenter_dashboard_content.dart';
+import 'minutes_form_screen.dart';
 
-enum FacultyWorkspace { pitLead, adviser, repoAssistant, pitInstructor }
+enum FacultyWorkspace { pitLead, adviser, pitInstructor, documenter }
 
 class FacultyDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -46,6 +49,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   bool _schedulingExpanded = false;
   bool _userManagementExpanded = true;
   FacultyWorkspace? _activeWorkspace;
+  int? _selectedMinutesScheduleId;
 
   @override
   void initState() {
@@ -95,14 +99,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         roles['uploader'] == true &&
         roles['adviser'] != true &&
         roles['pit_lead'] != true &&
-        roles['repo_assistant'] != true &&
+        roles['documenter'] != true &&
         roles['pit_instructor'] != true;
 
     // Show sidebar if user has any faculty role
     final showSidebar =
         roles['adviser'] == true ||
         roles['pit_lead'] == true ||
-        roles['repo_assistant'] == true ||
+        roles['documenter'] == true ||
         roles['uploader'] == true ||
         roles['pit_instructor'] == true;
 
@@ -175,8 +179,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     if (roles['pit_instructor'] == true) {
       workspaces.add(FacultyWorkspace.pitInstructor);
     }
-    if (roles['repo_assistant'] == true && roles['pit_lead'] != true) {
-      workspaces.add(FacultyWorkspace.repoAssistant);
+    if (roles['documenter'] == true) {
+      workspaces.add(FacultyWorkspace.documenter);
     }
     return workspaces;
   }
@@ -204,8 +208,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return 'Project Adviser';
       case FacultyWorkspace.pitInstructor:
         return 'PIT Instructor';
-      case FacultyWorkspace.repoAssistant:
-        return 'Repository Assistant';
+      case FacultyWorkspace.documenter:
+        return 'Minutes Documenter';
     }
   }
 
@@ -498,6 +502,30 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             color: Colors.transparent,
             child: IconButton(
               icon: const Icon(
+                Icons.draw_rounded,
+                color: Color(0xFFD1D5DB),
+                size: 18,
+              ),
+              tooltip: 'E-Signature',
+              onPressed: () {
+                if (!isWide) {
+                  Navigator.of(context).pop();
+                }
+                showDialog(
+                  context: context,
+                  builder: (context) => const ESignatureUploadDialog(),
+                );
+              },
+              constraints: const BoxConstraints(),
+              padding: const EdgeInsets.all(6),
+              splashRadius: 20,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Material(
+            color: Colors.transparent,
+            child: IconButton(
+              icon: const Icon(
                 Icons.logout_rounded,
                 color: Color(0xFFFCA5A5),
                 size: 18,
@@ -760,7 +788,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             isActive: _activeSection == 'student_teams',
           ),
         ];
-      case FacultyWorkspace.repoAssistant:
+      case FacultyWorkspace.documenter:
         return [
           _buildSectionHeader('Dashboard'),
           _buildSidebarItem(
@@ -772,15 +800,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'dashboard',
           ),
-          _buildSectionHeader('Repository'),
+          _buildSectionHeader('Operations'),
           _buildSidebarItem(
-            icon: Icons.manage_search,
-            label: 'Repository Vault',
+            icon: Icons.view_list_outlined,
+            label: 'Defense Board',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => _goToSection('repository_audit'),
+              () => _goToSection('defense_board'),
             ),
-            isActive: _activeSection == 'repository_audit',
+            isActive: _activeSection == 'defense_board',
           ),
         ];
     }
@@ -953,6 +981,18 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     DashboardState dashState,
     Map<String, dynamic> roles,
   ) {
+    if (_selectedMinutesScheduleId != null) {
+      return MinutesFormScreen(
+        scheduleId: _selectedMinutesScheduleId!,
+        onBack: () {
+          setState(() {
+            _selectedMinutesScheduleId = null;
+          });
+          ref.read(dashboardProvider('faculty').notifier).fetchDashboardData();
+        },
+      );
+    }
+
     final routerState = GoRouterState.of(context);
     final isSubRoute = routerState.pathParameters.containsKey('teamId') ||
         routerState.pathParameters.containsKey('sectionName');
@@ -1106,30 +1146,16 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           onOpenDeliverables: () => _goToSection('deliverables'),
         );
-      case FacultyWorkspace.repoAssistant:
-        final repoYear =
-            dashState.data?['repo_assistant_year']?.toString() ??
-            (dashState.data?['roles'] as Map?)?['repo_assistant_year']
-                ?.toString() ??
-            '';
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Welcome, $facultyName',
-              style: const TextStyle(fontSize: 21, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              repoYear.isNotEmpty
-                  ? 'Repository Assistant for $repoYear — open Repository Vault to upload passed PIT project files after the PIT lead marks the event officially complete in Grade Center.'
-                  : 'Repository Assistant workspace — open Repository Vault once your PIT lead assigns your year level.',
-              style: const TextStyle(color: Colors.grey),
-            ),
-          ],
+      case FacultyWorkspace.documenter:
+        return DocumenterDashboardContent(
+          data: dashState.data,
+          facultyName: facultyName,
+          onOpenMinutes: (scheduleId) {
+            setState(() {
+              _selectedMinutesScheduleId = scheduleId;
+            });
+          },
         );
     }
   }
-
-
 }
