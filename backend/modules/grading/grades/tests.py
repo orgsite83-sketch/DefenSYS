@@ -1694,3 +1694,77 @@ class GradeCenterApiTests(APITestCase):
             StudentStageGrade.objects.filter(team_grade=canonical).exclude(peer_score=None).exists(),
         )
         self.assertIsNone(canonical.peer_score)
+
+    def test_both_rubric_panelist_submission_and_scores_calculation(self):
+        both_rubric = Rubric.objects.create(
+            name="Hybrid Both Rubric",
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            defense_stage=self.stage,
+            evaluation_type=Rubric.EVAL_PANEL,
+            target_type='both',
+            status=Rubric.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+        team_crit = RubricCriterion.objects.create(
+            rubric=both_rubric,
+            name='Team Component',
+            scale=Rubric.SCALE_10,
+            max_score=10,
+            target_type='team',
+            display_order=0,
+        )
+        ind_crit = RubricCriterion.objects.create(
+            rubric=both_rubric,
+            name='Individual Component',
+            scale=Rubric.SCALE_10,
+            max_score=10,
+            target_type='individual',
+            display_order=1,
+        )
+
+        self.capstone_schedule.rubric = both_rubric
+        self.capstone_schedule.save()
+
+        sync_missing_grade_rows(user=self.admin)
+        tg = TeamGrade.objects.get(team=self.capstone_team)
+        self.assertIsNone(tg.panel_score)
+
+        self.client.force_authenticate(user=self.panelist)
+        payload = {
+            'team_id': self.capstone_team.id,
+            'schedule_id': self.capstone_schedule.id,
+            'submissions': [
+                {
+                    'student_id': None,
+                    'criteria_scores': [
+                        {'criterion_id': team_crit.id, 'score': 8},
+                    ],
+                    'remarks': 'Team remarks',
+                },
+                {
+                    'student_id': self.student.id,
+                    'criteria_scores': [
+                        {'criterion_id': ind_crit.id, 'score': 9},
+                    ],
+                    'remarks': 'Student 1 remarks',
+                },
+                {
+                    'student_id': self.second_student.id,
+                    'criteria_scores': [
+                        {'criterion_id': ind_crit.id, 'score': 7},
+                    ],
+                    'remarks': 'Student 2 remarks',
+                },
+            ]
+        }
+        res = self.client.post('/api/defense/schedules/submit-grades/', payload, format='json')
+        self.assertIn(res.status_code, (200, 201))
+
+        tg.refresh_from_db()
+        sg1 = StudentStageGrade.objects.get(team_grade=tg, student=self.student)
+        sg2 = StudentStageGrade.objects.get(team_grade=tg, student=self.second_student)
+
+        self.assertEqual(sg1.panel_score, Decimal('85.00'))
+        self.assertEqual(sg2.panel_score, Decimal('75.00'))
+        self.assertEqual(tg.panel_score, Decimal('80.00'))

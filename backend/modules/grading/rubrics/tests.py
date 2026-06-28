@@ -362,3 +362,73 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['stats']['published_rubrics'], 6)
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_both_rubric_creation_and_forcing_constraints(self):
+        payload = self.rubric_payload(
+            target_type='both',
+            criteria=[
+                {
+                    'name': 'Team Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                },
+                {
+                    'name': 'Individual Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 1,
+                    'target_type': 'individual',
+                },
+            ]
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        rubric_id = response.data['rubric']['id']
+        rubric = Rubric.objects.get(id=rubric_id)
+        self.assertEqual(rubric.target_type, 'both')
+        self.assertEqual(rubric.criteria.count(), 2)
+        criteria_list = list(rubric.criteria.order_by('display_order'))
+        self.assertEqual(criteria_list[0].target_type, 'team')
+        self.assertEqual(criteria_list[1].target_type, 'individual')
+
+        payload_team = self.rubric_payload(
+            name='Team Rubric Forcing Test',
+            target_type='team',
+            criteria=[
+                {
+                    'name': 'C1',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'individual',
+                }
+            ]
+        )
+        response_team = self.client.post('/api/grading/rubrics/', payload_team, format='json')
+        self.assertEqual(response_team.status_code, 201)
+        r_team = Rubric.objects.get(id=response_team.data['rubric']['id'])
+        self.assertEqual(r_team.criteria.get().target_type, 'team')
+
+        payload_ind = self.rubric_payload(
+            name='Individual Rubric Forcing Test',
+            target_type='individual',
+            criteria=[
+                {
+                    'name': 'C1',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                }
+            ]
+        )
+        response_ind = self.client.post('/api/grading/rubrics/', payload_ind, format='json')
+        self.assertEqual(response_ind.status_code, 201)
+        r_ind = Rubric.objects.get(id=response_ind.data['rubric']['id'])
+        self.assertEqual(r_ind.criteria.get().target_type, 'individual')

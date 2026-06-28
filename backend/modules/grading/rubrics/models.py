@@ -42,10 +42,12 @@ class Rubric(models.Model):
 
     TARGET_TEAM = 'team'
     TARGET_INDIVIDUAL = 'individual'
+    TARGET_BOTH = 'both'
 
     TARGET_CHOICES = (
         (TARGET_TEAM, 'Team'),
         (TARGET_INDIVIDUAL, 'Individual'),
+        (TARGET_BOTH, 'Both (Team & Individual)'),
     )
 
     name = models.CharField(max_length=160)
@@ -145,6 +147,14 @@ class RubricCriterion(models.Model):
     max_score = models.PositiveSmallIntegerField(default=10)
     weight = models.DecimalField(max_digits=5, decimal_places=2, default=1)
     display_order = models.PositiveSmallIntegerField(default=0)
+    target_type = models.CharField(
+        max_length=20,
+        choices=(
+            (Rubric.TARGET_TEAM, 'Team'),
+            (Rubric.TARGET_INDIVIDUAL, 'Individual'),
+        ),
+        default=Rubric.TARGET_TEAM,
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -158,6 +168,10 @@ class RubricCriterion(models.Model):
             raise ValidationError({'max_score': 'Max score must be at least 1.'})
         if self.weight <= 0:
             raise ValidationError({'weight': 'Criterion weight must be greater than 0.'})
+        if self.rubric.target_type == Rubric.TARGET_TEAM and self.target_type != Rubric.TARGET_TEAM:
+            self.target_type = Rubric.TARGET_TEAM
+        elif self.rubric.target_type == Rubric.TARGET_INDIVIDUAL and self.target_type != Rubric.TARGET_INDIVIDUAL:
+            self.target_type = Rubric.TARGET_INDIVIDUAL
 
     def save(self, *args, **kwargs):
         if not self.max_score:

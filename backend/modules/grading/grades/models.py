@@ -109,13 +109,13 @@ class TeamGrade(models.Model):
 
     @property
     def is_complete(self):
-        is_individual_panel = False
+        is_student_specific = False
         if self.schedule and self.schedule.rubric:
-            is_individual_panel = (self.schedule.rubric.target_type == 'individual')
+            is_student_specific = (self.schedule.rubric.target_type in ('individual', 'both'))
         elif self.pit_event_config and self.pit_event_config.panel_rubric:
-            is_individual_panel = (self.pit_event_config.panel_rubric.target_type == 'individual')
+            is_student_specific = (self.pit_event_config.panel_rubric.target_type in ('individual', 'both'))
 
-        if is_individual_panel:
+        if is_student_specific:
             if not self.pk:
                 return False
             memberships = self.team.memberships.all()
@@ -213,10 +213,12 @@ class TeamGrade(models.Model):
             for membership in memberships:
                 sg, _ = StudentStageGrade.objects.get_or_create(team_grade=self, student=membership.student)
                 sg.adviser_score = self.adviser_score
-                is_individual_panel = False
+                is_student_specific = False
                 if self.schedule and self.schedule.rubric:
-                    is_individual_panel = (self.schedule.rubric.target_type == 'individual')
-                if not is_individual_panel:
+                    is_student_specific = (self.schedule.rubric.target_type in ('individual', 'both'))
+                elif self.pit_event_config and self.pit_event_config.panel_rubric:
+                    is_student_specific = (self.pit_event_config.panel_rubric.target_type in ('individual', 'both'))
+                if not is_student_specific:
                     sg.panel_score = self.panel_score
                 sg.save()
                 recalculate_student_grade(sg)

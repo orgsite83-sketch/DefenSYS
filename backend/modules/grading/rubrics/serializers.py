@@ -31,6 +31,7 @@ class RubricCriterionSerializer(serializers.ModelSerializer):
             'max_score',
             'weight',
             'display_order',
+            'target_type',
         ]
         read_only_fields = ['id']
 
@@ -180,7 +181,7 @@ class RubricWriteSerializer(serializers.Serializer):
                     raise serializers.ValidationError({'weights': 'Panel, adviser, and peer weights must total 100%.'})
 
         self._validate_duplicate(attrs)
-        attrs['criteria'] = self._normalized_criteria(attrs['criteria'])
+        attrs['criteria'] = self._normalized_criteria(attrs['criteria'], attrs.get('target_type', Rubric.TARGET_TEAM))
         return attrs
 
     @transaction.atomic
@@ -280,7 +281,7 @@ class RubricWriteSerializer(serializers.Serializer):
         if queryset.exists():
             raise serializers.ValidationError({'name': 'A rubric with this name already exists for this semester.'})
 
-    def _normalized_criteria(self, criteria):
+    def _normalized_criteria(self, criteria, rubric_target_type):
         normalized = []
         seen_names = set()
         for index, item in enumerate(criteria):
@@ -292,6 +293,14 @@ class RubricWriteSerializer(serializers.Serializer):
                 raise serializers.ValidationError({'criteria': f'Duplicate criterion name: {name}.'})
             seen_names.add(key)
             scale = item.get('scale') or Rubric.SCALE_10
+            
+            # Resolve target type based on rubric constraints
+            criterion_target_type = item.get('target_type') or Rubric.TARGET_TEAM
+            if rubric_target_type == Rubric.TARGET_TEAM:
+                criterion_target_type = Rubric.TARGET_TEAM
+            elif rubric_target_type == Rubric.TARGET_INDIVIDUAL:
+                criterion_target_type = Rubric.TARGET_INDIVIDUAL
+                
             normalized.append({
                 'name': name,
                 'description': (item.get('description') or '').strip(),
@@ -299,6 +308,7 @@ class RubricWriteSerializer(serializers.Serializer):
                 'max_score': item.get('max_score') or default_max_score(scale),
                 'weight': item.get('weight', 1),
                 'display_order': item.get('display_order', index),
+                'target_type': criterion_target_type,
             })
 
         if not normalized:

@@ -475,6 +475,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       letterSpacing: 0.45,
       color: AppColors.textSecondary,
     );
+    final isBoth = _targetType == 'both';
     return Container(
       padding: const EdgeInsets.only(bottom: 8),
       decoration: const BoxDecoration(
@@ -482,9 +483,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       ),
       child: Row(
         children: [
-          Expanded(flex: 22, child: Text('NAME', style: hdr)),
-          Expanded(flex: 34, child: Text('DESCRIPTION', style: hdr)),
-          Expanded(flex: 18, child: Text('SCALE', style: hdr)),
+          Expanded(flex: isBoth ? 20 : 22, child: Text('NAME', style: hdr)),
+          Expanded(flex: isBoth ? 28 : 34, child: Text('DESCRIPTION', style: hdr)),
+          Expanded(flex: isBoth ? 16 : 18, child: Text('SCALE', style: hdr)),
+          if (isBoth)
+            Expanded(flex: 16, child: Text('TARGET TYPE', style: hdr)),
           SizedBox(width: 64, child: Text('WEIGHT', style: hdr)),
           SizedBox(width: 56, child: Text('ORDER', style: hdr)),
           const SizedBox(width: 130),
@@ -512,13 +515,14 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     required VoidCallback? onRemove,
     required VoidCallback onChanged,
   }) {
+    final isBoth = _targetType == 'both';
     return Padding(
       padding: const EdgeInsets.only(top: 10),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Expanded(
-            flex: 22,
+            flex: isBoth ? 20 : 22,
             child: TextField(
               controller: draft.name,
               enabled: enabled,
@@ -529,7 +533,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            flex: 34,
+            flex: isBoth ? 28 : 34,
             child: TextField(
               controller: draft.description,
               enabled: enabled,
@@ -542,7 +546,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           ),
           const SizedBox(width: 8),
           Expanded(
-            flex: 18,
+            flex: isBoth ? 16 : 18,
             child: DropdownButtonFormField<String>(
               key: ValueKey('crit-scale-$index-${draft.scale}'),
               initialValue: draft.scale,
@@ -567,6 +571,35 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   : null,
             ),
           ),
+          if (isBoth) ...[
+            const SizedBox(width: 8),
+            Expanded(
+              flex: 16,
+              child: DropdownButtonFormField<String>(
+                key: ValueKey('crit-target-$index-${draft.targetType}'),
+                initialValue: draft.targetType,
+                isExpanded: true,
+                style: _criterionInputStyle,
+                decoration: _tableCellDec(hint: 'Target'),
+                items: const [
+                  DropdownMenuItem(
+                    value: 'team',
+                    child: Text('Team'),
+                  ),
+                  DropdownMenuItem(
+                    value: 'individual',
+                    child: Text('Individual'),
+                  ),
+                ],
+                onChanged: enabled
+                    ? (value) {
+                        draft.targetType = value ?? draft.targetType;
+                        onChanged();
+                      }
+                    : null,
+              ),
+            ),
+          ],
           const SizedBox(width: 8),
           SizedBox(
             width: 64,
@@ -1095,6 +1128,17 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                 ),
                               ),
                             ),
+                            DropdownMenuItem(
+                              value: 'both',
+                              child: Text(
+                                'Both (Team & Individual)',
+                                style: TextStyle(
+                                  fontFamily: DefensysUi.fontFamily,
+                                  fontSize: _bodySize,
+                                  color: DefensysUi.textDark,
+                                ),
+                              ),
+                            ),
                           ],
                           onChanged: canEdit && _evaluationType != 'peer'
                               ? (v) {
@@ -1317,6 +1361,7 @@ class RubricCriterionDraft {
     int? maxScore,
     num weight = 1,
     int displayOrder = 0,
+    String targetType = 'team',
   }) : this._(
           name: TextEditingController(text: name),
           description: TextEditingController(text: description),
@@ -1327,6 +1372,7 @@ class RubricCriterionDraft {
           ),
           weight: TextEditingController(text: weight.toString()),
           displayOrder: TextEditingController(text: displayOrder.toString()),
+          targetType: targetType,
         );
 
   RubricCriterionDraft._({
@@ -1336,6 +1382,7 @@ class RubricCriterionDraft {
     required this.maxScore,
     required this.weight,
     required this.displayOrder,
+    required this.targetType,
   });
 
   factory RubricCriterionDraft.fromMap(Map item, List<String> scales) {
@@ -1348,6 +1395,7 @@ class RubricCriterionDraft {
       weight: num.tryParse(item['weight']?.toString() ?? '') ?? 1,
       displayOrder:
           int.tryParse(item['display_order']?.toString() ?? '') ?? 0,
+      targetType: item['target_type']?.toString() ?? 'team',
     );
   }
 
@@ -1357,6 +1405,7 @@ class RubricCriterionDraft {
   final TextEditingController maxScore;
   final TextEditingController weight;
   final TextEditingController displayOrder;
+  String targetType;
 
   Map<String, dynamic> toPayload() {
     return {
@@ -1366,6 +1415,7 @@ class RubricCriterionDraft {
       'max_score': int.tryParse(maxScore.text.trim()) ?? _scaleMax(scale),
       'weight': num.tryParse(weight.text.trim()) ?? 1,
       'display_order': int.tryParse(displayOrder.text.trim()) ?? 0,
+      'target_type': targetType,
     };
   }
 

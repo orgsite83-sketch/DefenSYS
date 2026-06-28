@@ -654,9 +654,12 @@ class PanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            is_individual = False
+            target_type = 'team'
             if schedule and schedule.rubric:
-                is_individual = (schedule.rubric.target_type == 'individual')
+                target_type = schedule.rubric.target_type
+
+            is_individual = (target_type == 'individual')
+            is_both = (target_type == 'both')
 
             memberships = list(team.memberships.select_related('student').all())
             team_student_ids = {m.student_id for m in memberships}
@@ -685,6 +688,21 @@ class PanelistGradeSubmissionView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST,
                             )
                         student = next(m.student for m in memberships if m.student_id == student_id_int)
+                    elif is_both:
+                        if student_id not in (None, ''):
+                            try:
+                                student_id_int = int(student_id)
+                            except (TypeError, ValueError):
+                                return Response(
+                                    {'detail': 'student_id must be an integer.'},
+                                    status=status.HTTP_400_BAD_REQUEST,
+                                )
+                            if student_id_int not in team_student_ids:
+                                return Response(
+                                    {'detail': f'Student with ID {student_id} is not a member of this team.'},
+                                    status=status.HTTP_400_BAD_REQUEST,
+                                )
+                            student = next(m.student for m in memberships if m.student_id == student_id_int)
 
                     item_criteria_scores = item.get('criteria_scores', [])
                     item_remarks = item.get('remarks', '')
@@ -935,9 +953,12 @@ class GuestPanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            is_individual = False
+            target_type = 'team'
             if schedule and schedule.rubric:
-                is_individual = (schedule.rubric.target_type == 'individual')
+                target_type = schedule.rubric.target_type
+
+            is_individual = (target_type == 'individual')
+            is_both = (target_type == 'both')
 
             memberships = list(team.memberships.select_related('student').all())
             team_student_ids = {m.student_id for m in memberships}
@@ -966,6 +987,21 @@ class GuestPanelistGradeSubmissionView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST,
                             )
                         student = next(m.student for m in memberships if m.student_id == student_id_int)
+                    elif is_both:
+                        if student_id not in (None, ''):
+                            try:
+                                student_id_int = int(student_id)
+                            except (TypeError, ValueError):
+                                return Response(
+                                    {'detail': 'student_id must be an integer.'},
+                                    status=status.HTTP_400_BAD_REQUEST,
+                                )
+                            if student_id_int not in team_student_ids:
+                                return Response(
+                                    {'detail': f'Student with ID {student_id} is not a member of this team.'},
+                                    status=status.HTTP_400_BAD_REQUEST,
+                                )
+                            student = next(m.student for m in memberships if m.student_id == student_id_int)
 
                     item_criteria_scores = item.get('criteria_scores', [])
                     item_remarks = item.get('remarks', '')

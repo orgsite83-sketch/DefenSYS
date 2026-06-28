@@ -65,8 +65,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     }
   }
 
-  List<Criterion> _parseCriteriaFromRubricMap(Map<String, dynamic> rubric) {
-    return (rubric['criteria'] as List? ?? []).map((c) {
+  List<Criterion> _parseCriteriaFromRubricMap(Map<String, dynamic> rubric, {String? filterTargetType}) {
+    final list = rubric['criteria'] as List? ?? [];
+    return list.where((c) {
+      if (filterTargetType == null) return true;
+      final t = c['target_type']?.toString() ?? 'team';
+      return t == filterTargetType;
+    }).map((c) {
       return Criterion(
         (c['name'] ?? 'Criterion').toString(),
         ((c['max_score'] as num?) ?? 10).toDouble(),
@@ -96,7 +101,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
 
       final embedded = team.panelRubric;
       if (embedded != null) {
-        if (team.isIndividualTarget) {
+        if (team.targetType == 'both') {
+          _criteria = _parseCriteriaFromRubricMap(embedded, filterTargetType: 'team');
+          for (var member in team.memberDetails) {
+            _studentCriteria[member.id] = _parseCriteriaFromRubricMap(embedded, filterTargetType: 'individual');
+            _studentRemarksControllers[member.id] = TextEditingController();
+          }
+        } else if (team.isIndividualTarget) {
           for (var member in team.memberDetails) {
             _studentCriteria[member.id] = _parseCriteriaFromRubricMap(embedded);
             _studentRemarksControllers[member.id] = TextEditingController();
@@ -153,19 +164,41 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     final hasValidScope = team.hasValidScope;
     
     final isIndividual = team.isIndividualTarget;
+    final isBoth = team.targetType == 'both';
     final canPost = hasValidScope &&
         hasPanelRubric &&
-        (isIndividual ? _studentCriteria.isNotEmpty : _criteria.isNotEmpty) &&
+        (isBoth
+            ? (_criteria.isNotEmpty || _studentCriteria.isNotEmpty)
+            : (isIndividual ? _studentCriteria.isNotEmpty : _criteria.isNotEmpty)) &&
         !isLocked &&
         !team.isLockedByDate;
 
-    final criteria = isIndividual
+    final List<Criterion> currentTeamCriteria = _criteria;
+    final List<Criterion> currentStudentCriteria = isIndividual || isBoth
         ? (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length
             ? (_studentCriteria[team.memberDetails[_selectedStudentIndex].id] ?? [])
             : <Criterion>[])
-        : (_criteria.isNotEmpty ? _criteria : team.criteria);
-    final total = criteria.fold(0.0, (s, c) => s + c.score);
-    final maxTotal = criteria.fold(0.0, (s, c) => s + c.maxScore);
+        : <Criterion>[];
+
+    final activeCriteria = isIndividual ? currentStudentCriteria : (_criteria.isNotEmpty ? _criteria : team.criteria);
+
+    final double total;
+    final double maxTotal;
+    if (isBoth) {
+      final tScore = currentTeamCriteria.fold(0.0, (s, c) => s + c.score);
+      final tMax = currentTeamCriteria.fold(0.0, (s, c) => s + c.maxScore);
+      final sScore = currentStudentCriteria.fold(0.0, (s, c) => s + c.score);
+      final sMax = currentStudentCriteria.fold(0.0, (s, c) => s + c.maxScore);
+      total = tScore + sScore;
+      maxTotal = tMax + sMax;
+    } else if (isIndividual) {
+      total = currentStudentCriteria.fold(0.0, (s, c) => s + c.score);
+      maxTotal = currentStudentCriteria.fold(0.0, (s, c) => s + c.maxScore);
+    } else {
+      final criteriaList = _criteria.isNotEmpty ? _criteria : team.criteria;
+      total = criteriaList.fold(0.0, (s, c) => s + c.score);
+      maxTotal = criteriaList.fold(0.0, (s, c) => s + c.maxScore);
+    }
     final panelPct = maxTotal > 0 ? (total / maxTotal * 100) : 0;
 
     final panelWeight = team.panelWeight;
@@ -233,7 +266,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ],
             ),
           ],
-          if (isIndividual) ...[
+          if (isIndividual || isBoth) ...[
             const SizedBox(height: 12),
             const Text(
               'Grade by Individual Student',
@@ -376,11 +409,13 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                   else
                     _scopeWeightUnavailable(),
                   const SizedBox(height: 16),
-                  const Text(
-                    'Rubric Criteria',
-                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
-                  ),
-                  const SizedBox(height: 8),
+                  if (hasPanelRubric && (isIndividual || !isBoth)) ...[
+                    const Text(
+                      'Rubric Criteria',
+                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    const SizedBox(height: 8),
+                  ],
                   if (!hasPanelRubric)
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -402,29 +437,78 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                         ],
                       ),
                     )
-                  else if (criteria.isEmpty)
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: Colors.orange.shade50,
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.orange.shade200),
+                  else if (isBoth) ...[
+                    if (currentTeamCriteria.isNotEmpty) ...[
+                      const Text(
+                        'Team Criteria',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: DefensysTokens.maroon,
+                        ),
                       ),
-                      child: const Row(
-                        children: [
-                          Icon(Icons.info_outline, color: Colors.orange),
-                          SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Assigned panel rubric has no criteria yet.',
-                              style: TextStyle(color: Colors.orange),
+                      const SizedBox(height: 8),
+                      ...currentTeamCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                      const SizedBox(height: 16),
+                    ],
+                    if (currentStudentCriteria.isNotEmpty) ...[
+                      Text(
+                        'Individual Criteria for ${team.memberDetails[_selectedStudentIndex].name}',
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: DefensysTokens.maroon,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      ...currentStudentCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                    ],
+                    if (currentTeamCriteria.isEmpty && currentStudentCriteria.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Assigned panel rubric has no criteria yet.',
+                                style: TextStyle(color: Colors.orange),
+                              ),
                             ),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    )
-                  else
-                    ...criteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                  ] else ...[
+                    if (activeCriteria.isEmpty)
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.orange.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.orange.shade200),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.orange),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Assigned panel rubric has no criteria yet.',
+                                style: TextStyle(color: Colors.orange),
+                              ),
+                            ),
+                          ],
+                        ),
+                      )
+                    else
+                      ...activeCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                  ],
                   const Divider(height: 24),
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -505,23 +589,50 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                       ),
                     )
                   else if (!isLocked) ...[
-                    TextField(
-                      controller: isIndividual
-                          ? (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length
-                              ? _studentRemarksControllers[team.memberDetails[_selectedStudentIndex].id]
-                              : null)
-                          : _teamRemarksController,
-                      maxLines: 3,
-                      decoration: InputDecoration(
-                        labelText: isIndividual
-                            ? 'Remarks / Feedback for ${team.memberDetails[_selectedStudentIndex].name}'
-                            : 'Remarks / Feedback',
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    if (isBoth) ...[
+                      TextField(
+                        controller: _teamRemarksController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          labelText: 'Team Remarks / Feedback',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignLabelWithHint: true,
                         ),
-                        alignLabelWithHint: true,
                       ),
-                    ),
+                      const SizedBox(height: 12),
+                      if (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length)
+                        TextField(
+                          controller: _studentRemarksControllers[team.memberDetails[_selectedStudentIndex].id],
+                          maxLines: 2,
+                          decoration: InputDecoration(
+                            labelText: 'Individual Remarks for ${team.memberDetails[_selectedStudentIndex].name}',
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            alignLabelWithHint: true,
+                          ),
+                        ),
+                    ] else ...[
+                      TextField(
+                        controller: isIndividual
+                            ? (team.memberDetails.isNotEmpty && _selectedStudentIndex < team.memberDetails.length
+                                ? _studentRemarksControllers[team.memberDetails[_selectedStudentIndex].id]
+                                : null)
+                            : _teamRemarksController,
+                        maxLines: 3,
+                        decoration: InputDecoration(
+                          labelText: isIndividual
+                              ? 'Remarks / Feedback for ${team.memberDetails[_selectedStudentIndex].name}'
+                              : 'Remarks / Feedback',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          alignLabelWithHint: true,
+                        ),
+                      ),
+                    ],
                     const SizedBox(height: 16),
                     Row(
                       children: [
@@ -595,7 +706,27 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       return;
     }
 
-    if (team.isIndividualTarget) {
+    final isBoth = team.targetType == 'both';
+    if (isBoth) {
+      if (team.memberDetails.isEmpty) {
+        showValidationToast(context, 'This team has no members to grade.');
+        return;
+      }
+      if (_criteria.isEmpty && _studentCriteria.isEmpty) {
+        showValidationToast(context, 'Score all criteria before posting.');
+        return;
+      }
+      for (var member in team.memberDetails) {
+        final memberCriteria = _studentCriteria[member.id] ?? [];
+        if (memberCriteria.isEmpty && _criteria.isEmpty) {
+          showValidationToast(
+            context,
+            'Score all criteria for ${member.name} before posting.',
+          );
+          return;
+        }
+      }
+    } else if (team.isIndividualTarget) {
       if (team.memberDetails.isEmpty) {
         showValidationToast(context, 'This team has no members to grade.');
         return;
@@ -646,9 +777,41 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
     );
 
     final isIndividual = team.isIndividualTarget;
+    final isBoth = team.targetType == 'both';
     final Map<String, dynamic> payload;
 
-    if (isIndividual) {
+    if (isBoth) {
+      final submissions = <Map<String, dynamic>>[];
+      
+      // 1. Team-wide submission
+      final teamScores = _criteria
+          .map((c) => {'criterion_id': c.id, 'score': c.score})
+          .toList();
+      submissions.add({
+        'student_id': null,
+        'criteria_scores': teamScores,
+        'remarks': _teamRemarksController.text,
+      });
+
+      // 2. Individual student submissions
+      for (var member in team.memberDetails) {
+        final memberCriteria = _studentCriteria[member.id] ?? [];
+        final criteriaScores = memberCriteria
+            .map((c) => {'criterion_id': c.id, 'score': c.score})
+            .toList();
+        final remarks = _studentRemarksControllers[member.id]?.text ?? '';
+        submissions.add({
+          'student_id': int.tryParse(member.id) ?? member.id,
+          'criteria_scores': criteriaScores,
+          'remarks': remarks,
+        });
+      }
+
+      payload = <String, dynamic>{
+        'team_id': int.tryParse(team.teamId) ?? team.teamId,
+        'submissions': submissions,
+      };
+    } else if (isIndividual) {
       final submissions = <Map<String, dynamic>>[];
       for (var member in team.memberDetails) {
         final memberCriteria = _studentCriteria[member.id] ?? [];
