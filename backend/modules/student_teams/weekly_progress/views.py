@@ -37,7 +37,9 @@ class StudentWeeklyProgressListCreateView(APIView):
             ).select_related('team', 'student')
         elif user.role == 'admin' or getattr(user, 'is_superuser', False):
             reports = WeeklyProgressReport.objects.all().select_related('team', 'student')
-        elif getattr(user, 'is_pit_lead', False) or getattr(user, 'is_uploader', False):
+        elif getattr(user, 'is_uploader', False):
+            reports = WeeklyProgressReport.objects.filter(team__semester__is_active=True).select_related('team', 'student')
+        elif getattr(user, 'is_pit_lead', False):
             reports = WeeklyProgressReport.objects.all().select_related('team', 'student')
         else:
             reports = WeeklyProgressReport.objects.none()

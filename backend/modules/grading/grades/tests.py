@@ -304,9 +304,17 @@ class GradeCenterApiTests(APITestCase):
         TeamMembership.objects.create(team=pit_team, student=self.pit_student, is_leader=True)
 
         _sync_unscheduled_team(pit_team)
-        placeholder = TeamGrade.objects.get(team=pit_team, scope=TeamGrade.SCOPE_PIT)
-        self.assertEqual(placeholder.stage_label, 'Unscheduled')
-        self.assertIsNone(placeholder.schedule_id)
+        self.assertFalse(TeamGrade.objects.filter(team=pit_team, scope=TeamGrade.SCOPE_PIT).exists())
+
+        placeholder = TeamGrade.objects.create(
+            team=pit_team,
+            semester=self.first_semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='Unscheduled',
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+        )
 
         DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_PIT,
@@ -385,9 +393,14 @@ class GradeCenterApiTests(APITestCase):
         TeamMembership.objects.create(team=team, student=self.student, is_leader=True)
 
         _sync_unscheduled_team(team)
-        placeholder = TeamGrade.objects.get(team=team, scope=TeamGrade.SCOPE_CAPSTONE)
-        self.assertEqual(placeholder.stage_label, 'Unscheduled')
-        self.assertIsNone(placeholder.schedule_id)
+        self.assertFalse(TeamGrade.objects.filter(team=team, scope=TeamGrade.SCOPE_CAPSTONE).exists())
+
+        placeholder = TeamGrade.objects.create(
+            team=team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label='Unscheduled',
+        )
 
         team.ready_for_stage = concept_stage.label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
@@ -1179,6 +1192,96 @@ class GradeCenterApiTests(APITestCase):
         self.assertIsNotNone(grade.peer_score)
         self.assertEqual(StudentStageGrade.objects.filter(team_grade=grade).exclude(peer_score=None).count(), 2)
 
+    def test_missing_evaluation_for_one_student_does_not_wipe_other_peer_scores(self):
+        grade = self._capstone_grade()
+        self._enable_capstone_peer_grading()
+
+        third_student = User.objects.create_user(
+            username='2024-0003',
+            password='pass12345',
+            role='student',
+            first_name='Bob',
+            last_name='Smith',
+        )
+        TeamMembership.objects.create(team=self.capstone_team, student=third_student, order=2)
+
+        # 3 members -> required = 3 * 2 = 6
+        # Submissions evaluating second_student
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=self.student,
+            evaluatee=self.second_student,
+            total_score=Decimal('4.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 4, 'max': 5}],
+        )
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=third_student,
+            evaluatee=self.second_student,
+            total_score=Decimal('5.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 5, 'max': 5}],
+        )
+
+        # Submissions evaluating third_student
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=self.student,
+            evaluatee=third_student,
+            total_score=Decimal('4.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 4, 'max': 5}],
+        )
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=self.second_student,
+            evaluatee=third_student,
+            total_score=Decimal('5.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 5, 'max': 5}],
+        )
+
+        # 2 dummy submissions to satisfy required = 6 count check
+        dummy_user = User.objects.create_user(
+            username='dummy-student',
+            password='pass12345',
+            role='student',
+        )
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=dummy_user,
+            evaluatee=self.second_student,
+            total_score=Decimal('4.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 4, 'max': 5}],
+        )
+        PeerEvaluationSubmission.objects.create(
+            team_grade=grade,
+            evaluator=dummy_user,
+            evaluatee=third_student,
+            total_score=Decimal('4.00'),
+            max_score=Decimal('5.00'),
+            breakdown=[{'criteriaName': 'Technical Quality', 'score': 4, 'max': 5}],
+        )
+
+        from grading.grades.peer_eval import sync_peer_summaries
+        sync_peer_summaries(grade)
+
+        grade.refresh_from_db()
+
+        student_sg = StudentStageGrade.objects.get(team_grade=grade, student=self.student)
+        self.assertIsNone(student_sg.peer_score)
+        self.assertIsNone(student_sg.final_grade)
+
+        second_sg = StudentStageGrade.objects.get(team_grade=grade, student=self.second_student)
+        self.assertIsNotNone(second_sg.peer_score)
+
+        third_sg = StudentStageGrade.objects.get(team_grade=grade, student=third_student)
+        self.assertIsNotNone(third_sg.peer_score)
+
+        self.assertEqual(grade.peer_score, Decimal('86.67'))
+
     def test_grade_detail_does_not_refresh_peer_summaries(self):
         grade = self._capstone_grade()
         PeerEvaluationSubmission.objects.create(
@@ -1768,3 +1871,20 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(sg1.panel_score, Decimal('85.00'))
         self.assertEqual(sg2.panel_score, Decimal('75.00'))
         self.assertEqual(tg.panel_score, Decimal('80.00'))
+
+    def test_save_bypass_clean(self):
+        grade = TeamGrade.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label='Test Stage',
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+        )
+        grade.panel_weight = 40
+        with self.assertRaises(DjangoValidationError):
+            grade.save(clean=True)
+        grade.save(clean=False)
+        grade.refresh_from_db()
+        self.assertEqual(grade.panel_weight, 40)

@@ -1895,7 +1895,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       if (!_isCapstoneAdmin) 'year_level': _pitLeadYear ?? '3rd Year',
       'member_ids': <String>[],
       'leader_id': '',
-      'adviser_id': '',
+      'adviser_name': '',
     };
     _deriveLevelOnRow(row);
     setState(() {
@@ -2063,6 +2063,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           'member_ids',
           'leader_id',
           'adviser_id',
+          'adviser_name',
           'team name',
           'capstone project',
           'pit project',
@@ -2078,16 +2079,16 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
         } else if (!_isCapstoneAdmin) {
           if (!isClientTemplate) {
-            if (headers.contains('adviser_id') || headers.contains('year_level')) {
-              warning = 'Wrong template? PIT import templates should not contain "adviser_id" or "year_level" columns. These will be ignored or cleared.';
+            if (headers.contains('adviser_id') || headers.contains('adviser_name') || headers.contains('year_level')) {
+              warning = 'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
             } else if (!headers.contains('member_ids') || !headers.contains('leader_id')) {
               warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
             }
           }
         } else {
           if (!isClientTemplate) {
-            if (!headers.contains('adviser_id') || !headers.contains('year_level')) {
-              warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_id" columns (or "Team Name" and "Team Members" for client format).';
+            if ((!headers.contains('adviser_id') && !headers.contains('adviser_name')) || !headers.contains('year_level')) {
+              warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
             }
           }
         }

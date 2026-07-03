@@ -309,13 +309,10 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         assert_active_semester_for_create(user, semester)
         if self.instance is not None:
             assert_team_writable(user, self.instance)
-        from academic_period_management.capstone_mode import assert_capstone_team_creation_allowed
-
-        if user_is_admin(user) and self.instance is None and not self.context.get('section_import'):
-            try:
-                assert_capstone_team_creation_allowed(semester)
-            except ValueError as exc:
-                raise serializers.ValidationError({'non_field_errors': [str(exc)]}) from exc
+            if not attrs.get('level'):
+                attrs['level'] = self.instance.level
+            if not attrs.get('year_level'):
+                attrs['year_level'] = self.instance.year_level
         from .team_levels import normalize_year_level
 
         if user_is_admin(user) and not normalize_year_level(attrs.get('year_level', '')):
@@ -374,10 +371,15 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                 attrs['section'] = import_section
         attrs['section'] = ' '.join((attrs.get('section') or '').strip().split())
 
-        if user_is_admin(user) and 'PIT' in attrs['level'] and not self.context.get('section_import'):
-            raise serializers.ValidationError({'level': 'Admins can only manage capstone teams.'})
         if user_is_pit_lead_only(user) and 'Capstone' in attrs['level']:
             raise serializers.ValidationError({'level': 'PIT Leads can only manage PIT teams.'})
+
+        if self.instance is None and attrs.get('level') and 'Capstone' in attrs['level']:
+            from academic_period_management.capstone_mode import assert_capstone_team_creation_allowed
+            try:
+                assert_capstone_team_creation_allowed(semester)
+            except ValueError as exc:
+                raise serializers.ValidationError({'non_field_errors': [str(exc)]}) from exc
 
         existing = StudentTeam.objects.filter(name=attrs['name'], level=attrs['level'])
         team_id = self.context.get('team_id')
@@ -476,9 +478,6 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             for index, student_id in enumerate(member_ids)
         ]
         TeamMembership.objects.bulk_create(memberships)
-        
-        # Update user team_id field
-        User.objects.filter(pk__in=member_ids).update(team_id=str(team.id))
 
 
 class BulkTeamRowSerializer(serializers.Serializer):
@@ -489,6 +488,7 @@ class BulkTeamRowSerializer(serializers.Serializer):
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
     member_ids = serializers.ListField(child=serializers.CharField(), min_length=1, max_length=4)
     leader_id = serializers.CharField()
+    adviser_name = serializers.CharField(required=False, allow_blank=True)
     adviser_id = serializers.CharField(required=False, allow_blank=True)
 
     def validate(self, attrs):

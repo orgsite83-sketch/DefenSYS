@@ -12,6 +12,8 @@ class GuestPanelistPrincipal:
     is_guest_panelist = True
     is_active = True
     is_anonymous = False
+    is_superuser = False
+    is_staff = False
 
     def __init__(self, token):
         self.token = token
@@ -27,6 +29,27 @@ class GuestPanelistPrincipal:
 
     def __str__(self):
         return self.username
+
+    def get_username(self):
+        return self.username
+
+    def get_all_permissions(self, obj=None):
+        return set()
+
+    def get_user_permissions(self, obj=None):
+        return set()
+
+    def get_group_permissions(self, obj=None):
+        return set()
+
+    def has_perm(self, perm, obj=None):
+        return False
+
+    def has_perms(self, perm_list, obj=None):
+        return all(self.has_perm(perm, obj) for perm in perm_list)
+
+    def has_module_perms(self, app_label):
+        return False
 
 
 class GuestJWTAuthentication(JWTAuthentication):

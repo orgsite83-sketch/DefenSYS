@@ -71,11 +71,12 @@ class SemesterCreateSerializer(serializers.Serializer):
         from .capstone_mode import default_capstone_flags_for_label, normalize_capstone_flags
 
         label = validated_data['label']
-        _, phase = default_capstone_flags_for_label(label)
+        creation_enabled, phase = default_capstone_flags_for_label(label)
         semester = Semester.objects.create(
             school_year=self.context['school_year'],
             label=label,
             capstone_program_phase=phase,
+            capstone_team_creation_enabled=creation_enabled,
         )
         normalize_capstone_flags(semester)
         semester.save(update_fields=['capstone_program_phase', 'capstone_team_creation_enabled'])

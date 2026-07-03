@@ -148,3 +148,19 @@ class DefenseBoardApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_pit_lead_only_sees_assigned_year_pit_schedules_with_unnormalized_year(self):
+        unnormalized_pit_lead = User.objects.create_user(
+            username='pit-lead-unnorm',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year=' 2nd Year ',
+        )
+        self.client.force_authenticate(user=unnormalized_pit_lead)
+
+        response = self.client.get('/api/defense/board/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['counts']['all'], 1)
+        self.assertEqual(response.data['schedules'][0]['team_name'], 'Team Circuit')

@@ -29,7 +29,10 @@ def _users_matching_full_name(value, *, role=None):
 
     queryset = User.objects.all()
     if role:
-        queryset = queryset.filter(role=role)
+        if isinstance(role, (list, tuple, set)):
+            queryset = queryset.filter(role__in=role)
+        else:
+            queryset = queryset.filter(role=role)
 
     matches = []
     for user in queryset:
@@ -41,7 +44,10 @@ def _users_matching_full_name(value, *, role=None):
 def _user_by_username_ref(raw, *, role=None):
     queryset = User.objects.filter(username__iexact=raw)
     if role:
-        queryset = queryset.filter(role=role)
+        if isinstance(role, (list, tuple, set)):
+            queryset = queryset.filter(role__in=role)
+        else:
+            queryset = queryset.filter(role=role)
     return queryset.first()
 
 
@@ -69,21 +75,27 @@ def resolve_user_by_full_name(value, *, role=None, field_label='User'):
     return matches[0], None
 
 
-def resolve_adviser_by_name(name):
+def resolve_adviser(name_or_username):
     """
-    Resolve CSV adviser_id (full name) to a User and validation status.
+    Resolve CSV adviser reference (full name or username/faculty ID) to a User and validation status.
     Returns (user_or_none, status, display_name_or_empty).
     """
-    raw = (name or '').strip()
+    raw = (name_or_username or '').strip()
     if not raw:
         return None, ADVISER_STATUS_NONE, ''
 
+    # 1. Try resolving by username first (matching role=['faculty', 'admin'])
+    user = _user_by_username_ref(raw, role=['faculty', 'admin'])
+    if user:
+        if not user.is_active:
+            return None, ADVISER_STATUS_INACTIVE, display_name(user)
+        if user.role == 'faculty' and not getattr(user, 'is_adviser', False):
+            return None, ADVISER_STATUS_NOT_ADVISER, display_name(user)
+        return user, ADVISER_STATUS_VALID, display_name(user)
+
+    # 2. Try resolving by full name
     normalized = normalize_name(raw)
-    faculty_matches = [
-        user
-        for user in User.objects.filter(role__in=['faculty', 'admin'])
-        if normalize_name(display_name(user)) == normalized
-    ]
+    faculty_matches = _users_matching_full_name(raw, role=['faculty', 'admin'])
     if len(faculty_matches) > 1:
         return None, ADVISER_STATUS_USER_NOT_FOUND, ''
     if len(faculty_matches) == 1:
@@ -96,6 +108,10 @@ def resolve_adviser_by_name(name):
 
     all_matches = _users_matching_full_name(raw)
     if not all_matches:
+        # Check if username exists for ANY role (to return NOT_ADVISER if it's e.g. a student username)
+        any_user = _user_by_username_ref(raw)
+        if any_user:
+            return None, ADVISER_STATUS_NOT_ADVISER, display_name(any_user)
         return None, ADVISER_STATUS_USER_NOT_FOUND, ''
     if len(all_matches) > 1:
         return None, ADVISER_STATUS_USER_NOT_FOUND, ''
@@ -163,26 +179,24 @@ def validate_bulk_team_row(
     issues = []
     warnings = []
     pit_row = is_pit_bulk_row(data, user)
-    raw_adviser = (data.get('adviser_id') or '').strip()
+    raw_adviser = (data.get('adviser_name') or data.get('adviser_id') or '').strip()
     adviser_ref = '' if pit_row else raw_adviser
     if pit_row:
         if raw_adviser:
+            column_name = 'adviser_name' if data.get('adviser_name') else 'adviser_id'
             warnings.append(
-                f"PIT teams do not have advisers. The adviser_id column ('{raw_adviser}') will be ignored."
+                f"PIT teams do not have advisers. The {column_name} column ('{raw_adviser}') will be ignored."
             )
         data = dict(data)
+        data['adviser_name'] = ''
         data['adviser_id'] = ''
         adviser, adviser_status, adviser_name = None, ADVISER_STATUS_NONE, ''
     else:
-        adviser, adviser_status, adviser_name = resolve_adviser_by_name(adviser_ref)
+        adviser, adviser_status, adviser_name = resolve_adviser(adviser_ref)
 
     if not pit_row and adviser_ref and adviser_status not in (ADVISER_STATUS_VALID,):
         normalized = normalize_name(adviser_ref)
-        duplicate_advisers = [
-            user
-            for user in User.objects.filter(role__in=['faculty', 'admin'])
-            if normalize_name(display_name(user)) == normalized
-        ]
+        duplicate_advisers = _users_matching_full_name(adviser_ref, role=['faculty', 'admin'])
         if len(duplicate_advisers) > 1:
             issues.append(
                 f'Adviser "{adviser_ref}": multiple users match that name. '
@@ -282,10 +296,10 @@ def preview_bulk_teams(
     preview_rows = []
     summary = {
         'total': 0,
+        'ready': 0,
         'with_adviser': 0,
         'without_adviser': 0,
         'adviser_invalid': 0,
-        'ready': 0,
     }
 
     for index, row in enumerate(rows, start=1):
@@ -306,14 +320,14 @@ def preview_bulk_teams(
                 'row': index,
                 'sheet_row': index + 1,
                 'team_name': row.get('team_name', ''),
-                'adviser_id': (row.get('adviser_id') or '').strip(),
+                'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
+                'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
-                'adviser_name': '',
                 'ready': False,
                 'issues': prep_issues,
             })
             summary['total'] += 1
-            raw_adviser = (row.get('adviser_id') or '').strip()
+            raw_adviser = (row.get('adviser_id') or row.get('adviser_name') or '').strip()
             if raw_adviser:
                 summary['adviser_invalid'] += 1
             else:
@@ -333,14 +347,14 @@ def preview_bulk_teams(
                 'row': index,
                 'sheet_row': index + 1,
                 'team_name': row.get('team_name', ''),
-                'adviser_id': (row.get('adviser_id') or '').strip(),
+                'adviser_id': (row.get('adviser_id') or row.get('adviser_name') or '').strip(),
+                'adviser_name': (row.get('adviser_name') or row.get('adviser_id') or '').strip(),
                 'adviser_status': ADVISER_STATUS_NONE,
-                'adviser_name': '',
                 'ready': False,
-                'issues': [_format_serializer_errors(row_serializer.errors)],
+                'issues': ['; '.join(format_bulk_import_errors(row_serializer.errors))],
             })
             summary['total'] += 1
-            raw_adviser = (row.get('adviser_id') or '').strip()
+            raw_adviser = (row.get('adviser_id') or row.get('adviser_name') or '').strip()
             if raw_adviser:
                 summary['adviser_invalid'] += 1
             else:
@@ -406,9 +420,6 @@ def format_bulk_import_errors(errors):
     return [str(errors)]
 
 
-def _format_serializer_errors(errors):
-    return '; '.join(format_bulk_import_errors(errors))
-
 
 def build_team_payload_from_row(result, user=None):
     data = result['data']
@@ -429,4 +440,4 @@ def build_team_payload_from_row(result, user=None):
     }
 
 
-resolve_adviser_username = resolve_adviser_by_name
+

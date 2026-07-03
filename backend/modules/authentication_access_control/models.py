@@ -19,14 +19,12 @@ class User(AbstractUser):
     objects = DefenSysUserManager()
 
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
-    team_id = models.CharField(max_length=100, blank=True, null=True)
 
     # Faculty Specific Roles
     is_panelist = models.BooleanField(default=False)
     is_pit_lead = models.BooleanField(default=False)
     pit_lead_year = models.CharField(max_length=50, blank=True, null=True)
     is_adviser = models.BooleanField(default=False)
-    adviser_phase = models.CharField(max_length=50, blank=True, null=True)
     is_documenter = models.BooleanField(default=False)
     is_uploader = models.BooleanField(default=False)
     e_signature = models.ImageField(

@@ -5,7 +5,7 @@ void main() {
   group('parseTeamBulkCsv', () {
     test('parses valid capstone CSV rows', () {
       const csv = '''
-team_name,project_title,year_level,member_ids,leader_id,adviser_id
+team_name,project_title,year_level,member_ids,leader_id,adviser_name
 Team Alpha,Project A,3rd Year,101|102,101,201
 ''';
 
@@ -38,7 +38,7 @@ Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,"REYES, Carlos"
       expect(result.rows, hasLength(2));
       expect(result.rows[0]['team_name'], 'Team SkyLedger');
       expect(result.rows[0]['project_title'], 'Alumni Career Tracker');
-      expect(result.rows[0]['adviser_id'], 'Ricardo Fontanilla');
+      expect(result.rows[0]['adviser_name'], 'Ricardo Fontanilla');
       expect(result.rows[0]['member_ids'], [
         'VILLAR, Marcus',
         'ONG, Patricia',
@@ -49,7 +49,7 @@ Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,"REYES, Carlos"
 
       expect(result.rows[1]['team_name'], 'Team CodeLearners');
       expect(result.rows[1]['project_title'], 'Smart Campus Navigator');
-      expect(result.rows[1]['adviser_id'], 'Ricardo Fontanilla');
+      expect(result.rows[1]['adviser_name'], 'Ricardo Fontanilla');
       expect(result.rows[1]['member_ids'], ['REYES, Carlos']);
       expect(result.rows[1]['leader_id'], 'REYES, Carlos');
     });
@@ -65,7 +65,7 @@ Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,"REYES, Carlos"
             'year_level': '4th Year',
             'member_ids': [1, 2],
             'leader_id': 1,
-            'adviser_id': 9,
+            'adviser_name': 9,
           },
         ],
         isCapstoneAdmin: true,
@@ -81,7 +81,7 @@ Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,"REYES, Carlos"
   group('parseTeamBulkCsvWithContext', () {
     test('applies PIT level for pit lead context', () {
       const csv = '''
-team_name,project_title,year_level,member_ids,leader_id,adviser_id
+team_name,project_title,year_level,member_ids,leader_id,adviser_name
 Team PIT,Title,3rd Year,101,101,
 ''';
 
@@ -92,7 +92,7 @@ Team PIT,Title,3rd Year,101,101,
       );
 
       expect(result.rows.first['level'], '3rd Year PIT');
-      expect(result.rows.first.containsKey('adviser_id'), isTrue);
+      expect(result.rows.first.containsKey('adviser_name'), isTrue);
     });
 
     test('PIT header omits adviser column', () {
@@ -110,12 +110,12 @@ Team PIT,Title,3rd Year,101,101,
 
       expect(csv.startsWith(teamBulkImportHeaderPit), isTrue);
       expect(csv.contains('Adviser'), isFalse);
-      expect(csv.contains('adviser_id'), isFalse);
+      expect(csv.contains('adviser_name'), isFalse);
     });
 
     test('does not set level for capstone admin context', () {
       const csv = '''
-team_name,project_title,year_level,member_ids,leader_id,adviser_id
+team_name,project_title,year_level,member_ids,leader_id,adviser_name
 Team Cap,Title,3rd Year,101,101,
 ''';
 

@@ -253,10 +253,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         children: [
           _tableHeader(
             columns: const [
-              _ColumnSpec('Term', 1.2),
-              _ColumnSpec('Capstone', 1.1),
-              _ColumnSpec('System Status', 1.6),
-              _ColumnSpec('Action', 0.9),
+              _ColumnSpec('Term', 1.5),
+              _ColumnSpec('System Status', 2.0),
+              _ColumnSpec('Action', 1.0),
             ],
           ),
           if (selectedYear == null)
@@ -499,9 +498,6 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   ) {
     final semesterId = _asInt(semester['id']);
     final isActive = semester['is_active'] == true;
-    final capstoneLabel = _capstonePhaseLabel(
-      semester['capstone_program_phase']?.toString(),
-    );
 
     return Container(
       height: _rowHeight,
@@ -514,7 +510,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
-            flex: 120,
+            flex: 150,
             child: Text(
               semester['label']?.toString() ?? 'Unknown semester',
               style: const TextStyle(
@@ -524,9 +520,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               ),
             ),
           ),
-          Expanded(flex: 110, child: _capstoneChip(capstoneLabel)),
           Expanded(
-            flex: 160,
+            flex: 200,
             child: isActive
                 ? const DefensysStatusBadge.success(
                     label: 'Active (Write-Enabled)',
@@ -535,7 +530,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 : const DefensysStatusBadge.inactive(label: 'Inactive'),
           ),
           Expanded(
-            flex: 90,
+            flex: 100,
             child: DefensysUi.flatSwitch(
               value: isActive,
               scale: 0.88,
@@ -602,7 +597,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 const SizedBox(width: 10),
                 const Expanded(
                   child: Text(
-                    'Auto-derived based on active semester: Capstone 1 in 2nd Sem, Capstone 2 in 1st Sem.',
+                    'Capstone-specific phase. PIT for 1st–3rd year cohorts is active during both terms.',
                     style: TextStyle(color: _muted, fontSize: 12, height: 1.35),
                   ),
                 ),
@@ -836,10 +831,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   String _activeBannerSubtitle(Map<String, dynamic> active) {
     final mode = active['capstone_mode']?.toString();
     if (mode == 'capstone_1_intake') {
-      return 'Capstone 1 intake — peer evaluation and adviser grading apply to this term.';
+      return 'Capstone 1 Intake & PIT term — peer evaluation and adviser grading apply to this term.';
     }
     if (mode == 'capstone_2_continue') {
-      return 'Capstone 2 term — manage existing teams.';
+      return 'Capstone 2 & PIT term — manage existing teams and active PIT workflows.';
     }
     return 'All uploads, evaluations, and peer rubrics are routing to this period.';
   }

@@ -35,6 +35,7 @@ class CapstoneModeTests(APITestCase):
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
+            capstone_team_creation_enabled=True,
         )
         info = capstone_operating_mode(semester)
         self.assertEqual(info['mode'], MODE_CAPSTONE_2_CONTINUE)
@@ -46,6 +47,7 @@ class CapstoneModeTests(APITestCase):
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
+            capstone_team_creation_enabled=True,
         )
         info = capstone_operating_mode(semester)
         self.assertEqual(info['mode'], MODE_CAPSTONE_1_INTAKE)
@@ -57,6 +59,7 @@ class CapstoneModeTests(APITestCase):
             school_year=school_year,
             label=Semester.FIRST,
             is_active=True,
+            capstone_team_creation_enabled=True,
         )
         student = User.objects.create_user(
             username='capstone-leader',
@@ -151,7 +154,7 @@ class CapstoneModeTests(APITestCase):
         semester.save()
         semester.refresh_from_db()
         self.assertEqual(semester.capstone_program_phase, Semester.PHASE_CAPSTONE_1)
-        self.assertTrue(semester.capstone_team_creation_enabled)
+        self.assertFalse(semester.capstone_team_creation_enabled)
 
     def test_activate_second_sem_derives_capstone_1(self):
         admin = User.objects.create_user(
@@ -165,6 +168,7 @@ class CapstoneModeTests(APITestCase):
             school_year=school_year,
             label=Semester.SECOND,
             is_active=False,
+            capstone_team_creation_enabled=True,
         )
 
         response = self.client.patch(
@@ -191,6 +195,7 @@ class CapstoneModeTests(APITestCase):
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
+            capstone_team_creation_enabled=True,
         )
 
         response = self.client.patch(
@@ -203,3 +208,29 @@ class CapstoneModeTests(APITestCase):
             response.data['semester']['capstone_program_phase'],
             Semester.PHASE_CAPSTONE_1,
         )
+
+    def test_patch_updates_capstone_team_creation_enabled(self):
+        admin = User.objects.create_user(
+            username='admin-capstone-toggle',
+            password='pass12345',
+            role='admin',
+        )
+        self.client.force_authenticate(user=admin)
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.SECOND,
+            is_active=True,
+            capstone_team_creation_enabled=True,
+        )
+
+        response = self.client.patch(
+            f'/api/academic-periods/semesters/{semester.id}/',
+            {'capstone_team_creation_enabled': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(response.data['semester']['capstone_team_creation_enabled'])
+        
+        semester.refresh_from_db()
+        self.assertFalse(semester.capstone_team_creation_enabled)

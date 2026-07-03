@@ -56,8 +56,8 @@ class StudentTeamApiTests(APITestCase):
             school_year=self.school_year,
             label=Semester.FIRST,
             is_active=True,
-            capstone_team_creation_enabled=False,
-            capstone_program_phase=Semester.PHASE_NONE,
+            capstone_team_creation_enabled=True,
+            capstone_program_phase=Semester.PHASE_CAPSTONE_2,
         )
         self.second_semester = Semester.objects.create(
             school_year=self.school_year,
@@ -162,7 +162,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['team']['adviser_name'], 'Ada Lovelace')
         self.assertEqual(TeamAdviserAssignment.objects.filter(team_id=response.data['team']['id']).count(), 1)
         self.student_1.refresh_from_db()
-        self.assertEqual(self.student_1.team_id, str(response.data['team']['id']))
+        self.assertEqual(self.student_1.team_memberships.first().team_id, response.data['team']['id'])
 
     def test_teams_list_exposes_capstone_mode(self):
         response = self.client.get('/api/teams/?level=Capstone')
@@ -444,7 +444,7 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['errors'][0]['team_name'], 'Team Error Name')
         self.assertEqual(response.data['errors'][0]['row'], 1)
 
-    def _bulk_team_row(self, team_name, adviser_id='', leader_id='Juan Dela Cruz'):
+    def _bulk_team_row(self, team_name, adviser_id='', leader_id='Juan Dela Cruz', adviser_name=''):
         return {
             'team_name': team_name,
             'project_title': f'{team_name} Project',
@@ -452,6 +452,7 @@ class StudentTeamApiTests(APITestCase):
             'year_level': '3rd Year',
             'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
             'leader_id': leader_id,
+            'adviser_name': adviser_name or adviser_id,
             'adviser_id': adviser_id,
         }
 
@@ -1540,16 +1541,189 @@ class StudentTeamApiTests(APITestCase):
             semester=self.first_semester,
             year_level='3rd Year',
         )
-        response_invalid = self.client.post(
+        response_valid = self.client.post(
             '/api/teams/',
             {
-                'name': 'Invalid Capstone 2 Team',
+                'name': 'Valid 3rd Year Capstone 2 Team',
                 'leader_id': student_3rd.id,
                 'member_ids': [student_3rd.id],
             },
             format='json',
         )
-        self.assertEqual(response_invalid.status_code, 400)
-        self.assertIn('level', response_invalid.data)
-        self.assertIn('Only 4th Year Capstone teams can be created during Capstone 2', response_invalid.data['level'][0])
+        self.assertEqual(response_valid.status_code, 201)
+        self.assertEqual(response_valid.data['team']['level'], StudentTeam.LEVEL_3_CAPSTONE)
+
+    def test_delete_team_clean(self):
+        self._activate_capstone_intake_semester()
+        team = StudentTeam.objects.create(
+            name='Team Delete Clean',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        response = self.client.delete(f'/api/teams/{team.id}/')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(StudentTeam.objects.filter(id=team.id).exists())
+
+    def test_delete_team_has_grades_schedules_blocked(self):
+        self._activate_capstone_intake_semester()
+        team = StudentTeam.objects.create(
+            name='Team Delete Blocked',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        from defense.scheduler.models import DefenseSchedule
+        from defense.stages.models import DefenseStage
+        import datetime
+        
+        concept = DefenseStage.objects.first()
+        # Create a defense schedule
+        DefenseSchedule.objects.create(
+            semester=self.second_semester,
+            team=team,
+            scope='capstone',
+            defense_stage=concept,
+            scheduled_date=datetime.date.today(),
+            start_time=datetime.time(9, 0),
+            room='Room 1',
+        )
+
+        response = self.client.delete(f'/api/teams/{team.id}/')
+        self.assertEqual(response.status_code, 409)
+        self.assertTrue(StudentTeam.objects.filter(id=team.id).exists())
+
+    def test_delete_team_has_grades_schedules_non_admin_force_forbidden(self):
+        self._activate_capstone_intake_semester()
+        team = StudentTeam.objects.create(
+            name='Team Delete Force Forbidden',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        from defense.scheduler.models import DefenseSchedule
+        from defense.stages.models import DefenseStage
+        import datetime
+        
+        concept = DefenseStage.objects.first()
+        # Create a defense schedule
+        DefenseSchedule.objects.create(
+            semester=self.second_semester,
+            team=team,
+            scope='capstone',
+            defense_stage=concept,
+            scheduled_date=datetime.date.today(),
+            start_time=datetime.time(9, 0),
+            room='Room 1',
+        )
+
+        # Authenticate as faculty
+        self.client.force_authenticate(user=self.adviser)
+        response = self.client.delete(f'/api/teams/{team.id}/?force=true')
+        self.assertEqual(response.status_code, 403)
+        self.assertTrue(StudentTeam.objects.filter(id=team.id).exists())
+
+    def test_delete_team_has_grades_schedules_admin_force_success(self):
+        self._activate_capstone_intake_semester()
+        team = StudentTeam.objects.create(
+            name='Team Delete Force Success',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        from defense.scheduler.models import DefenseSchedule
+        from defense.stages.models import DefenseStage
+        import datetime
+        
+        concept = DefenseStage.objects.first()
+        # Create a defense schedule
+        DefenseSchedule.objects.create(
+            semester=self.second_semester,
+            team=team,
+            scope='capstone',
+            defense_stage=concept,
+            scheduled_date=datetime.date.today(),
+            start_time=datetime.time(9, 0),
+            room='Room 1',
+        )
+
+        # Authenticate as admin
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.delete(f'/api/teams/{team.id}/?force=true')
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(StudentTeam.objects.filter(id=team.id).exists())
+
+    def test_resolve_adviser_optimized(self):
+        from .bulk_import import (
+            resolve_adviser,
+            ADVISER_STATUS_VALID,
+            ADVISER_STATUS_INACTIVE,
+            ADVISER_STATUS_NOT_ADVISER,
+            ADVISER_STATUS_USER_NOT_FOUND,
+        )
+        
+        # Test valid adviser (Ada Lovelace) by full name
+        user, status, name = resolve_adviser('Ada Lovelace')
+        self.assertEqual(status, ADVISER_STATUS_VALID)
+        self.assertEqual(user, self.adviser)
+        self.assertEqual(name, 'Ada Lovelace')
+
+        # Test valid adviser by username
+        user, status, name = resolve_adviser('faculty-1')
+        self.assertEqual(status, ADVISER_STATUS_VALID)
+        self.assertEqual(user, self.adviser)
+        self.assertEqual(name, 'Ada Lovelace')
+        
+        # Test inactive adviser
+        self.adviser.is_active = False
+        self.adviser.save()
+        user, status, name = resolve_adviser('Ada Lovelace')
+        self.assertEqual(status, ADVISER_STATUS_INACTIVE)
+        self.assertEqual(name, 'Ada Lovelace')
+
+        user, status, name = resolve_adviser('faculty-1')
+        self.assertEqual(status, ADVISER_STATUS_INACTIVE)
+        self.assertEqual(name, 'Ada Lovelace')
+
+        self.adviser.is_active = True
+        self.adviser.save()
+        
+        # Test non-adviser faculty by name and username
+        non_adviser_faculty = User.objects.create_user(
+            username='faculty-3',
+            password='pass12345',
+            role='faculty',
+            first_name='Alan',
+            last_name='Turing',
+            is_adviser=False,
+        )
+        user, status, name = resolve_adviser('Alan Turing')
+        self.assertEqual(status, ADVISER_STATUS_NOT_ADVISER)
+
+        user, status, name = resolve_adviser('faculty-3')
+        self.assertEqual(status, ADVISER_STATUS_NOT_ADVISER)
+        
+        # Test name that does not exist
+        user, status, name = resolve_adviser('Non Existent Adviser')
+        self.assertEqual(status, ADVISER_STATUS_USER_NOT_FOUND)
+        
+        # Test duplicate names
+        duplicate_adviser = User.objects.create_user(
+            username='faculty-4',
+            password='pass12345',
+            role='faculty',
+            first_name='Ada',
+            last_name='Lovelace',
+            is_adviser=True,
+        )
+        user, status, name = resolve_adviser('Ada Lovelace')
+        self.assertEqual(status, ADVISER_STATUS_USER_NOT_FOUND)
 

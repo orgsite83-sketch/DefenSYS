@@ -224,7 +224,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     }
   }
 
-  Future<bool> deleteTeam(int teamId) async {
+  Future<bool> deleteTeam(int teamId, {bool force = false}) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -232,9 +232,9 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     );
 
     try {
+      final urlStr = force ? '$baseUrl/$teamId/?force=true' : '$baseUrl/$teamId/';
       final response = await _client.delete(
-        Uri.parse('$baseUrl/$teamId/'),
-        
+        Uri.parse(urlStr),
       );
 
       if (response.statusCode == 200) {

@@ -97,6 +97,7 @@ class PitInstructorAssignmentSerializer(serializers.ModelSerializer):
 
 class ManagedUserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
+    team_id = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
     displayRole = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -129,9 +130,12 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'email': {'required': False, 'allow_blank': True},
             'first_name': {'required': False, 'allow_blank': True},
             'last_name': {'required': False, 'allow_blank': True},
-            'team_id': {'required': False, 'allow_null': True, 'allow_blank': True},
             'pit_lead_year': {'required': False, 'allow_null': True, 'allow_blank': True},
         }
+
+    def get_team_id(self, obj):
+        membership = obj.team_memberships.first()
+        return str(membership.team_id) if membership else None
 
     def get_name(self, obj):
         full_name = f'{obj.first_name} {obj.last_name}'.strip()
@@ -168,8 +172,6 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         password = validated_data.pop('password', '') or validated_data['username']
         self._normalize_role_fields(validated_data)
         user = User.objects.create_user(password=password, **validated_data)
-        user.adviser_phase = None
-        user.save(update_fields=['adviser_phase'])
         return user
 
     def update(self, instance, validated_data):
@@ -179,7 +181,6 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
         for field, value in validated_data.items():
             setattr(instance, field, value)
-        instance.adviser_phase = None
         if password:
             instance.set_password(password)
         instance.save()

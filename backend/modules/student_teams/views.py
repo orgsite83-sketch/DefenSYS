@@ -60,13 +60,6 @@ def team_audit_values(team, **extra):
     return values
 
 
-def teams_queryset():
-    return (
-        StudentTeam.objects.select_related('semester', 'semester__school_year', 'leader', 'adviser')
-        .prefetch_related('memberships', 'memberships__student')
-    )
-
-
 def teams_queryset_for_user(user):
     return visible_teams_for(user)
 
@@ -170,7 +163,6 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
             role__in=['faculty', 'admin'],
             is_active=True,
         ).order_by('username')
-    active = active_semester()
     
     payload = {
         'active_semester': SemesterSerializer(active).data if active else None,
@@ -186,11 +178,16 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     return payload
 
 
-def counts_payload(queryset=None, stats_base=None):
-    base = stats_base if stats_base is not None else teams_queryset()
-    current = queryset if queryset is not None else base
+def counts_payload(queryset=None, stats_base=None, user=None):
+    if stats_base is None:
+        if user:
+            visible = teams_queryset_for_user(user)
+            stats_base = apply_team_scope(visible, scope='active', user=user)
+        else:
+            stats_base = StudentTeam.objects.none()
+    current = queryset if queryset is not None else stats_base
     return {
-        'all': base.count(),
+        'all': stats_base.count(),
         'filtered': current.count(),
         'pending': current.filter(status=StudentTeam.STATUS_PENDING).count(),
         'approved': current.filter(status=StudentTeam.STATUS_APPROVED).count(),
@@ -266,11 +263,11 @@ class StudentTeamListCreateView(APIView):
         )
         serializer.is_valid(raise_exception=True)
         team = serializer.save()
-        team = teams_queryset().get(pk=team.pk)
+        team = teams_queryset_for_user(request.user).get(pk=team.pk)
 
         return Response({
             'team': StudentTeamSerializer(team, context={'user': request.user}).data,
-            'counts': counts_payload(),
+            'counts': counts_payload(user=request.user),
         }, status=status.HTTP_201_CREATED)
 
 
@@ -308,11 +305,11 @@ class StudentTeamDetailView(APIView):
                 reason=request.data.get('adviser_change_reason', ''),
                 request=request,
             )
-        team = teams_queryset().get(pk=team.pk)
+        team = teams_queryset_for_user(request.user).get(pk=team.pk)
 
         return Response({
             'team': StudentTeamSerializer(team, context={'user': request.user}).data,
-            'counts': counts_payload(),
+            'counts': counts_payload(user=request.user),
         })
 
     def delete(self, request, team_id):
@@ -325,18 +322,26 @@ class StudentTeamDetailView(APIView):
 
         has_schedules = DefenseSchedule.objects.filter(team=team).exists()
         has_grades = TeamGrade.objects.filter(team=team).exists()
+        force = request.query_params.get('force', 'false').lower() == 'true'
+
         if has_schedules or has_grades:
-            return Response(
-                {
-                    'warning': (
-                        'This team has defense schedules or grade records. '
-                        'Deleting it will permanently remove all grades, '
-                        'panelist scores, and peer evaluations. '
-                        'Consider changing the team status instead.'
-                    ),
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
+            if not force:
+                return Response(
+                    {
+                        'warning': (
+                            'This team has defense schedules or grade records. '
+                            'Deleting it will permanently remove all grades, '
+                            'panelist scores, and peer evaluations. '
+                            'Consider changing the team status instead.'
+                        ),
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
+            if getattr(request.user, 'role', None) != 'admin':
+                return Response(
+                    {'detail': 'Only administrators can force-delete teams with active schedules or grades.'},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
 
         member_ids = list(team.memberships.values_list('student_id', flat=True))
         audit_values = team_audit_values(
@@ -358,8 +363,7 @@ class StudentTeamDetailView(APIView):
             new_values={'deleted': True},
             request=request,
         )
-        User.objects.filter(pk__in=member_ids, team_id=str(team_id)).update(team_id=None)
-        return Response({'counts': counts_payload()}, status=status.HTTP_200_OK)
+        return Response({'counts': counts_payload(user=request.user)}, status=status.HTTP_200_OK)
 
 
 
@@ -590,7 +594,7 @@ class BulkImportTeamsView(APIView):
             'skipped_count': len(skipped),
             'errors': errors,
             'error_count': len(errors),
-            'counts': counts_payload(),
+            'counts': counts_payload(user=request.user),
             'adviser_filter': adviser_filter,
         }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
 

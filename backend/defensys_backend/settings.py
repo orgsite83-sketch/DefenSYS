@@ -278,6 +278,7 @@ REST_FRAMEWORK = {
         'token_refresh': '10/min',
         'login': '5/min',
         'anon': '10/min',
+        'logout': '5/min',
     },
 }
 

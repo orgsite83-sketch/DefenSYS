@@ -44,6 +44,10 @@ Before writing a script, check `execution/` per your directive. Only create new 
 
 Directives are living documents. When you discover API constraints, better approaches, common errors, or timing expectations—update the directive. But don't create or overwrite directives without asking unless explicitly told to. Directives are your instruction set and must be preserved (and improved upon over time, not extemporaneously used and then discarded).
 
+**4. Honestly consult the user on feature requests**
+
+Never blindly agree to user suggestions or feature requests. Be completely honest if a proposed feature is a bad idea, redundant, or presents risks (such as spamming users, causing performance issues, or violating architectural principles). Explain the reasoning clearly and consult with the user first before adding it to the implementation plan.
+
 ## Self-annealing loop
 
 Errors are learning opportunities. When something breaks:

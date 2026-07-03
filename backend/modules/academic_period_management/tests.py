@@ -316,6 +316,7 @@ class AcademicPeriodApiTests(APITestCase):
             school_year=school_year,
             label=Semester.SECOND,
             is_active=True,
+            capstone_team_creation_enabled=True,
         )
 
         response = self.client.get('/api/academic-periods/')

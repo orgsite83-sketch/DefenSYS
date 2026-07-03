@@ -1,3 +1,4 @@
+import logging
 from decimal import Decimal
 
 from django.conf import settings
@@ -5,6 +6,36 @@ from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import Q
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
+
+
+class TeamGradeQuerySet(models.QuerySet):
+    def with_relations(self):
+        return self.select_related(
+            'schedule',
+            'schedule__rubric',
+            'schedule__defense_stage',
+            'defense_stage',
+            'pit_event_config',
+            'pit_event_config__panel_rubric',
+            'pit_event_config__peer_rubric',
+            'team',
+            'team__leader',
+            'team__adviser',
+            'semester',
+            'semester__school_year',
+            'published_by',
+        ).prefetch_related(
+            'breakdowns',
+            'breakdowns__rubric',
+            'student_grades',
+            'student_grades__student',
+            'team__memberships',
+            'team__memberships__student',
+            'schedule__panel_assignments',
+            'schedule__panel_assignments__panelist',
+        )
 
 
 class TeamGrade(models.Model):
@@ -79,6 +110,8 @@ class TeamGrade(models.Model):
     published_at = models.DateTimeField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    objects = TeamGradeQuerySet.as_manager()
 
     class Meta:
         app_label = 'grading'
@@ -193,7 +226,7 @@ class TeamGrade(models.Model):
         self.published_at = timezone.now()
         self.save()
 
-    def save(self, *args, **kwargs):
+    def save(self, *args, clean=True, **kwargs):
         if self.scope == self.SCOPE_PIT:
             self.adviser_weight = 0
             self.defense_stage = None
@@ -204,7 +237,8 @@ class TeamGrade(models.Model):
             if self.defense_stage_id:
                 self.stage_label = self.defense_stage.label
         self.recalculate(keep_published=True)
-        self.full_clean()
+        if clean and not kwargs.get('update_fields'):
+            self.full_clean()
         super().save(*args, **kwargs)
 
         try:
@@ -222,8 +256,9 @@ class TeamGrade(models.Model):
                     sg.panel_score = self.panel_score
                 sg.save()
                 recalculate_student_grade(sg)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.exception("Failed to propagate grades to student stage grades on TeamGrade save.")
+            raise e
 
     def __str__(self):
         return f'{self.team} - {self.stage_label}'

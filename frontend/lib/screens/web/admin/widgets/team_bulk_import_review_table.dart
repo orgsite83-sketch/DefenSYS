@@ -217,8 +217,8 @@ class TeamBulkImportReviewTable extends StatelessWidget {
                   onRowChanged(index);
                 }),
                 if (isCapstoneAdmin)
-                  _field('Adviser (optional)', row['adviser_id']?.toString() ?? '', (v) {
-                    row['adviser_id'] = v;
+                  _field('Adviser (optional)', row['adviser_name']?.toString() ?? row['adviser_id']?.toString() ?? '', (v) {
+                    row['adviser_name'] = v;
                     onRowChanged(index);
                   }),
               ];

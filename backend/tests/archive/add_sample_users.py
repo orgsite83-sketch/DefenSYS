@@ -25,7 +25,6 @@ users_data = [
         'first_name': 'John',
         'last_name': 'Doe',
         'role': 'student',
-        'team_id': 'TEAM-001',
     },
     {
         'username': 'student2',
@@ -34,7 +33,6 @@ users_data = [
         'first_name': 'Jane',
         'last_name': 'Smith',
         'role': 'student',
-        'team_id': 'TEAM-002',
     },
     {
         'username': 'faculty1',

@@ -70,9 +70,6 @@ class Command(BaseCommand):
             WeeklyProgressReport.objects.filter(student_id=user.id).delete()
         except Exception:
             pass
-
-        User.objects.filter(pk=user.pk).update(team_id=None)
-
         queryset = User.objects.filter(pk=user.pk, role='student')
         deleted_count = queryset._raw_delete(queryset.db)
         if deleted_count == 0:

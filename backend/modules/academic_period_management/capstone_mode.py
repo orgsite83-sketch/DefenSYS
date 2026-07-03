@@ -38,12 +38,9 @@ def derive_capstone_team_creation_enabled(semester):
 
 
 def normalize_capstone_flags(semester):
-    """Derive and persist capstone phase + team-creation flag from term and roster data."""
+    """Derive and persist capstone phase from term and roster data."""
     semester.capstone_program_phase = derive_capstone_program_phase(semester)
-    semester.capstone_team_creation_enabled = derive_capstone_team_creation_enabled(
-        semester
-    )
-    return ['capstone_program_phase', 'capstone_team_creation_enabled']
+    return ['capstone_program_phase']
 
 
 def sync_capstone_flags_after_rollover(active_semester, team_updates):
@@ -59,7 +56,7 @@ def sync_capstone_flags_after_rollover(active_semester, team_updates):
 
     normalize_capstone_flags(first_semester)
     first_semester.save(
-        update_fields=['capstone_program_phase', 'capstone_team_creation_enabled'],
+        update_fields=['capstone_program_phase'],
     )
 
 
@@ -78,34 +75,36 @@ def capstone_operating_mode(semester):
 
     phase = derive_capstone_program_phase(semester)
 
-    if phase == Semester.PHASE_CAPSTONE_2:
-        return {
-            'mode': MODE_CAPSTONE_2_CONTINUE,
-            'can_create_capstone_teams': True,
-            'message': (
-                'Capstone 2 term: teams carry over from the previous term. '
-                'New teams can also be created or imported if needed.'
-            ),
-        }
-
-    if derive_capstone_team_creation_enabled(semester):
-        return {
-            'mode': MODE_CAPSTONE_1_INTAKE,
-            'can_create_capstone_teams': True,
-            'message': (
-                'Capstone 1 intake: create new capstone teams for this term '
-                '(3rd Year, 2nd Semester).'
-            ),
-        }
+    if semester.capstone_team_creation_enabled:
+        if phase == Semester.PHASE_CAPSTONE_2:
+            return {
+                'mode': MODE_CAPSTONE_2_CONTINUE,
+                'can_create_capstone_teams': True,
+                'message': (
+                    'Capstone 2 term: teams carry over from the previous term. '
+                    'New teams can also be created or imported if needed.'
+                ),
+            }
+        elif phase == Semester.PHASE_CAPSTONE_1:
+            return {
+                'mode': MODE_CAPSTONE_1_INTAKE,
+                'can_create_capstone_teams': True,
+                'message': (
+                    'Capstone 1 intake: create new capstone teams for this term '
+                    '(3rd Year, 2nd Semester).'
+                ),
+            }
+        else:
+            return {
+                'mode': MODE_CAPSTONE_1_INTAKE,
+                'can_create_capstone_teams': True,
+                'message': 'Capstone team creation is enabled.',
+            }
 
     return {
         'mode': MODE_OFF,
         'can_create_capstone_teams': False,
-        'message': (
-            'Capstone team creation is not open for this term. '
-            'Activate 2nd Semester for Capstone 1 intake, or run Student Records '
-            'rollover before continuing in 1st Semester.'
-        ),
+        'message': 'Capstone team creation is not open for this term.',
     }
 
 

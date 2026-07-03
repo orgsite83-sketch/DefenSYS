@@ -84,13 +84,15 @@ def _project_manager_fields(user):
 
 def _user_payload(user):
     is_project_manager, managed_section = _project_manager_fields(user)
+    membership = user.team_memberships.first()
+    team_id = str(membership.team_id) if membership else None
     return {
         'id': user.id,
         'username': user.username,
         'name': _display_name(user),
         'email': user.email,
         'role': user.role,
-        'team_id': user.team_id,
+        'team_id': team_id,
         'is_project_manager': is_project_manager,
         'managed_section': managed_section,
     }
@@ -825,20 +827,6 @@ class StudentDashboardView(APIView):
             .order_by('-updated_at', '-id')
             .first()
         )
-        
-        # Fallback: If no team found via memberships but user has team_id, try to find by team_id
-        if not team and user.team_id:
-            try:
-                team = (
-                    StudentTeam.objects
-                    .select_related('semester', 'semester__school_year', 'leader', 'adviser')
-                    .prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
-                    .get(id=int(user.team_id))
-                )
-            except (StudentTeam.DoesNotExist, ValueError):
-                # team_id is invalid or team doesn't exist
-                pass
-        
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
         schedule = (

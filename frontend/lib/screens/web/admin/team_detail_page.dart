@@ -4,6 +4,7 @@ import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/team_detail_provider.dart';
+import '../../../services/auth_provider.dart';
 import '../../../utils/pdf_viewer.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -1149,6 +1150,54 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     if (deleted && mounted) {
       widget.onDeleted?.call();
       widget.onBack();
+      return;
+    }
+
+    if (mounted) {
+      final teamsState = ref.read(studentTeamsProvider);
+      final errorMsg = teamsState.error;
+      if (errorMsg != null && (errorMsg.contains('defense schedules') || errorMsg.contains('grade records'))) {
+        final user = ref.read(authProvider).user;
+        final isAdmin = user?['role']?.toString() == 'admin';
+
+        if (!isAdmin) {
+          showDialog(
+            context: context,
+            builder: (dialogContext) => AlertDialog(
+              surfaceTintColor: Colors.transparent,
+              title: const Text('Delete Blocked'),
+              content: const Text('Only system administrators can delete teams with active schedules or grades.'),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('OK'),
+                ),
+              ],
+            ),
+          );
+          return;
+        }
+
+        final forceDeleted = await showDialog<bool>(
+          context: context,
+          builder: (dialogContext) {
+            return _ForceDeleteDialog(
+              teamName: name,
+              warningMessage: errorMsg,
+            );
+          },
+        );
+
+        if (forceDeleted == true && mounted) {
+          final forceDone = await ref
+              .read(studentTeamsProvider.notifier)
+              .deleteTeam(widget.teamId, force: true);
+          if (forceDone && mounted) {
+            widget.onDeleted?.call();
+            widget.onBack();
+          }
+        }
+      }
     }
   }
 
@@ -1552,6 +1601,101 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _ForceDeleteDialog extends StatefulWidget {
+  final String teamName;
+  final String warningMessage;
+
+  const _ForceDeleteDialog({
+    required this.teamName,
+    required this.warningMessage,
+  });
+
+  @override
+  State<_ForceDeleteDialog> createState() => _ForceDeleteDialogState();
+}
+
+class _ForceDeleteDialogState extends State<_ForceDeleteDialog> {
+  final _controller = TextEditingController();
+  bool _isValid = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_checkValidity);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _checkValidity() {
+    setState(() {
+      _isValid = _controller.text.trim() == widget.teamName.trim();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      surfaceTintColor: Colors.transparent,
+      title: Row(
+        children: const [
+          Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+          SizedBox(width: 8),
+          Text('Force Delete Team'),
+        ],
+      ),
+      content: SizedBox(
+        width: 480,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.warningMessage,
+              style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.red),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Force-deleting will permanently erase all associated grades, scores, and peer evaluations. This action cannot be undone.',
+            ),
+            const SizedBox(height: 16),
+            Text(
+              'To confirm, type the team name: ${widget.teamName}',
+              style: const TextStyle(fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              decoration: const InputDecoration(
+                hintText: 'Enter team name',
+                border: OutlineInputBorder(),
+                contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+          ),
+          onPressed: _isValid ? () => Navigator.pop(context, true) : null,
+          child: const Text('Force Delete'),
+        ),
+      ],
     );
   }
 }

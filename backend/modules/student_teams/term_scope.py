@@ -73,7 +73,7 @@ def team_is_editable(user, team, active=None):
         return False
 
     if user_is_admin(user):
-        return 'Capstone' in (team.level or '')
+        return True
 
     if user_is_pit_lead_only(user):
         if pit_lead_operating_mode(user, active=active) == PIT_MODE_AUDIT:

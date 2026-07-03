@@ -617,11 +617,6 @@ class Command(BaseCommand):
         )
         sync_team(team_cap2, students[0], students)
 
-        # Update student active team IDs
-        for s in students:
-            s.team_id = str(team_cap2.id)
-            s.save()
-
         # Stages
         concept_stage, _ = DefenseStage.objects.get_or_create(
             label="Concept Proposal", defaults={'display_order': 1}

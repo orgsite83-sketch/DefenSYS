@@ -70,34 +70,10 @@ def verify_database_persistence():
             print(f" Role: {'Leader' if membership.is_leader else 'Member'}")
             print(f" Created: {membership.created_at}")
     
-    # Verify User.team_id field
-    print(f"\n User.team_id Field:")
-    students_with_teams = User.objects.filter(role='student', team_id__isnull=False)
-    print(f"Students with team_id set: {students_with_teams.count()}")
-    
-    if students_with_teams.exists():
-        print(f"\n   Sample students:")
-        for student in students_with_teams[:5]:
-            print(f"- {student.username}: team_id = {student.team_id}")
-    
     # Verify data integrity
     print(f"\n Data Integrity Checks:")
     
-    # Check 1: team_id matches membership
-    mismatches = 0
-    for student in User.objects.filter(role='student'):
-        membership = TeamMembership.objects.filter(student=student).first()
-        if membership:
-            if student.team_id != str(membership.team_id):
-                mismatches += 1
-                print(f"Warning: {student.username}: team_id={student.team_id}, but in team {membership.team_id}")
-    
-    if mismatches == 0:
-        print(f"All student team_id fields match their memberships")
-    else:
-        print(f"Warning: Found {mismatches} mismatches")
-    
-    # Check 2: No students in multiple teams
+    # Check 1: No students in multiple teams
     multi_team_students = []
     for student in User.objects.filter(role='student'):
         team_count = TeamMembership.objects.filter(student=student).count()
@@ -178,14 +154,12 @@ def verify_database_persistence():
     print(f"Tables exist and contain data")
     print(f"StudentTeam model: {teams.count()} teams")
     print(f"TeamMembership model: {memberships.count()} memberships")
-    print(f"User.team_id field: {students_with_teams.count()} students")
-    print(f"Data integrity: {'OK' if mismatches == 0 and not multi_team_students else 'Issues found'}")
+    print(f"Data integrity: {'OK' if not multi_team_students else 'Issues found'}")
     print(f"Write operations: Working")
     
     print(f"\n All team operations ARE saved to the database!")
     print(f"- Team creation → Saved to student_teams_studentteam")
     print(f"- Member assignment → Saved to student_teams_teammembership")
-    print(f"- User team_id → Saved to authentication_access_control_user")
     print(f"- Timestamps → Automatically tracked (created_at, updated_at)")
     
     print(f"\n" + "="*70 + "\n")

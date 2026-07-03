@@ -1,12 +1,8 @@
-from decimal import Decimal
-
 from django.db import transaction
 from django.utils import timezone
 
+from grading.constants import PASS_GRADE_THRESHOLD
 from .models import StudentTeam, TeamStageProgress
-
-
-PASS_GRADE_THRESHOLD = Decimal('75.00')
 
 
 def get_ready_teams(semester, stage):

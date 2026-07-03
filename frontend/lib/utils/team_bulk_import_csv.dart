@@ -5,7 +5,7 @@ const teamBulkImportHeaderPit =
     'Team Name,PIT Project,Team Members';
 
 const teamBulkImportLegacyHeader =
-    'team_name,project_title,level,year_level,member_ids,leader_id,adviser_id';
+    'team_name,project_title,level,year_level,member_ids,leader_id,adviser_name';
 
 String bulkImportHeaderFor({required bool isCapstoneAdmin}) =>
     isCapstoneAdmin ? teamBulkImportHeader : teamBulkImportHeaderPit;
@@ -19,7 +19,7 @@ String rowsToTeamCsv(
   for (final row in rows) {
     final teamName = row['team_name']?.toString() ?? '';
     final project = row['project_title']?.toString() ?? '';
-    final adviser = row['adviser_id']?.toString() ?? '';
+    final adviser = row['adviser_name']?.toString() ?? row['adviser_id']?.toString() ?? '';
     final members = row['member_ids'];
     final membersList = members is List
         ? members.map((item) => item.toString().trim()).where((item) => item.isNotEmpty).toList()
@@ -272,7 +272,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
           'year_level': '',
           'member_ids': <String>[if (member.isNotEmpty) member],
           'leader_id': member,
-          if (adviserIdx >= 0) 'adviser_id': adviser,
+          if (adviserIdx >= 0) 'adviser_name': adviser,
           if (section.isNotEmpty) 'section': section,
         };
       } else {
@@ -310,7 +310,10 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
   final yearLevelIndex = index('year_level');
   final memberIdsIndex = index('member_ids');
   final leaderIdIndex = index('leader_id');
-  final adviserIdIndex = index('adviser_id');
+  var adviserNameIndex = index('adviser_name');
+  if (adviserNameIndex == -1) {
+    adviserNameIndex = index('adviser_id');
+  }
 
   if ([teamNameIndex, memberIdsIndex, leaderIdIndex].contains(-1)) {
     return ParsedBulkCsvResult(
@@ -345,7 +348,7 @@ ParsedBulkCsvResult parseTeamBulkCsv(String csv) {
               .where((item) => item.isNotEmpty)
               .toList(),
           'leader_id': read(leaderIdIndex),
-          if (adviserIdIndex >= 0) 'adviser_id': read(adviserIdIndex),
+          if (adviserNameIndex >= 0) 'adviser_name': read(adviserNameIndex),
           if (section.isNotEmpty) 'section': section,
         };
       })

@@ -1,8 +1,6 @@
 from django.conf import settings
 from django.db import models
 
-from student_teams.models import StudentTeam
-
 
 class TeamDocument(models.Model):
     DOCUMENT_TYPES = (
@@ -13,7 +11,7 @@ class TeamDocument(models.Model):
         ('other', 'Other'),
     )
 
-    team = models.ForeignKey(StudentTeam, on_delete=models.CASCADE, related_name='documents')
+    team = models.ForeignKey('student_teams.StudentTeam', on_delete=models.CASCADE, related_name='documents')
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,

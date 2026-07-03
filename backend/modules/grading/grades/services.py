@@ -9,6 +9,7 @@ from academic_period_management.models import Semester
 from authentication_access_control.audit import audit_scope_metadata, log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import DefenseSchedule
+from grading.constants import PASS_GRADE_THRESHOLD
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam
 from student_teams.services import mark_stage_result
@@ -652,33 +653,7 @@ def weights_for_schedule(schedule):
 
 
 def grade_queryset():
-    return (
-        TeamGrade.objects.select_related(
-            'schedule',
-            'schedule__rubric',
-            'schedule__defense_stage',
-            'defense_stage',
-            'pit_event_config',
-            'pit_event_config__panel_rubric',
-            'pit_event_config__peer_rubric',
-            'team',
-            'team__leader',
-            'team__adviser',
-            'semester',
-            'semester__school_year',
-            'published_by',
-        )
-        .prefetch_related(
-            'breakdowns',
-            'breakdowns__rubric',
-            'student_grades',
-            'student_grades__student',
-            'team__memberships',
-            'team__memberships__student',
-            'schedule__panel_assignments',
-            'schedule__panel_assignments__panelist',
-        )
-    )
+    return TeamGrade.objects.with_relations()
 
 
 def _is_pit_lead_only(user):
@@ -704,7 +679,7 @@ def _scope_for_team(team):
 
 
 def _context_for_team(team):
-    return team.current_defense_stage or team.ready_for_stage or 'Unscheduled'
+    return team.current_defense_stage or team.ready_for_stage or None
 
 
 def _grade_has_score_data(grade):
@@ -810,6 +785,9 @@ def canonical_capstone_grade_for_team(team, semester=None, stage_label=None):
     if not resolved_label:
         resolved_label = _context_for_team(team)
 
+    if not resolved_label:
+        return None
+
     if schedule and (label_is_placeholder or schedule.stage_label == resolved_label):
         grade = TeamGrade.objects.filter(
             team=team,
@@ -875,6 +853,8 @@ def _cleanup_stale_capstone_grades_for_team(canonical, team, semester):
 
 
 def resolve_canonical_capstone_grade(grade):
+    if grade is None:
+        return None
     if grade.scope != TeamGrade.SCOPE_CAPSTONE:
         return grade
     canonical = canonical_capstone_grade_for_team(grade.team, grade.semester, grade.stage_label)
@@ -1069,6 +1049,8 @@ class GradeContextService:
     def get_or_create_unscheduled_team(team, *, repair_placeholders=True):
         scope = _scope_for_team(team)
         stage_label = _context_for_team(team)
+        if not stage_label or stage_label == 'Unscheduled':
+            return None, False
         weights = default_weights(scope)
         defense_stage = None
         if scope == TeamGrade.SCOPE_CAPSTONE and not _is_unscheduled_placeholder_label(stage_label):
@@ -1607,9 +1589,6 @@ def build_group_settings_map(grades_queryset, semester):
     return result
 
 
-PASS_GRADE_THRESHOLD = Decimal('75.00')
-
-
 class IncompleteGradingTeamsError(Exception):
     """Raised when officially complete is blocked by incomplete team grading."""
 
@@ -1641,9 +1620,6 @@ def _mark_schedule_done_from_grade(grade):
 
 def finalize_passed_grade_for_archive(grade, user=None):
     return GradeContextService.finalize_for_archive(grade, user=user)
-
-
-finalize_passed_pit_grade_for_archive = finalize_passed_grade_for_archive
 
 
 def _empty_auto_finalize_result():
@@ -1806,9 +1782,6 @@ def incomplete_grading_teams_for_group(
     return incomplete
 
 
-# Backward-compatible alias
-incomplete_peer_teams_for_group = incomplete_grading_teams_for_group
-
 
 def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=None, year_level=None):
     grades = list(
@@ -1835,10 +1808,6 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
         'peer_complete_team_count': peer_complete,
         'peer_total_team_count': total,
     }
-
-
-def peer_completion_counts_for_group(semester, scope, stage_label, *, config=None):
-    return grading_readiness_counts_for_group(semester, scope, stage_label, config=config)
 
 
 def _auto_finalize_passed_grades_in_queryset(grades, user=None):
@@ -1919,9 +1888,6 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     return grade
 
 
-maybe_auto_publish_passed_grade = maybe_auto_finalize_passed_grade
-
-
 def repair_pending_passed_grades_in_queryset(queryset, user=None):
     """Finalize passed grades still pending when their stage/event is officially complete."""
     pending = queryset.filter(status=TeamGrade.STATUS_PENDING).select_related(
@@ -1999,10 +1965,8 @@ class StageCompletionService:
             if incomplete:
                 raise IncompleteGradingTeamsError(incomplete)
 
-            if scope == TeamGrade.SCOPE_PIT:
-                auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
-            else:
-                auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
+            auto_result = _auto_finalize_passed_grades_in_queryset(grades, user=user)
+
 
             config.is_officially_complete = True
             config.peer_grading_enabled = False

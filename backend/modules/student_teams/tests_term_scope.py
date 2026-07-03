@@ -169,3 +169,62 @@ class TermScopeTests(APITestCase):
         self.assertTrue(
             any(row.get('is_historical') for row in response.data['history_students'])
         )
+
+    def test_admin_can_manage_active_pit_team(self):
+        # 1. Setup active PIT team
+        pit_team = StudentTeam.objects.create(
+            name='Team PIT Active',
+            project_title='Active PIT',
+            level='3rd Year PIT',
+            year_level='3rd Year',
+            semester=self.second_sem,
+            leader=self.student,
+        )
+        TeamMembership.objects.create(
+            team=pit_team,
+            student=self.student,
+            is_leader=True,
+            order=0,
+        )
+
+        # 2. Authenticate as admin
+        self.client.force_authenticate(user=self.admin)
+
+        # 3. Patch the PIT team
+        response = self.client.patch(
+            f'/api/teams/{pit_team.id}/',
+            {
+                'name': 'Updated Team PIT Active',
+                'project_title': 'Updated Active PIT',
+                'level': '3rd Year PIT',
+                'year_level': '3rd Year',
+                'leader_id': self.student.id,
+                'member_ids': [self.student.id],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        pit_team.refresh_from_db()
+        self.assertEqual(pit_team.name, 'Updated Team PIT Active')
+
+        # 4. Check that deleting works
+        del_resp = self.client.delete(f'/api/teams/{pit_team.id}/')
+        self.assertEqual(del_resp.status_code, status.HTTP_200_OK)
+        self.assertFalse(StudentTeam.objects.filter(id=pit_team.id).exists())
+
+        # 5. Check that admin can create a PIT team
+        create_resp = self.client.post(
+            '/api/teams/',
+            {
+                'name': 'New Admin PIT Team',
+                'project_title': 'New Admin PIT Project',
+                'level': '3rd Year PIT',
+                'year_level': '3rd Year',
+                'leader_id': self.student.id,
+                'member_ids': [self.student.id],
+            },
+            format='json',
+        )
+        self.assertEqual(create_resp.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(StudentTeam.objects.filter(name='New Admin PIT Team').exists())
+

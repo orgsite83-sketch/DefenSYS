@@ -112,3 +112,56 @@ class Phase1SecurityRegressionTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['schedules'], [])
         self.assertEqual(response.data['counts']['all'], 0)
+
+    def test_authenticated_media_path_traversal(self):
+        user = User.objects.create_user(
+            username='media-traversal-user',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=user)
+
+        # Test path traversal with URL-encoded parent directory references
+        response_traversal1 = self.client.get('/api/media/files/..%2Foutside.pdf')
+        self.assertEqual(response_traversal1.status_code, 404)
+
+        response_traversal2 = self.client.get('/api/media/files/team_documents%2F..%2F..%2Foutside.pdf')
+        self.assertEqual(response_traversal2.status_code, 404)
+
+        # Test absolute path and Windows device paths
+        response_abs = self.client.get('/api/media/files/%2Fetc%2Fpasswd')
+        self.assertEqual(response_abs.status_code, 404)
+
+        response_win = self.client.get('/api/media/files/C:%5Cwindows%5Csystem32')
+        self.assertEqual(response_win.status_code, 404)
+
+    def test_guest_panelist_principal_django_permission_methods(self):
+        from modules.authentication_access_control.guest_authentication import GuestPanelistPrincipal
+        token = {
+            'guest_code_id': 123,
+            'guest_code': 'ABC',
+            'guest_name': 'Test Guest',
+            'defense_schedule_id': 456,
+            'team_id': 789,
+        }
+        principal = GuestPanelistPrincipal(token)
+        
+        # Check standard properties
+        self.assertTrue(principal.is_authenticated)
+        self.assertTrue(principal.is_guest_panelist)
+        self.assertTrue(principal.is_active)
+        self.assertFalse(principal.is_anonymous)
+        self.assertFalse(principal.is_superuser)
+        self.assertFalse(principal.is_staff)
+        self.assertEqual(principal.username, 'guest:ABC')
+        self.assertEqual(principal.get_username(), 'guest:ABC')
+
+        # Check Django permission backend methods
+        self.assertFalse(principal.has_perm('some_perm'))
+        self.assertFalse(principal.has_perm('some_perm', obj=object()))
+        self.assertFalse(principal.has_perms(['perm1', 'perm2']))
+        self.assertTrue(principal.has_perms([]))
+        self.assertFalse(principal.has_module_perms('some_app'))
+        self.assertEqual(principal.get_all_permissions(), set())
+        self.assertEqual(principal.get_user_permissions(), set())
+        self.assertEqual(principal.get_group_permissions(), set())

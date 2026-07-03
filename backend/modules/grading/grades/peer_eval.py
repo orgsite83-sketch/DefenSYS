@@ -150,7 +150,8 @@ def _build_peer_scores_for_complete_grade(grade, memberships):
             averages.append(ratio * Decimal('100'))
 
         if not averages:
-            return None
+            peer_scores[evaluatee.id] = None
+            continue
 
         average = (sum(averages) / Decimal(len(averages))).quantize(Decimal('0.01'))
         peer_scores[evaluatee.id] = average
@@ -201,7 +202,11 @@ def sync_peer_summaries(grade):
         sg.save()
         recalculate_student_grade(sg)
 
-    grade.peer_score = (normalized_total / Decimal(len(peer_scores))).quantize(Decimal('0.01'))
+    valid_scores = [score for score in peer_scores.values() if score is not None]
+    if valid_scores:
+        grade.peer_score = (normalized_total / Decimal(len(valid_scores))).quantize(Decimal('0.01'))
+    else:
+        grade.peer_score = None
     grade.save()
     from .services import maybe_auto_finalize_passed_grade
     maybe_auto_finalize_passed_grade(grade)
@@ -225,6 +230,8 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
         raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
     grade = _grade_for_team(team)
+    if grade is None:
+        raise ValidationError({'detail': 'Peer grading is not open for this team (no active defense stage or schedule).'})
 
     if grade.status in TeamGrade.LOCKED_STATUSES:
         raise ValidationError({'detail': 'Grades for this team have already been finalized and cannot be changed.'})
@@ -269,7 +276,7 @@ def peer_criteria_payload(team):
         grade = _grade_for_team(team)
     except ValidationError:
         return []
-    if not peer_grading_allowed_for_grade(grade):
+    if grade is None or not peer_grading_allowed_for_grade(grade):
         return []
 
     rubric = find_matching_rubric(grade, Rubric.EVAL_PEER)

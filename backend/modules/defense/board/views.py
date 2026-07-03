@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Q, Case, When, F, CharField
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
@@ -34,10 +34,14 @@ class CanManageBoard(BasePermission):
 def board_queryset_for_user(user):
     queryset = schedule_queryset()
     if getattr(user, 'is_pit_lead', False) and getattr(user, 'role', None) != 'admin':
+        from student_teams.team_levels import normalize_year_level
+        pit_year = normalize_year_level(getattr(user, 'pit_lead_year', None))
+        if not pit_year:
+            return queryset.none()
         queryset = queryset.filter(
             scope=DefenseSchedule.SCOPE_PIT,
             team__level__icontains='PIT',
-            team__year_level=getattr(user, 'pit_lead_year', None),
+            team__year_level=pit_year,
         )
     return queryset
 
@@ -55,11 +59,19 @@ def counts_payload(base_queryset, current_queryset=None):
 
 
 def stage_options(queryset):
-    labels = set()
-    for item in queryset:
-        if item.stage_label:
-            labels.add(item.stage_label)
-    return sorted(labels)
+    return sorted(
+        queryset.annotate(
+            computed_stage_label=Case(
+                When(scope=DefenseSchedule.SCOPE_PIT, then=F('event_name')),
+                default=F('defense_stage__label'),
+                output_field=CharField()
+            )
+        )
+        .exclude(computed_stage_label__in=[None, ''])
+        .values_list('computed_stage_label', flat=True)
+        .distinct()
+    )
+
 
 
 def filter_board_queryset(request, queryset):

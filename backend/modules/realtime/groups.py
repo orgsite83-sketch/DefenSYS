@@ -26,20 +26,12 @@ def user_group_name(user_id: int) -> str:
 
 
 def _student_team_for_user(user):
-    team = (
+    return (
         StudentTeam.objects.select_related('semester')
         .filter(memberships__student=user)
         .order_by('-updated_at', '-id')
         .first()
     )
-    if team:
-        return team
-    if user.team_id:
-        try:
-            return StudentTeam.objects.select_related('semester').get(pk=int(user.team_id))
-        except (StudentTeam.DoesNotExist, ValueError, TypeError):
-            return None
-    return None
 
 
 def groups_for_user(user) -> set[str]:

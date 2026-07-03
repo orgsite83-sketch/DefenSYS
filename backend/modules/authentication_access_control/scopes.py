@@ -73,7 +73,7 @@ def visible_teams_for(user):
             queryset = queryset.filter(year_level=pit_year)
         return queryset
     if getattr(user, 'is_uploader', False):
-        return base
+        return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'faculty':
         return base.filter(Q(adviser=user) | pit_instructor_section_filters(user)).distinct()
     if getattr(user, 'role', None) == 'student':
@@ -133,7 +133,7 @@ def visible_schedules_for(user):
             .exclude(team__year_level='3rd Year', semester__label='2nd Semester')
         )
     if getattr(user, 'is_uploader', False):
-        return base
+        return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'faculty':
         return base.filter(
             Q(team__adviser=user)
@@ -161,33 +161,7 @@ def visible_schedules_for(user):
 def grade_records_for(user):
     from grading.grades.models import TeamGrade
 
-    base = (
-        TeamGrade.objects.select_related(
-            'schedule',
-            'schedule__rubric',
-            'schedule__defense_stage',
-            'defense_stage',
-            'pit_event_config',
-            'pit_event_config__panel_rubric',
-            'pit_event_config__peer_rubric',
-            'team',
-            'team__leader',
-            'team__adviser',
-            'semester',
-            'semester__school_year',
-            'published_by',
-        )
-        .prefetch_related(
-            'breakdowns',
-            'breakdowns__rubric',
-            'student_grades',
-            'student_grades__student',
-            'team__memberships',
-            'team__memberships__student',
-            'schedule__panel_assignments',
-            'schedule__panel_assignments__panelist',
-        )
-    )
+    base = TeamGrade.objects.with_relations()
     if not user or not getattr(user, 'is_authenticated', False):
         return base.none()
     if is_admin_user(user):
@@ -245,5 +219,13 @@ def audit_logs_for(user):
             | Q(old_values__pit_year_level=pit_year)
             | Q(new_values__pit_year_level=pit_year)
         )
-        return base.filter(pit_marker, year_marker)
+        has_year_metadata = (
+            Q(old_values__year_level__isnull=False)
+            | Q(new_values__year_level__isnull=False)
+            | Q(old_values__team_year_level__isnull=False)
+            | Q(new_values__team_year_level__isnull=False)
+            | Q(old_values__pit_year_level__isnull=False)
+            | Q(new_values__pit_year_level__isnull=False)
+        )
+        return base.filter(pit_marker).filter(year_marker | ~has_year_metadata)
     return base.none()

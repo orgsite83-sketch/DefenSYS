@@ -194,6 +194,29 @@ class JwtSessionApiTests(APITestCase):
         self.assertEqual(response.data['username'], 'session-user')
         self.assertEqual(response.data['role'], 'admin')
 
+    def test_logout_endpoint_is_throttled(self):
+        from rest_framework.settings import api_settings
+        original_rate = api_settings.DEFAULT_THROTTLE_RATES.get('logout')
+        api_settings.DEFAULT_THROTTLE_RATES['logout'] = '1/min'
+        try:
+            response1 = self.client.post(
+                '/api/logout/',
+                {'refresh': 'not-a-valid-token'},
+                format='json',
+            )
+            # Invalid token yields 401 unauthorized
+            self.assertEqual(response1.status_code, 401)
+
+            response2 = self.client.post(
+                '/api/logout/',
+                {'refresh': 'not-a-valid-token'},
+                format='json',
+            )
+            # Throttled request yields 429 Too Many Requests
+            self.assertEqual(response2.status_code, 429)
+        finally:
+            api_settings.DEFAULT_THROTTLE_RATES['logout'] = original_rate
+
 
 class SystemAuditLogApiTests(APITestCase):
     def setUp(self):

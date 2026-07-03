@@ -17,19 +17,19 @@ class AuthenticatedMediaFileView(APIView):
         if getattr(settings, 'USE_S3', False):
             raise Http404('Media is served from object storage.')
 
-        resolved = os.path.normpath(file_path)
+        resolved = os.path.normpath(file_path).replace('\\', '/')
         drive, path = os.path.splitdrive(resolved)
         if drive or os.path.isabs(resolved) or '..' in resolved or resolved.startswith('/') or resolved.startswith('\\'):
             raise Http404('Invalid file path.')
 
-        if not default_storage.exists(file_path):
+        if not default_storage.exists(resolved):
             raise Http404('File not found.')
 
-        opened = default_storage.open(file_path, 'rb')
-        content_type, _encoding = mimetypes.guess_type(file_path)
+        opened = default_storage.open(resolved, 'rb')
+        content_type, _encoding = mimetypes.guess_type(resolved)
         return FileResponse(
             opened,
             content_type=content_type or 'application/octet-stream',
             as_attachment=False,
-            filename=file_path.split('/')[-1],
+            filename=resolved.split('/')[-1],
         )

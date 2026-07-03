@@ -22,10 +22,16 @@ def team_document_queryset_for_user(user, team_id=None):
             return qs.filter(team_id=team_id)
         return qs
 
-    if getattr(user, 'is_pit_lead', False) or getattr(user, 'is_uploader', False):
+    if getattr(user, 'is_pit_lead', False):
         if team_id is not None:
             return qs.filter(team_id=team_id)
         return qs
+
+    if getattr(user, 'is_uploader', False):
+        active_qs = qs.filter(team__semester__is_active=True)
+        if team_id is not None:
+            return active_qs.filter(team_id=team_id)
+        return active_qs
 
     accessible = StudentTeam.objects.filter(
         Q(leader=user) | Q(memberships__student=user) | Q(adviser=user)
@@ -42,8 +48,10 @@ def user_can_access_team(user, team):
         return False
     if user.is_superuser or getattr(user, 'role', None) == 'admin':
         return True
-    if getattr(user, 'is_pit_lead', False) or getattr(user, 'is_uploader', False):
+    if getattr(user, 'is_pit_lead', False):
         return True
+    if getattr(user, 'is_uploader', False):
+        return team.semester.is_active
     if team.leader_id == user.id:
         return True
     if team.adviser_id == user.id:

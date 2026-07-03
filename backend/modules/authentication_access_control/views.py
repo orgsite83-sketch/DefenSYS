@@ -43,8 +43,13 @@ class ThrottledTokenRefreshView(TokenRefreshView):
     permission_classes = [AllowAny]
 
 
+class LogoutRateThrottle(AnonRateThrottle):
+    scope = 'logout'
+
+
 class LogoutView(TokenBlacklistView):
     permission_classes = [AllowAny]
+    throttle_classes = [LogoutRateThrottle]
 
 
 class CurrentUserView(APIView):

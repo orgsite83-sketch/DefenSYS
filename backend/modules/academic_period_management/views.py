@@ -122,6 +122,13 @@ class SemesterStatusView(APIView):
             semester.capstone_adviser_grading_enabled = bool(value)
             update_fields.append('capstone_adviser_grading_enabled')
 
+        if 'capstone_team_creation_enabled' in request.data:
+            value = request.data['capstone_team_creation_enabled']
+            if isinstance(value, str):
+                value = value.lower() in ['1', 'true', 'yes', 'on']
+            semester.capstone_team_creation_enabled = bool(value)
+            update_fields.append('capstone_team_creation_enabled')
+
         capstone_fields = normalize_capstone_flags(semester)
         update_fields.extend(capstone_fields)
 

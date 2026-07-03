@@ -2,6 +2,9 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 
+from student_teams.documents.models import TeamDocument  # noqa: F401
+from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: F401
+
 
 class StudentTeam(models.Model):
     LEVEL_1_PIT = '1st Year PIT'
@@ -275,7 +278,3 @@ class TeamAdviserAssignment(models.Model):
     def __str__(self):
         adviser_label = self.adviser.username if self.adviser_id else 'Unassigned'
         return f'{self.team.name}: {adviser_label}'
-
-
-from student_teams.documents.models import TeamDocument  # noqa: E402,F401
-from student_teams.weekly_progress.models import WeeklyProgressReport  # noqa: E402,F401

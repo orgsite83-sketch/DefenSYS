@@ -20,6 +20,7 @@ def _coerce_bool(value) -> bool:
 
 class UserSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
+    team_id = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
     is_project_manager = serializers.SerializerMethodField()
     managed_section = serializers.SerializerMethodField()
@@ -32,6 +33,10 @@ class UserSerializer(serializers.ModelSerializer):
             'is_documenter', 'is_uploader', 'e_signature', 'facultyRoles',
             'is_project_manager', 'managed_section',
         ]
+
+    def get_team_id(self, obj):
+        membership = obj.team_memberships.first()
+        return str(membership.team_id) if membership else None
 
     def get_name(self, obj):
         full_name = f"{obj.first_name} {obj.last_name}".strip()

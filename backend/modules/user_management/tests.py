@@ -148,27 +148,6 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(faculty.pit_lead_year, '4th Year')
         self.assertTrue(response.data['user']['facultyRoles']['documenter'])
 
-    def test_update_user_clears_legacy_adviser_phase(self):
-        faculty = User.objects.create_user(
-            username='faculty-adv',
-            password='pass12345',
-            role='faculty',
-            is_adviser=True,
-            adviser_phase='Capstone 1',
-        )
-
-        response = self.client.patch(
-            f'/api/users/{faculty.id}/',
-            {'first_name': 'Updated'},
-            format='json',
-        )
-
-        faculty.refresh_from_db()
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(faculty.first_name, 'Updated')
-        self.assertIsNone(faculty.adviser_phase)
-        self.assertNotIn('adviserPhase', response.data['user']['facultyRoles'])
-
     def test_save_backfills_role_history_when_flag_already_on(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
         Semester.objects.create(
@@ -255,7 +234,6 @@ class UserManagementApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         faculty.refresh_from_db()
-        self.assertIsNone(faculty.adviser_phase)
         history = FacultyRoleAssignment.objects.filter(user=faculty)
         self.assertEqual(history.count(), 1)
         entry = history.first()
