@@ -15,6 +15,7 @@ from user_management.permissions import (
 
 from academic_period_management.models import SchoolYear, Semester
 from academic_period_management.serializers import SemesterSerializer
+from academic_period_management.services import active_semester
 from repository.deliverables.models import DeliverableSubmission
 from curriculum_analytics.services import (
     analytics_academic_year_count,
@@ -63,17 +64,20 @@ def _display_name(user):
     return full_name or user.username
 
 
-def _project_manager_fields(user):
+def _project_manager_fields(user, active_semester=None):
     if getattr(user, 'role', None) != 'student':
         return False, None
 
     from student_teams.models import SectionAssignment
 
+    q_filter = {'project_manager': user}
+    if active_semester is not None:
+        q_filter['semester'] = active_semester
+    else:
+        q_filter['semester__is_active'] = True
+
     assignment = (
-        SectionAssignment.objects.filter(
-            project_manager=user,
-            semester__is_active=True,
-        )
+        SectionAssignment.objects.filter(**q_filter)
         .order_by('section')
         .first()
     )
@@ -82,8 +86,8 @@ def _project_manager_fields(user):
     return True, assignment.section
 
 
-def _user_payload(user):
-    is_project_manager, managed_section = _project_manager_fields(user)
+def _user_payload(user, active_semester=None):
+    is_project_manager, managed_section = _project_manager_fields(user, active_semester)
     membership = user.team_memberships.first()
     team_id = str(membership.team_id) if membership else None
     return {
@@ -134,8 +138,9 @@ def _active_role_labels(user):
     return labels
 
 
-def _active_semester_label():
-    semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
+def _active_semester_label(semester=None):
+    if semester is None:
+        semester = active_semester()
     return semester.display_name if semester else 'Not configured'
 
 
@@ -489,18 +494,19 @@ def _pit_rollover_preview_payload(user):
     }
 
 
-def _pit_lead_overview_payload(user):
+def _pit_lead_overview_payload(user, active_sem=None):
     pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
     if not getattr(user, 'is_pit_lead', False) or not pit_year:
         return None
 
     pit_teams = _pit_teams_queryset(user)
-    active_semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
+    if active_sem is None:
+        active_sem = active_semester()
 
     student_count = 0
-    if active_semester:
+    if active_sem:
         student_count = StudentAcademicRecord.objects.filter(
-            semester=active_semester,
+            semester=active_sem,
             year_level=pit_year,
         ).values('student_id').distinct().count()
 
@@ -515,7 +521,7 @@ def _pit_lead_overview_payload(user):
     pending_grades = grade_qs.exclude(status=TeamGrade.STATUS_PUBLISHED).count() if pit_team_ids else 0
     published_grades = grade_qs.filter(status=TeamGrade.STATUS_PUBLISHED).count() if pit_team_ids else 0
     alerts = []
-    active_label = _active_semester_label()
+    active_label = _active_semester_label(active_sem)
     if active_label == 'Not configured':
         alerts.append({
             'type': 'warning',
@@ -570,28 +576,26 @@ def _schedule_payload(schedule):
 
 
 def _student_visible_grade(team, schedule):
+    """Return the student-visible grade using canonical resolution."""
     if team is None:
         return None
 
-    if schedule is not None:
-        scheduled_grade = (
-            TeamGrade.objects.filter(
-                team=team,
-                semester=schedule.semester,
-                scope=schedule.scope,
-                stage_label=schedule.stage_label,
-                status=TeamGrade.STATUS_PUBLISHED,
-            )
-            .order_by('-updated_at', '-id')
-            .first()
-        )
-        return scheduled_grade
+    from grading.grades.services import canonical_capstone_grade_for_team, resolve_canonical_capstone_grade
+    from grading.grades.models import TeamGrade
 
-    return (
-        TeamGrade.objects.filter(team=team, status=TeamGrade.STATUS_PUBLISHED)
-        .order_by('-updated_at', '-id')
-        .first()
-    )
+    if team.is_capstone:
+        grade = canonical_capstone_grade_for_team(team, team.semester)
+        if grade is not None:
+            grade = resolve_canonical_capstone_grade(grade)
+        if grade is not None and grade.status == TeamGrade.STATUS_PUBLISHED:
+            return grade
+        return None
+
+    # PIT: use schedule-scoped or latest published
+    base = TeamGrade.objects.filter(team=team, scope=TeamGrade.SCOPE_PIT)
+    if schedule is not None:
+        base = base.filter(semester=schedule.semester, stage_label=schedule.stage_label)
+    return base.filter(status=TeamGrade.STATUS_PUBLISHED).order_by('-updated_at', '-id').first()
 
 
 class AdminDashboardView(APIView):
@@ -619,8 +623,9 @@ class AdminDashboardView(APIView):
             level__icontains='Capstone',
             ready_for_stage__isnull=False,
         ).exclude(ready_for_stage='').count()
-        active_semester = _active_semester_label()
-        period_configured = active_semester != 'Not configured'
+        active_sem = active_semester()
+        active_label = _active_semester_label(active_sem)
+        period_configured = active_label != 'Not configured'
 
         return Response({
             'stats': {
@@ -643,12 +648,12 @@ class AdminDashboardView(APIView):
                 'analytics_top_tech': analytics_top_technology,
                 'ready_capstone_teams': ready_capstone_count,
             },
-            'active_semester': active_semester,
+            'active_semester': active_label,
             'alerts': [
                 {
                     'type': 'success' if period_configured else 'warning',
                     'message': (
-                        f'{active_semester} is active for write-enabled modules.'
+                        f'{active_label} is active for write-enabled modules.'
                         if period_configured
                         else 'No active semester is configured. Create an academic period before migrating write-enabled modules.'
                     ),
@@ -675,7 +680,6 @@ class PitLeadCohortView(APIView):
 
     def get(self, request):
         user = request.user
-        pit_year, _active = _pit_lead_scope(user)
 
         search = request.query_params.get('search', '').strip()
         team_status = request.query_params.get('team_status', 'all').strip() or 'all'
@@ -769,6 +773,7 @@ class FacultyDashboardView(APIView):
 
     def get(self, request):
         user = request.user
+        active_sem = active_semester()
         advised_teams = StudentTeam.objects.filter(adviser=user).select_related(
             'semester',
             'semester__school_year',
@@ -795,11 +800,11 @@ class FacultyDashboardView(APIView):
             ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
         else:
             pit_teams = _pit_teams_queryset(user)
-        pit_lead_overview = _pit_lead_overview_payload(user)
+        pit_lead_overview = _pit_lead_overview_payload(user, active_sem=active_sem)
         pit_assistant = None  # Repository assistant feature removed
 
         return Response({
-            'faculty': _user_payload(user),
+            'faculty': _user_payload(user, active_sem),
             'roles': _faculty_roles(user),
             'active_roles': _active_role_labels(user),
             'advised_teams': [_team_payload(team) for team in advised_teams],
@@ -807,7 +812,7 @@ class FacultyDashboardView(APIView):
             'pit_teams': [_team_payload(team) for team in pit_teams],
             'pit_lead_year': user.pit_lead_year if user.is_pit_lead else None,
             'pit_lead_overview': pit_lead_overview,
-            'active_semester': _active_semester_label(),
+            'active_semester': _active_semester_label(active_sem),
             'is_documenter': user.is_documenter,
         })
 
@@ -837,26 +842,31 @@ class StudentDashboardView(APIView):
             if team
             else None
         )
-        grade = _student_visible_grade(team, schedule)
-        active_sem = Semester.objects.filter(is_active=True).first()
-        from grading.grades.services import (
-            canonical_capstone_grade_for_team,
-            peer_grading_allowed_for_grade,
-            resolve_canonical_capstone_grade,
-        )
-
-        peer_grade_row = None
+        # Unified grade resolution
+        canonical_grade = None
         if team:
             if team.is_capstone:
-                peer_grade_row = canonical_capstone_grade_for_team(team, team.semester)
-                if peer_grade_row is not None:
-                    peer_grade_row = resolve_canonical_capstone_grade(peer_grade_row)
+                from grading.grades.services import canonical_capstone_grade_for_team, resolve_canonical_capstone_grade
+                canonical_grade = canonical_capstone_grade_for_team(team, team.semester)
+                if canonical_grade is not None:
+                    canonical_grade = resolve_canonical_capstone_grade(canonical_grade)
             else:
-                peer_grade_row = (
-                    TeamGrade.objects.filter(team=team, scope=TeamGrade.SCOPE_PIT)
-                    .order_by('-updated_at', '-id')
-                    .first()
-                )
+                if schedule is not None:
+                    canonical_grade = TeamGrade.objects.filter(
+                        team=team,
+                        semester=schedule.semester,
+                        scope=TeamGrade.SCOPE_PIT,
+                        stage_label=schedule.stage_label,
+                    ).order_by('-updated_at', '-id').first()
+                if canonical_grade is None:
+                    canonical_grade = TeamGrade.objects.filter(
+                        team=team, scope=TeamGrade.SCOPE_PIT
+                    ).order_by('-updated_at', '-id').first()
+
+        grade = canonical_grade if (canonical_grade and canonical_grade.status == TeamGrade.STATUS_PUBLISHED) else None
+        peer_grade_row = canonical_grade
+        active_sem = active_semester()
+        from grading.grades.services import peer_grading_allowed_for_grade
 
         peer_eval_on = bool(peer_grade_row and peer_grading_allowed_for_grade(peer_grade_row))
         from grading.grades.peer_eval import (
@@ -896,7 +906,7 @@ class StudentDashboardView(APIView):
             weights['adviser'] = raw_weights['adviser_weight']
 
         return Response({
-            'student': _user_payload(user),
+            'student': _user_payload(user, active_sem),
             'academic_record': {
                 'school_year': academic_record.school_year.label,
                 'semester': academic_record.semester.label,

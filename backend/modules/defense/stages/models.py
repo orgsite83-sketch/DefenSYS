@@ -148,6 +148,18 @@ class StageGradingConfig(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()
         super().save(*args, **kwargs)
+        from grading.grades.models import TeamGrade
+        from django.db.models import Q
+
+        TeamGrade.objects.filter(
+            Q(defense_stage=self.defense_stage) | Q(semester=self.semester, scope=TeamGrade.SCOPE_CAPSTONE, stage_label__iexact=self.defense_stage.label),
+            status=TeamGrade.STATUS_PENDING,
+        ).update(
+            defense_stage=self.defense_stage,
+            panel_weight=self.panel_weight,
+            adviser_weight=self.adviser_weight,
+            peer_weight=self.peer_weight,
+        )
 
     def as_weights_dict(self):
         return {

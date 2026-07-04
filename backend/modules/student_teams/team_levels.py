@@ -59,7 +59,8 @@ def normalize_year_level(value):
 def _active_semester(semester=None):
     if semester is not None:
         return semester
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+    from academic_period_management.services import active_semester
+    return active_semester()
 
 
 def _year_levels_for_students(member_ids, semester):

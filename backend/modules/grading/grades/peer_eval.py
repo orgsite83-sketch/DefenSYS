@@ -238,7 +238,7 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
     require_grade_editable(grade)
 
     if not peer_grading_allowed_for_grade(grade):
-        raise ValidationError({'detail': 'Peer grading is not open for this event or stage.'})
+        raise ValidationError({'peer_eval': 'Peer grading is not currently enabled for this grade.'})
     require_matching_rubric(grade, Rubric.EVAL_PEER)
 
     total_decimal = Decimal(str(total)).quantize(Decimal('0.01'))

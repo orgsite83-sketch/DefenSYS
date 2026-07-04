@@ -13,22 +13,7 @@ from defense.scheduler.serializers import (
     active_semester,
     schedule_queryset,
 )
-
-
-class CanManageBoard(BasePermission):
-    message = 'Only administrators and PIT leads can manage defense board entries.'
-
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(
-            user
-            and user.is_authenticated
-            and (
-                getattr(user, 'role', None) == 'admin'
-                or user.is_superuser
-                or getattr(user, 'is_pit_lead', False)
-            )
-        )
+from user_management.permissions import CanManageModule
 
 
 def board_queryset_for_user(user):
@@ -126,7 +111,7 @@ class DefenseBoardListView(APIView):
 
 
 class DefenseBoardDetailView(APIView):
-    permission_classes = [CanManageBoard]
+    permission_classes = [CanManageModule]
 
     def get_object(self, request, schedule_id):
         return get_object_or_404(board_queryset_for_user(request.user), pk=schedule_id)
@@ -135,7 +120,7 @@ class DefenseBoardDetailView(APIView):
         schedule = self.get_object(request, schedule_id)
         serializer = DefenseScheduleStatusSerializer(
             data=request.data,
-            context={'schedule': schedule},
+            context={'schedule': schedule, 'request': request},
         )
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
@@ -147,19 +132,6 @@ class DefenseBoardDetailView(APIView):
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(request, schedule_id)
-
-        has_grade_data = schedule.panelist_grade_submissions.exists()
-        if has_grade_data:
-            return Response(
-                {
-                    'warning': (
-                        'This schedule has panelist grades already submitted. '
-                        'Deleting it will permanently remove those individual scores. '
-                        'Consider cancelling the schedule instead.'
-                    ),
-                },
-                status=status.HTTP_409_CONFLICT,
-            )
-
-        schedule.delete()
+        from defense.scheduler.services import delete_schedule
+        delete_schedule(schedule, actor=request.user, request=request)
         return Response(board_payload(request), status=status.HTTP_200_OK)

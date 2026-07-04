@@ -1,4 +1,5 @@
 from academic_period_management.models import Semester
+from academic_period_management.services import active_semester
 
 from .models import StudentAcademicRecord
 
@@ -9,10 +10,6 @@ YEAR_LEVELS = [
     StudentAcademicRecord.THIRD_YEAR,
     StudentAcademicRecord.FOURTH_YEAR,
 ]
-
-
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
 
 
 def next_academic_step(year_level, semester_label):

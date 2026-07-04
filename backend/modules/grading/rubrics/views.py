@@ -11,13 +11,10 @@ from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
 from .models import Rubric
 from .serializers import RubricSerializer, RubricWeightsSerializer, RubricWriteSerializer
+from user_management.permissions import CanManageModule
 
 
-class CanManageRubrics(BasePermission):
-    message = 'Only administrators and PIT leads can manage rubrics.'
 
-    def has_permission(self, request, view):
-        return user_can_manage_rubrics(request.user)
 
 
 def user_can_manage_rubrics(user):
@@ -86,8 +83,8 @@ def rubric_queryset():
     )
 
 
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from academic_period_management.services import active_semester
+from grading.grades.services import default_weights
 
 
 def _scopes_for_user(user):
@@ -119,8 +116,15 @@ def options_payload(user=None):
         'scale_options': [choice[0] for choice in Rubric.SCALE_CHOICES],
         'statuses': [choice[0] for choice in Rubric.STATUS_CHOICES],
         'default_weights': {
-            'capstone': {'panel': 50, 'adviser': 30, 'peer': 20},
-            'pit': {'panel': 80, 'peer': 20},
+            'capstone': {
+                'panel': default_weights('capstone')['panel_weight'],
+                'adviser': default_weights('capstone')['adviser_weight'],
+                'peer': default_weights('capstone')['peer_weight'],
+            },
+            'pit': {
+                'panel': default_weights('pit')['panel_weight'],
+                'peer': default_weights('pit')['peer_weight'],
+            },
         },
     }
 
@@ -194,7 +198,7 @@ class RubricListCreateView(APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [CanManageRubrics()]
+        return [CanManageModule()]
 
     def get(self, request):
         visible = rubric_queryset_for_read(request.user)
@@ -240,7 +244,7 @@ class RubricListCreateView(APIView):
 
 
 class RubricDetailView(APIView):
-    permission_classes = [CanManageRubrics]
+    permission_classes = [CanManageModule]
 
     def get_object(self, request, rubric_id):
         return get_object_or_404(
@@ -314,7 +318,7 @@ class RubricDetailView(APIView):
 
 
 class RubricPublishView(APIView):
-    permission_classes = [CanManageRubrics]
+    permission_classes = [CanManageModule]
 
     def post(self, request, rubric_id):
         rubric = get_object_or_404(
@@ -349,7 +353,7 @@ class RubricPublishView(APIView):
 
 
 class RubricWeightsView(APIView):
-    permission_classes = [CanManageRubrics]
+    permission_classes = [CanManageModule]
 
     def patch(self, request, rubric_id):
         rubric = get_object_or_404(

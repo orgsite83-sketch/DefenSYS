@@ -20,7 +20,8 @@ DISPLAY_ROLE_PRIORITY = [
 
 
 def _active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+    from academic_period_management.services import active_semester
+    return active_semester()
 
 
 def snapshot_role_flags(user):

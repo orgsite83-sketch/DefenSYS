@@ -1888,3 +1888,93 @@ class GradeCenterApiTests(APITestCase):
         grade.save(clean=False)
         grade.refresh_from_db()
         self.assertEqual(grade.panel_weight, 40)
+
+    def test_grade_override_flags_and_recomputation_bypass(self):
+        grade = TeamGrade.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label='Test Stage Override',
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+            panel_score=Decimal('70.00'),
+            adviser_score=Decimal('80.00'),
+            peer_score=Decimal('90.00'),
+        )
+        self.assertFalse(grade.panel_score_is_override)
+        self.assertFalse(grade.adviser_score_is_override)
+        self.assertFalse(grade.peer_score_is_override)
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {
+                'panel_score': '85.00',
+                'adviser_score': '95.00',
+            },
+            format='json'
+        )
+        self.assertEqual(res.status_code, 200)
+        
+        grade.refresh_from_db()
+        self.assertEqual(grade.panel_score, Decimal('85.00'))
+        self.assertEqual(grade.adviser_score, Decimal('95.00'))
+        self.assertTrue(grade.panel_score_is_override)
+        self.assertTrue(grade.adviser_score_is_override)
+        self.assertFalse(grade.peer_score_is_override)
+
+        self.assertTrue(res.data['grade']['panel_score_is_override'])
+        self.assertTrue(res.data['grade']['adviser_score_is_override'])
+        self.assertFalse(res.data['grade']['peer_score_is_override'])
+
+        from grading.grades.services import recompute_panel_score
+        recompute_panel_score(grade)
+        grade.refresh_from_db()
+        self.assertEqual(grade.panel_score, Decimal('85.00'))
+
+        grade.panel_score_is_override = False
+        grade.save()
+        recompute_panel_score(grade)
+        grade.refresh_from_db()
+        self.assertIsNone(grade.panel_score)
+
+    def test_admin_cannot_patch_adviser_score_when_adviser_grading_disabled(self):
+        grade = TeamGrade.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label='Test Stage Validation',
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+        )
+
+        # 1. By default or when enabled, it should succeed
+        self.semester.capstone_adviser_grading_enabled = True
+        self.semester.save()
+
+        self.client.force_authenticate(user=self.admin)
+        res = self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {'adviser_score': '90.00'},
+            format='json'
+        )
+        self.assertEqual(res.status_code, 200)
+        grade.refresh_from_db()
+        self.assertEqual(grade.adviser_score, Decimal('90.00'))
+
+        # 2. When disabled, it should fail
+        self.semester.capstone_adviser_grading_enabled = False
+        self.semester.save()
+
+        res = self.client.patch(
+            f'/api/grading/grades/{grade.id}/',
+            {'adviser_score': '95.00'},
+            format='json'
+        )
+        self.assertEqual(res.status_code, 400)
+        self.assertIn('adviser_score', res.data)
+        grade.refresh_from_db()
+        self.assertEqual(grade.adviser_score, Decimal('90.00'))  # remains unchanged
+

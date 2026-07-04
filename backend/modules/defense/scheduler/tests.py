@@ -270,6 +270,62 @@ class DefenseSchedulerApiTests(APITestCase):
         progress.refresh_from_db()
         self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
 
+    def test_delete_schedule_blocked_when_has_grade_submissions(self):
+        # Create a scheduled defense
+        schedule = self.create_scheduled_defense()
+        
+        # Create a grade submission for this schedule
+        from grading.grades.models import TeamGrade, PanelistGradeSubmission
+        grade = TeamGrade.objects.create(
+            team=self.team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            schedule=schedule,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+        )
+        submission = PanelistGradeSubmission.objects.create(
+            team_grade=grade,
+            schedule=schedule,
+            panelist=self.panelist,
+        )
+        
+        # Verify deleting the schedule returns 409 Conflict
+        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'has_grade_data')
+        self.assertIn('panelist grades already submitted', response.data['detail'])
+        
+        # Ensure schedule still exists
+        self.assertTrue(DefenseSchedule.objects.filter(id=schedule.id).exists())
+
+    def test_board_delete_schedule_blocked_when_has_grade_submissions(self):
+        # Create a scheduled defense
+        schedule = self.create_scheduled_defense()
+        
+        # Create a grade submission for this schedule
+        from grading.grades.models import TeamGrade, PanelistGradeSubmission
+        grade = TeamGrade.objects.create(
+            team=self.team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            schedule=schedule,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+        )
+        submission = PanelistGradeSubmission.objects.create(
+            team_grade=grade,
+            schedule=schedule,
+            panelist=self.panelist,
+        )
+        
+        # Verify deleting the schedule via Board endpoint returns 409 Conflict
+        response = self.client.delete(f'/api/defense/board/{schedule.id}/')
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.data['code'], 'has_grade_data')
+        self.assertIn('panelist grades already submitted', response.data['detail'])
+        
+        # Ensure schedule still exists
+        self.assertTrue(DefenseSchedule.objects.filter(id=schedule.id).exists())
+
     def test_cancel_schedule_reverts_stage_progress_to_ready(self):
         # Create a scheduled defense
         schedule = self.create_scheduled_defense()
@@ -1635,5 +1691,80 @@ class PitEventGradingConfigTests(APITestCase):
         payload = self.pit_payload(event_name='2nd Year PIT Expo Open', team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
         self.assertEqual(response.status_code, 201)
+
+    def test_retroactive_pit_weights_sync(self):
+        from grading.grades.models import TeamGrade
+
+        # Create another student and team for published grade
+        student_other = User.objects.create_user(
+            username='pit-student-other',
+            password='pass12345',
+            role='student',
+        )
+        team_published = StudentTeam.objects.create(
+            name='PIT Team Beta',
+            project_title='IoT Security',
+            level=StudentTeam.LEVEL_2_PIT,
+            year_level='2nd Year',
+            semester=self.semester,
+            leader=student_other,
+        )
+
+        # Create two TeamGrade records for this PIT event
+        pending_grade = TeamGrade.objects.create(
+            team=self.team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='PIT Test Event',
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+            status=TeamGrade.STATUS_PENDING,
+        )
+        published_grade = TeamGrade.objects.create(
+            team=team_published,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='PIT Test Event',
+            panel_score=85,
+            peer_score=85,
+            final_grade=85,
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+
+        # Create the PitEventGradingConfig with different weights
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='PIT Test Event',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=70,
+            peer_weight=30,
+        )
+
+        # Check pending grade has updated weights & is linked
+        pending_grade.refresh_from_db()
+        self.assertEqual(pending_grade.panel_weight, 70)
+        self.assertEqual(pending_grade.peer_weight, 30)
+        self.assertEqual(pending_grade.pit_event_config_id, config.id)
+
+        # Check published grade has NOT updated weights and is not linked
+        published_grade.refresh_from_db()
+        self.assertEqual(published_grade.panel_weight, 80)
+        self.assertEqual(published_grade.peer_weight, 20)
+        self.assertIsNone(published_grade.pit_event_config_id)
+
+        # Update the PitEventGradingConfig weights
+        config.panel_weight = 60
+        config.peer_weight = 40
+        config.save()
+
+        # Check pending grade weights are updated again
+        pending_grade.refresh_from_db()
+        self.assertEqual(pending_grade.panel_weight, 60)
+        self.assertEqual(pending_grade.peer_weight, 40)
 
 

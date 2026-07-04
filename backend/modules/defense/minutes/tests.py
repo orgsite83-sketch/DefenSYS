@@ -329,7 +329,7 @@ class MinutesCrudApiTests(APITestCase):
         # Try submit with empty comments
         submit_response = self.client.post(f'/api/defense/minutes/{self.schedule.id}/submit/')
         self.assertEqual(submit_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("All panelist comments must be filled before submitting.", submit_response.data['error'])
+        self.assertIn("All panelist comments must be filled before submitting.", submit_response.data['detail'])
 
         # Fill comments
         payload = [
@@ -345,7 +345,7 @@ class MinutesCrudApiTests(APITestCase):
         
         submit_response = self.client.post(f'/api/defense/minutes/{self.schedule.id}/submit/')
         self.assertEqual(submit_response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("Please upload your e-signature first.", submit_response.data['error'])
+        self.assertIn("Please upload your e-signature first.", submit_response.data['detail'])
 
         # Restore signature and submit
         self.doc_faculty.e_signature = original_sig

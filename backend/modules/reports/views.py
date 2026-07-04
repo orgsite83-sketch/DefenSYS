@@ -23,6 +23,7 @@ from authentication_access_control.scopes import (
 from grading.grades.models import TeamGrade
 from defense.scheduler.models import DefenseSchedule
 from academic_period_management.models import Semester
+from academic_period_management.services import active_semester
 from authentication_access_control.models import SystemAuditLog
 
 # Import PDF Generators
@@ -79,7 +80,7 @@ class SemesterGradesReportView(APIView):
         if semester_id:
             semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
         else:
-            semester = Semester.objects.filter(is_active=True).first()
+            semester = active_semester()
             if not semester:
                 return Response(
                     {"detail": "No active semester is configured."},
@@ -101,6 +102,12 @@ class SemesterGradesReportView(APIView):
                 Q(team__name__icontains=search)
                 | Q(team__project_title__icontains=search)
                 | Q(stage_label__icontains=search)
+                | Q(team__adviser__first_name__icontains=search)
+                | Q(team__adviser__last_name__icontains=search)
+                | Q(team__adviser__username__icontains=search)
+                | Q(schedule__panel_assignments__panelist__first_name__icontains=search)
+                | Q(schedule__panel_assignments__panelist__last_name__icontains=search)
+                | Q(schedule__panel_assignments__panelist__username__icontains=search)
             ).distinct()
         if year_level:
             queryset = queryset.filter(team__year_level=year_level)
@@ -129,7 +136,7 @@ class DefenseScheduleReportView(APIView):
         if semester_id:
             semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
         else:
-            semester = Semester.objects.filter(is_active=True).first()
+            semester = active_semester()
             if not semester:
                 return Response(
                     {"detail": "No active semester is configured."},
@@ -152,6 +159,10 @@ class DefenseScheduleReportView(APIView):
                 | Q(team__project_title__icontains=search)
                 | Q(room__icontains=search)
                 | Q(event_name__icontains=search)
+                | Q(defense_stage__label__icontains=search)
+                | Q(panel_assignments__panelist__first_name__icontains=search)
+                | Q(panel_assignments__panelist__last_name__icontains=search)
+                | Q(panel_assignments__panelist__username__icontains=search)
             ).distinct()
         if scope:
             queryset = queryset.filter(scope=scope)
@@ -180,7 +191,7 @@ class TeamRosterReportView(APIView):
         if semester_id:
             semester = get_object_or_404(Semester.objects.select_related('school_year'), pk=semester_id)
         else:
-            semester = Semester.objects.filter(is_active=True).first()
+            semester = active_semester()
             
         # Retrieve teams scoped to user's permissions
         queryset = visible_teams_for(request.user)

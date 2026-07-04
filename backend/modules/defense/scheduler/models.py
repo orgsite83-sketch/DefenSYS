@@ -329,6 +329,18 @@ class PitEventGradingConfig(models.Model):
         self.event_name = (self.event_name or '').strip()
         self.full_clean()
         super().save(*args, **kwargs)
+        from grading.grades.models import TeamGrade
+        from django.db.models import Q
+
+        TeamGrade.objects.filter(
+            Q(pit_event_config=self) | Q(semester=self.semester, scope=TeamGrade.SCOPE_PIT, stage_label__iexact=self.event_name),
+            status=TeamGrade.STATUS_PENDING,
+        ).update(
+            pit_event_config=self,
+            panel_weight=self.panel_weight,
+            peer_weight=self.peer_weight,
+            adviser_weight=0,
+        )
 
     def __str__(self):
         return f'{self.event_name} ({self.semester})'

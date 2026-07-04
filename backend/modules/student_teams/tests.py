@@ -1727,3 +1727,67 @@ class StudentTeamApiTests(APITestCase):
         user, status, name = resolve_adviser('Ada Lovelace')
         self.assertEqual(status, ADVISER_STATUS_USER_NOT_FOUND)
 
+    def test_patch_team_status_locked_when_published_grade_exists(self):
+        self._activate_capstone_intake_semester()
+        team = StudentTeam.objects.create(
+            name='Team Guard Test',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.second_semester,
+            leader=self.student_1,
+            adviser=self.adviser,
+        )
+        
+        # Verify initial team status is Pending
+        self.assertEqual(team.status, StudentTeam.STATUS_PENDING)
+        
+        # Create a TeamGrade for the team with STATUS_PUBLISHED
+        from decimal import Decimal
+        from grading.grades.models import TeamGrade
+        TeamGrade.objects.create(
+            team=team,
+            semester=self.second_semester,
+            status=TeamGrade.STATUS_PUBLISHED,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            panel_score=Decimal('80.00'),
+            peer_score=Decimal('80.00'),
+            adviser_score=Decimal('80.00'),
+            final_grade=Decimal('80.00'),
+        )
+        
+        # Attempt to PATCH status to Approved directly
+        response = self.client.patch(
+            f'/api/teams/{team.id}/',
+            {
+                'name': 'Team Guard Test',
+                'leader_id': self.student_1.id,
+                'member_ids': [self.student_1.id, self.student_2.id],
+                'status': StudentTeam.STATUS_APPROVED,
+            },
+            format='json',
+        )
+        
+        # Expect 409 conflict
+        self.assertEqual(response.status_code, 409)
+        self.assertIn('status', response.data)
+        self.assertEqual(
+            response.data['status'],
+            'Team status is locked because a published grade exists. Unpublish the grade to change team status.'
+        )
+        
+        # Now try to PATCH a different field (e.g. name) WITHOUT changing status.
+        response = self.client.patch(
+            f'/api/teams/{team.id}/',
+            {
+                'name': 'Team Guard Test Renamed',
+                'leader_id': self.student_1.id,
+                'member_ids': [self.student_1.id, self.student_2.id],
+            },
+            format='json',
+        )
+        
+        # Expect 200 OK because status was not modified
+        self.assertEqual(response.status_code, 200)
+        team.refresh_from_db()
+        self.assertEqual(team.name, 'Team Guard Test Renamed')
+

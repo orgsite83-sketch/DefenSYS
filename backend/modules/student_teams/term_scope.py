@@ -21,8 +21,7 @@ HISTORICAL_TEAM_MESSAGE = (
 )
 
 
-def get_active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from academic_period_management.services import active_semester as get_active_semester
 
 
 def term_status_for_team(team, active=None):
@@ -140,8 +139,11 @@ def apply_team_scope(queryset, scope='active', user=None):
             return queryset.exclude(semester_id=active.id)
         return queryset
 
-    if active:
-        return queryset.filter(semester_id=active.id)
+    if normalized == 'active':
+        if active:
+            return queryset.filter(semester_id=active.id)
+        return queryset.none()
+
     return queryset.none()
 
 

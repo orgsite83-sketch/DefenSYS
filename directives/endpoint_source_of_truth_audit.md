@@ -13,50 +13,170 @@
 | 🟡 Medium | 5 | Inconsistent patterns that increase maintenance risk |
 | 🔵 Low | 3 | Style inconsistencies (not dangerous, but messy) |
 
+**Total: 113 endpoints audited across 13 modules.**
+
 ---
 
-## 🔴 CRITICAL — Multiple Mutation Paths (Data Corruption Risk)
+## 🔴 1. Grade Score Writes from Multiple Endpoints (Panel Scores)
 
-### 1. Grade Score Writes from Multiple Endpoints (Panel Scores)
+**Priority**: P0 — Fix Immediately
 
 **Problem**: Panel grades for a team can be submitted through THREE different endpoints, all ultimately writing to the same `TeamGrade.panel_score` and `GradeBreakdown` rows:
 
 | # | Endpoint | View | Module |
 |---|----------|------|--------|
-| 1 | `POST /api/grading/grades/<id>/` (PATCH) | `GradeCenterDetailView.patch` | [views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L192-L219) |
+| 1 | `PATCH /api/grading/grades/<id>/` | `GradeCenterDetailView.patch` | [views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L192-L219) |
 | 2 | `POST /api/defense/schedules/submit-grades/` | `PanelistGradeSubmissionView.post` | [scheduler/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L533-L742) |
 | 3 | `POST /api/defense/schedules/guest-submit-grades/` | `GuestPanelistGradeSubmissionView.post` | [scheduler/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L849-L1036) |
 
-**Why it's dangerous**:
-- **Endpoint 1** (`GradeCenterDetailView.patch`) performs a raw `TeamGradeUpdateSerializer.save()` which writes `panel_score` directly — it **does NOT** call `recompute_panel_score()`. The admin can manually set `panel_score=85` while the underlying `GradeBreakdown`/`PanelistGradeSubmission` rows still reflect the real per-panelist averages.
+**Why it's dangerous (how the code works now)**:
+- **Endpoint 1** (`GradeCenterDetailView.patch`) performs a raw `TeamGradeUpdateSerializer.save()` which writes `panel_score` directly via `setattr` — it **does NOT** call `recompute_panel_score()`. The admin can manually set `panel_score=85` while the underlying `GradeBreakdown`/`PanelistGradeSubmission` rows still reflect the real per-panelist averages.
 - **Endpoints 2 & 3** both call `submit_panelist_grade()` → `recompute_panel_score()` which recalculates from breakdown/submission data.
 - If an admin manually edits via Endpoint 1, then a panelist submits via Endpoint 2, the `recompute_panel_score()` will **overwrite** the admin's manual value with the computed average — silently dropping the admin's override.
 - **No audit trail** distinguishes whether `panel_score` was set by manual override or by computation.
+- **Data that can be corrupted**: `TeamGrade.panel_score`, `TeamGrade.final_grade`.
 
-**Data that can be corrupted**: `TeamGrade.panel_score`, `TeamGrade.final_grade`.
+**Recommended Fix**:
+
+**Step 1 — Add override flag to `TeamGrade` model** in [models.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/models.py#L95-L97):
+
+```diff
+ panel_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
++panel_score_is_override = models.BooleanField(default=False)
+ adviser_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
++adviser_score_is_override = models.BooleanField(default=False)
+ peer_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+```
+
+**Step 2 — Set the flag in `TeamGradeUpdateSerializer.save()`** in [serializers.py:262-273](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/serializers.py#L262-L273):
+
+```diff
+ def save(self):
+     grade = self.context['grade']
+     for field in ['panel_score', 'adviser_score', 'peer_score']:
+         if field in self.validated_data:
+             setattr(grade, field, self.validated_data[field])
++            setattr(grade, f'{field.split("_score")[0]}_score_is_override', True)
+     ...
+```
+
+**Step 3 — Respect override in `recompute_panel_score()`** in [services.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py):
+
+```diff
+ def recompute_panel_score(grade):
++    if grade.panel_score_is_override:
++        return  # Admin override takes precedence; skip recompute
+     # ... existing computation logic ...
+```
+
+**Step 4 — Add audit log to `GradeCenterDetailView.patch`** in [views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L192-L219):
+
+```diff
++if any(f in serializer.validated_data for f in ['panel_score', 'adviser_score', 'peer_score']):
++    log_high_impact_action(
++        category=SystemAuditLog.CATEGORY_GRADE_CENTER,
++        action='grade.admin_score_override',
++        target=grade,
++        actor=request.user,
++        new_values={f: str(serializer.validated_data[f]) for f in ['panel_score', 'adviser_score', 'peer_score'] if f in serializer.validated_data},
++    )
+```
+
+**Migration**: Generate and run migration for the two new boolean fields.
 
 ---
 
-### 2. Schedule Status Modified from Two Independent Endpoints
+## 🔴 2. Schedule Status Modified from Three Independent Paths
 
-**Problem**: `DefenseSchedule.status` can be changed from two separate endpoints with **different validation logic and different audit trails**:
+**Priority**: P0 — Fix Immediately
 
-| # | Endpoint | View | Audit |
-|---|----------|------|-------|
-| 1 | `PATCH /api/defense/schedules/<id>/` | `DefenseScheduleDetailView.patch` | ✅ `log_high_impact_action` with `schedule.status_change` |
-| 2 | `PATCH /api/defense/board/<id>/` | `DefenseBoardDetailView.patch` | ❌ No audit log for status changes |
+**Problem**: `DefenseSchedule.status` can be changed from three separate code paths with **different validation logic and different audit trails**:
 
-**Why it's dangerous**:
-- Both endpoints use different serializers (`DefenseSchedulePatchSerializer` vs `DefenseScheduleStatusSerializer`) to validate status transitions. If the transition rules differ between these serializers, a user could make a transition via the Board endpoint that the Scheduler endpoint would reject.
-- Schedule status changes via the Board endpoint are **not audited** — silent changes to defense schedules.
+| # | Mutation Path | Location | Audit? |
+|---|--------------|----------|--------|
+| 1 | `PATCH /api/defense/schedules/<id>/` | [DefenseScheduleDetailView.patch](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L311-L325) | ✅ `log_high_impact_action` |
+| 2 | `PATCH /api/defense/board/<id>/` | [DefenseBoardDetailView.patch](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L134-L146) | ❌ No audit log |
+| 3 | Grade publish/finalize | [GradeContextService.publish](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L1172-L1187) | ❌ No schedule audit |
 
-**Additionally**: The `GradeContextService.publish()` and `GradeContextService.finalize_for_archive()` methods in [services.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L1172-L1187) also directly mutate `schedule.status` to `STATUS_DONE`, creating a **third** mutation path for schedule status with no schedule-level audit log.
+**Why it's dangerous (how the code works now)**:
+- Path 1 uses `DefenseSchedulePatchSerializer` which delegates transition validation to `DefenseScheduleStatusSerializer.VALID_TRANSITIONS`.
+- Path 2 uses `DefenseScheduleStatusSerializer` directly — same transitions but **no audit log is written**.
+- Path 3 directly sets `schedule.status = STATUS_DONE` and calls `schedule.save()` — **no transition validation at all** and no schedule-level audit.
+- A user could bypass transition rules by using the grade publish path (e.g., going from `CANCELLED` → `DONE` if a grade is published on a cancelled schedule).
+- Schedule status changes via the Board endpoint are completely invisible in the audit trail.
 
-**Data that can be corrupted**: `DefenseSchedule.status` — three sources can set it with different validation rules.
+**Recommended Fix**:
+
+**Step 1 — Create a single canonical service function** (new file or add to existing `defense/scheduler/services.py`):
+
+```python
+from authentication_access_control.models import SystemAuditLog
+from .models import DefenseSchedule
+
+VALID_TRANSITIONS = {
+    DefenseSchedule.STATUS_SCHEDULED: [DefenseSchedule.STATUS_DONE, DefenseSchedule.STATUS_CANCELLED],
+    DefenseSchedule.STATUS_DONE: [DefenseSchedule.STATUS_ARCHIVED],
+    DefenseSchedule.STATUS_CANCELLED: [DefenseSchedule.STATUS_SCHEDULED],
+    DefenseSchedule.STATUS_ARCHIVED: [],
+}
+
+def transition_schedule_status(schedule, new_status, *, actor=None, reason=''):
+    """Single source of truth for schedule status transitions."""
+    from authentication_access_control.services import log_high_impact_action
+
+    old_status = schedule.status
+    if new_status == old_status:
+        return schedule
+
+    allowed = VALID_TRANSITIONS.get(old_status, [])
+    if new_status not in allowed:
+        from rest_framework.exceptions import ValidationError
+        raise ValidationError({'status': f'Cannot change status from "{old_status}" to "{new_status}".'})
+
+    schedule.status = new_status
+    schedule.save(update_fields=['status', 'updated_at'])
+
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_DEFENSE_SCHEDULING,
+        action='schedule.status_change',
+        target=schedule,
+        actor=actor,
+        old_values={'status': old_status},
+        new_values={'status': new_status, 'reason': reason},
+    )
+    return schedule
+```
+
+**Step 2 — Refactor Board view** at [board/views.py:134-146](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L134-L146):
+
+```diff
+ def patch(self, request, schedule_id):
+     schedule = self.get_object(request, schedule_id)
+-    serializer = DefenseScheduleStatusSerializer(data=request.data, context={'schedule': schedule})
+-    serializer.is_valid(raise_exception=True)
+-    schedule = serializer.save()
++    from defense.scheduler.services import transition_schedule_status
++    schedule = transition_schedule_status(schedule, request.data.get('status'), actor=request.user, reason='board_view')
+```
+
+**Step 3 — Refactor Grade service** at [services.py:1172-1184](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L1172-L1184):
+
+```diff
+-if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
+-    grade.schedule.status = DefenseSchedule.STATUS_DONE
+-    grade.schedule.save(update_fields=['status', 'updated_at'])
++if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
++    from defense.scheduler.services import transition_schedule_status
++    transition_schedule_status(grade.schedule, DefenseSchedule.STATUS_DONE, actor=user, reason='grade_finalized')
+```
+
+**Step 4 — Make both serializers import `VALID_TRANSITIONS`** from the service instead of defining their own copies.
 
 ---
 
-### 3. Team Status Modified via Grade Publish AND Direct Team Edit
+## 🔴 3. Team Status Modified via Grade Publish AND Direct Team Edit
+
+**Priority**: P0 — Fix Immediately
 
 **Problem**: `StudentTeam.status` is set in two places:
 
@@ -65,11 +185,41 @@
 | 1 | Grade publish/finalize | [_apply_team_result_from_grade](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L1600-L1612) sets `team.status` to `STATUS_APPROVED` or `STATUS_FAILED` |
 | 2 | Direct team PATCH | `StudentTeamDetailView.patch` can update team `status` directly |
 
-**Why it's dangerous**: An admin could publish a grade (setting team status to "Approved"), then another user or process edits the team directly back to "Active", while the published grade still says "Approved". The team status and grade status become permanently out of sync.
+**Why it's dangerous (how the code works now)**:
+- An admin publishes a grade → `_apply_team_result_from_grade()` sets `team.status = 'Approved'`.
+- Another user (or the same admin) then PATCHes the team directly → sets `team.status = 'Active'`.
+- Now the published grade says "Approved" but the team says "Active". These are permanently out of sync.
+- No guard prevents overwriting a grade-derived team status.
+
+**Recommended Fix**:
+
+Add a guard in `StudentTeamDetailView.patch` in [student_teams/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/student_teams/views.py):
+
+```diff
+ def patch(self, request, pk):
+     team = self.get_object(pk)
+     assert_team_writable(request.user, team)
++
++    # Prevent overriding a grade-derived team status
++    if 'status' in request.data:
++        from grading.grades.models import TeamGrade
++        published_grade = TeamGrade.objects.filter(
++            team=team, status=TeamGrade.STATUS_PUBLISHED
++        ).exists()
++        if published_grade:
++            return Response(
++                {'status': 'Team status is locked because a published grade exists. Unpublish the grade to change team status.'},
++                status=status.HTTP_409_CONFLICT,
++            )
++
+     serializer = ...
+```
 
 ---
 
-### 4. `adviser_score` Written from Two Different Modules
+## 🔴 4. `adviser_score` Written from Two Modules with Different Validation
+
+**Priority**: P0 — Fix Immediately
 
 **Problem**: `TeamGrade.adviser_score` can be written from:
 
@@ -78,102 +228,262 @@
 | 1 | `POST /api/grading/grades/adviser-grades/<id>/submit/` | `AdviserSubmitGradeView.post` | Checks `LOCKED_STATUSES`, `require_grade_editable`, `require_matching_rubric`, adviser grading enabled flag |
 | 2 | `PATCH /api/grading/grades/<id>/` | `GradeCenterDetailView.patch` | Only checks `require_grade_editable` via `TeamGradeUpdateSerializer` |
 
-**Why it's dangerous**: 
+**Why it's dangerous (how the code works now)**:
 - The admin PATCH endpoint (2) can write `adviser_score` **even when `capstone_adviser_grading_enabled` is false** and **without rubric validation**.
 - If an admin sets `adviser_score` manually, then the adviser submits through endpoint 1, the adviser's validated score overwrites via `grade.save()` — but the breakdown data is now from the adviser while the raw score may have been from the admin. No conflict resolution exists.
 
+**Recommended Fix**:
+
+Add validation in `TeamGradeUpdateSerializer.validate()` in [serializers.py:242-260](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/serializers.py#L242-L260):
+
+```diff
+ def validate(self, attrs):
+     if not attrs:
+         raise serializers.ValidationError('At least one score or status field is required.')
++
++    # Block if editing disabled grading components
++    grade = self.context['grade']
++    if 'adviser_score' in attrs and grade.scope == TeamGrade.SCOPE_CAPSTONE:
++        semester = grade.semester
++        if not getattr(semester, 'capstone_adviser_grading_enabled', True):
++            raise serializers.ValidationError({
++                'adviser_score': 'Adviser grading is disabled for this semester. Enable it in Evaluation Settings first.'
++            })
++
+     if attrs.get('status') == TeamGrade.STATUS_PUBLISHED:
+         # ... existing publish validation ...
+```
+
 ---
 
-## 🟠 HIGH — Duplicated Logic That Can Silently Diverge
+## 🟠 5. Seven Independent `active_semester()` Functions
 
-### 5. Seven Independent `active_semester()` Functions
+**Priority**: P1 — Fix Soon
 
-**Problem**: The concept of "get the active semester" is implemented as **7 separate function definitions** across the codebase, plus multiple inline `Semester.objects.filter(is_active=True).first()` calls:
+**Problem**: The concept of "get the active semester" is implemented as **7 separate function definitions** plus multiple inline `Semester.objects.filter(is_active=True).first()` calls:
 
 | # | Location | Implementation |
 |---|----------|----------------|
-| 1 | [grading/grades/services.py:59](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L59) | `Semester.objects.select_related('school_year').filter(is_active=True).first()` |
-| 2 | [student_teams/term_scope.py:24](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/student_teams/term_scope.py#L24) | `Semester.objects.select_related('school_year').filter(is_active=True).first()` |
-| 3 | [student_teams/views.py:79](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/student_teams/views.py#L79) | Wraps `get_active_semester()` from term_scope |
+| 1 | [grading/grades/services.py:59](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L59) | Own copy with `select_related` |
+| 2 | [student_teams/term_scope.py:24](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/student_teams/term_scope.py#L24) | Own copy with `select_related` |
+| 3 | [student_teams/views.py:79](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/student_teams/views.py#L79) | Wraps `get_active_semester()` |
 | 4 | [defense/scheduler/serializers.py:46](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/serializers.py#L46) | Own copy |
 | 5 | [grading/rubrics/views.py:89](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/rubrics/views.py#L89) | Own copy |
 | 6 | [academic_period_management/views.py:21](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/academic_period_management/views.py#L21) | Own copy |
 | 7 | [repository/deliverables/services.py:118](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/repository/deliverables/services.py#L118) | Own copy |
 | 8 | [user_management/academic_records/rollover.py:14](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/academic_records/rollover.py#L14) | Own copy |
 
-**Additionally**, these inline queries skip the helper entirely:
-- [reports/views.py:82, 132, 183](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L82) — `Semester.objects.filter(is_active=True).first()` (no `select_related`)
-- [defense/scheduler/views.py:629, 933](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L629) — `team.semester or Semester.objects.filter(is_active=True).first()`
-- [dashboards/views.py:841](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L841) — `Semester.objects.filter(is_active=True).first()`
+**Inline queries that skip the helper entirely**:
+- [reports/views.py:82, 132, 183](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L82) — no `select_related`
+- [defense/scheduler/views.py:629, 933](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L629) — `team.semester or Semester.objects.filter(...).first()` fallback
+- [dashboards/views.py:841](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L841) — no `select_related`
 
-**Why it's dangerous**: 
-- If the model or query logic changes (e.g., adding `is_archived` flag, multi-tenant support), not all copies will be updated.
-- The `select_related('school_year')` prefetch is missing in some copies (reports, dashboards), causing inconsistent performance and potential N+1 queries.
-- The inline `team.semester or Semester.objects.filter(...)` pattern in scheduler views (lines 629, 933) is a **fallback** that can pick a different semester than what the team is scoped to, potentially creating a `TeamGrade` row with a semester that doesn't match the team's semester.
+**Why it's dangerous (how the code works now)**:
+- If the model or query logic changes (e.g., adding `is_archived` flag), not all copies will be updated.
+- The `select_related('school_year')` prefetch is missing in some copies, causing inconsistent N+1 queries.
+- The `team.semester or Semester.objects.filter(...)` fallback in scheduler views can pick a different semester than what the team is scoped to, potentially creating a `TeamGrade` row with a mismatched semester.
+
+**Recommended Fix**:
+
+**Step 1 — Create the one canonical function** in `academic_period_management/services.py` (new file):
+
+```python
+from .models import Semester
+
+def active_semester():
+    """Single source of truth for the currently active semester."""
+    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+```
+
+**Step 2 — Delete all 7+ duplicates** and replace with:
+
+```python
+from academic_period_management.services import active_semester
+```
+
+In `student_teams/term_scope.py`, add an alias for backwards compatibility:
+
+```python
+from academic_period_management.services import active_semester as get_active_semester
+```
+
+**Step 3 — Replace all inline queries** in `reports/views.py`, `scheduler/views.py`, and `dashboards/views.py` with the canonical import.
 
 ---
 
-### 6. Duplicate `counts_payload()` Functions in `academic_records/views.py`
+## 🟠 6. Duplicate `counts_payload()` in academic_records/views.py
 
-**Problem**: The file [academic_records/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/academic_records/views.py) defines `counts_payload()` **twice** — at line 46 and line 165. Both are identical.
+**Priority**: P1 — Fix Soon
 
-**Why it's dangerous**: If only one copy is updated during a refactor, the two views using different copies will return different count structures to the frontend.
+**Problem**: [academic_records/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/academic_records/views.py) defines `counts_payload()` **twice** — at line 46 and line 165. Both are identical.
+
+**Why it's dangerous (how the code works now)**:
+- Python uses the **last** definition in file scope — so the line-46 copy is dead code.
+- If someone edits only the line-46 copy thinking it's the active one, nothing changes. If they edit only the line-165 copy, it works but the line-46 version becomes stale and confusing.
+- During a refactor, updating one but not the other will cause subtle bugs.
+
+**Recommended Fix**:
+
+Delete the first `options_payload()` + `counts_payload()` block at lines 31–52. Keep the line-165 block (the one Python actually uses). Verify all callers reference the correct version.
 
 ---
 
-### 7. Duplicated Permission Classes (`CanManage*`)
+## 🟠 7. Four Identical Permission Classes (`CanManage*`)
 
-**Problem**: The same "admin or PIT lead" permission check is implemented as **4 separate classes** with the same logic:
+**Priority**: P1 — Fix Soon
+
+**Problem**: The same "admin or PIT lead" permission check is implemented as 4 separate classes:
 
 | Class | File |
 |-------|------|
-| `CanManageSchedules` | [scheduler/views.py:46](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L46-L59) |
-| `CanManageGradeCenter` | [grades/views.py:33](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L33-L46) |
-| `CanManageBoard` | [board/views.py:18](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L18-L31) |
+| `CanManageSchedules` | [scheduler/views.py:46](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L46) |
+| `CanManageGradeCenter` | [grades/views.py:33](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L33) |
+| `CanManageBoard` | [board/views.py:18](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L18) |
 | `CanManageRubrics` | [rubrics/views.py:16](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/rubrics/views.py#L16) |
 
 All check: `user.role == 'admin' or user.is_superuser or user.is_pit_lead`.
 
-**Why it's dangerous**: If the permission model changes (e.g., a new "department head" role), one class might be updated while the others remain unchanged, creating an access-control gap.
+**Why it's dangerous (how the code works now)**:
+- If the permission model changes (e.g., a new "department head" role), one class might be updated while the others remain unchanged, creating an access-control gap where some modules allow the role and others don't.
+
+**Recommended Fix**:
+
+**Step 1 — Create a single canonical permission** in [user_management/permissions.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/permissions.py):
+
+```python
+class CanManageModule(BasePermission):
+    """Allows admin, superuser, or PIT lead to manage module resources."""
+    message = 'Only administrators and PIT leads can manage this module.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user and user.is_authenticated
+            and (getattr(user, 'role', None) == 'admin' or user.is_superuser or getattr(user, 'is_pit_lead', False))
+        )
+```
+
+**Step 2 — Replace all four duplicates** with `from user_management.permissions import CanManageModule` and update `permission_classes`.
 
 ---
 
-### 8. Default Grade Weights Defined in Two Places
+## 🟠 8. Default Grade Weights Defined in Two Places
 
-**Problem**: The default grade weight distribution (capstone: 50/30/20, PIT: 80/20) is defined independently in:
+**Priority**: P1 — Fix Soon
+
+**Problem**: The default grade weight distribution is defined independently in:
 
 | # | Location | Values |
 |---|----------|--------|
 | 1 | [grading/grades/services.py:63-66](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L63-L66) | `{'panel_weight': 50, 'adviser_weight': 30, 'peer_weight': 20}` / `{'panel_weight': 80, 'peer_weight': 20, 'adviser_weight': 0}` |
 | 2 | [grading/rubrics/views.py:121-124](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/rubrics/views.py#L121-L124) | `{'panel': 50, 'adviser': 30, 'peer': 20}` / `{'panel': 80, 'peer': 20}` |
 
-**Why it's dangerous**: The rubric view returns these as display-only metadata to the frontend. If someone changes the actual computation defaults in `services.py` but forgets the rubric view, the frontend will display wrong weights to users.
+**Why it's dangerous (how the code works now)**:
+- The rubric view returns these as display metadata to the frontend. If someone changes the actual computation defaults in `services.py` but forgets the rubric view, the frontend will display wrong weights to users while the backend computes with different ones.
+
+**Recommended Fix**:
+
+Make the rubric view read from the canonical source at [rubrics/views.py:121-124](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/rubrics/views.py#L121-L124):
+
+```diff
++from grading.grades.services import default_weights
++
+ 'default_weights': {
+-    'capstone': {'panel': 50, 'adviser': 30, 'peer': 20},
+-    'pit': {'panel': 80, 'peer': 20},
++    'capstone': {
++        'panel': default_weights('capstone')['panel_weight'],
++        'adviser': default_weights('capstone')['adviser_weight'],
++        'peer': default_weights('capstone')['peer_weight'],
++    },
++    'pit': {
++        'panel': default_weights('pit')['panel_weight'],
++        'peer': default_weights('pit')['peer_weight'],
++    },
+ },
+```
 
 ---
 
-### 9. `_student_visible_grade()` Uses Independent Grade Lookup
+## 🟠 9. Student Dashboard Grade Lookup Bypasses Canonical Resolution
 
-**Problem**: The student dashboard in [dashboards/views.py:572-594](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L572-L594) builds its grade display with a standalone `_student_visible_grade()` function that queries `TeamGrade` independently, bypassing the canonical resolution paths used everywhere else (`resolve_canonical_capstone_grade`, `GradeContextService`, `grade_records_for`).
+**Priority**: P1 — Fix Soon
+
+**Problem**: The student dashboard in [dashboards/views.py:572-594](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L572-L594) builds its grade display with a standalone `_student_visible_grade()` function that queries `TeamGrade` independently, bypassing the canonical resolution paths used everywhere else.
 
 ```python
-# Dashboard code — does NOT use canonical_capstone_grade_for_team
+# Current dashboard code — does NOT use canonical_capstone_grade_for_team
 def _student_visible_grade(team, schedule):
     if schedule is not None:
         return TeamGrade.objects.filter(..., status=TeamGrade.STATUS_PUBLISHED).first()
     return TeamGrade.objects.filter(team=team, status=TeamGrade.STATUS_PUBLISHED).first()
 ```
 
-**Why it's dangerous**: This function:
-- Only shows `STATUS_PUBLISHED` grades — if a grade is `PENDING`, the student sees **no grade at all**, even though the data exists.
+**Why it's dangerous (how the code works now)**:
+- Only shows `STATUS_PUBLISHED` grades — if a grade is `PENDING`, the student sees **no grade at all**.
 - Does **not** filter by scope (capstone vs PIT), so it could return a PIT grade for a capstone team if the PIT grade was published more recently.
 - Does **not** use `without_stale_unscheduled_placeholders()`, so it could return a stale placeholder.
-- Meanwhile, line 851-859 of the **same view** uses `canonical_capstone_grade_for_team()` for peer evaluation context — so the same response can show grade data from one source and peer eval data from a completely different grade record.
+- Meanwhile, line 851-859 of the **same view** uses `canonical_capstone_grade_for_team()` for peer evaluation context — so the same API response can show grade data from one source and peer eval data from a completely different grade record.
+
+**Recommended Fix**:
+
+**Step 1 — Rewrite `_student_visible_grade()`**:
+
+```python
+def _student_visible_grade(team, schedule):
+    """Return the student-visible grade using canonical resolution."""
+    if team is None:
+        return None
+
+    from grading.grades.services import canonical_capstone_grade_for_team, resolve_canonical_capstone_grade
+    from grading.grades.models import TeamGrade
+
+    if team.is_capstone:
+        grade = canonical_capstone_grade_for_team(team, team.semester)
+        if grade is not None:
+            grade = resolve_canonical_capstone_grade(grade)
+        if grade is not None and grade.status == TeamGrade.STATUS_PUBLISHED:
+            return grade
+        return None
+
+    # PIT: use schedule-scoped or latest published
+    base = TeamGrade.objects.filter(team=team, scope=TeamGrade.SCOPE_PIT)
+    if schedule is not None:
+        base = base.filter(semester=schedule.semester, stage_label=schedule.stage_label)
+    return base.filter(status=TeamGrade.STATUS_PUBLISHED).order_by('-updated_at', '-id').first()
+```
+
+**Step 2 — Unify grade source** for display AND peer eval context in `StudentDashboardView.get()`:
+
+```diff
+-grade = _student_visible_grade(team, schedule)
+-...
+-peer_grade_row = None
+-if team:
+-    if team.is_capstone:
+-        peer_grade_row = canonical_capstone_grade_for_team(team, team.semester)
+-        ...
++# Unified grade resolution
++canonical_grade = None
++if team:
++    if team.is_capstone:
++        canonical_grade = canonical_capstone_grade_for_team(team, team.semester)
++        if canonical_grade is not None:
++            canonical_grade = resolve_canonical_capstone_grade(canonical_grade)
++    else:
++        canonical_grade = TeamGrade.objects.filter(
++            team=team, scope=TeamGrade.SCOPE_PIT
++        ).order_by('-updated_at', '-id').first()
++
++grade = canonical_grade if (canonical_grade and canonical_grade.status == TeamGrade.STATUS_PUBLISHED) else None
++peer_grade_row = canonical_grade
+```
 
 ---
 
-## 🟡 MEDIUM — Inconsistent Patterns
+## 🟡 10. Semester Fallback in Grade Submission (`team.semester or active_semester()`)
 
-### 10. Semester Fallback in Grade Submission (`team.semester or active_semester()`)
+**Priority**: P2 — Fix When Convenient
 
 **Problem**: In [PanelistGradeSubmissionView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L629) and [GuestPanelistGradeSubmissionView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L933):
 
@@ -181,25 +491,69 @@ def _student_visible_grade(team, schedule):
 semester = team.semester or Semester.objects.filter(is_active=True).first()
 ```
 
-This fallback is used to determine `semester` but **is never used** downstream in the grade creation path — `GradeContextService.get_for_panel_submission(schedule)` derives semester from the schedule, not the local variable. The variable `semester` is only used for the "no active semester" error check.
+**Why it's dangerous (how the code works now)**:
+- This fallback can pick a **different semester** than what the team is scoped to.
+- If the logic is ever refactored to pass `semester` into the grade service, this fallback could cause grades to be created on the wrong semester.
+- Currently the variable is only used for the "no active semester" error check, so it's a dead fallback — but its presence is misleading.
 
-**Why it's risky**: If the logic is refactored to pass `semester` into the grade service, this fallback could cause grades to be created on the wrong semester.
+**Recommended Fix**:
+
+```diff
+-semester = team.semester or Semester.objects.filter(is_active=True).first()
+-if not semester:
+-    return Response({'error': 'No active semester is configured.'}, ...)
++if not team.semester:
++    return Response({'detail': 'This team has no semester assigned.'}, ...)
++semester = team.semester
+```
 
 ---
 
-### 11. Board View Bypasses Scope Filtering for Schedule Deletion
+## 🟡 11. Board vs Scheduler Delete Have Different Safety Checks
 
-**Problem**: [DefenseBoardDetailView.delete](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L148-L165) checks `schedule.panelist_grade_submissions.exists()` before deletion but returns a 409 Conflict warning instead of actually blocking. The user sees a warning about grade data loss but the endpoint does NOT prevent the deletion if called a second time (since the response is 409, not 403).
+**Priority**: P2 — Fix When Convenient
 
-However, the [DefenseScheduleDetailView.delete](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L334-L350) in the scheduler module **does not check** for existing grade submissions at all — it just deletes.
+**Problem**: Two endpoints delete schedules with different safety levels:
 
-**Why it's risky**: Two endpoints for the same delete operation, with different safety checks. The scheduler endpoint is more dangerous.
+| # | Endpoint | Safety Check |
+|---|----------|-------------|
+| 1 | [DefenseBoardDetailView.delete](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L148-L165) | ✅ Checks `panelist_grade_submissions.exists()`, returns 409 warning |
+| 2 | [DefenseScheduleDetailView.delete](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L334-L350) | ❌ No check — just deletes |
 
----
+**Why it's dangerous (how the code works now)**:
+- The scheduler endpoint is the more commonly used one, and it has **zero** safety checks — it will delete a schedule even if panelists have already submitted grades, permanently destroying those scores.
+- The board endpoint at least warns, but doesn't hard-block.
 
-### 12. Report Filter Logic Diverges from Source List Views
+**Recommended Fix**:
 
-**Problem**: The search filter in [SemesterGradesReportView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L99-L104) uses a subset of the search fields vs the [GradeCenterListView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/views.py#L64-L75):
+Add the same grade-data check to `DefenseScheduleDetailView.delete` in [scheduler/views.py:334-350](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L334-L350):
+
+```diff
+ def delete(self, request, schedule_id):
+     schedule = self.get_object(request, schedule_id)
++
++    has_grade_data = schedule.panelist_grade_submissions.exists()
++    if has_grade_data:
++        return Response(
++            {'detail': 'This schedule has panelist grades already submitted. '
++             'Deleting it will permanently remove those individual scores. '
++             'Consider cancelling the schedule instead.',
++             'code': 'has_grade_data'},
++            status=status.HTTP_409_CONFLICT,
++        )
++
+     schedule.delete()
+```
+
+Better long-term: unify both into a single `delete_schedule()` service function.
+
+---Done
+
+## 🟡 12. Report Filter Logic Diverges from Source List Views
+
+**Priority**: P2 — Fix When Convenient
+
+**Problem**: The search filters in report export views use a subset of fields vs the main list views:
 
 | Filter Field | Grade Center List | Semester Grades Report |
 |-------------|-------------------|----------------------|
@@ -209,68 +563,202 @@ However, the [DefenseScheduleDetailView.delete](file:///c:/Users/Admin/Desktop/D
 | `team__adviser__*` | ✅ | ❌ |
 | `schedule__panel_assignments__panelist__*` | ✅ | ❌ |
 
-Users could get different result sets when exporting vs viewing, leading to confusion about data integrity.
+Same issue in [DefenseScheduleReportView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L149-L155) — missing `defense_stage__label` and panelist search.
 
-Similarly, [DefenseScheduleReportView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L149-L155) lacks the `defense_stage__label` and panelist search fields present in the scheduler list view's [filter_schedules](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L107-L117).
+**Why it's dangerous (how the code works now)**:
+- Users can get different result sets when exporting vs viewing the same data with the same search term, leading to confusion about data integrity.
+
+**Recommended Fix**:
+
+**Step 1 — Add missing fields** to [SemesterGradesReportView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L99-L104):
+
+```diff
+ if search:
+     queryset = queryset.filter(
+         Q(team__name__icontains=search)
+         | Q(team__project_title__icontains=search)
+         | Q(stage_label__icontains=search)
++        | Q(team__adviser__first_name__icontains=search)
++        | Q(team__adviser__last_name__icontains=search)
++        | Q(schedule__panel_assignments__panelist__first_name__icontains=search)
++        | Q(schedule__panel_assignments__panelist__last_name__icontains=search)
+     ).distinct()
+```
+
+**Step 2 — Add missing fields** to [DefenseScheduleReportView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/reports/views.py#L149-L155):
+
+```diff
+ if search:
+     queryset = queryset.filter(
+         Q(team__name__icontains=search)
+         | Q(team__project_title__icontains=search)
+         | Q(room__icontains=search)
+         | Q(event_name__icontains=search)
++        | Q(defense_stage__label__icontains=search)
++        | Q(panel_assignments__panelist__first_name__icontains=search)
++        | Q(panel_assignments__panelist__last_name__icontains=search)
+     ).distinct()
+```
+
+**Better long-term**: Extract filter logic into a `filter_queryset()` function per module that both the list view and the report view call.
 
 ---
 
-### 13. Grade Weights Fallback Chain Has 4 Levels
+## 🟡 13. Grade Weights Fallback Chain Has 4 Levels
 
-**Problem**: The `weights_for_schedule()` function at [services.py:626-652](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L626-L652) has a complex fallback chain:
+**Priority**: P2 — Fix When Convenient
 
-1. If capstone + defense_stage → `weights_for_capstone_stage()`
-2. If PIT → `get_pit_event_config()` → config weights, else `weights_for_pit_event()`
-3. If rubric exists → rubric weights
-4. Else → `default_weights()`
+**Problem**: `weights_for_schedule()` at [services.py:626-652](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L626-L652) has a complex fallback chain:
 
-Each level can return different weights for the same schedule. If a PIT event config is created **after** a grade was already created with rubric weights, the grade's weights won't retroactively update unless a sync is manually triggered.
+1. StageGradingConfig / PitEventGradingConfig (if configured)
+2. Schedule's rubric custom weights
+3. `default_weights()` for the scope
+
+**Why it's dangerous (how the code works now)**:
+- Each level can return different weights for the same schedule.
+- If a PIT event config is created **after** a grade was already created with rubric weights, the grade's weights won't retroactively update unless a sync is manually triggered.
+- No documentation explains the precedence order.
+
+**Recommended Fix**:
+
+**Step 1 — Document the precedence** with an inline docstring:
+
+```python
+def weights_for_schedule(schedule):
+    """
+    Weight resolution order (first match wins):
+    1. StageGradingConfig / PitEventGradingConfig (if configured)
+    2. Schedule's rubric custom weights
+    3. default_weights() for the scope
+
+    IMPORTANT: Existing TeamGrade rows are NOT retroactively updated
+    when a config is created after the grade. Call sync_missing_grade_rows() to recompute.
+    """
+```
+
+**Step 2 — Add retroactive sync** when a config is saved:
+
+```python
+# defense/stages/grading_config.py — after saving the config:
+from grading.grades.models import TeamGrade
+TeamGrade.objects.filter(
+    defense_stage=config.defense_stage,
+    semester=config.semester,
+    status=TeamGrade.STATUS_PENDING,
+).update(
+    panel_weight=config.panel_weight,
+    adviser_weight=config.adviser_weight,
+    peer_weight=config.peer_weight,
+)
+```
 
 ---
 
-### 14. `peer_grading_allowed_for_grade()` vs Dashboard Peer Eval Flag
+## 🟡 14. Peer Grading Enabled — Dashboard vs Submit Check
+
+**Priority**: P2 — Fix When Convenient
 
 **Problem**: Two separate sources determine if peer evaluation is enabled:
 
 | Source | Logic |
 |--------|-------|
-| [peer_grading_allowed_for_grade](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L2143-L2147) | PIT: checks `group_settings_for_grade().peer_grading_enabled`; Capstone: checks `semester.capstone_peer_evaluation_enabled` |
-| [StudentDashboardView](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L861) | Calls `peer_grading_allowed_for_grade()` ✅ (correctly delegates) |
+| [peer_grading_allowed_for_grade](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/services.py#L2143-L2147) | PIT: checks `group_settings.peer_grading_enabled`; Capstone: checks `semester.capstone_peer_evaluation_enabled` |
+| `submit_student_peer_evaluation()` in `peer_eval.py` | Has its own peer-enabled check |
 
-This is actually correctly delegated — noting for completeness that the **dashboard** correctly uses the canonical function. However, the `StudentPeerEvaluationSubmitView` in [peer_views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/grading/grades/peer_views.py) delegates to `submit_student_peer_evaluation()` which contains its **own** peer-enabled check inside `peer_eval.py`. If those two paths diverge, the dashboard could show "peer eval enabled" while the submit endpoint rejects.
+**Why it's dangerous (how the code works now)**:
+- The dashboard correctly calls `peer_grading_allowed_for_grade()` to show "peer eval enabled".
+- But the submit endpoint in `peer_eval.py` uses its own internal check.
+- If those two paths diverge, the dashboard could show "peer eval enabled" while the submit endpoint rejects, or vice versa.
+
+**Recommended Fix**:
+
+Ensure `submit_student_peer_evaluation()` in `peer_eval.py` calls the canonical function:
+
+```diff
+ # grading/grades/peer_eval.py — inside submit_student_peer_evaluation()
++from .services import peer_grading_allowed_for_grade
++if not peer_grading_allowed_for_grade(grade):
++    raise ValidationError({'peer_eval': 'Peer grading is not currently enabled for this grade.'})
+```
+
+---Done
+
+## 🔵 15. Duplicate Function Blocks in academic_records/views.py
+
+**Priority**: P2 — Fix When Convenient
+
+**Problem**: [academic_records/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/academic_records/views.py) defines `options_payload()` and `counts_payload()` twice — at lines 31–52 and again at lines 148–171. Both blocks are identical.
+
+**Why it's dangerous (how the code works now)**:
+- Python uses the last definition — so the line-46 copy is dead code today.
+- During future edits, developers may update the wrong copy.
+
+**Recommended Fix**: Delete the first block (lines 31–52). Keep the line-148–171 block. Verify callers.
+
+---Done
 
 ---
 
-## 🔵 LOW — Style / Maintenance Inconsistencies
+## 🔵 16. Inconsistent Error Response Shapes
 
-### 15. `academic_records/views.py` Has Duplicate Function Blocks
-
-**Problem**: The file [academic_records/views.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/user_management/academic_records/views.py) defines `options_payload()` and `counts_payload()` twice at lines 31–52 and again at lines 148–171. The blocks are identical. This appears to be a copy-paste artifact from when the view was refactored.
-
-**Impact**: Low — both are identical today, but divergence risk during future edits.
-
----
-
-### 16. Inconsistent Error Response Shapes
+**Priority**: P2 — Fix When Convenient
 
 **Problem**: Error responses across endpoints use different payload shapes:
 
 | Pattern | Used In |
 |---------|---------|
-| `{'detail': 'message'}` | Most endpoints |
-| `{'error': 'message'}` | [scheduler/views.py:632-633](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L632-L633), [scheduler/views.py:740-741](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L740-L741) |
-| `{'warning': 'message'}` | [board/views.py:155-160](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L155-L160) |
-| Exception `message_dict` (flat) | Several views |
+| `{'detail': 'message'}` | Most endpoints (DRF standard) |
+| `{'error': 'message'}` | [scheduler/views.py:632](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L632), [scheduler/views.py:740](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L740) |
+| `{'warning': 'message'}` | [board/views.py:155](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L155) |
 
-**Impact**: Frontend must handle multiple error shapes, making global error handling fragile.
+**Why it's dangerous (how the code works now)**:
+- Frontend must handle multiple error shapes, making global error handling fragile. A global error interceptor that checks `response.data.detail` will miss `error` and `warning` keys.
+
+**Recommended Fix**: Standardize all to `{'detail': '...'}` (DRF convention):
+
+| File | Line | Change |
+|------|------|--------|
+| [scheduler/views.py:632](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L632) | 632 | `{'error': ...}` → `{'detail': ...}` |
+| [scheduler/views.py:740](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/scheduler/views.py#L740) | 740 | `{'error': ...}` → `{'detail': ...}` |
+| [board/views.py:155](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/defense/board/views.py#L155) | 155 | `{'warning': ...}` → `{'detail': ..., 'code': 'has_grade_data'}` |
+
+---Done
 
 ---
 
-### 17. Dashboard `_active_semester_label()` vs `active_semester()` 
+## 🔵 17. Dashboard Triple Semester Query
 
-**Problem**: The dashboard uses `_active_semester_label()` at [dashboards/views.py:137-139](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L137-L139) which returns a display string, while most other code uses `active_semester()` which returns a model object. The dashboard also separately queries `Semester.objects.filter(is_active=True).first()` at line 841.
+**Priority**: P2 — Fix When Convenient
 
-**Impact**: Low — no data corruption, but 3 separate semester queries in one dashboard response.
+**Problem**: The dashboard views query `Semester.objects.filter(is_active=True)` multiple times in a single request — `_active_semester_label()` at [dashboards/views.py:137](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L137), plus inline at [line 841](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/dashboards/views.py#L841), etc.
+
+**Why it's dangerous (how the code works now)**:
+- Not a corruption risk, but 3 separate identical database queries in one API response is wasteful.
+- If an admin deactivates the semester between queries in the same request (unlikely but possible), each query could return a different result.
+
+**Recommended Fix**: Cache the semester at the top of each dashboard view and pass it down:
+
+```diff
++from academic_period_management.services import active_semester
++active_sem = active_semester()
+ ...
+-active_sem = Semester.objects.filter(is_active=True).first()
+```
+
+Refactor `_active_semester_label()` to accept an optional parameter:
+
+```diff
+-def _active_semester_label():
+-    semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
+-    return semester.display_name if semester else 'Not configured'
++def _active_semester_label(semester=None):
++    if semester is None:
++        from academic_period_management.services import active_semester
++        semester = active_semester()
++    return semester.display_name if semester else 'Not configured'
+```
+
+---Done
 
 ---
 
@@ -391,33 +879,3 @@ This is actually correctly delegated — noting for completeness that the **dash
 | 111 | `api/notifications/<id>/read/` | POST | `NotificationReadView` | notifications |
 | 112 | `api/notifications/read-all/` | POST | `NotificationReadAllView` | notifications |
 | 113 | `api/media/files/<path>/` | GET | `AuthenticatedMediaFileView` | defensys_backend |
-
-**Total: 113 endpoints across 13 modules.**
-
----
-
-## Recommended Fixes (Priority Order)
-
-### P0 — Fix Immediately
-
-1. **Item #1 (Panel Score)**: Add an `is_manual_override` flag to `TeamGrade` or make `GradeCenterDetailView.patch` call `recompute_panel_score()` when `panel_score` changes, so manual edits aren't silently overwritten.
-
-2. **Item #2 (Schedule Status)**: Add audit logging to `DefenseBoardDetailView.patch`. Unify the status transition serializer or have both endpoints delegate to a single `transition_schedule_status()` service function.
-
-3. **Item #4 (Adviser Score)**: Make `GradeCenterDetailView.patch` respect the `capstone_adviser_grading_enabled` flag, or at minimum log a warning when an admin overrides a disabled grading type.
-
-### P1 — Fix Soon
-
-4. **Item #5 (active_semester)**: Create a single canonical `active_semester()` in `academic_period_management.services` and import it everywhere. Remove all duplicate definitions.
-
-5. **Item #6 (Duplicate counts_payload)**: Remove the duplicate block in `academic_records/views.py`.
-
-6. **Item #7 (CanManage*)**: Create a single `CanManageModule` permission class in `user_management.permissions` and import it.
-
-7. **Item #9 (Student Dashboard Grade)**: Rewrite `_student_visible_grade()` to use `canonical_capstone_grade_for_team()` for capstone teams and the canonical PIT grade resolver, ensuring the same grade record is used for both display and peer eval context.
-
-### P2 — Fix When Convenient
-
-8. **Items #8, #10, #12, #13, #14**: Consolidate default weights, remove unused semester fallbacks, align report filters with list view filters.
-
-9. **Items #15, #16, #17**: Clean up duplicate code blocks, normalize error response shapes.

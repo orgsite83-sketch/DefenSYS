@@ -115,8 +115,7 @@ def display_name(user):
     return full_name or user.username
 
 
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from academic_period_management.services import active_semester
 
 
 def defense_stage_for_label(stage_label):

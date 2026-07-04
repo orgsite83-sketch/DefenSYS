@@ -128,6 +128,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'published_at',
             'created_at',
             'updated_at',
+            'panel_score_is_override',
+            'adviser_score_is_override',
+            'peer_score_is_override',
         ]
 
     def get_rubric_target_type(self, obj):
@@ -242,6 +245,16 @@ class TeamGradeUpdateSerializer(serializers.Serializer):
     def validate(self, attrs):
         if not attrs:
             raise serializers.ValidationError('At least one score or status field is required.')
+
+        # Block if editing disabled grading components
+        grade = self.context['grade']
+        if 'adviser_score' in attrs and grade.scope == TeamGrade.SCOPE_CAPSTONE:
+            semester = grade.semester
+            if not getattr(semester, 'capstone_adviser_grading_enabled', True):
+                raise serializers.ValidationError({
+                    'adviser_score': 'Adviser grading is disabled for this semester. Enable it in Evaluation Settings first.'
+                })
+
         if attrs.get('status') == TeamGrade.STATUS_PUBLISHED:
             instance = self.context['grade']
             score_map = {
@@ -264,6 +277,7 @@ class TeamGradeUpdateSerializer(serializers.Serializer):
         for field in ['panel_score', 'adviser_score', 'peer_score']:
             if field in self.validated_data:
                 setattr(grade, field, self.validated_data[field])
+                setattr(grade, f'{field.split("_score")[0]}_score_is_override', True)
         if 'status' in self.validated_data and self.validated_data['status'] != TeamGrade.STATUS_PUBLISHED:
             grade.status = self.validated_data['status']
         grade.save()

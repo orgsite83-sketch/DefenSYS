@@ -12,7 +12,7 @@ from defense.stages.serializers import DefenseStageSerializer
 from authentication_access_control.audit import log_high_impact_action
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import grade_records_for
-from user_management.permissions import IsSystemAdmin
+from user_management.permissions import IsSystemAdmin, CanManageModule
 from .models import TeamGrade
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
 from django.core.exceptions import ValidationError as DjangoValidationError
@@ -30,20 +30,7 @@ from .services import (
 )
 
 
-class CanManageGradeCenter(BasePermission):
-    message = 'Only administrators and PIT leads can manage grade records.'
 
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(
-            user
-            and user.is_authenticated
-            and (
-                getattr(user, 'role', None) == 'admin'
-                or user.is_superuser
-                or getattr(user, 'is_pit_lead', False)
-            )
-        )
 
 
 def _is_grade_center_admin(user):
@@ -138,7 +125,7 @@ def grade_center_payload(request, queryset=None, sync_info=None):
         'group_settings': build_group_settings_map(current, semester),
         **options_payload(base),
     }
-    if CanManageGradeCenter().has_permission(request, None):
+    if CanManageModule().has_permission(request, None):
         active_stages = list(
             DefenseStage.objects.filter(is_active=True).order_by('display_order', 'label')
         )
@@ -155,8 +142,11 @@ def grade_center_payload(request, queryset=None, sync_info=None):
 def grade_audit_values(grade):
     return {
         'panel_score': str(grade.panel_score) if grade.panel_score is not None else None,
+        'panel_score_is_override': grade.panel_score_is_override,
         'adviser_score': str(grade.adviser_score) if grade.adviser_score is not None else None,
+        'adviser_score_is_override': grade.adviser_score_is_override,
         'peer_score': str(grade.peer_score) if grade.peer_score is not None else None,
+        'peer_score_is_override': grade.peer_score_is_override,
         'final_grade': str(grade.final_grade) if grade.final_grade is not None else None,
         'status': grade.status,
     }
@@ -171,7 +161,7 @@ class GradeCenterListView(APIView):
 
 
 class GradeCenterSyncView(APIView):
-    permission_classes = [CanManageGradeCenter]
+    permission_classes = [CanManageModule]
 
     def post(self, request):
         sync_info = sync_missing_grade_rows(user=request.user)
@@ -180,7 +170,7 @@ class GradeCenterSyncView(APIView):
 
 
 class GradeCenterDetailView(APIView):
-    permission_classes = [CanManageGradeCenter]
+    permission_classes = [CanManageModule]
 
     def get_object(self, request, grade_id):
         return get_object_or_404(grade_records_for(request.user), pk=grade_id)
@@ -220,7 +210,7 @@ class GradeCenterDetailView(APIView):
 
 
 class GradeCenterPublishView(APIView):
-    permission_classes = [CanManageGradeCenter]
+    permission_classes = [CanManageModule]
 
     def post(self, request, grade_id):
         grade = get_object_or_404(grade_records_for(request.user), pk=grade_id)
@@ -306,7 +296,7 @@ class GradeCenterGroupSettingsSerializer(drf_serializers.Serializer):
 
 
 class GradeCenterGroupSettingsView(APIView):
-    permission_classes = [CanManageGradeCenter]
+    permission_classes = [CanManageModule]
 
     def patch(self, request):
         semester = active_semester()

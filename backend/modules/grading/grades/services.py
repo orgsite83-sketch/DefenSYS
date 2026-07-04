@@ -56,8 +56,7 @@ def display_name(user):
     return full_name or user.username
 
 
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from academic_period_management.services import active_semester
 
 
 def default_weights(scope):
@@ -202,6 +201,9 @@ def recompute_panel_score(team_grade):
     Set team_grade.panel_score to the arithmetic mean of each panelist's percentage.
     Also syncs and updates individual student stage grades if target_type is individual or both.
     """
+    if team_grade.panel_score_is_override:
+        return team_grade.panel_score
+
     from .models import StudentStageGrade
     from .peer_eval import recalculate_student_grade
 
@@ -624,6 +626,18 @@ def submit_panelist_grade(schedule, team_grade, criteria_scores, *, panelist=Non
 
 
 def weights_for_schedule(schedule):
+    """
+    Resolves grading weights for a defense schedule.
+
+    Resolution Precedence (first match wins):
+    1. Stage-specific / Event-specific Config (StageGradingConfig / PitEventGradingConfig)
+    2. Rubric Custom Weights (if schedule.rubric has weights defined)
+    3. Scope System-Wide Defaults (default_weights)
+
+    Note: Existing TeamGrade records are NOT automatically updated by this function
+    once created. See the save() method on StageGradingConfig/PitEventGradingConfig
+    for retroactive pending sync.
+    """
     if schedule and schedule.scope == TeamGrade.SCOPE_CAPSTONE and schedule.defense_stage_id:
         from defense.stages.grading_config import weights_for_capstone_stage
 
@@ -1170,8 +1184,13 @@ class GradeContextService:
         )
 
         if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
-            grade.schedule.status = DefenseSchedule.STATUS_DONE
-            grade.schedule.save(update_fields=['status', 'updated_at'])
+            from defense.scheduler.services import transition_schedule_status
+            transition_schedule_status(
+                grade.schedule,
+                DefenseSchedule.STATUS_DONE,
+                actor=user,
+                reason='grade_finalized'
+            )
 
         _apply_team_result_from_grade(grade)
         return grade
@@ -1180,8 +1199,13 @@ class GradeContextService:
     def publish(grade, user=None):
         grade.publish(user=user)
         if grade.schedule_id and grade.schedule.status != DefenseSchedule.STATUS_DONE:
-            grade.schedule.status = DefenseSchedule.STATUS_DONE
-            grade.schedule.save(update_fields=['status', 'updated_at'])
+            from defense.scheduler.services import transition_schedule_status
+            transition_schedule_status(
+                grade.schedule,
+                DefenseSchedule.STATUS_DONE,
+                actor=user,
+                reason='grade_published'
+            )
 
         _apply_team_result_from_grade(grade)
         return grade

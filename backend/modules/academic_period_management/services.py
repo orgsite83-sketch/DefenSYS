@@ -7,8 +7,12 @@ from authentication_access_control.models import SystemAuditLog
 from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
 from grading.grades.models import TeamGrade
 from student_teams.models import StudentTeam
-
 from .models import Semester, SemesterTransitionLog
+
+
+def active_semester():
+    """Single source of truth for the currently active semester."""
+    return Semester.objects.select_related('school_year').filter(is_active=True).first()
 
 
 def build_semester_transition_preview(target_semester):

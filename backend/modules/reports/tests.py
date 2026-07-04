@@ -189,3 +189,73 @@ class ReportsApiTests(APITestCase):
         response = self.client.get('/api/reports/audit-trail/')
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response['Content-Type'], 'application/pdf')
+
+    def test_report_search_filters(self):
+        self.client.force_authenticate(user=self.admin)
+        
+        # Create a panelist user
+        panelist = User.objects.create_user(
+            username='panelist-1',
+            password='pass12345',
+            role='faculty',
+            first_name='Charles',
+            last_name='Babbage',
+            is_panelist=True,
+        )
+        
+        # Create a defense schedule
+        from defense.scheduler.models import DefenseSchedule, SchedulePanelist
+        import datetime
+        schedule = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team_other,
+            defense_stage=self.stage,
+            scheduled_date=datetime.date(2026, 7, 4),
+            start_time=datetime.time(10, 0),
+            room='Room 101',
+            created_by=self.admin,
+        )
+        
+        # Assign panelist to schedule
+        SchedulePanelist.objects.create(
+            schedule=schedule,
+            panelist=panelist,
+            order=1,
+            is_chair=True,
+        )
+        
+        # Link schedule to TeamGrade
+        self.grade_other.schedule = schedule
+        self.grade_other.save()
+        
+        # 1. Test Semester Grades search
+        # Search by team adviser first name 'Ada' (should match team_advised)
+        response = self.client.get('/api/reports/semester-grades/', {
+            'semester_id': self.semester.id,
+            'search': 'Ada'
+        })
+        self.assertEqual(response.status_code, 200)
+        
+        # Search by panelist last name 'Babbage'
+        response = self.client.get('/api/reports/semester-grades/', {
+            'semester_id': self.semester.id,
+            'search': 'Babbage'
+        })
+        self.assertEqual(response.status_code, 200)
+
+        # 2. Test Defense Schedules search
+        # Search by stage label 'Concept'
+        response = self.client.get('/api/reports/defense-schedules/', {
+            'semester_id': self.semester.id,
+            'search': 'Concept'
+        })
+        self.assertEqual(response.status_code, 200)
+
+        # Search by panelist first name 'Charles'
+        response = self.client.get('/api/reports/defense-schedules/', {
+            'semester_id': self.semester.id,
+            'search': 'Charles'
+        })
+        self.assertEqual(response.status_code, 200)
+

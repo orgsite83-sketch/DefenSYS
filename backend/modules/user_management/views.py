@@ -210,7 +210,8 @@ class UserRoleAssignmentHistoryView(APIView):
 
 
 def _active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+    from academic_period_management.services import active_semester
+    return active_semester()
 
 
 def _is_admin(user):
@@ -395,7 +396,7 @@ class BulkImportUsersMixin:
 
         student_context = request.data.get('student_context') or {}
         if self.force_pit_lead_context:
-            context_semester = Semester.objects.select_related('school_year').filter(is_active=True).first()
+            context_semester = _active_semester()
             context_year_level = (getattr(request.user, 'pit_lead_year', None) or '').strip()
             if context_semester is None:
                 return Response({'detail': 'No active semester is configured.'}, status=status.HTTP_400_BAD_REQUEST)
@@ -528,7 +529,7 @@ class BulkImportUsersMixin:
             return Semester.objects.filter(pk=semester_id).first()
 
         if context.get('use_active_semester'):
-            return Semester.objects.select_related('school_year').filter(is_active=True).first()
+            return _active_semester()
 
         return None
 

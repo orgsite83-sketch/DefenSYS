@@ -7,7 +7,7 @@ from academic_period_management.capstone_mode import derive_capstone_program_pha
 from academic_period_management.models import Semester
 from student_teams.models import StudentTeam, TeamMembership
 from user_management.academic_records.models import StudentAcademicRecord
-from user_management.academic_records.rollover import active_semester
+from academic_period_management.services import active_semester
 
 
 class Command(BaseCommand):

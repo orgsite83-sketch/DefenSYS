@@ -93,8 +93,11 @@ class TeamGrade(models.Model):
         on_delete=models.PROTECT,
     )
     panel_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    panel_score_is_override = models.BooleanField(default=False)
     adviser_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    adviser_score_is_override = models.BooleanField(default=False)
     peer_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    peer_score_is_override = models.BooleanField(default=False)
     final_grade = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
     panel_weight = models.PositiveSmallIntegerField(default=50)
     adviser_weight = models.PositiveSmallIntegerField(default=30)

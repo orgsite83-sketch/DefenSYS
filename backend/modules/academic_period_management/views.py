@@ -15,11 +15,7 @@ from .serializers import (
     SemesterCreateSerializer,
     SemesterSerializer,
 )
-from .services import build_semester_transition_preview, switch_active_semester
-
-
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from .services import build_semester_transition_preview, switch_active_semester, active_semester
 
 
 def semester_payload(semester, *, include_capstone_mode=False):

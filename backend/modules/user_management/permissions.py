@@ -129,3 +129,20 @@ class CanManageTeams(BasePermission):
             return True
         
         return False
+
+
+class CanManageModule(BasePermission):
+    """Allows admin, superuser, or PIT lead to manage module resources."""
+    message = 'Only administrators and PIT leads can manage this resource.'
+
+    def has_permission(self, request, view):
+        user = request.user
+        return bool(
+            user
+            and user.is_authenticated
+            and (
+                getattr(user, 'role', None) == 'admin'
+                or user.is_superuser
+                or getattr(user, 'is_pit_lead', False)
+            )
+        )

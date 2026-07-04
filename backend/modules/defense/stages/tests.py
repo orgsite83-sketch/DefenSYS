@@ -343,3 +343,82 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(weights['panel_weight'], 55)
         self.assertEqual(weights['adviser_weight'], 25)
         self.assertEqual(weights['peer_weight'], 20)
+
+    def test_retroactive_weights_sync(self):
+        from grading.grades.models import TeamGrade
+
+        # Create students and teams
+        student1 = User.objects.create_user(
+            username='student-sync-test-1',
+            password='pass12345',
+            role='student',
+        )
+        team_pending = StudentTeam.objects.create(
+            name='Sync Team Pending',
+            project_title='Sync Project 1',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=student1,
+        )
+
+        student2 = User.objects.create_user(
+            username='student-sync-test-2',
+            password='pass12345',
+            role='student',
+        )
+        team_published = StudentTeam.objects.create(
+            name='Sync Team Published',
+            project_title='Sync Project 2',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=student2,
+        )
+
+        # Create two TeamGrade records
+        pending_grade = TeamGrade.objects.create(
+            team=team_pending,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            defense_stage=self.stage,
+            stage_label=self.stage.label,
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+            status=TeamGrade.STATUS_PENDING,
+        )
+        published_grade = TeamGrade.objects.create(
+            team=team_published,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            defense_stage=self.stage,
+            stage_label=self.stage.label,
+            panel_score=85,
+            adviser_score=85,
+            peer_score=85,
+            final_grade=85,
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+
+        # Save stage config with different weights
+        config = get_or_create_stage_grading_config(self.stage, self.semester)
+        config.panel_weight = 60
+        config.adviser_weight = 25
+        config.peer_weight = 15
+        config.save()
+
+        # Check pending grade has updated weights
+        pending_grade.refresh_from_db()
+        self.assertEqual(pending_grade.panel_weight, 60)
+        self.assertEqual(pending_grade.adviser_weight, 25)
+        self.assertEqual(pending_grade.peer_weight, 15)
+
+        # Check published grade has NOT updated weights
+        published_grade.refresh_from_db()
+        self.assertEqual(published_grade.panel_weight, 50)
+        self.assertEqual(published_grade.adviser_weight, 30)
+        self.assertEqual(published_grade.peer_weight, 20)

@@ -17,6 +17,7 @@ from student_teams.models import StudentTeam
 from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_scheduled
 from .models import DefenseSchedule, SchedulePanelist, PitEventDeliverable
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
+from .services import VALID_TRANSITIONS, transition_schedule_status
 
 
 User = get_user_model()
@@ -43,8 +44,7 @@ def display_name(user):
     return full_name or user.username
 
 
-def active_semester():
-    return Semester.objects.select_related('school_year').filter(is_active=True).first()
+from academic_period_management.services import active_semester
 
 
 def schedule_queryset():
@@ -804,27 +804,13 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
 
 
 class DefenseScheduleStatusSerializer(serializers.Serializer):
-    VALID_TRANSITIONS = {
-        DefenseSchedule.STATUS_SCHEDULED: [
-            DefenseSchedule.STATUS_DONE,
-            DefenseSchedule.STATUS_CANCELLED,
-        ],
-        DefenseSchedule.STATUS_DONE: [
-            DefenseSchedule.STATUS_ARCHIVED,
-        ],
-        DefenseSchedule.STATUS_CANCELLED: [
-            DefenseSchedule.STATUS_SCHEDULED,
-        ],
-        DefenseSchedule.STATUS_ARCHIVED: [],
-    }
-
     status = serializers.ChoiceField(choices=[choice[0] for choice in DefenseSchedule.STATUS_CHOICES])
 
     def validate_status(self, value):
         current = self.context['schedule'].status
-        allowed = self.VALID_TRANSITIONS.get(current, [])
         if value == current:
             return value
+        allowed = VALID_TRANSITIONS.get(current, [])
         if value not in allowed:
             raise serializers.ValidationError(
                 f'Cannot change status from "{current}" to "{value}".'
@@ -833,9 +819,15 @@ class DefenseScheduleStatusSerializer(serializers.Serializer):
 
     def save(self):
         schedule = self.context['schedule']
-        schedule.status = self.validated_data['status']
-        schedule.save()
-        return schedule
+        request = self.context.get('request')
+        actor = request.user if request else None
+        return transition_schedule_status(
+            schedule,
+            self.validated_data['status'],
+            actor=actor,
+            reason='status_serializer_update',
+            request=request,
+        )
 
 
 def send_documenter_assignment_notification(schedule):
@@ -884,7 +876,7 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
         current = self.schedule_instance.status
         if value == current:
             return value
-        allowed = DefenseScheduleStatusSerializer.VALID_TRANSITIONS.get(current, [])
+        allowed = VALID_TRANSITIONS.get(current, [])
         if value not in allowed:
             raise serializers.ValidationError(
                 f'Cannot change status from "{current}" to "{value}".'
@@ -934,12 +926,19 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
 
         # Perform updates
         if 'status' in validated_data:
-            schedule.status = validated_data['status']
+            request = self.context.get('request')
+            actor = request.user if request else None
+            transition_schedule_status(
+                schedule,
+                validated_data['status'],
+                actor=actor,
+                reason='patch_serializer_update',
+                request=request,
+            )
 
         if new_doc_id != 'not_provided':
             schedule.documenter_id = new_doc_id
-
-        schedule.save()
+            schedule.save()
 
         # Trigger notifications and reset/update minutes on documenter reassignment
         if has_documenter_change:

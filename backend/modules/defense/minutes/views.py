@@ -216,7 +216,7 @@ class MinutesSubmitView(APIView):
         # Check e-signature
         if not request.user.e_signature:
             return Response(
-                {"error": "Please upload your e-signature first."},
+                {"detail": "Please upload your e-signature first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -225,7 +225,7 @@ class MinutesSubmitView(APIView):
         for comment in comments:
             if not comment.comments or not comment.comments.strip():
                 return Response(
-                    {"error": "All panelist comments must be filled before submitting."},
+                    {"detail": "All panelist comments must be filled before submitting."},
                     status=status.HTTP_400_BAD_REQUEST
                 )
                 
@@ -286,7 +286,7 @@ class MinutesSignAdviserView(APIView):
         # Check e-signature
         if not request.user.e_signature:
             return Response(
-                {"error": "Please upload your e-signature first."},
+                {"detail": "Please upload your e-signature first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
             
@@ -350,7 +350,7 @@ class MinutesSignChairmanView(APIView):
         # Check e-signature
         if not request.user.e_signature:
             return Response(
-                {"error": "Please upload your e-signature first."},
+                {"detail": "Please upload your e-signature first."},
                 status=status.HTTP_400_BAD_REQUEST
             )
             

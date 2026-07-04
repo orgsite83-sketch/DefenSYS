@@ -287,6 +287,19 @@ class StudentTeamDetailView(APIView):
 
     def patch(self, request, team_id):
         team = self.get_object(team_id)
+        
+        # Prevent overriding a grade-derived team status
+        if 'status' in request.data:
+            from grading.grades.models import TeamGrade
+            published_grade = TeamGrade.objects.filter(
+                team=team, status=TeamGrade.STATUS_PUBLISHED
+            ).exists()
+            if published_grade:
+                return Response(
+                    {'status': 'Team status is locked because a published grade exists. Unpublish the grade to change team status.'},
+                    status=status.HTTP_409_CONFLICT,
+                )
+
         old_adviser_id = team.adviser_id
         serializer = StudentTeamWriteSerializer(
             team,

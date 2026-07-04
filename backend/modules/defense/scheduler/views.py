@@ -24,7 +24,7 @@ from authentication_access_control.guest_authentication import (
 )
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.scopes import visible_schedules_for
-from user_management.permissions import IsPanelist
+from user_management.permissions import IsPanelist, CanManageModule
 
 from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig
 from academic_period_management.models import Semester
@@ -43,20 +43,7 @@ from .serializers import (
 )
 
 
-class CanManageSchedules(BasePermission):
-    message = 'Only administrators and PIT leads can manage defense schedules.'
 
-    def has_permission(self, request, view):
-        user = request.user
-        return bool(
-            user
-            and user.is_authenticated
-            and (
-                getattr(user, 'role', None) == 'admin'
-                or user.is_superuser
-                or getattr(user, 'is_pit_lead', False)
-            )
-        )
 
 
 def counts_payload(queryset=None, base_queryset=None):
@@ -72,17 +59,7 @@ def counts_payload(queryset=None, base_queryset=None):
     }
 
 
-def schedule_audit_values(schedule, **extra):
-    values = {
-        **audit_scope_metadata(scope=schedule.scope, team=schedule.team),
-        'schedule_id': schedule.pk,
-        'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
-        'start_time': schedule.start_time.isoformat() if schedule.start_time else '',
-        'room': schedule.room,
-        'stage_label': schedule.stage_label,
-    }
-    values.update(extra)
-    return values
+from .services import schedule_audit_values
 
 
 def list_payload(queryset=None, base_queryset=None, user=None, include_options=True):
@@ -128,11 +105,11 @@ class DefenseScheduleListCreateView(APIView):
     def get_permissions(self):
         if self.request.method == 'GET':
             return [IsAuthenticated()]
-        return [CanManageSchedules()]
+        return [CanManageModule()]
 
     def get(self, request):
         base = visible_schedules_for(request.user)
-        can_manage = CanManageSchedules().has_permission(request, self)
+        can_manage = CanManageModule().has_permission(request, self)
         return Response(
             list_payload(
                 filter_schedules(request, base),
@@ -158,7 +135,7 @@ class DefenseScheduleListCreateView(APIView):
 
 
 class PitEventConfigLookupView(APIView):
-    permission_classes = [CanManageSchedules]
+    permission_classes = [CanManageModule]
 
     def get(self, request):
         semester_id = request.query_params.get('semester_id')
@@ -268,7 +245,7 @@ class PitEventConfigLookupView(APIView):
 
 
 class DefenseScheduleGeneratePlanView(APIView):
-    permission_classes = [CanManageSchedules]
+    permission_classes = [CanManageModule]
 
     def post(self, request):
         serializer = GenerateSchedulePlanSerializer(data=request.data, context={'request': request})
@@ -282,7 +259,7 @@ class DefenseScheduleGeneratePlanView(APIView):
 
 
 class DefenseScheduleConfirmPlanView(APIView):
-    permission_classes = [CanManageSchedules]
+    permission_classes = [CanManageModule]
 
     def post(self, request):
         serializer = ConfirmSchedulePlanSerializer(data=request.data, context={'request': request})
@@ -301,29 +278,19 @@ class DefenseScheduleConfirmPlanView(APIView):
 
 
 class DefenseScheduleDetailView(APIView):
-    permission_classes = [CanManageSchedules]
+    permission_classes = [CanManageModule]
 
     def get_object(self, schedule_id):
         return get_object_or_404(visible_schedules_for(self.request.user), pk=schedule_id)
 
     def patch(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
-        old_status = schedule.status
         serializer = DefenseSchedulePatchSerializer(
             data=request.data,
-            context={'schedule': schedule},
+            context={'schedule': schedule, 'request': request},
         )
         serializer.is_valid(raise_exception=True)
         schedule = serializer.save()
-        if old_status != schedule.status:
-            log_high_impact_action(
-                category=SystemAuditLog.CATEGORY_SCHEDULING,
-                action='schedule.status_change',
-                target=schedule,
-                old_values=schedule_audit_values(schedule, status=old_status),
-                new_values=schedule_audit_values(schedule, status=schedule.status),
-                request=request,
-            )
         base = visible_schedules_for(request.user)
         schedule = base.get(pk=schedule.pk)
         return Response({
@@ -333,19 +300,8 @@ class DefenseScheduleDetailView(APIView):
 
     def delete(self, request, schedule_id):
         schedule = self.get_object(schedule_id)
-        audit_values = schedule_audit_values(schedule, status=schedule.status)
-        schedule_pk = schedule.pk
-        schedule.delete()
-        log_high_impact_action(
-            category=SystemAuditLog.CATEGORY_SCHEDULING,
-            action='schedule.delete',
-            target=schedule,
-            target_type='DefenseSchedule',
-            target_id=schedule_pk,
-            old_values=audit_values,
-            new_values={'deleted': True},
-            request=request,
-        )
+        from .services import delete_schedule
+        delete_schedule(schedule, actor=request.user, request=request)
         base = visible_schedules_for(request.user)
         return Response(list_payload(base_queryset=base, user=request.user), status=status.HTTP_200_OK)
 
@@ -626,12 +582,12 @@ class PanelistGradeSubmissionView(APIView):
                         status=status.HTTP_400_BAD_REQUEST,
                     )
 
-            semester = team.semester or Semester.objects.filter(is_active=True).first()
-            if not semester:
+            if not team.semester:
                 return Response(
-                    {'error': 'No active semester found'},
+                    {'detail': 'This team has no semester assigned.'},
                     status=status.HTTP_400_BAD_REQUEST
                 )
+            semester = team.semester
 
             if schedule:
                 team_grade = GradeContextService.get_for_panel_submission(schedule, panelist=panelist)
@@ -737,7 +693,7 @@ class PanelistGradeSubmissionView(APIView):
             )
         except Exception as e:
             return Response(
-                {'error': f'Failed to submit grades: {str(e)}'},
+                {'detail': f'Failed to submit grades: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
@@ -930,12 +886,12 @@ class GuestPanelistGradeSubmissionView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
-            semester = team.semester or Semester.objects.filter(is_active=True).first()
-            if not semester:
+            if not team.semester:
                 return Response(
-                    {'error': 'No active semester found'},
+                    {'detail': 'This team has no semester assigned.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+            semester = team.semester
 
             team_grade = GradeContextService.get_for_guest_panel_submission(schedule, guest=principal)
 
@@ -1030,6 +986,6 @@ class GuestPanelistGradeSubmissionView(APIView):
             )
         except Exception as e:
             return Response(
-                {'error': f'Failed to submit grades: {str(e)}'},
+                {'detail': f'Failed to submit grades: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
