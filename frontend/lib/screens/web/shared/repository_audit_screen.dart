@@ -194,9 +194,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final year = state.scope['pit_year_level']?.toString() ?? '';
     switch (scope) {
       case 'pit_lead':
-        return 'Vault passed PIT projects for $year after the event is officially complete in Grade Center.';
+        return 'Archive passed PIT projects for $year after the event is officially complete in Grade Center.';
       default:
-        return 'Browse pre-defense uploads and digital vault items by team or deliverable (e.g. D1 across all teams).';
+        return 'Browse pre-defense uploads and repository items by team or deliverable (e.g. D1 across all teams).';
     }
   }
 
@@ -273,7 +273,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       return const SizedBox.shrink();
     }
     final message =
-        'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after vault save.';
+        'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after archive_save.';
     return _notice(
       Icons.info_outline_rounded,
       message,
@@ -301,7 +301,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Ready to vault${events.isNotEmpty ? ' · $events' : ''}',
+            'Ready to archive${events.isNotEmpty ? ' · $events' : ''}',
             style: const TextStyle(
               color: AppColors.maroon,
               fontSize: 15,
@@ -316,7 +316,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(height: 12),
           ...queue.map((raw) {
             final row = Map<String, dynamic>.from(raw as Map);
-            final pending = row['vault_status'] == 'pending';
+            final pending = row['archive_status'] == 'pending';
             return Padding(
               padding: const EdgeInsets.only(bottom: 10),
               child: Row(
@@ -350,7 +350,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                     ),
                   ),
                   Text(
-                    pending ? 'Awaiting PDF' : 'In vault',
+                    pending ? 'Awaiting PDF' : 'In archive',
                     style: TextStyle(
                       color: pending
                           ? const Color(0xFFD97706)
@@ -389,7 +389,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Repository Vault',
+                'Project Archive',
                 style: GoogleFonts.plusJakartaSans(
                   color: AppColors.maroon,
                   fontSize: 21,
@@ -414,7 +414,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           children: [
             _primaryButton(
               icon: Icons.file_download_rounded,
-              label: 'Export Vault Records',
+              label: 'Export Archive Records',
               onTap: state.isSaving ? null : _exportCsv,
             ),
           ],
@@ -452,8 +452,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
-              title: 'Vault items',
-              value: _count(state, 'vault_submissions'),
+              title: 'Archive items',
+              value: _count(state, 'archive_submissions'),
               valueColor: const Color(0xFF7C3AED),
               icon: Icons.lock_outline_rounded,
               iconTint: const Color(0xFFDDD6FE),
@@ -496,7 +496,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         const SizedBox(width: 18),
         Expanded(
           child: _metricCard(
-            title: 'Approved Vault Entries',
+            title: 'Approved Archive Entries',
             value: _count(state, 'approved'),
             valueColor: const Color(0xFF059669),
             icon: Icons.description_outlined,
@@ -512,8 +512,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _sectionHeader(
-          'Repository Vault Summary',
-          'Current vault status and record counts for your scope.',
+          'Project Archive Summary',
+          'Current archive status and record counts for your scope.',
         ),
         const SizedBox(height: 12),
         _buildStats(state),
@@ -545,7 +545,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       children: [
         _sectionHeader(
           'Upload Queue',
-          'Teams and files that are ready for PIT or Capstone vault upload.',
+          'Teams and files that are ready for PIT or Capstone archive upload.',
         ),
         const SizedBox(height: 12),
         ...children,
@@ -671,7 +671,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           Align(
             alignment: Alignment.centerLeft,
             child: Text(
-              'Repository Vault Records',
+              'Project Archive Records',
               style: GoogleFonts.plusJakartaSans(
                 color: AppColors.maroon,
                 fontSize: 16,
@@ -1259,7 +1259,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'No vault records found',
+                  'No archive records found',
                   style: GoogleFonts.plusJakartaSans(
                     color: const Color(0xFF1E293B),
                     fontSize: 15,
@@ -1336,9 +1336,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                       const SizedBox(height: 3),
                       Text(
                         isMissing
-                            ? (entry['vault_note']?.toString().isNotEmpty ==
+                            ? (entry['archive_note']?.toString().isNotEmpty ==
                                       true
-                                  ? entry['vault_note'].toString()
+                                  ? entry['archive_note'].toString()
                                   : 'No file uploaded yet')
                             : 'By $uploadedBy',
                         maxLines: 1,
@@ -1477,7 +1477,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   Widget _statusBadge(String status) {
     final color = _statusColor(status);
     final icon = switch (status) {
-      'Approved' || 'Vault Submission' => Icons.check_circle_rounded,
+      'Approved' || 'Post-Defense' => Icons.check_circle_rounded,
       'Needs Revision' => Icons.warning_rounded,
       'Pre-Defense' => Icons.school_rounded,
       _ => Icons.hourglass_empty_rounded,
@@ -1781,7 +1781,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     return queue
         .whereType<Map>()
         .map((raw) => Map<String, dynamic>.from(raw))
-        .where((row) => row['vault_status'] == 'pending')
+        .where((row) => row['archive_status'] == 'pending')
         .map((row) => row['suggested_file_name']?.toString() ?? '')
         .where((name) => name.isNotEmpty)
         .toList();
@@ -2065,7 +2065,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     await showDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Repository Vault CSV'),
+        title: const Text('Project Archive CSV'),
         content: SizedBox(
           width: 720,
           child: SingleChildScrollView(child: SelectableText(csv)),
@@ -2118,7 +2118,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   }
 
   Color _statusColor(String status) {
-    if (status == 'Approved' || status == 'Vault Submission') {
+    if (status == 'Approved' || status == 'Post-Defense') {
       return AppColors.success;
     }
     if (status == 'Needs Revision') {
@@ -2357,10 +2357,10 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
                 '';
             final track = _teamTrack(team);
             final pre = _asInt(team['pre']);
-            final vault = _asInt(team['vault']);
+            final vault = _asInt(team['post']);
             final counts = track == 'pit'
-                ? '$vault vault'
-                : '$pre pre · $vault vault';
+                ? '$vault archive'
+                : '$pre pre · $vault archive';
             final subtitle = [
               if (level.isNotEmpty) level,
               if (project.isNotEmpty && project != name) project,
@@ -2705,8 +2705,8 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     for (final group in groups) {
       final stage = group['stage']?.toString() ?? '';
       final preRows = _mapList(group['pre_defense']);
-      final vaultRows = _mapList(group['vault']);
-      if (preRows.isEmpty && vaultRows.isEmpty) {
+      final postRows = _mapList(group['post']);
+      if (preRows.isEmpty && postRows.isEmpty) {
         continue;
       }
 
@@ -2735,9 +2735,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         preRows,
       );
       addSubsection(
-        'Digital vault deliverables',
+        'Repository deliverables',
         const Color(0xFFF5F3FF),
-        vaultRows,
+        postRows,
       );
       dataChildren.add(const SizedBox(height: 12));
       actionChildren.add(_repositoryActionSpacer(height: 12));
@@ -2766,7 +2766,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           height: 72,
           alignment: Alignment.center,
           child: const Text(
-            'No PIT vault files found.',
+            'No PIT archive files found.',
             style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
           ),
         ),
@@ -2780,14 +2780,14 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     for (final group in groups) {
       final course = group['stage']?.toString() ?? 'PIT';
-      final rows = _mapList(group['pit_vault']);
+      final rows = _mapList(group['pit_post']);
       if (rows.isEmpty) continue;
 
       dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
       actionChildren.add(_repositoryActionSpacer(height: 32));
 
       final preRows = rows.where((row) => row['submission_kind'] == 'pre').toList();
-      final vaultRows = rows.where((row) => row['submission_kind'] == 'vault' || row['submission_kind'] == 'pit').toList();
+      final postRows = rows.where((row) => row['submission_kind'] == 'post' || row['submission_kind'] == 'pit').toList();
 
       void addSubsection(
         String title,
@@ -2811,9 +2811,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         preRows,
       );
       addSubsection(
-        'Digital vault',
+        'Repository',
         const Color(0xFFFFF7ED),
-        vaultRows,
+        postRows,
       );
 
       dataChildren.add(const SizedBox(height: 12));
@@ -2877,7 +2877,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
             .where((entry) => entry['submission_kind'] == 'pre')
             .toList(),
         'vault': stageEntries
-            .where((entry) => entry['submission_kind'] == 'vault')
+            .where((entry) => entry['submission_kind'] == 'post')
             .toList(),
       };
     }).toList();
@@ -2899,7 +2899,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         final code = entry['course_code']?.toString() ?? '';
         return stage == course || code == course;
       }).toList();
-      return {'stage': course, 'pit_vault': courseEntries};
+      return {'stage': course, 'pit_post': courseEntries};
     }).toList();
   }
 
@@ -3045,13 +3045,13 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
   Widget _kindBadge(String? kind) {
     final label = switch (kind) {
       'pre' => 'Pre-defense',
-      'vault' => 'Vault',
-      'pit' => 'Digital vault',
+      'post' => 'Repository',
+      'pit' => 'Repository',
       _ => 'File',
     };
     final color = switch (kind) {
       'pre' => const Color(0xFF2563EB),
-      'vault' => const Color(0xFF7C3AED),
+      'post' => const Color(0xFF7C3AED),
       'pit' => const Color(0xFF7C3AED),
       _ => AppColors.textSecondary,
     };

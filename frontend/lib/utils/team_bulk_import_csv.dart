@@ -413,29 +413,61 @@ const teamSampleYearLevels = [
 /// One demo team per year level (4 members each). Matches `sample_file/demo_teams_*`.
 const Map<String, String> sampleTeamCsvByYear = {
   '1st Year':
-      '$teamBulkImportHeader\n'
-      'Team NovaPath,Campus Wayfinder App,,James Rivera\n'
-      ',,,Sofia Lim\n'
-      ',,,Miguel Torres\n'
-      ',,,Chloe Nguyen\n',
+      '$teamBulkImportHeaderPit\n'
+      'Team NovaPath,Campus Wayfinder App,James Rivera\n'
+      ',,Sofia Lim\n'
+      ',,Miguel Torres\n'
+      ',,Chloe Nguyen\n'
+      'Team ByteForce,Smart Locker System,Lucas Alcantara\n'
+      ',,Elena Santos\n'
+      ',,Mateo Garcia\n'
+      ',,Olivia Diaz\n'
+      'Team NexGen,Interactive Map,Gabriel Cruz\n'
+      ',,Isabella Reyes\n'
+      ',,Daniel Lee\n'
+      ',,Ava Martinez\n',
   '2nd Year':
-      '$teamBulkImportHeader\n'
-      'Team ByteBridge,Library Seat Finder,,Darren Kim\n'
-      ',,,Isabel Cruz\n'
-      ',,,Noah Ramos\n'
-      ',,,Leah Fernandez\n',
+      '$teamBulkImportHeaderPit\n'
+      'Team Quantum,Automated Grade Calculator,Darren Kim\n'
+      ',,Isabel Cruz\n'
+      ',,Noah Ramos\n'
+      ',,Leah Fernandez\n'
+      'Team ByteForce,Library Seat Reservation,Nathan Lopez\n'
+      ',,Mia Valenzuela\n'
+      ',,Leo Mendoza\n'
+      ',,Chloe Castillo\n'
+      'Team NexGen,Student Health Tracker,Oliver Aquino\n'
+      ',,Emma Corpuz\n'
+      ',,Ethan Rivera\n'
+      ',,Sophia Sy\n',
   '3rd Year':
-      '$teamBulkImportHeader\n'
-      'Team CodeLearners,Smart Campus Navigator,Ricardo Fontanilla,Carlos Reyes\n'
-      ',,,Maria Santos\n'
-      ',,,Juan Dela Cruz\n'
-      ',,,Ana Mendoza\n',
+      '$teamBulkImportHeaderPit\n'
+      'Team CodeLearners,Smart Campus Navigator,Carlos Reyes\n'
+      ',,Maria Santos\n'
+      ',,Juan Dela Cruz\n'
+      ',,Ana Mendoza\n'
+      'Team ByteForce,IoT-Based Smart Classroom Monitor,Jose Garcia\n'
+      ',,Liza Torres\n'
+      ',,Marco Villanueva\n'
+      ',,Nina Flores\n'
+      'Team NexGen,Online Complaint Management System,Diego Ramos\n'
+      ',,Patricia Cruz\n'
+      ',,Ryan Bautista\n'
+      ',,Sophia Aquino\n',
   '4th Year':
       '$teamBulkImportHeader\n'
       'Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,Marcus Villar\n'
       ',,,Patricia Ong\n'
       ',,,Ethan Salazar\n'
-      ',,,Zoe Castillo\n',
+      ',,,Zoe Castillo\n'
+      'Team ByteForce,AI-Powered Attendance System,Ricardo Fontanilla,Ryan Torres\n'
+      ',,,Nina Villanueva\n'
+      ',,,Diego Garcia\n'
+      ',,,Patricia Ramos\n'
+      'Team NexGen,Campus Lost and Found Portal,Ricardo Fontanilla,Carlos Bautista\n'
+      ',,,Sophia Santos\n'
+      ',,,Miguel Cruz\n'
+      ',,,Isabella Alcantara\n',
 };
 
 String sampleTeamCsvForYear(

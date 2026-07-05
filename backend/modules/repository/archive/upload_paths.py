@@ -30,7 +30,7 @@ def slugify_academic_year(academic_year):
     return cleaned or 'unknown'
 
 
-def vault_entry_upload_to(instance, filename):
+def archive_entry_upload_to(instance, filename):
     entry_type = getattr(instance, 'entry_type', None) or TYPE_PIT
     if entry_type not in (TYPE_PIT, TYPE_CAPSTONE):
         entry_type = TYPE_PIT
@@ -41,4 +41,4 @@ def vault_entry_upload_to(instance, filename):
     month = uploaded_at.strftime('%m')
     safe_name = Path(filename).name
 
-    return f'vault_entries/{entry_type}/{year_slug}/{academic}/{month}/{safe_name}'
+    return f'archive_entries/{entry_type}/{year_slug}/{academic}/{month}/{safe_name}'

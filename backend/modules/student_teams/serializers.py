@@ -109,6 +109,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     defense_context = serializers.SerializerMethodField()
     term_status = serializers.SerializerMethodField()
     is_editable = serializers.SerializerMethodField()
+    instructor_name = serializers.SerializerMethodField()
     system_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
 
@@ -131,6 +132,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'adviser_id',
             'adviser_username',
             'adviser_name',
+            'instructor_name',
             'member_ids',
             'members',
             'member_count',
@@ -154,6 +156,21 @@ class StudentTeamSerializer(serializers.ModelSerializer):
 
     def get_adviser_name(self, obj):
         return display_name(obj.adviser)
+
+    def get_instructor_name(self, obj):
+        if not obj.section:
+            return None
+        from user_management.models import SectionInstructorAssignment
+        from student_teams.team_levels import normalize_year_level
+        assignment = SectionInstructorAssignment.objects.filter(
+            semester=obj.semester,
+            year_level=normalize_year_level(obj.year_level),
+            section=obj.section,
+            is_active=True
+        ).first()
+        if assignment and assignment.faculty:
+            return display_name(assignment.faculty)
+        return None
 
     def get_system_name(self, obj):
         if not obj.section:

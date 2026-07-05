@@ -12,7 +12,7 @@ from defense.stages.models import DefenseStage, StageGradingConfig
 from grading.grades.models import TeamGrade
 from grading.rubrics.models import Rubric, RubricCriterion
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 from student_teams.models import StudentTeam, TeamMembership
 from .models import RepositoryAuditLog
 from .services import validate_capstone_file_name, validate_pit_file_name
@@ -57,7 +57,7 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.capstone_team = StudentTeam.objects.create(
             name='Team Cipher',
-            project_title='Secure Vault Search',
+            project_title='Secure Archive Search',
             level=StudentTeam.LEVEL_4_CAPSTONE,
             year_level='4th Year',
             semester=self.semester,
@@ -89,23 +89,23 @@ class RepositoryAuditApiTests(APITestCase):
             stage_label='Final Defense',
             deliverable_id='D15',
             label='D15 - Fully Functional Software System and Source Code',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_Cipher_Source_Code.zip',
             uploaded_by=self.admin,
         )
-        self.pit_entry = VaultEntry.objects.create(
-            entry_type=VaultEntry.TYPE_PIT,
+        self.pit_entry = ArchiveEntry.objects.create(
+            entry_type=ArchiveEntry.TYPE_PIT,
             file_name='3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf',
             year_level='3rd Year',
             academic_year='2026-2027',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.pit_lead,
         )
-        VaultEntry.objects.create(
+        ArchiveEntry.objects.create(
             file_name='2ndYear.PIT201.CampusSocialNetwork.1stSemester.pdf',
             academic_year='2026-2027',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.other_pit_lead,
         )
 
@@ -131,7 +131,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertFalse(response.data['scope']['can_upload_pit'])
         self.assertIn(self.pit_entry.file_name, file_names)
 
-        pit_count_before = VaultEntry.objects.filter(entry_type=VaultEntry.TYPE_PIT).count()
+        pit_count_before = ArchiveEntry.objects.filter(entry_type=ArchiveEntry.TYPE_PIT).count()
         upload = self.client.post(
             '/api/repository/audit/upload-pit/',
             {'file_names': [self.pit_entry.file_name]},
@@ -139,7 +139,7 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.assertEqual(upload.status_code, 403)
         self.assertEqual(
-            VaultEntry.objects.filter(entry_type=VaultEntry.TYPE_PIT).count(),
+            ArchiveEntry.objects.filter(entry_type=ArchiveEntry.TYPE_PIT).count(),
             pit_count_before,
         )
 
@@ -306,7 +306,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertTrue(response.data['upload_window']['open'])
         self.assertEqual(response.data['upload_window']['queue'][0]['team_id'], self.pit_team.id)
 
-    def test_pit_upload_does_not_publish_grade_after_vault(self):
+    def test_pit_upload_does_not_publish_grade_after_archive(self):
         self._open_upload_window_for_pit_team(event_name='3rd Year Expo')
         self.client.force_authenticate(user=self.pit_lead)
         grade = TeamGrade.objects.get(team=self.pit_team)
@@ -423,11 +423,11 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_audit_search_matches_pdf_topics(self):
-        VaultEntry.objects.filter(pk=self.pit_entry.pk).update(
+        ArchiveEntry.objects.filter(pk=self.pit_entry.pk).update(
             extracted_text='Smart campus navigation with flutter mobile sensors',
             topics=['flutter', 'campus', 'navigation'],
             category='Mobile Development',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
         )
         self.client.force_authenticate(user=self.admin)
         response = self.client.get('/api/repository/audit/', {'search': 'flutter'})
@@ -439,7 +439,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.client.force_authenticate(user=self.pit_lead)
         forbidden = self.client.post(
             '/api/repository/audit/override-status/',
-            {'entry_id': f'pit-{self.pit_entry.id}', 'status': VaultEntry.STATUS_NEEDS_REVISION},
+            {'entry_id': f'pit-{self.pit_entry.id}', 'status': ArchiveEntry.STATUS_NEEDS_REVISION},
             format='json',
         )
         self.assertEqual(forbidden.status_code, 403)
@@ -447,13 +447,13 @@ class RepositoryAuditApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
         override = self.client.post(
             '/api/repository/audit/override-status/',
-            {'entry_id': f'pit-{self.pit_entry.id}', 'status': VaultEntry.STATUS_NEEDS_REVISION},
+            {'entry_id': f'pit-{self.pit_entry.id}', 'status': ArchiveEntry.STATUS_NEEDS_REVISION},
             format='json',
         )
 
         self.assertEqual(override.status_code, 200)
         self.pit_entry.refresh_from_db()
-        self.assertEqual(self.pit_entry.status, VaultEntry.STATUS_NEEDS_REVISION)
+        self.assertEqual(self.pit_entry.status, ArchiveEntry.STATUS_NEEDS_REVISION)
         self.assertEqual(RepositoryAuditLog.objects.filter(source_id=self.pit_entry.id).count(), 1)
 
     def _open_capstone_upload_window(self, stage_label='Concept Proposal'):
@@ -505,14 +505,14 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertFalse(response.data['scope']['can_upload_capstone'])
         self.assertEqual(len(response.data['capstone_upload_window']['queue']), 1)
         self.assertIn(
-            'SecureVaultSearch',
+            'SecureArchiveSearch',
             response.data['capstone_upload_window']['queue'][0]['suggested_file_name'],
         )
 
     def test_capstone_upload_is_forbidden(self):
         self._open_capstone_upload_window()
         self.client.force_authenticate(user=self.admin)
-        file_name = '3rdYear.CAP301.SecureVaultSearch.1stSemester.pdf'
+        file_name = '3rdYear.CAP301.SecureArchiveSearch.1stSemester.pdf'
         upload = self.client.post(
             '/api/repository/audit/upload-capstone/',
             {'file_names': [file_name]},
@@ -520,7 +520,7 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.assertEqual(upload.status_code, 403)
 
-    def test_submission_kind_pre_excludes_vault(self):
+    def test_submission_kind_pre_excludes_archive(self):
         self.client.force_authenticate(user=self.admin)
         response = self.client.get(
             '/api/repository/audit/',
@@ -540,7 +540,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertIn('team_counts', options)
         self.assertIn('submission_kind_options', options)
         self.assertNotIn('archive_pdf', response.data['counts'])
-        self.assertIn('vault_submissions', response.data['counts'])
+        self.assertIn('archive_submissions', response.data['counts'])
 
     def test_filter_deliverable_d1_returns_capstone_submissions(self):
         self.client.force_authenticate(user=self.admin)
@@ -569,7 +569,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertTrue(response.data['grouped_by_stage'])
         first = response.data['grouped_by_stage'][0]
         self.assertIn('pre_defense', first)
-        self.assertIn('vault', first)
+        self.assertIn('post', first)
         self.assertNotIn('archive', first)
 
     def test_capstone_entries_include_submission_kind(self):
@@ -578,7 +578,7 @@ class RepositoryAuditApiTests(APITestCase):
         capstone_rows = [
             entry
             for entry in response.data['entries']
-            if entry.get('submission_kind') in ('pre', 'vault')
+            if entry.get('submission_kind') in ('pre', 'post')
         ]
         self.assertTrue(capstone_rows)
         self.assertIn(
@@ -605,25 +605,25 @@ class RepositoryAuditApiTests(APITestCase):
             leader=self.student,
             status=StudentTeam.STATUS_APPROVED,
         )
-        VaultEntry.objects.create(
-            entry_type=VaultEntry.TYPE_PIT,
+        ArchiveEntry.objects.create(
+            entry_type=ArchiveEntry.TYPE_PIT,
             file_name='3rdYear.PIT301.SmartCampusNavigator.1stSemester.pdf',
             year_level='3rd Year',
             academic_year='2026-2027',
             team=pit_team,
             team_name=pit_team.name,
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.pit_lead,
         )
-        VaultEntry.objects.create(
-            entry_type=VaultEntry.TYPE_CAPSTONE,
+        ArchiveEntry.objects.create(
+            entry_type=ArchiveEntry.TYPE_CAPSTONE,
             file_name='3rdYear.CAP301.SmartCampusNavigator.1stSemester.pdf',
             year_level='3rd Year',
             academic_year='2026-2027',
             team=capstone_team,
             team_name=capstone_team.name,
             stage_label='Concept Proposal',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.admin,
         )
         DeliverableSubmission.objects.create(
@@ -650,7 +650,7 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertIn('codelearners_d1.pdf', file_names)
         self.assertIn('3rdYear.CAP301.SmartCampusNavigator.1stSemester.pdf', file_names)
 
-    def test_grouped_by_stage_includes_pre_when_vault_entry_exists(self):
+    def test_grouped_by_stage_includes_pre_when_archive_entry_exists(self):
         team = StudentTeam.objects.create(
             name='Archive Plus Pre',
             project_title='Archive Plus Pre',
@@ -670,15 +670,15 @@ class RepositoryAuditApiTests(APITestCase):
             file_name='archive_plus_pre_d1.pdf',
             uploaded_by=self.admin,
         )
-        VaultEntry.objects.create(
-            entry_type=VaultEntry.TYPE_CAPSTONE,
+        ArchiveEntry.objects.create(
+            entry_type=ArchiveEntry.TYPE_CAPSTONE,
             file_name='3rdYear.CAP301.ArchivePlusPre.1stSemester.pdf',
             year_level='3rd Year',
             academic_year='2026-2027',
             team=team,
             team_name=team.name,
             stage_label='Concept Proposal',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.admin,
         )
 
@@ -698,7 +698,7 @@ class RepositoryAuditApiTests(APITestCase):
         concept = next(group for group in groups if group['stage'] == 'Concept Proposal')
         pre_names = [row['file_name'] for row in concept['pre_defense']]
         self.assertIn('archive_plus_pre_d1.pdf', pre_names)
-        self.assertEqual(len(concept['vault']), 1)
+        self.assertEqual(len(concept['post']), 1)
 
     def test_options_teams_match_team_counts(self):
         self.client.force_authenticate(user=self.admin)
@@ -730,7 +730,7 @@ class RepositoryAuditApiTests(APITestCase):
         response = self.client.get(
             '/api/repository/audit/trail/',
             {
-                'entry_type': VaultEntry.TYPE_PIT,
+                'entry_type': ArchiveEntry.TYPE_PIT,
                 'source_id': str(self.pit_entry.id),
             },
         )
@@ -739,11 +739,11 @@ class RepositoryAuditApiTests(APITestCase):
 
     def test_audit_list_omits_ml_fields_by_default(self):
         self.client.force_authenticate(user=self.admin)
-        VaultEntry.objects.filter(pk=self.pit_entry.pk).update(
+        ArchiveEntry.objects.filter(pk=self.pit_entry.pk).update(
             extracted_text='long indexed text for search only',
         )
         response = self.client.get('/api/repository/audit/', {'type': 'pit'})
-        pit_rows = [e for e in response.data['entries'] if e.get('type') == VaultEntry.TYPE_PIT]
+        pit_rows = [e for e in response.data['entries'] if e.get('type') == ArchiveEntry.TYPE_PIT]
         self.assertTrue(pit_rows)
         self.assertEqual(pit_rows[0].get('extracted_text'), '')
 
@@ -809,7 +809,7 @@ class RepositoryAuditApiTests(APITestCase):
         
         # 2. Get the config and set a custom template
         config = PitEventGradingConfig.objects.get(event_name='3rd Year Expo')
-        config.vault_file_template = '{year}{course}{project}{semester}{event}'
+        config.archive_file_template = '{year}{course}{project}{semester}{event}'
         config.save()
 
         # Configure the deliverable template for this PIT event
@@ -818,7 +818,7 @@ class RepositoryAuditApiTests(APITestCase):
             pit_event_config=config,
             deliverable_id='PIT_D1',
             label='PIT Project Poster',
-            deliverable_type=PitEventDeliverable.TYPE_VAULT,
+            deliverable_type=PitEventDeliverable.TYPE_POST,
             required=True,
         )
 

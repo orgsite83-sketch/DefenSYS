@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 from django.utils import timezone
 
-from .upload_paths import vault_entry_upload_to
+from .upload_paths import archive_entry_upload_to
 
 
 PIT_YEAR_PREFIX_LABELS = {
@@ -19,7 +19,7 @@ PIT_SEMESTER_LABELS = {
 }
 
 
-class VaultEntry(models.Model):
+class ArchiveEntry(models.Model):
     TYPE_PIT = 'pit'
     TYPE_CAPSTONE = 'capstone'
 
@@ -42,7 +42,7 @@ class VaultEntry(models.Model):
     
     # Actual file storage
     file = models.FileField(
-        upload_to=vault_entry_upload_to,
+        upload_to=archive_entry_upload_to,
         null=True,
         blank=True,
         help_text='Actual uploaded file',
@@ -82,7 +82,7 @@ class VaultEntry(models.Model):
 
     team = models.ForeignKey(
         'student_teams.StudentTeam',
-        related_name='vault_entries',
+        related_name='archive_entries',
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -95,14 +95,14 @@ class VaultEntry(models.Model):
     stage_label = models.CharField(max_length=80, blank=True)
     defense_stage = models.ForeignKey(
         'defense.DefenseStage',
-        related_name='vault_entries',
+        related_name='archive_entries',
         null=True,
         blank=True,
         on_delete=models.PROTECT,
     )
     pit_event_config = models.ForeignKey(
         'defense.PitEventGradingConfig',
-        related_name='vault_entries',
+        related_name='archive_entries',
         null=True,
         blank=True,
         on_delete=models.PROTECT,
@@ -110,7 +110,7 @@ class VaultEntry(models.Model):
     status = models.CharField(max_length=40, choices=STATUS_CHOICES, default=STATUS_APPROVED)
     uploaded_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='uploaded_vault_entries',
+        related_name='uploaded_archive_entries',
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -123,16 +123,16 @@ class VaultEntry(models.Model):
 
     class Meta:
         app_label = 'repository'
-        db_table = 'digital_vault_vaultentry'
+        db_table = 'repository_archiveentry'
         ordering = ['-uploaded_at', 'file_name']
         constraints = [
             models.UniqueConstraint(
                 fields=['entry_type', 'file_name', 'academic_year'],
-                name='unique_vault_entry_per_academic_year',
+                name='unique_archive_entry_per_academic_year',
             ),
         ]
         indexes = [
-            models.Index(fields=['entry_type', 'team'], name='vault_entry_type_team_idx'),
+            models.Index(fields=['entry_type', 'team'], name='archive_entry_type_team_idx'),
         ]
 
     def save(self, *args, **kwargs):

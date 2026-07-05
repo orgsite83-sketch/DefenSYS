@@ -1,9 +1,9 @@
 from repository.audit.models import RepositoryAuditLog
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 
 __all__ = [
-    'VaultEntry',
+    'ArchiveEntry',
     'DeliverableSubmission',
     'RepositoryAuditLog',
 ]

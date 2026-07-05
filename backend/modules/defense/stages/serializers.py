@@ -13,8 +13,8 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'deliverable_type',
             'required',
             'display_order',
-            'vault_note',
-            'vault_file_template',
+            'archive_note',
+            'archive_file_template',
             'is_restricted',
         ]
 
@@ -25,6 +25,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     previous_stage_code = serializers.SerializerMethodField()
     deliverables = StageDeliverableSerializer(many=True, read_only=True)
     deliverables_count = serializers.SerializerMethodField()
+    is_officially_complete = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseStage
@@ -40,13 +41,32 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'previous_stage_code',
             'deliverables',
             'deliverables_count',
+            'is_officially_complete',
             'created_at',
             'updated_at',
         ]
-        read_only_fields = ['code', 'previous_stage_id', 'previous_stage_label', 'previous_stage_code', 'deliverables', 'deliverables_count']
+        read_only_fields = [
+            'code',
+            'previous_stage_id',
+            'previous_stage_label',
+            'previous_stage_code',
+            'deliverables',
+            'deliverables_count',
+            'is_officially_complete',
+        ]
 
     def get_deliverables_count(self, obj):
         return obj.deliverables.count()
+
+    def get_is_officially_complete(self, obj):
+        semester = self.context.get('semester')
+        if not semester:
+            from academic_period_management.models import Semester
+            semester = Semester.objects.filter(is_active=True).first()
+        if not semester:
+            return False
+        config = obj.grading_configs.filter(semester=semester).first()
+        return config.is_officially_complete if config else False
 
     def get_previous_stage_id(self, obj):
         previous = self._previous_stage(obj)
@@ -131,8 +151,8 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 deliverable_type=dtype,
                 required=bool(required),
                 display_order=deliverable_data.get('display_order', 1),
-                vault_note=deliverable_data.get('vault_note', ''),
-                vault_file_template=deliverable_data.get('vault_file_template', ''),
+                archive_note=deliverable_data.get('archive_note', ''),
+                archive_file_template=deliverable_data.get('archive_file_template', ''),
                 is_restricted=bool(deliverable_data.get('is_restricted', False)),
             )
 

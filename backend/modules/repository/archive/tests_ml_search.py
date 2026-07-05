@@ -1,9 +1,9 @@
 from django.test import SimpleTestCase
 
-from repository.vault.ml_search import build_suggestions, score_entry
+from repository.archive.ml_search import build_suggestions, score_entry
 
 
-class VaultMlSearchTests(SimpleTestCase):
+class ArchiveMlSearchTests(SimpleTestCase):
     def test_score_entry_boosts_category_and_topics(self):
         entry = {
             'id': 'pit-1',

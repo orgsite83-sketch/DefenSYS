@@ -1,12 +1,12 @@
 from django.core.management.base import BaseCommand
 
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.ml_indexing import apply_ml_from_pdf
-from repository.vault.models import VaultEntry
+from repository.archive.ml_indexing import apply_ml_from_pdf
+from repository.archive.models import ArchiveEntry
 
 
 class Command(BaseCommand):
-    help = 'Re-extract PDF text, TF-IDF topics, and Naive Bayes categories for vault files.'
+    help = 'Re-extract PDF text, TF-IDF topics, and Naive Bayes categories for archive files.'
 
     def add_arguments(self, parser):
         parser.add_argument(
@@ -17,7 +17,7 @@ class Command(BaseCommand):
         parser.add_argument(
             '--pit-only',
             action='store_true',
-            help='Only reindex VaultEntry PIT rows.',
+            help='Only reindex ArchiveEntry PIT rows.',
         )
         parser.add_argument(
             '--capstone-only',
@@ -33,13 +33,13 @@ class Command(BaseCommand):
         capstone_done = 0
 
         if not capstone_only:
-            queryset = VaultEntry.objects.exclude(file='').exclude(file__isnull=True)
+            queryset = ArchiveEntry.objects.exclude(file='').exclude(file__isnull=True)
             for entry in queryset.iterator():
                 if force:
                     entry.extracted_text = ''
                 if apply_ml_from_pdf(entry, force=force):
-                    if entry.status == VaultEntry.STATUS_PENDING:
-                        entry.status = VaultEntry.STATUS_APPROVED
+                    if entry.status == ArchiveEntry.STATUS_PENDING:
+                        entry.status = ArchiveEntry.STATUS_APPROVED
                     entry.save()
                     pit_done += 1
                     self.stdout.write(self.style.SUCCESS(f'Indexed PIT: {entry.file_name}'))
@@ -55,6 +55,6 @@ class Command(BaseCommand):
 
         self.stdout.write(
             self.style.SUCCESS(
-                f'Reindex complete. PIT vault entries: {pit_done}; capstone submissions: {capstone_done}.',
+                f'Reindex complete. PIT archive entries: {pit_done}; capstone submissions: {capstone_done}.',
             ),
         )

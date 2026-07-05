@@ -806,38 +806,37 @@ class StudentTeamSendReminderView(APIView):
             )
             notified_user_ids.add(adviser.id)
 
-        # CC PIT Instructor(s)
-        if not team.is_capstone:
-            from user_management.models import PitInstructorAssignment
-            assignments = PitInstructorAssignment.objects.filter(
-                semester=team.semester,
-                year_level=team.year_level,
-                section=team.section,
-                is_active=True
-            ).select_related('faculty')
-            
-            for assignment in assignments:
-                instructor = assignment.faculty
-                if instructor and instructor.id not in notified_user_ids:
-                    inst_body = (
-                        f"Dear {instructor.first_name} {instructor.last_name},\n\n"
-                        f"This is a copy of the reminder sent to team {team.name} (Led by {leader.first_name} {leader.last_name}) "
-                        f"regarding pending/incomplete deliverables for '{stage_label}':\n\n"
-                    )
-                    if missing_list:
-                        inst_body += "\n".join(missing_list)
-                    else:
-                        inst_body += "- Pending overall stage endorsement or review of pre-defense files."
-                    
-                    inst_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
-                    
-                    Notification.objects.create(
-                        recipient=instructor,
-                        sender=user,
-                        title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
-                        message=inst_body
-                    )
-                    notified_user_ids.add(instructor.id)
+        # CC Section Instructor(s)
+        from user_management.models import SectionInstructorAssignment
+        assignments = SectionInstructorAssignment.objects.filter(
+            semester=team.semester,
+            year_level=team.year_level,
+            section=team.section,
+            is_active=True
+        ).select_related('faculty')
+        
+        for assignment in assignments:
+            instructor = assignment.faculty
+            if instructor and instructor.id not in notified_user_ids:
+                inst_body = (
+                    f"Dear {instructor.first_name} {instructor.last_name},\n\n"
+                    f"This is a copy of the reminder sent to team {team.name} (Led by {leader.first_name} {leader.last_name}) "
+                    f"regarding pending/incomplete deliverables for '{stage_label}':\n\n"
+                )
+                if missing_list:
+                    inst_body += "\n".join(missing_list)
+                else:
+                    inst_body += "- Pending overall stage endorsement or review of pre-defense files."
+                
+                inst_body += f"\n\nSent by: {user.first_name} {user.last_name}\n\nRegards,\nDefenSYS Scheduler System"
+                
+                Notification.objects.create(
+                    recipient=instructor,
+                    sender=user,
+                    title=f"CC Reminder: Team {team.name} Pending Deliverables ({stage_label})",
+                    message=inst_body
+                )
+                notified_user_ids.add(instructor.id)
 
         return Response({
             'status': 'success',

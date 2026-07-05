@@ -27,13 +27,13 @@ def _pit_year(user):
     return (getattr(user, 'pit_lead_year', None) or '').strip()
 
 
-def pit_instructor_section_filters(user):
-    from user_management.models import PitInstructorAssignment
+def section_instructor_section_filters(user):
+    from user_management.models import SectionInstructorAssignment
 
     if not user or not getattr(user, 'is_authenticated', False):
         return Q(pk__in=[])
 
-    assignments = PitInstructorAssignment.objects.filter(
+    assignments = SectionInstructorAssignment.objects.filter(
         faculty=user,
         is_active=True,
     ).values_list('semester_id', 'year_level', 'section')
@@ -44,7 +44,6 @@ def pit_instructor_section_filters(user):
             continue
         query |= Q(
             semester_id=semester_id,
-            level__icontains='PIT',
             year_level=year_level,
             section=section,
         )
@@ -75,7 +74,7 @@ def visible_teams_for(user):
     if getattr(user, 'is_uploader', False):
         return base.filter(semester__is_active=True)
     if getattr(user, 'role', None) == 'faculty':
-        return base.filter(Q(adviser=user) | pit_instructor_section_filters(user)).distinct()
+        return base.filter(Q(adviser=user) | section_instructor_section_filters(user)).distinct()
     if getattr(user, 'role', None) == 'student':
         from student_teams.models import SectionAssignment
         pm_section = SectionAssignment.objects.filter(

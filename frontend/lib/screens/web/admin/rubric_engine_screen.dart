@@ -166,7 +166,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
         initialEvaluationType: _rubricEditorInitialEval,
         readOnly: _rubricEditorReadOnly,
         onBack: _closeRubricEditor,
-        onDelete: !_rubricEditorReadOnly && rubricId != null
+        onDelete: rubricId != null
             ? () => _confirmDelete(
                   rubricId,
                   target!['name']?.toString() ?? 'rubric',
@@ -1001,11 +1001,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     if (!mounted || confirmed != true) {
       return;
     }
-    await ref.read(rubricEngineProvider.notifier).deleteRubric(rubricId);
+    final success = await ref.read(rubricEngineProvider.notifier).deleteRubric(rubricId);
     if (!mounted) {
       return;
     }
-    if (closeEditorOnSuccess) {
+    if (success && closeEditorOnSuccess) {
       _closeRubricEditor();
     }
   }

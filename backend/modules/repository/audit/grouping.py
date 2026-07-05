@@ -6,9 +6,9 @@ from repository.deliverables.services import (
     STAGE_OPTIONS,
     deliverable_definitions_for_stage,
     stage_payload,
-    vault_unlocked,
+    archive_unlocked,
 )
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 from student_teams.models import StudentTeam
 
 from .constants import STATUS_OPTIONS, SUBMISSION_KIND_OPTIONS, TYPE_OPTIONS
@@ -45,9 +45,9 @@ def teams_for_track(track):
 
 def track_from_entry_type(entry_type):
     normalized = (entry_type or '').strip()
-    if normalized == VaultEntry.TYPE_CAPSTONE:
+    if normalized == ArchiveEntry.TYPE_CAPSTONE:
         return 'capstone'
-    if normalized == VaultEntry.TYPE_PIT:
+    if normalized == ArchiveEntry.TYPE_PIT:
         return 'pit'
     return 'all'
 
@@ -78,7 +78,7 @@ def team_counts_payload(entries, track='all'):
             'year_level': team.year_level,
             'track': team_track(team.level),
             'pre': 0,
-            'vault': 0,
+            'post': 0,
             'total': 0,
         }
         for team in teams_for_track(track)
@@ -91,14 +91,14 @@ def team_counts_payload(entries, track='all'):
         kind = entry.get('submission_kind') or ''
         if track == 'capstone' and kind == 'pit':
             continue
-        if track == 'pit' and kind in ('pre', 'vault'):
+        if track == 'pit' and kind in ('pre', 'post'):
             continue
         if kind == 'pre' and not entry.get('is_missing'):
             bucket['pre'] += 1
-        elif kind == 'vault' and not entry.get('is_missing'):
-            bucket['vault'] += 1
+        elif kind == 'post' and not entry.get('is_missing'):
+            bucket['post'] += 1
         elif kind == 'pit':
-            bucket['vault'] += 1
+            bucket['post'] += 1
         if entry.get('has_file') or entry.get('is_missing'):
             bucket['total'] += 1
     return sorted(tallies.values(), key=lambda item: (item['level'] or '', item['name'] or ''))
@@ -169,15 +169,15 @@ def _checklist_for_team_stage(team, stage_label):
             and item['required']
             and not item['uploaded']
         ],
-        'vault_locked_ids': [
+        'archive_locked_ids': [
             item['id']
             for item in payload['deliverables']
-            if item['type'] == DeliverableSubmission.TYPE_VAULT and item['locked']
+            if item['type'] == DeliverableSubmission.TYPE_POST and item['locked']
         ],
-        'vault_missing_ids': [
+        'archive_missing_ids': [
             item['id']
             for item in payload['deliverables']
-            if item['type'] == DeliverableSubmission.TYPE_VAULT
+            if item['type'] == DeliverableSubmission.TYPE_POST
             and not item['uploaded']
             and not item['locked']
         ],
@@ -199,7 +199,7 @@ def _entries_for_stage_deliverables(
         if submission.stage_label == stage_label
     }
     pre_defense = []
-    vault = []
+    post_defense = []
     payload_kwargs = {
         'request': request,
         'include_ml': include_ml,
@@ -212,19 +212,19 @@ def _entries_for_stage_deliverables(
             if payload['submission_kind'] == 'pre':
                 pre_defense.append(payload)
             else:
-                vault.append(payload)
+                post_defense.append(payload)
             continue
-        if definition['type'] == DeliverableSubmission.TYPE_VAULT:
-            if not vault_unlocked(team, stage_label):
-                vault.append(_missing_capstone_entry(team, stage_label, definition, request=request))
+        if definition['type'] == DeliverableSubmission.TYPE_POST:
+            if not archive_unlocked(team, stage_label):
+                post_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
             elif definition.get('required'):
-                vault.append(_missing_capstone_entry(team, stage_label, definition, request=request))
+                post_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
         elif definition.get('required'):
             pre_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
 
     included_source_ids = {
         entry.get('source_id')
-        for entry in pre_defense + vault
+        for entry in pre_defense + post_defense
         if entry.get('source_id')
     }
     for submission in team.deliverable_submissions.all():
@@ -235,23 +235,23 @@ def _entries_for_stage_deliverables(
         payload = capstone_entry_payload(submission, **payload_kwargs)
         if payload['submission_kind'] == 'pre':
             pre_defense.append(payload)
-        elif payload['submission_kind'] == 'vault':
-            vault.append(payload)
+        elif payload['submission_kind'] == 'post':
+            post_defense.append(payload)
         included_source_ids.add(submission.id)
 
     included_ids = {
         entry.get('id')
-        for entry in pre_defense + vault
+        for entry in pre_defense + post_defense
         if entry.get('id')
     }
-    vault.extend([
+    post_defense.extend([
         entry
         for entry in entries_for_team
-        if entry.get('submission_kind') == 'vault'
+        if entry.get('submission_kind') == 'post'
         and entry.get('stage') == stage_label
         and entry.get('id') not in included_ids
     ])
-    return pre_defense, vault
+    return pre_defense, post_defense
 
 
 def grouped_by_stage_for_team(
@@ -273,7 +273,7 @@ def grouped_by_stage_for_team(
     for stage_name in stages:
         if stage_filter and stage_name != stage_filter:
             continue
-        pre_defense, vault = _entries_for_stage_deliverables(
+        pre_defense, post_defense = _entries_for_stage_deliverables(
             team,
             stage_name,
             entries_for_team,
@@ -281,12 +281,12 @@ def grouped_by_stage_for_team(
             include_ml=include_ml,
             include_audit_trail=include_audit_trail,
         )
-        if not (pre_defense or vault) and not stage_filter:
+        if not (pre_defense or post_defense) and not stage_filter:
             continue
         groups.append({
             'stage': stage_name,
             'pre_defense': pre_defense,
-            'vault': vault,
+            'post': post_defense,
             'checklist': _checklist_for_team_stage(team, stage_name),
         })
     return groups
@@ -345,8 +345,8 @@ def deliverable_summary_payload(deliverable_id, entries, stage_filter=''):
                 label = definition['label']
                 kind = definition['type']
                 break
-    if kind == DeliverableSubmission.TYPE_VAULT:
-        kind = 'vault'
+    if kind == DeliverableSubmission.TYPE_POST:
+        kind = 'post'
     elif kind == DeliverableSubmission.TYPE_PRE:
         kind = 'pre'
 
@@ -358,8 +358,8 @@ def deliverable_summary_payload(deliverable_id, entries, stage_filter=''):
     return {
         'deliverable_id': deliverable_id,
         'label': label,
-        'submission_kind': kind if kind in ('pre', 'vault') else (
-            'vault' if kind == DeliverableSubmission.TYPE_VAULT else 'pre'
+        'submission_kind': kind if kind in ('pre', 'post') else (
+            'post' if kind == DeliverableSubmission.TYPE_POST else 'pre'
         ),
         'uploaded_count': uploaded,
         'missing_count': missing,

@@ -62,8 +62,8 @@ def get_deliverable_definitions(stage_label):
                 'label': d.label,
                 'required': d.required,
                 'type': d.deliverable_type,
-                'vault_note': d.vault_note,
-                'vault_file_template': d.vault_file_template,
+                'archive_note': d.archive_note,
+                'archive_file_template': d.archive_file_template,
                 'is_restricted': d.is_restricted,
             }
             for d in deliverables
@@ -94,8 +94,8 @@ def get_deliverable_definitions_for_team(team, stage_label):
             'label': d.label,
             'required': d.required,
             'type': d.deliverable_type,
-            'vault_note': d.vault_note,
-            'vault_file_template': d.vault_file_template,
+            'archive_note': d.archive_note,
+            'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
@@ -212,10 +212,10 @@ def team_queryset_for_user(user):
             else:
                 q |= Q(level__icontains='PIT')
         
-        # PIT Instructors
-        from user_management.models import PitInstructorAssignment
+        # Section Instructors
+        from user_management.models import SectionInstructorAssignment
         from student_teams.team_levels import normalize_year_level
-        assignments = PitInstructorAssignment.objects.filter(faculty=user, is_active=True)
+        assignments = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
         if assignments.exists():
             for assign in assignments:
                 norm_year = normalize_year_level(assign.year_level)
@@ -223,7 +223,7 @@ def team_queryset_for_user(user):
                     semester=assign.semester,
                     section=assign.section,
                     level__icontains=norm_year
-                ) & Q(level__icontains='PIT')
+                )
 
         if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False) or assignments.exists():
             return queryset.filter(q)
@@ -261,7 +261,7 @@ def filter_teams(request, queryset):
     return queryset
 
 
-def vault_unlocked(team, stage_label):
+def archive_unlocked(team, stage_label):
     if team.status == StudentTeam.STATUS_APPROVED:
         return True
     return DefenseSchedule.objects.filter(
@@ -293,21 +293,21 @@ def required_complete(team, stage_label):
 def stage_payload(team, stage_label):
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
-    unlocked = vault_unlocked(team, stage_label)
+    unlocked = archive_unlocked(team, stage_label)
     rows = []
 
-    from repository.audit.services import resolve_vault_file_template
+    from repository.audit.services import resolve_archive_file_template
     from academic_period_management.models import Semester
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
 
     for item in definitions:
         submission = submitted.get(item['id'])
-        is_vault = item['type'] == DeliverableSubmission.TYPE_VAULT
+        is_vault = item['type'] == DeliverableSubmission.TYPE_POST
         
         suggested = ''
         if is_vault:
-            suggested = resolve_vault_file_template(
-                item.get('vault_file_template', ''),
+            suggested = resolve_archive_file_template(
+                item.get('archive_file_template', ''),
                 team,
                 stage_label,
                 semester_label,
@@ -319,7 +319,7 @@ def stage_payload(team, stage_label):
             'label': item['label'],
             'required': item['required'],
             'type': item['type'],
-            'vault_note': item.get('vault_note', ''),
+            'archive_note': item.get('archive_note', ''),
             'suggested_file_name': suggested,
             'uploaded': submission is not None,
             'locked': is_vault and not unlocked,
@@ -327,30 +327,30 @@ def stage_payload(team, stage_label):
         })
 
     pre_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_PRE]
-    vault_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_VAULT]
+    archive_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_POST]
     required_items = [item for item in pre_items if item['required']]
-    vault_required_items = [item for item in vault_items if item['required']]
+    archive_required_items = [item for item in archive_items if item['required']]
 
     configured = len(definitions) > 0
-    vault_required_complete = (
-        not vault_required_items
-        or all(item['uploaded'] for item in vault_required_items)
+    archive_required_complete = (
+        not archive_required_items
+        or all(item['uploaded'] for item in archive_required_items)
     )
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
         'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label),
-        'vault_unlocked': unlocked,
+        'archive_unlocked': unlocked,
         'required_complete': configured and required_complete(team, stage_label),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
         'required_total': len(required_items),
-        'vault_uploaded': sum(1 for item in vault_items if item['uploaded']),
-        'vault_total': len(vault_items),
-        'vault_required_uploaded': sum(1 for item in vault_required_items if item['uploaded']),
-        'vault_required_total': len(vault_required_items),
-        'vault_complete': unlocked and vault_required_complete,
+        'archive_uploaded': sum(1 for item in archive_items if item['uploaded']),
+        'archive_total': len(archive_items),
+        'archive_required_uploaded': sum(1 for item in archive_required_items if item['uploaded']),
+        'archive_required_total': len(archive_required_items),
+        'archive_complete': unlocked and archive_required_complete,
         'deliverables': rows,
     }
 
@@ -478,16 +478,16 @@ def counts_payload(teams):
         for team in team_list
         if not required_complete(team, current_stage_for_team(team))
     )
-    vault_total = DeliverableSubmission.objects.filter(
+    archive_total = DeliverableSubmission.objects.filter(
         team__in=team_list,
-        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        deliverable_type=DeliverableSubmission.TYPE_POST,
     ).count() if team_list else 0
     return {
         'teams': len(team_list),
         'ready': ready_count,
         'missing_requirements': missing_count,
         'submitted_files': submitted_total,
-        'vault_files': vault_total,
+        'archive_files': archive_total,
     }
 
 
@@ -499,16 +499,16 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
     definition = definition_for(team, stage_label, deliverable_id)
     if definition is None:
         raise ValueError('Deliverable does not exist for this stage.')
-    if definition['type'] == DeliverableSubmission.TYPE_VAULT:
-        if not vault_unlocked(team, stage_label):
-            raise PermissionError('Vault submissions are locked until this defense is done.')
+    if definition['type'] == DeliverableSubmission.TYPE_POST:
+        if not archive_unlocked(team, stage_label):
+            raise PermissionError('Post-Defense submissions are locked until this defense is done.')
         
         # Check naming convention
-        from repository.audit.services import resolve_vault_file_template
+        from repository.audit.services import resolve_archive_file_template
         from academic_period_management.models import Semester
         semester_label = team.semester.label if team.semester_id else Semester.FIRST
-        suggested = resolve_vault_file_template(
-            definition.get('vault_file_template', ''),
+        suggested = resolve_archive_file_template(
+            definition.get('archive_file_template', ''),
             team,
             stage_label,
             semester_label,

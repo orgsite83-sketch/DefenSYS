@@ -9,6 +9,7 @@ import '../../../services/user_management_provider.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../utils/student_bulk_import_csv.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class PitStudentImportScreen extends ConsumerStatefulWidget {
   const PitStudentImportScreen({super.key});
@@ -298,12 +299,7 @@ class _PitStudentImportScreenState
       });
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error reading file: $e'),
-          backgroundColor: const Color(0xFFDC2626),
-        ),
-      );
+      showErrorToast(context, 'Error reading file: $e');
     }
   }
 

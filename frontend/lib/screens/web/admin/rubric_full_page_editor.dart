@@ -5,7 +5,6 @@ import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
-import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
@@ -266,6 +265,25 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     showSuccessToast(context, 'Rubric criteria and details cloned.');
   }
 
+  void _showCloneRubricDialog(
+    BuildContext context,
+    List<Map<String, dynamic>> availableRubrics,
+  ) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogContext) {
+        return _CloneRubricDialog(
+          availableRubrics: availableRubrics,
+          onClone: (sourceRubric) {
+            _cloneFromRubric(sourceRubric);
+            Navigator.pop(dialogContext);
+          },
+        );
+      },
+    );
+  }
+
   Widget _buildCloneDropdown(RubricEngineState state) {
     if (_editing || widget.readOnly) return const SizedBox.shrink();
 
@@ -288,45 +306,42 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       children: [
         _labeledControl(
           'CLONE FROM EXISTING RUBRIC (OPTIONAL)',
-          DropdownButtonFormField<int?>(
-            key: const ValueKey('clone-rubric-dropdown'),
-            initialValue: null,
-            isExpanded: true,
-            style: _dropdownFieldStyle,
-            decoration: _outlineInputDec(
-              hint: '— Select a rubric to copy criteria —',
-            ),
-            items: [
-              const DropdownMenuItem<int?>(
-                value: null,
-                child: Text('— Select a rubric to copy criteria —'),
+          InkWell(
+            onTap: () => _showCloneRubricDialog(context, availableRubrics),
+            borderRadius: BorderRadius.circular(8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFD1D5DB)),
               ),
-              ...availableRubrics.map((r) {
-                final displaySem = r['display_semester']?.toString() ?? '';
-                final semesterLabel = displaySem.isNotEmpty ? ' ($displaySem)' : '';
-                final scopeLabel = r['scope'] == 'pit' ? ' [PIT]' : ' [Capstone]';
-                final evalTypeLabel = ' · ${_evaluationLabel(r['evaluation_type']?.toString())}';
-                return DropdownMenuItem<int?>(
-                  value: _asInt(r['id']),
-                  child: Text(
-                    '${r['name']}$scopeLabel$evalTypeLabel$semesterLabel',
-                    style: TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      fontSize: _bodySize,
-                      color: DefensysUi.textDark,
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.copy_all_rounded,
+                    color: AppColors.maroon,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Select a rubric to copy criteria...',
+                      style: TextStyle(
+                        fontFamily: DefensysUi.fontFamily,
+                        color: const Color(0xFF9CA3AF),
+                        fontSize: _bodySize,
+                      ),
                     ),
                   ),
-                );
-              }),
-            ],
-            onChanged: (rubricId) {
-              if (rubricId != null) {
-                final source = availableRubrics.firstWhere(
-                  (r) => _asInt(r['id']) == rubricId,
-                );
-                _cloneFromRubric(source);
-              }
-            },
+                  const Icon(
+                    Icons.arrow_forward_ios_rounded,
+                    color: Color(0xFF9CA3AF),
+                    size: 14,
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
         const SizedBox(height: 16),
@@ -728,7 +743,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
 
     String title = '';
-    String message = '';
     String confirmLabel = '';
 
     final evalLabel = _evaluationLabel(_evaluationType);
@@ -744,38 +758,123 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     if (status == 'published') {
       title = 'Publish Rubric?';
       confirmLabel = 'Publish & Lock';
-      if (duplicate != null) {
-        final duplicateName = duplicate['name']?.toString() ?? 'Unnamed';
-        final isPublished = duplicate['status']?.toString() == 'published';
-        if (isPublished) {
-          message = 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'$duplicateName\'). Published rubrics are locked and cannot be deleted. Saving this may result in duplicate rubrics.\n\nAre you sure you want to publish and lock this rubric?';
-        } else {
-          message = 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'$duplicateName\').\n\nAre you sure you want to publish and lock this rubric?';
-        }
-      } else {
-        message = 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited or deleted.';
-      }
     } else {
       title = 'Save Rubric Draft?';
       confirmLabel = 'Save Draft';
-      if (duplicate != null) {
-        final duplicateName = duplicate['name']?.toString() ?? 'Unnamed';
-        message = 'Warning: A rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'$duplicateName\').\n\nAre you sure you want to save this rubric draft?';
-      } else {
-        message = 'Are you sure you want to save this rubric as a draft?';
-      }
     }
 
     if (!mounted) return;
-    final confirmed = await showConfirmDialog(
-      context,
-      title: title,
-      message: message,
-      confirmLabel: confirmLabel,
-      cancelLabel: 'Cancel',
+    final confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (dialogContext) {
+        return AlertDialog(
+          surfaceTintColor: Colors.transparent,
+          backgroundColor: Colors.white,
+          title: Text(
+            title,
+            style: const TextStyle(
+              fontFamily: DefensysUi.fontFamily,
+              fontWeight: FontWeight.bold,
+              fontSize: 16.5,
+              color: Color(0xFF111827),
+            ),
+          ),
+          content: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 550),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (duplicate != null) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF7ED),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFFED7AA)),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(
+                          Icons.warning_amber_rounded,
+                          color: Color(0xFFEA580C),
+                          size: 20,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            status == 'published'
+                                ? (duplicate['status']?.toString() == 'published'
+                                    ? 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\'). Published rubrics are locked and cannot be edited (deletion is blocked if tied to any schedules or events). Saving this may result in duplicate rubrics.'
+                                    : 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'${duplicate['name']}\').')
+                                : 'Warning: A rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\').',
+                            style: const TextStyle(
+                              fontFamily: DefensysUi.fontFamily,
+                              fontSize: 12.5,
+                              color: Color(0xFF9A3412),
+                              height: 1.4,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                ],
+                Text(
+                  status == 'published'
+                      ? 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited (deletion is only allowed if not tied to any Capstone schedules or PIT events).'
+                      : 'Are you sure you want to save this rubric draft?',
+                  style: const TextStyle(
+                    fontFamily: DefensysUi.fontFamily,
+                    fontSize: 13.5,
+                    color: Color(0xFF374151),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: Text(
+                'Cancel',
+                style: TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  color: Colors.grey[600],
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DefensysUi.primaryMaroon,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(
+                confirmLabel,
+                style: const TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        );
+      },
     );
 
-    if (!confirmed) return;
+    if (confirmed != true) return;
 
     final payload = {
       'name': _name.text.trim(),
@@ -853,6 +952,26 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     final isCapstoneOnlyManager = _isCapstoneOnlyManager(user);
     final saving = state.isSaving || _checking;
     final canEdit = !widget.readOnly && !saving;
+
+    final activeSem = state.activeSemester;
+    final activeYear = activeSem?['school_year']?.toString();
+
+    final filteredSemesters = state.semesters.where((semester) {
+      final semId = _asInt(semester['id']);
+      final semYear = semester['school_year']?.toString();
+
+      // Always include the currently selected semester to avoid dropdown validation crash.
+      if (semId == _semesterId) {
+        return true;
+      }
+
+      // Limit dropdown to semesters of the active semester's school year.
+      if (activeYear != null) {
+        return semYear == activeYear;
+      }
+
+      return true;
+    }).toList();
 
     final evalItems = [
       DropdownMenuItem(
@@ -1041,20 +1160,28 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                                       ),
                                     ),
                                   ),
-                                  ...state.semesters.map(
-                                    (semester) => DropdownMenuItem<int?>(
-                                      value: _asInt(semester['id']),
-                                      child: Text(
-                                        semester['display_name']
-                                                ?.toString() ??
-                                            '',
-                                        style: TextStyle(
-                                          fontFamily: DefensysUi.fontFamily,
-                                          fontSize: _bodySize,
-                                          color: DefensysUi.textDark,
+                                  ...filteredSemesters.map(
+                                    (semester) {
+                                      final semId = _asInt(semester['id']);
+                                      final isActive = semester['is_active'] == true ||
+                                          semId == _asInt(state.activeSemester?['id']);
+                                      final displayName =
+                                          semester['display_name']?.toString() ?? '';
+                                      final labelText = isActive
+                                          ? '$displayName (Active)'
+                                          : displayName;
+                                      return DropdownMenuItem<int?>(
+                                        value: semId,
+                                        child: Text(
+                                          labelText,
+                                          style: TextStyle(
+                                            fontFamily: DefensysUi.fontFamily,
+                                            fontSize: _bodySize,
+                                            color: DefensysUi.textDark,
+                                          ),
                                         ),
-                                      ),
-                                    ),
+                                      );
+                                    },
                                   ),
                                 ],
                                 onChanged: canEdit
@@ -1266,7 +1393,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       ),
                       child: Text(widget.readOnly ? 'Back' : 'Cancel'),
                     ),
-                    if (!widget.readOnly && widget.onDelete != null) ...[
+                    if (widget.onDelete != null) ...[
                       const SizedBox(width: 8),
                       TextButton(
                         onPressed: saving ? null : widget.onDelete,
@@ -1440,5 +1567,575 @@ class RubricCriterionDraft {
       return '10-Point Scale';
     }
     return scales.isNotEmpty ? scales.first : '10-Point Scale';
+  }
+}
+
+class _CloneRubricDialog extends StatefulWidget {
+  const _CloneRubricDialog({
+    required this.availableRubrics,
+    required this.onClone,
+  });
+
+  final List<Map<String, dynamic>> availableRubrics;
+  final ValueChanged<Map<String, dynamic>> onClone;
+
+  @override
+  State<_CloneRubricDialog> createState() => _CloneRubricDialogState();
+}
+
+class _CloneRubricDialogState extends State<_CloneRubricDialog> {
+  String _searchQuery = '';
+  String _selectedScope = 'all';
+  String? _selectedSemester;
+  Map<String, dynamic>? _selectedRubric;
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isDesktop = screenWidth > 800;
+
+    final semesters = widget.availableRubrics
+        .map((r) => r['display_semester']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toSet()
+        .toList();
+
+    final filtered = widget.availableRubrics.where((r) {
+      if (_searchQuery.isNotEmpty) {
+        final name = r['name']?.toString().toLowerCase() ?? '';
+        final sem = r['display_semester']?.toString().toLowerCase() ?? '';
+        final query = _searchQuery.toLowerCase();
+        if (!name.contains(query) && !sem.contains(query)) {
+          return false;
+        }
+      }
+      if (_selectedScope != 'all') {
+        if (r['scope'] != _selectedScope) return false;
+      }
+      if (_selectedSemester != null) {
+        if (r['display_semester']?.toString() != _selectedSemester) return false;
+      }
+      return true;
+    }).toList();
+
+    return Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      clipBehavior: Clip.antiAlias,
+      child: Container(
+        width: isDesktop ? 950 : screenWidth * 0.9,
+        height: 600,
+        color: Colors.white,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _buildHeader(context),
+            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+            Expanded(
+              child: isDesktop
+                  ? Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Expanded(
+                          flex: 11,
+                          child: _buildLeftPane(filtered, semesters),
+                        ),
+                        const VerticalDivider(width: 1, color: Color(0xFFE5E7EB)),
+                        Expanded(
+                          flex: 12,
+                          child: _buildRightPane(),
+                        ),
+                      ],
+                    )
+                  : Column(
+                      children: [
+                        Expanded(
+                          flex: 3,
+                          child: _buildLeftPane(filtered, semesters),
+                        ),
+                        const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                        Expanded(
+                          flex: 2,
+                          child: _buildRightPane(),
+                        ),
+                      ],
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      color: const Color(0xFFF9FAFB),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Select Rubric to Clone',
+                style: TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysUi.primaryMaroon,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Browse and preview templates before applying criteria.',
+                style: TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  fontSize: 12,
+                  color: Color(0xFF4B5563),
+                ),
+              ),
+            ],
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, color: Colors.grey),
+            onPressed: () => Navigator.pop(context),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLeftPane(List<Map<String, dynamic>> filtered, List<String> semesters) {
+    return Padding(
+      padding: const EdgeInsets.all(16.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            onChanged: (val) => setState(() => _searchQuery = val),
+            style: const TextStyle(fontSize: 13, fontFamily: DefensysUi.fontFamily),
+            decoration: InputDecoration(
+              hintText: 'Search by name or semester...',
+              prefixIcon: const Icon(Icons.search, size: 18, color: Colors.grey),
+              filled: true,
+              fillColor: const Color(0xFFF3F4F6),
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8),
+                borderSide: BorderSide.none,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _buildScopeTab('all', 'All'),
+              const SizedBox(width: 6),
+              _buildScopeTab('capstone', 'Capstone'),
+              const SizedBox(width: 6),
+              _buildScopeTab('pit', 'PIT'),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String?>(
+                    value: _selectedSemester,
+                    hint: const Text('All Semesters', style: TextStyle(fontSize: 11, fontFamily: DefensysUi.fontFamily)),
+                    isDense: true,
+                    style: const TextStyle(fontSize: 11, color: Colors.black, fontFamily: DefensysUi.fontFamily),
+                    onChanged: (val) => setState(() {
+                      _selectedSemester = val;
+                    }),
+                    items: [
+                      const DropdownMenuItem<String?>(
+                        value: null,
+                        child: Text('All Semesters'),
+                      ),
+                      ...semesters.map((s) => DropdownMenuItem<String?>(
+                        value: s,
+                        child: Text(s),
+                      )),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: filtered.isEmpty
+                ? Center(
+                    child: Text(
+                      'No matching rubrics found',
+                      style: TextStyle(color: Colors.grey[500], fontSize: 13, fontFamily: DefensysUi.fontFamily),
+                    ),
+                  )
+                : ListView.builder(
+                    itemCount: filtered.length,
+                    itemBuilder: (context, index) {
+                      final r = filtered[index];
+                      final isSelected = _selectedRubric?['id'] == r['id'];
+                      final displaySem = r['display_semester']?.toString() ?? '';
+                      final isPit = r['scope'] == 'pit';
+                      final criteriaCount = (r['criteria'] as List?)?.length ?? 0;
+                      
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 8.0),
+                        child: InkWell(
+                          onTap: () {
+                            setState(() {
+                              _selectedRubric = r;
+                            });
+                          },
+                          borderRadius: BorderRadius.circular(8),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: isSelected ? DefensysUi.primaryMaroon.withValues(alpha: 0.05) : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isSelected ? DefensysUi.primaryMaroon : const Color(0xFFE5E7EB),
+                                width: isSelected ? 1.5 : 1,
+                              ),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  r['name']?.toString() ?? '',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 13.5,
+                                    color: Color(0xFF111827),
+                                    fontFamily: DefensysUi.fontFamily,
+                                  ),
+                                ),
+                                const SizedBox(height: 6),
+                                Row(
+                                  children: [
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: isPit ? const Color(0xFFEFF6FF) : const Color(0xFFECFDF5),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        isPit ? 'PIT' : 'Capstone',
+                                        style: TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w600,
+                                          color: isPit ? const Color(0xFF1D4ED8) : const Color(0xFF047857),
+                                          fontFamily: DefensysUi.fontFamily,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFF3F4F6),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        _evaluationLabel(r['evaluation_type']?.toString()),
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          fontWeight: FontWeight.w500,
+                                          color: Color(0xFF4B5563),
+                                          fontFamily: DefensysUi.fontFamily,
+                                        ),
+                                      ),
+                                    ),
+                                    const Spacer(),
+                                    if (displaySem.isNotEmpty)
+                                      Text(
+                                        displaySem,
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.grey[500],
+                                          fontFamily: DefensysUi.fontFamily,
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 6),
+                                Text(
+                                  '$criteriaCount Criteria',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: Colors.grey[600],
+                                    fontWeight: FontWeight.w500,
+                                    fontFamily: DefensysUi.fontFamily,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeTab(String scope, String label) {
+    final active = _selectedScope == scope;
+    return GestureDetector(
+      onTap: () => setState(() => _selectedScope = scope),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+        decoration: BoxDecoration(
+          color: active ? DefensysUi.primaryMaroon.withValues(alpha: 0.08) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active ? DefensysUi.primaryMaroon : const Color(0xFFD1D5DB),
+            width: active ? 1.2 : 1,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: active ? FontWeight.w600 : FontWeight.normal,
+            color: active ? DefensysUi.primaryMaroon : const Color(0xFF4B5563),
+            fontFamily: DefensysUi.fontFamily,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRightPane() {
+    if (_selectedRubric == null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.assignment_outlined, size: 54, color: Colors.grey[300]),
+            const SizedBox(height: 12),
+            Text(
+              'Select a rubric template',
+              style: TextStyle(
+                color: Colors.grey[500],
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                fontFamily: DefensysUi.fontFamily,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'Select a rubric from the list to preview its evaluation criteria.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.grey[400],
+                fontSize: 11.5,
+                fontFamily: DefensysUi.fontFamily,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final rubric = _selectedRubric!;
+    final name = rubric['name']?.toString() ?? '';
+    final criteria = rubric['criteria'] as List? ?? [];
+    
+    num totalWeight = 0;
+    for (final c in criteria) {
+      if (c is Map) {
+        totalWeight += num.tryParse(c['weight']?.toString() ?? '') ?? 0;
+      }
+    }
+
+    return Container(
+      color: const Color(0xFFFAFAFA),
+      padding: const EdgeInsets.all(20.0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF111827),
+                        fontFamily: DefensysUi.fontFamily,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Total Weight: ${totalWeight.toStringAsFixed(0)}% · ${criteria.length} Criteria',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey[600],
+                        fontWeight: FontWeight.w500,
+                        fontFamily: DefensysUi.fontFamily,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          const Divider(height: 1, color: Color(0xFFE5E7EB)),
+          const SizedBox(height: 12),
+          Expanded(
+            child: ListView.builder(
+              itemCount: criteria.length,
+              itemBuilder: (context, index) {
+                final c = criteria[index] as Map? ?? {};
+                final critName = c['name']?.toString() ?? 'Criterion ${index + 1}';
+                final desc = c['description']?.toString() ?? '';
+                final weight = c['weight']?.toString() ?? '0';
+                final maxScore = c['max_score']?.toString() ?? '0';
+                final targetType = c['target_type'] == 'individual' ? 'Individual' : 'Team';
+                final scale = c['scale']?.toString() ?? '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              critName,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1F2937),
+                                fontFamily: DefensysUi.fontFamily,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF7ED),
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFFFEDD5)),
+                            ),
+                            child: Text(
+                              'Weight: $weight%',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFFC2410C),
+                                fontFamily: DefensysUi.fontFamily,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (desc.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Text(
+                          desc,
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: Colors.grey[600],
+                            height: 1.3,
+                            fontFamily: DefensysUi.fontFamily,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Icon(Icons.assessment_outlined, size: 12, color: Colors.grey[500]),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Scale: $scale (Max: $maxScore)',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              color: Colors.grey[500],
+                              fontFamily: DefensysUi.fontFamily,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF3F4F6),
+                              borderRadius: BorderRadius.circular(3),
+                            ),
+                            child: Text(
+                              targetType,
+                              style: const TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF4B5563),
+                                fontFamily: DefensysUi.fontFamily,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: DefensysUi.primaryMaroon,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              elevation: 0,
+            ),
+            onPressed: () => widget.onClone(rubric),
+            child: const Text(
+              'Clone Criteria & Configuration',
+              style: TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontWeight: FontWeight.bold,
+                fontSize: 13,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _evaluationLabel(String? value) {
+    return switch (value) {
+      'adviser' => 'Adviser',
+      'peer' => 'Peer',
+      _ => 'Panel',
+    };
   }
 }

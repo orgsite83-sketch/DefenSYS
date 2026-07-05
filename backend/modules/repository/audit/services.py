@@ -18,8 +18,8 @@ from defense.stages.models import StageGradingConfig
 from grading.grades.models import TeamGrade
 from repository.deliverables.models import DeliverableSubmission
 from repository.entry_payloads import apply_list_entry_options
-from repository.vault.ml_search import filter_and_rank_entries
-from repository.vault.models import PIT_SEMESTER_LABELS, PIT_YEAR_PREFIX_LABELS, VaultEntry
+from repository.archive.ml_search import filter_and_rank_entries
+from repository.archive.models import PIT_SEMESTER_LABELS, PIT_YEAR_PREFIX_LABELS, ArchiveEntry
 from student_teams.models import StudentTeam
 from student_teams.term_scope import get_active_semester
 from .constants import (
@@ -40,7 +40,7 @@ from .grouping import (
 )
 from .payloads import (
     capstone_entry_payload,
-    capstone_vault_entry_payload,
+    capstone_archive_entry_payload,
     pit_entry_payload,
 )
 from .models import RepositoryAuditLog
@@ -151,7 +151,7 @@ def _complete_passing_grades(scope):
 def pit_upload_window_open(year_level, semester=None):
     if not year_level:
         return False
-    queue = pit_vault_upload_queue(year_level, semester=semester)
+    queue = pit_archive_upload_queue(year_level, semester=semester)
     if queue:
         return True
     semester = semester or get_active_semester()
@@ -202,7 +202,7 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
                 event_name__iexact=event_name.strip(),
             ).first()
             if config:
-                template = config.vault_file_template.strip()
+                template = config.archive_file_template.strip()
 
     if template:
         resolved = template.replace('{year}', prefix)
@@ -219,7 +219,7 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
     return f'{prefix}.{course}.{project}.{semester_key}.pdf'
 
 
-def pit_vault_upload_queue(year_level, semester=None):
+def pit_archive_upload_queue(year_level, semester=None):
     if not year_level:
         return []
 
@@ -230,16 +230,16 @@ def pit_vault_upload_queue(year_level, semester=None):
         return []
 
     uploaded_event_keys = set(
-        VaultEntry.objects.filter(
-            entry_type=VaultEntry.TYPE_PIT,
+        ArchiveEntry.objects.filter(
+            entry_type=ArchiveEntry.TYPE_PIT,
             year_level=year_level,
             team_id__isnull=False,
             pit_event_config_id__isnull=False,
         ).values_list('team_id', 'pit_event_config_id')
     )
     legacy_uploaded_team_ids = set(
-        VaultEntry.objects.filter(
-            entry_type=VaultEntry.TYPE_PIT,
+        ArchiveEntry.objects.filter(
+            entry_type=ArchiveEntry.TYPE_PIT,
             year_level=year_level,
             team_id__isnull=False,
             pit_event_config_id__isnull=True,
@@ -286,7 +286,7 @@ def pit_vault_upload_queue(year_level, semester=None):
             'pit_event_config_id': grade.pit_event_config_id,
             'event_name': event_name,
             'suggested_file_name': suggested_pit_file_name(team, year_level, semester_label, event_name=event_name),
-            'vault_status': 'uploaded' if uploaded else 'pending',
+            'archive_status': 'uploaded' if uploaded else 'pending',
         })
     return queue
 
@@ -321,7 +321,7 @@ def pit_upload_diagnostics(year_level, semester=None):
             if label
         }
     )
-    ready_for_archive = len(pit_vault_upload_queue(year_level, semester=semester))
+    ready_for_archive = len(pit_archive_upload_queue(year_level, semester=semester))
     unpublished_passed = pit_grades.filter(
         final_grade__gte=Decimal('75.00'),
     ).exclude(
@@ -342,7 +342,7 @@ def pit_upload_diagnostics(year_level, semester=None):
 def upload_window_payload(year_level, semester=None):
     open_window = pit_upload_window_open(year_level, semester=semester)
     completed = all_completed_pit_event_names(semester=semester)
-    queue = pit_vault_upload_queue(year_level, semester=semester) if open_window else []
+    queue = pit_archive_upload_queue(year_level, semester=semester) if open_window else []
     diagnostics = {}
     if year_level and (not open_window or not queue):
         diagnostics = pit_upload_diagnostics(year_level, semester=semester)
@@ -411,7 +411,7 @@ def _semester_key_from_label(semester_label):
     return '1stSemester'
 
 
-def resolve_vault_file_template(
+def resolve_archive_file_template(
     template, team, stage_label, semester_label='1st Semester',
     deliverable_label='',
 ):
@@ -461,7 +461,7 @@ def resolve_vault_file_template(
     return resolved
 
 
-def capstone_vault_upload_queue(semester=None):
+def capstone_archive_upload_queue(semester=None):
     semester = semester or get_active_semester()
     stage_labels = all_completed_capstone_stage_labels(semester=semester)
     stage_ids = all_completed_capstone_stage_ids(semester=semester)
@@ -471,22 +471,22 @@ def capstone_vault_upload_queue(semester=None):
     uploaded_keys = {
         (team_id, defense_stage_id or stage_label)
         for team_id, defense_stage_id, stage_label in (
-            VaultEntry.objects.filter(
-                entry_type=VaultEntry.TYPE_CAPSTONE,
+            ArchiveEntry.objects.filter(
+                entry_type=ArchiveEntry.TYPE_CAPSTONE,
                 team_id__isnull=False,
             ).values_list('team_id', 'defense_stage_id', 'stage_label')
         )
     }
     uploaded_legacy_keys = set(
-        VaultEntry.objects.filter(
-            entry_type=VaultEntry.TYPE_CAPSTONE,
+        ArchiveEntry.objects.filter(
+            entry_type=ArchiveEntry.TYPE_CAPSTONE,
             team_id__isnull=False,
         ).values_list('team_id', 'stage_label')
     )
     
     from repository.deliverables.models import DeliverableSubmission
     for t_id, s_label, f_name in DeliverableSubmission.objects.filter(
-        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        deliverable_type=DeliverableSubmission.TYPE_POST,
         team_id__isnull=False,
     ).values_list('team_id', 'stage_label', 'file_name'):
         if CAPSTONE_FILENAME_RE.fullmatch((f_name or '').strip()):
@@ -529,7 +529,7 @@ def capstone_vault_upload_queue(semester=None):
                 stage_label,
                 semester_label,
             ),
-            'vault_status': 'pending',
+            'archive_status': 'pending',
         })
     return queue
 
@@ -544,7 +544,7 @@ def capstone_upload_diagnostics(semester=None):
         semester=semester,
         scope=TeamGrade.SCOPE_CAPSTONE,
     )
-    ready_for_archive = len(capstone_vault_upload_queue(semester=semester))
+    ready_for_archive = len(capstone_archive_upload_queue(semester=semester))
     unpublished_passed = capstone_grades.filter(
         final_grade__gte=Decimal('75.00'),
     ).exclude(
@@ -567,7 +567,7 @@ def capstone_upload_diagnostics(semester=None):
 
 def capstone_upload_window_open(semester=None):
     semester = semester or get_active_semester()
-    queue = capstone_vault_upload_queue(semester=semester)
+    queue = capstone_archive_upload_queue(semester=semester)
     if queue:
         return True
     stage_labels = all_completed_capstone_stage_labels(semester=semester)
@@ -586,7 +586,7 @@ def capstone_upload_window_payload(semester=None):
     semester = semester or get_active_semester()
     open_window = capstone_upload_window_open(semester=semester)
     completed = all_completed_capstone_stage_labels(semester=semester)
-    queue = capstone_vault_upload_queue(semester=semester) if open_window else []
+    queue = capstone_archive_upload_queue(semester=semester) if open_window else []
     diagnostics = {}
     if not open_window or not queue:
         diagnostics = capstone_upload_diagnostics(semester=semester)
@@ -690,20 +690,20 @@ def validate_pit_file_name(file_name):
 
 
 def pit_queryset_for_scope(scope):
-    queryset = VaultEntry.objects.select_related('team', 'uploaded_by').filter(
-        entry_type=VaultEntry.TYPE_PIT,
+    queryset = ArchiveEntry.objects.select_related('team', 'uploaded_by').filter(
+        entry_type=ArchiveEntry.TYPE_PIT,
     )
     if scope['scope'] == 'pit_lead' and scope.get('pit_year_level'):
         queryset = queryset.filter(year_level=scope['pit_year_level'])
     return queryset
 
 
-def capstone_vault_queryset_for_scope(scope):
+def capstone_archive_queryset_for_scope(scope):
     if scope['scope'] != 'admin':
-        return VaultEntry.objects.none()
+        return ArchiveEntry.objects.none()
     return (
-        VaultEntry.objects.select_related('team', 'uploaded_by')
-        .filter(entry_type=VaultEntry.TYPE_CAPSTONE)
+        ArchiveEntry.objects.select_related('team', 'uploaded_by')
+        .filter(entry_type=ArchiveEntry.TYPE_CAPSTONE)
         .filter(Q(team__isnull=True) | Q(team__level__icontains='Capstone'))
     )
 
@@ -757,7 +757,7 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
 
     submission_keys = set()
     for s in pit_submissions + capstone_submissions:
-        if s.team_id and s.stage_label and s.deliverable_type == DeliverableSubmission.TYPE_VAULT:
+        if s.team_id and s.stage_label and s.deliverable_type == DeliverableSubmission.TYPE_POST:
             submission_keys.add((s.team_id, s.stage_label))
 
     pit_legacy = []
@@ -767,7 +767,7 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         pit_legacy.append(entry)
 
     capstone_legacy = []
-    for entry in capstone_vault_queryset_for_scope(scope):
+    for entry in capstone_archive_queryset_for_scope(scope):
         if entry.team_id and entry.stage_label and (entry.team_id, entry.stage_label) in submission_keys:
             continue
         capstone_legacy.append(entry)
@@ -777,7 +777,7 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         for entry in pit_legacy
     ]
     entries.extend(
-        capstone_vault_entry_payload(entry, **payload_kwargs)
+        capstone_archive_entry_payload(entry, **payload_kwargs)
         for entry in capstone_legacy
     )
     entries.extend(
@@ -804,20 +804,20 @@ def counts_payload(entries, filtered_entries):
         'capstone': sum(
             1
             for entry in filtered_entries
-            if entry.get('type') == VaultEntry.TYPE_CAPSTONE
+            if entry.get('type') == ArchiveEntry.TYPE_CAPSTONE
             and entry.get('submission_kind') != 'pit'
         ),
         'approved': sum(
             1
             for entry in filtered_entries
-            if entry['status'] in [VaultEntry.STATUS_APPROVED, 'Vault Submission']
+            if entry['status'] in [ArchiveEntry.STATUS_APPROVED, 'Post-Defense']
         ),
         'needs_revision': sum(
-            1 for entry in filtered_entries if entry['status'] == VaultEntry.STATUS_NEEDS_REVISION
+            1 for entry in filtered_entries if entry['status'] == ArchiveEntry.STATUS_NEEDS_REVISION
         ),
         'pre_defense': sum(1 for entry in filtered_entries if entry.get('submission_kind') == 'pre'),
-        'vault_submissions': sum(
-            1 for entry in filtered_entries if entry.get('submission_kind') == 'vault'
+        'archive_submissions': sum(
+            1 for entry in filtered_entries if entry.get('submission_kind') == 'post'
         ),
         'missing_required': sum(1 for entry in filtered_entries if entry.get('is_missing')),
         'uploaded': sum(
@@ -852,8 +852,8 @@ def repository_audit_payload(request):
         include_audit_trail=include_audit_trail,
     )
     query_params = request.query_params.copy()
-    if scope.get('scope') != 'admin' and query_params.get('type') == VaultEntry.TYPE_CAPSTONE:
-        query_params['type'] = VaultEntry.TYPE_PIT
+    if scope.get('scope') != 'admin' and query_params.get('type') == ArchiveEntry.TYPE_CAPSTONE:
+        query_params['type'] = ArchiveEntry.TYPE_PIT
     deliverable_id = (query_params.get('deliverable_id') or '').strip()
     stage_filter = (query_params.get('stage') or '').strip()
     view_mode = (query_params.get('view') or '').strip()
@@ -864,7 +864,7 @@ def repository_audit_payload(request):
 
     filtered, suggestions = filter_and_rank_entries(entries, query_params)
     for entry in filtered:
-        if entry['type'] == VaultEntry.TYPE_PIT:
+        if entry['type'] == ArchiveEntry.TYPE_PIT:
             entry['can_override'] = scope['can_override']
         apply_list_entry_options(
             entry,
@@ -984,7 +984,7 @@ def _pit_archive_grade_for_team(team, *, semester=None, pit_event_config_id=None
 def eligible_pit_team_ids(year_level, semester=None):
     return {
         item['team_id']
-        for item in pit_vault_upload_queue(year_level, semester=semester)
+        for item in pit_archive_upload_queue(year_level, semester=semester)
     }
 
 
@@ -999,7 +999,7 @@ def eligible_pit_teams(year_level, semester=None):
 
 
 def match_pit_team_by_suggested_filename(file_name, year_level, semester=None):
-    queue = pit_vault_upload_queue(year_level, semester=semester)
+    queue = pit_archive_upload_queue(year_level, semester=semester)
     file_name_clean = file_name.strip().lower()
     for item in queue:
         if item['suggested_file_name'].strip().lower() == file_name_clean:
@@ -1055,8 +1055,8 @@ def _no_eligible_teams_skip_reason(file_name, active_semester, selected_year=Non
 
 
 def _pit_team_match_skip_reason(file_name, selected_year, active_semester):
-    queue = pit_vault_upload_queue(selected_year, semester=active_semester)
-    pending = [item for item in queue if item['vault_status'] == 'pending']
+    queue = pit_archive_upload_queue(selected_year, semester=active_semester)
+    pending = [item for item in queue if item['archive_status'] == 'pending']
     if pending:
         example = pending[0]['suggested_file_name']
         return {
@@ -1075,7 +1075,7 @@ def _pit_team_match_skip_reason(file_name, selected_year, active_semester):
     }
 
 
-def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_year, active_semester, eligible_ids):
+def _save_pit_archive_entry(user, *, file_name, file_obj, selected_year, academic_year, active_semester, eligible_ids):
     if not eligible_ids:
         return None, _no_eligible_teams_skip_reason(
             file_name,
@@ -1110,8 +1110,8 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
         return None, _pit_team_match_skip_reason(file_name, selected_year, active_semester)
     archive_grade = _pit_archive_grade_for_team(team, semester=active_semester)
 
-    entry, made = VaultEntry.objects.update_or_create(
-        entry_type=VaultEntry.TYPE_PIT,
+    entry, made = ArchiveEntry.objects.update_or_create(
+        entry_type=ArchiveEntry.TYPE_PIT,
         file_name=file_name,
         academic_year=academic_year,
         defaults={
@@ -1122,7 +1122,7 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
             'semester_label': metadata['semester_label'],
             'stage_label': metadata['course_code'],
             'pit_event_config_id': archive_grade.pit_event_config_id if archive_grade else None,
-            'status': VaultEntry.STATUS_APPROVED,
+            'status': ArchiveEntry.STATUS_APPROVED,
             'uploaded_by': user,
             'metadata': {
                 'project_slug': metadata['project_slug'],
@@ -1142,7 +1142,7 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
         message = 'PIT file uploaded' if made else 'PIT file metadata refreshed'
 
     log_action(
-        VaultEntry.TYPE_PIT,
+        ArchiveEntry.TYPE_PIT,
         entry.id,
         entry.file_name,
         RepositoryAuditLog.ACTION_UPLOAD,
@@ -1152,9 +1152,9 @@ def _save_pit_vault_entry(user, *, file_name, file_obj, selected_year, academic_
     )
     log_high_impact_action(
         category=SystemAuditLog.CATEGORY_REPOSITORY,
-        action='repository.vault_upload',
+        action='repository.archive_upload',
         target=entry,
-        target_type='VaultEntry',
+        target_type='ArchiveEntry',
         target_id=entry.pk,
         actor=user,
         old_values={'status': '' if made else entry.status},
@@ -1209,7 +1209,7 @@ def upload_pit_files(user, file_names=None, uploaded_files=None, year_level=None
         )
 
     for file_name, file_obj in upload_items:
-        entry, skip = _save_pit_vault_entry(
+        entry, skip = _save_pit_archive_entry(
             user,
             file_name=file_name,
             file_obj=file_obj,
@@ -1230,14 +1230,14 @@ def upload_pit_files(user, file_names=None, uploaded_files=None, year_level=None
 def eligible_capstone_queue_keys(semester=None):
     return {
         (item['team_id'], item.get('defense_stage_id') or item['stage_label'])
-        for item in capstone_vault_upload_queue(semester=semester)
+        for item in capstone_archive_upload_queue(semester=semester)
     }
 
 
 def match_capstone_team(file_name, semester=None):
     file_key = normalize(file_name)
     validate_capstone_file_name(file_name)
-    for item in capstone_vault_upload_queue(semester=semester):
+    for item in capstone_archive_upload_queue(semester=semester):
         team = StudentTeam.objects.filter(pk=item['team_id']).first()
         if team is None:
             continue
@@ -1251,8 +1251,8 @@ def match_capstone_team(file_name, semester=None):
 
 
 def _capstone_team_match_skip_reason(file_name, active_semester):
-    queue = capstone_vault_upload_queue(semester=active_semester)
-    pending = [item for item in queue if item['vault_status'] == 'pending']
+    queue = capstone_archive_upload_queue(semester=active_semester)
+    pending = [item for item in queue if item['archive_status'] == 'pending']
     if pending:
         example = pending[0]['suggested_file_name']
         return {
@@ -1293,7 +1293,7 @@ def _no_eligible_capstone_skip_reason(file_name, active_semester):
     return {'file_name': file_name, 'reason': ' '.join(parts)}
 
 
-def _save_capstone_vault_entry(
+def _save_capstone_archive_entry(
     user,
     *,
     file_name,
@@ -1315,8 +1315,8 @@ def _save_capstone_vault_entry(
     if team is None or eligible_key not in eligible_keys:
         return None, _capstone_team_match_skip_reason(file_name, active_semester)
 
-    entry, made = VaultEntry.objects.update_or_create(
-        entry_type=VaultEntry.TYPE_CAPSTONE,
+    entry, made = ArchiveEntry.objects.update_or_create(
+        entry_type=ArchiveEntry.TYPE_CAPSTONE,
         file_name=file_name,
         academic_year=academic_year,
         defaults={
@@ -1327,7 +1327,7 @@ def _save_capstone_vault_entry(
             'semester_label': metadata['semester_label'],
             'stage_label': stage_label,
             'defense_stage_id': defense_stage_id,
-            'status': VaultEntry.STATUS_APPROVED,
+            'status': ArchiveEntry.STATUS_APPROVED,
             'uploaded_by': user,
             'metadata': {
                 'project_slug': metadata['project_slug'],
@@ -1347,7 +1347,7 @@ def _save_capstone_vault_entry(
         message = 'Capstone file uploaded' if made else 'Capstone file metadata refreshed'
 
     log_action(
-        VaultEntry.TYPE_CAPSTONE,
+        ArchiveEntry.TYPE_CAPSTONE,
         entry.id,
         entry.file_name,
         RepositoryAuditLog.ACTION_UPLOAD,
@@ -1357,9 +1357,9 @@ def _save_capstone_vault_entry(
     )
     log_high_impact_action(
         category=SystemAuditLog.CATEGORY_REPOSITORY,
-        action='repository.vault_upload',
+        action='repository.archive_upload',
         target=entry,
-        target_type='VaultEntry',
+        target_type='ArchiveEntry',
         target_id=entry.pk,
         actor=user,
         old_values={'status': '' if made else entry.status},
@@ -1409,7 +1409,7 @@ def upload_capstone_files(user, file_names=None, uploaded_files=None, academic_y
         )
 
     for file_name, file_obj in upload_items:
-        entry, skip = _save_capstone_vault_entry(
+        entry, skip = _save_capstone_archive_entry(
             user,
             file_name=file_name,
             file_obj=file_obj,
@@ -1431,14 +1431,14 @@ def override_pit_status(user, entry_id, status):
     entry, scope = resolve_pit_entry(user, entry_id)
     if not scope['can_override']:
         raise PermissionDenied('Only admins can override PIT repository status.')
-    valid = {VaultEntry.STATUS_PENDING, VaultEntry.STATUS_APPROVED, VaultEntry.STATUS_NEEDS_REVISION}
+    valid = {ArchiveEntry.STATUS_PENDING, ArchiveEntry.STATUS_APPROVED, ArchiveEntry.STATUS_NEEDS_REVISION}
     if status not in valid:
         raise ValidationError('Invalid PIT repository status.')
     previous = entry.status
     entry.status = status
     entry.save(update_fields=['status', 'updated_at'])
     log_action(
-        VaultEntry.TYPE_PIT,
+        ArchiveEntry.TYPE_PIT,
         entry.id,
         entry.file_name,
         RepositoryAuditLog.ACTION_OVERRIDE,
@@ -1451,7 +1451,7 @@ def override_pit_status(user, entry_id, status):
         category=SystemAuditLog.CATEGORY_REPOSITORY,
         action='repository.status_override',
         target=entry,
-        target_type='VaultEntry',
+        target_type='ArchiveEntry',
         target_id=entry.pk,
         actor=user,
         old_values={
@@ -1472,26 +1472,26 @@ def override_pit_status(user, entry_id, status):
 
 
 def repository_entries_count():
-    return VaultEntry.objects.filter(entry_type=VaultEntry.TYPE_PIT).count() + DeliverableSubmission.objects.filter(
+    return ArchiveEntry.objects.filter(entry_type=ArchiveEntry.TYPE_PIT).count() + DeliverableSubmission.objects.filter(
         team__level__icontains='Capstone',
     ).count()
 
 
 def repository_pending_count():
     """Legacy dashboard hook: pending AI gate removed; report needs-revision PIT files."""
-    return VaultEntry.objects.filter(
-        entry_type=VaultEntry.TYPE_PIT,
-        status=VaultEntry.STATUS_NEEDS_REVISION,
+    return ArchiveEntry.objects.filter(
+        entry_type=ArchiveEntry.TYPE_PIT,
+        status=ArchiveEntry.STATUS_NEEDS_REVISION,
     ).count()
 
 
 def repository_approved_count():
-    return VaultEntry.objects.filter(
-        entry_type=VaultEntry.TYPE_PIT,
-        status=VaultEntry.STATUS_APPROVED,
+    return ArchiveEntry.objects.filter(
+        entry_type=ArchiveEntry.TYPE_PIT,
+        status=ArchiveEntry.STATUS_APPROVED,
     ).count() + DeliverableSubmission.objects.filter(
         team__level__icontains='Capstone',
-        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        deliverable_type=DeliverableSubmission.TYPE_POST,
     ).count()
 
 
@@ -1501,7 +1501,7 @@ def repository_csv(entries):
     writer.writerow(['Type', 'File Name', 'Team', 'Year Level', 'Academic Year', 'Stage/Course', 'Status', 'Uploaded By', 'Uploaded At'])
     for entry in entries:
         writer.writerow([
-            'Capstone' if entry['type'] == VaultEntry.TYPE_CAPSTONE else 'PIT',
+            'Capstone' if entry['type'] == ArchiveEntry.TYPE_CAPSTONE else 'PIT',
             entry['file_name'],
             entry.get('team_name') or '',
             entry.get('year_level') or '',

@@ -1218,7 +1218,7 @@ class PitEventGradingConfigTests(APITestCase):
             'peer_rubric_id': self.peer_rubric.id,
             'panel_weight': 70,
             'peer_weight': 30,
-            'vault_file_template': 'test-template-{project}'
+            'archive_file_template': 'test-template-{project}'
         }
         response = self.client.post(
             '/api/defense/schedules/pit-event-config/',
@@ -1228,17 +1228,17 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['config']['panel_weight'], 70)
         self.assertEqual(response.data['config']['peer_weight'], 30)
-        self.assertEqual(response.data['config']['vault_file_template'], 'test-template-{project}')
+        self.assertEqual(response.data['config']['archive_file_template'], 'test-template-{project}')
         
         # Verify db
         config = PitEventGradingConfig.objects.get(event_name='New PIT Expo', semester=self.semester)
         self.assertEqual(config.panel_weight, 70)
-        self.assertEqual(config.vault_file_template, 'test-template-{project}')
+        self.assertEqual(config.archive_file_template, 'test-template-{project}')
 
         # Update post (update)
         payload['panel_weight'] = 80
         payload['peer_weight'] = 20
-        payload['vault_file_template'] = 'updated-template-{project}'
+        payload['archive_file_template'] = 'updated-template-{project}'
         response = self.client.post(
             '/api/defense/schedules/pit-event-config/',
             payload,
@@ -1246,7 +1246,7 @@ class PitEventGradingConfigTests(APITestCase):
         )
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['config']['panel_weight'], 80)
-        self.assertEqual(response.data['config']['vault_file_template'], 'updated-template-{project}')
+        self.assertEqual(response.data['config']['archive_file_template'], 'updated-template-{project}')
 
     def test_panelist_assignments_returns_pit_grade_weights_without_adviser(self):
         self.client.post(
@@ -1605,7 +1605,7 @@ class PitEventGradingConfigTests(APITestCase):
             peer_rubric=self.peer_rubric,
             panel_weight=75,
             peer_weight=25,
-            vault_file_template='{year}-{course}-{project}-{event}-{semester}'
+            archive_file_template='{year}-{course}-{project}-{event}-{semester}'
         )
 
         from repository.audit.services import suggested_pit_file_name

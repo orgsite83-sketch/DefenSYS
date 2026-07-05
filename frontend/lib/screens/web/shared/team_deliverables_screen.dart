@@ -293,8 +293,8 @@ class _TeamDeliverablesScreenState
           Colors.blue,
         ),
         _stat(
-          'Vault Files',
-          _count(state, 'vault_files'),
+          'Archive Files',
+          _count(state, 'archive_files'),
           Icons.inventory_2_outlined,
           AppColors.gold,
         ),
@@ -654,14 +654,14 @@ class _TeamDeliverablesScreenState
                   ),
                 );
                 
-                final vaultBlock = Container(
+                final archiveBlock = Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF8FAFC),
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(color: const Color(0xFFF1F5F9)),
                   ),
-                  child: _vaultProgressBlock(selectedStage),
+                  child: _archiveProgressBlock(selectedStage),
                 );
 
                 if (useVerticalLayout) {
@@ -670,7 +670,7 @@ class _TeamDeliverablesScreenState
                     children: [
                       reqBlock,
                       const SizedBox(height: 12),
-                      vaultBlock,
+                      archiveBlock,
                     ],
                   );
                 }
@@ -680,7 +680,7 @@ class _TeamDeliverablesScreenState
                   children: [
                     Expanded(child: reqBlock),
                     const SizedBox(width: 14),
-                    Expanded(child: vaultBlock),
+                    Expanded(child: archiveBlock),
                   ],
                 );
               },
@@ -812,30 +812,30 @@ class _TeamDeliverablesScreenState
     );
   }
 
-  Widget _vaultProgressBlock(Map<String, dynamic> selectedStage) {
-    final unlocked = selectedStage['vault_unlocked'] == true;
-    final done = _asInt(selectedStage['vault_required_uploaded']);
-    final total = _asInt(selectedStage['vault_required_total']);
+  Widget _archiveProgressBlock(Map<String, dynamic> selectedStage) {
+    final unlocked = selectedStage['archive_unlocked'] == true;
+    final done = _asInt(selectedStage['archive_required_uploaded']);
+    final total = _asInt(selectedStage['archive_required_total']);
 
     if (!unlocked) {
       return _progressBlock(
-        'Vault',
+        'Archive',
         0,
         0,
         AppColors.gold,
-        emptyLabel: 'Vault — Locked until defense done',
+        emptyLabel: 'Archive — Locked until defense done',
       );
     }
     if (total == 0) {
       return _progressBlock(
-        'Vault',
+        'Archive',
         0,
         0,
         AppColors.gold,
-        emptyLabel: 'Vault — No required items',
+        emptyLabel: 'Archive — No required items',
       );
     }
-    return _progressBlock('Vault', done, total, AppColors.gold);
+    return _progressBlock('Archive', done, total, AppColors.gold);
   }
 
   Widget _progressBlock(
@@ -931,7 +931,7 @@ class _TeamDeliverablesScreenState
               builder: (context, setDialogState) {
                 final stage = _stagePayload(stages, selectedStage);
                 final pre = _deliverables(stage, 'pre');
-                final vault = _deliverables(stage, 'vault');
+                final vault = _deliverables(stage, 'post');
                 final configured = stage['deliverables_configured'] == true;
                 final complete = stage['required_complete'] == true;
                 final endorsed = stage['endorsed'] == true;
@@ -975,9 +975,9 @@ class _TeamDeliverablesScreenState
                             ),
                           ),
                           const SizedBox(height: 18),
-                          _sectionTitle('Post-Defense Vault Submissions'),
-                          if (stage['vault_unlocked'] != true)
-                            _lockedVaultNotice(selectedStage)
+                          _sectionTitle('Post-Defense Deliverables'),
+                          if (stage['archive_unlocked'] != true)
+                            _lockedArchiveNotice(selectedStage)
                           else
                             ...vault.map(
                               (item) => _deliverableRow(
@@ -1136,9 +1136,9 @@ class _TeamDeliverablesScreenState
                           ),
                         ),
                       ],
-                    ] else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
+                    ] else if ((item['archive_note']?.toString() ?? '').isNotEmpty)
                       Text(
-                        item['vault_note'].toString(),
+                        item['archive_note'].toString(),
                         style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -1809,7 +1809,7 @@ class _TeamDeliverablesScreenState
                   ? () async {
                       final suggestedName =
                           item['suggested_file_name']?.toString() ?? '';
-                      if (item['type'] == 'vault' && suggestedName.isNotEmpty) {
+                      if (item['type'] == 'post' && suggestedName.isNotEmpty) {
                         if (selectedFileName!.trim().toLowerCase() !=
                             suggestedName.trim().toLowerCase()) {
                           setState(() {
@@ -1969,7 +1969,7 @@ class _TeamDeliverablesScreenState
     );
   }
 
-  Widget _lockedVaultNotice(String stageLabel) {
+  Widget _lockedArchiveNotice(String stageLabel) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -1984,7 +1984,7 @@ class _TeamDeliverablesScreenState
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'Vault uploads unlock after the $stageLabel defense is marked done.',
+              'Post-Defense uploads unlock after the $stageLabel defense is marked done.',
               style: const TextStyle(color: AppColors.textSecondary),
             ),
           ),

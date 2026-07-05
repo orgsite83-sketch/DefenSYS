@@ -47,6 +47,7 @@ class _DefenseSchedulerScreenState
   bool _showFinalPreview = false;
   bool _scopeInitializedFromState = false;
   bool _isSendingReminder = false;
+  bool _loadingStageDetails = false;
   List<Map<String, dynamic>> _planSlots = [];
 
   @override
@@ -80,6 +81,52 @@ class _DefenseSchedulerScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
     _initializeScopeFromState(state);
+
+    final stages = state.defenseStages;
+    if (_scope == 'capstone' && _stageId == null && stages.isNotEmpty) {
+      int? targetStageId;
+      for (final stage in stages) {
+        final isComplete = stage['is_officially_complete'] == true;
+        if (isComplete) {
+          continue;
+        }
+        final stageLabel = stage['label']?.toString() ?? '';
+        final hasReadyTeams = state.teams.any((team) {
+          final readyForStage = team['ready_for_stage']?.toString() ?? '';
+          final teamLevel = team['level']?.toString() ?? '';
+          final isCapstone = teamLevel.toLowerCase().contains('capstone');
+          return isCapstone && readyForStage == stageLabel;
+        });
+        if (hasReadyTeams) {
+          targetStageId = _asInt(stage['id']);
+          break;
+        }
+      }
+
+      if (targetStageId == null) {
+        for (final stage in stages) {
+          final isComplete = stage['is_officially_complete'] == true;
+          if (!isComplete) {
+            targetStageId = _asInt(stage['id']);
+            break;
+          }
+        }
+      }
+
+      targetStageId ??= _asInt(stages.first['id']);
+
+      if (targetStageId != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _stageId == null) {
+            setState(() {
+              _stageId = targetStageId;
+            });
+            _prefillCapstoneStageRubrics();
+          }
+        });
+      }
+    }
+
     final currentStep = _planSlots.isEmpty ? 1 : (_showFinalPreview ? 3 : 2);
 
     ref.listen(defenseSchedulerProvider, (previous, next) {
@@ -639,6 +686,7 @@ class _DefenseSchedulerScreenState
                     },
                   ),
                 ),
+                _buildStageWarnings(state),
               ] else if (_scope == 'pit') ...[
                 Container(
                   width: double.infinity,
@@ -2243,14 +2291,24 @@ class _DefenseSchedulerScreenState
     if (semesterId == null) {
       return;
     }
+    setState(() {
+      _loadingStageDetails = true;
+    });
     final detail = await ref
         .read(defenseStagesProvider.notifier)
         .fetchStageDetail(_stageId!, semesterId: semesterId);
-    if (!mounted || detail == null) {
+    if (!mounted) return;
+    if (detail == null) {
+      setState(() {
+        _loadingStageDetails = false;
+      });
       return;
     }
     final grading = detail['grading_config'];
     if (grading is! Map) {
+      setState(() {
+        _loadingStageDetails = false;
+      });
       return;
     }
     setState(() {
@@ -2259,6 +2317,7 @@ class _DefenseSchedulerScreenState
           _asInt(grading['adviser_rubric_id']) ?? _adviserRubricId;
       _capstonePeerRubricId =
           _asInt(grading['peer_rubric_id']) ?? _capstonePeerRubricId;
+      _loadingStageDetails = false;
     });
   }
 
@@ -4382,6 +4441,117 @@ class _DefenseSchedulerScreenState
         setState(() => _isSendingReminder = false);
       }
     }
+  }
+
+  Widget _buildStageWarnings(DefenseSchedulerState state) {
+    if (_scope != 'capstone' || _stageId == null) {
+      return const SizedBox.shrink();
+    }
+    if (_loadingStageDetails) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8, left: 4),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation<Color>(AppColors.maroon),
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              'Checking stage configuration...',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 12,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final selectedStage = state.defenseStages.firstWhere(
+      (stage) => _asInt(stage['id']) == _stageId,
+      orElse: () => <String, dynamic>{},
+    );
+
+    if (selectedStage.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final deliverablesCount = _asInt(selectedStage['deliverables_count']) ?? 0;
+    final noDeliverables = deliverablesCount == 0;
+
+    final noRubrics = _rubricId == null &&
+        _adviserRubricId == null &&
+        _capstonePeerRubricId == null;
+
+    if (!noDeliverables && !noRubrics) {
+      return const SizedBox.shrink();
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB), // amber-50
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFDE68A)), // amber-200
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (noDeliverables)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFD97706), // amber-600
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No deliverables are defined for this stage. Students will not be required to submit deliverables.',
+                    style: TextStyle(
+                      color: Color(0xFF92400E), // amber-800
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          if (noDeliverables && noRubrics) const SizedBox(height: 8),
+          if (noRubrics)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const [
+                Icon(
+                  Icons.warning_amber_rounded,
+                  color: Color(0xFFD97706), // amber-600
+                  size: 18,
+                ),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'No grading rubrics are assigned to this stage for the active semester. Panelists/advisers will not be able to grade.',
+                    style: TextStyle(
+                      color: Color(0xFF92400E), // amber-800
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
   }
 }
 

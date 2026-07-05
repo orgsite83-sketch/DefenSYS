@@ -334,6 +334,8 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               _readOnlyField('Adviser', adviserName),
               const SizedBox(height: 16),
               _adviserHistorySection(detailState.adviserHistory),
+              const SizedBox(height: 16),
+              _classroomSectionCard(team),
             ],
             if (!isCapstone) ...[
               const SizedBox(height: 12),
@@ -427,6 +429,51 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               }),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _classroomSectionCard(Map<String, dynamic> team) {
+    final section = team['section']?.toString() ?? '—';
+    final instructor = team['instructor_name']?.toString() ?? 'No instructor assigned';
+    final systemName = team['system_name']?.toString() ?? '—';
+    final pm = team['project_manager_name']?.toString() ?? '—';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF3F4F6)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.class_outlined, size: 16, color: _muted),
+              const SizedBox(width: 8),
+              Text(
+                'Classroom Section Info'.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: _muted,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _readOnlyField('Section', section),
+          const SizedBox(height: 12),
+          _readOnlyField('Instructor (Info Only)', instructor),
+          const SizedBox(height: 12),
+          _readOnlyField('System Name', systemName),
+          const SizedBox(height: 12),
+          _readOnlyField('Section Project Manager', pm),
+        ],
       ),
     );
   }

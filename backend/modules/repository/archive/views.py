@@ -2,18 +2,18 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .services import digital_vault_payload, search_vault_payload
+from .services import project_archive_payload, search_archive_payload
 
 
-class DigitalVaultListView(APIView):
+class ProjectArchiveListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(digital_vault_payload(request))
+        return Response(project_archive_payload(request))
 
 
-class DigitalVaultSearchView(APIView):
+class ProjectArchiveSearchView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(search_vault_payload(request))
+        return Response(search_archive_payload(request))

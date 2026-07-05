@@ -277,7 +277,7 @@ class SystemAuditLogApiTests(APITestCase):
             (SystemAuditLog.CATEGORY_GRADE_CENTER, 'grade.manual_edit'),
             (SystemAuditLog.CATEGORY_SCHEDULING, 'schedule.status_change'),
             (SystemAuditLog.CATEGORY_STUDENT_TEAMS, 'team.adviser_change'),
-            (SystemAuditLog.CATEGORY_REPOSITORY, 'repository.vault_upload'),
+            (SystemAuditLog.CATEGORY_REPOSITORY, 'repository.archive_upload'),
             (SystemAuditLog.CATEGORY_GUEST_ACCESS, 'guest_code.exchange'),
         ]
         for category, action in categories:
@@ -332,8 +332,8 @@ class SystemAuditLogApiTests(APITestCase):
         SystemAuditLog.objects.create(
             actor=self.admin,
             category=SystemAuditLog.CATEGORY_REPOSITORY,
-            action='repository.vault_upload',
-            target_type='VaultEntry',
+            action='repository.archive_upload',
+            target_type='ArchiveEntry',
             target_id='1',
             new_values={'entry_type': 'pit', 'year_level': '3rd Year'},
         )

@@ -23,19 +23,19 @@ Demo CSV files for bulk import. Default password for imported users is the same 
 
 For convenience, sample files are organized into directories by academic year:
 
-* **[1st_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/1st_Year)**: Contains student and team import templates for 1st Year.
-* **[2nd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/2nd_Year)**: Contains student and team import templates for 2nd Year.
-* **[3rd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/3rd_Year)**: Contains student, team, and capstone team import templates for 3rd Year.
-* **[4th_Year_Capstone](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/4th_Year_Capstone)**: Contains student and team import templates for 4th Year Capstone.
+* **[1st_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/1st_Year)**: Contains 1st_Sem (1st sem) and 2nd_Sem (2nd sem) PIT import templates for 1st Year.
+* **[2nd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/2nd_Year)**: Contains 1st_Sem (1st sem) and 2nd_Sem (2nd sem) PIT import templates for 2nd Year.
+* **[3rd_Year](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/3rd_Year)**: Contains PIT (1st sem) and Capstone (2nd sem) import templates for 3rd Year.
+* **[4th_Year_Capstone](file:///c:/Users/Admin/Desktop/DefenSYS/sample_file/4th_Year_Capstone)**: Contains student, team, and schedule import templates for 4th Year Capstone.
 
 ## Student Id Number Ranges
 
 | Year | IDs | Leader in team CSV |
 |------|-----|--------------------|
-| 1st Year | 4011-4014 | James Rivera |
-| 2nd Year | 4021-4024 | Darren Kim |
-| 3rd Year | 4081-4084 | Carlos Reyes |
-| 4th Year | 4091-4094 | Marcus Villar |
+| 1st Year | 1011-1022 | James Rivera |
+| 2nd Year | 2011-2022 | Darren Kim |
+| 3rd Year | 4081-4092 | Carlos Reyes |
+| 4th Year | 4011-4022 | Marcus Villar |
 
 ## PIT Lead Official Class List
 

@@ -103,7 +103,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       NavigationDestination(icon: const Icon(Icons.group), label: l10n.navTeam),
       NavigationDestination(
         icon: const Icon(Icons.folder_open),
-        label: l10n.navDigitalVault,
+        label: l10n.navRepository,
       ),
       if (isPM)
         const NavigationDestination(
@@ -184,12 +184,25 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
             },
           ),
           IconButton(
-            icon: _profile.avatarBytes != null
-                ? CircleAvatar(
-                    radius: 14,
-                    backgroundImage: MemoryImage(_profile.avatarBytes!),
-                  )
-                : const Icon(Icons.account_circle_outlined),
+            icon: CircleAvatar(
+              radius: 14,
+              backgroundColor: Colors.white.withValues(alpha: 0.25),
+              backgroundImage: _profile.avatarBytes != null
+                  ? MemoryImage(_profile.avatarBytes!)
+                  : null,
+              child: _profile.avatarBytes == null
+                  ? Text(
+                      _profile.name.trim().isNotEmpty
+                          ? _profile.name.trim()[0].toUpperCase()
+                          : 'S',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    )
+                  : null,
+            ),
             tooltip: 'Profile',
             onPressed: () => _showProfileSheet(context),
           ),

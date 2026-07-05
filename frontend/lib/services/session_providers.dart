@@ -9,7 +9,7 @@ import 'dashboard_provider.dart';
 import 'defense_board_provider.dart';
 import 'defense_scheduler_provider.dart';
 import 'defense_stages_provider.dart';
-import 'digital_vault_provider.dart';
+import 'repository_provider.dart';
 import 'grade_center_provider.dart';
 import 'pit_lead_cohort_provider.dart';
 import 'repository_audit_provider.dart';
@@ -38,7 +38,7 @@ void invalidateSessionProviders(Ref ref) {
   ref.invalidate(adviserGradingProvider);
   ref.invalidate(pitLeadCohortProvider);
   ref.invalidate(weeklyProgressProvider);
-  ref.invalidate(digitalVaultProvider);
+  ref.invalidate(repositoryProvider);
   ref.invalidate(dashboardProvider);
   ref.invalidate(documenterProvider);
 }

@@ -61,20 +61,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       defenseStagesProvider,
       (previous, next) {
         if (next.error != null && next.error != previous?.error) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.error!),
-              backgroundColor: AppColors.danger,
-            ),
-          );
+          showErrorToast(context, next.error!);
         }
         if (next.message != null && next.message != previous?.message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.message!),
-              backgroundColor: AppColors.success,
-            ),
-          );
+          showSuccessToast(context, next.message!);
         }
       },
     );
@@ -299,7 +289,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   ),
                 ),
                 Text(
-                  'Order by display order',
+                  'Order by stage order',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 13,
@@ -368,7 +358,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageThFixed('ORDER', 64, maxLines: 1),
+          _stageThFixed('STAGE ORDER', 100, maxLines: 1),
           Expanded(flex: 26, child: _stageTh('NAME')),
           Expanded(flex: 15, child: _stageTh('CODE')),
           Expanded(flex: 17, child: _stageTh('PREVIOUS STAGE')),
@@ -436,7 +426,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageTdFixed(64, _orderTableBadge(stage['display_order'])),
+          _stageTdFixed(100, _orderTableBadge(stage['display_order'])),
           Expanded(
             flex: 26,
             child: _stageTd(_stageNameCell(stage)),
@@ -871,7 +861,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           controller: order,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(
-                            labelText: 'Display Order',
+                            labelText: 'Stage Order',
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1086,8 +1076,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     'deliverable_type': 'pre',
                                     'required': true,
                                     'display_order': deliverables.length + 1,
-                                    'vault_note': '',
-                                    'vault_file_template': '',
+                                    'archive_note': '',
+                                    'archive_file_template': '',
                                     'is_restricted': false,
                                   });
                                 });
@@ -1118,7 +1108,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               SizedBox(width: 8),
                               Expanded(
                                 child: Text(
-                                  'Pre-Defense items gate endorsement. Vault items unlock after defense is approved.',
+                                  'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is approved.',
                                   style: TextStyle(
                                     color: Color(0xFF0369A1),
                                     fontSize: 12,
@@ -1283,9 +1273,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
-        (item['_templateController'] = TextEditingController(text: item['vault_file_template']?.toString() ?? ''));
+        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
 
-    final isVault = item['deliverable_type'] == 'vault';
+    final isPost = item['deliverable_type'] == 'post';
 
     return Container(
       padding: const EdgeInsets.all(12),
@@ -1311,7 +1301,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   ),
                   onChanged: (value) {
                     item['label'] = value;
-                    if (isVault) {
+                    if (isPost) {
                       setDialogState(() {});
                     }
                   },
@@ -1333,12 +1323,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   ),
                   items: const [
                     DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
-                    DropdownMenuItem(value: 'vault', child: Text('Vault')),
+                    DropdownMenuItem(value: 'post', child: Text('Post-Defense')),
                   ],
                   onChanged: (value) {
                     setDialogState(() {
                       item['deliverable_type'] = value;
-                      if (value == 'vault') {
+                      if (value == 'post') {
                         item['required'] = false;
                       } else if (value == 'pre') {
                         item['required'] = true;
@@ -1386,7 +1376,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ),
             ],
           ),
-          if (isVault) ...[
+          if (isPost) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -1399,7 +1389,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   },
                 ),
                 const Text(
-                  'Restricted (Private in Vault)',
+                  'Restricted (Private in Archive)',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -1412,14 +1402,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             TextField(
               controller: templateController,
               decoration: const InputDecoration(
-                labelText: 'Vault File Template',
+                labelText: 'Archive File Template',
                 isDense: true,
                 border: OutlineInputBorder(),
                 hintText: '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
               ),
               onChanged: (value) {
                 setDialogState(() {
-                  item['vault_file_template'] = value;
+                  item['archive_file_template'] = value;
                 });
               },
             ),
@@ -1448,7 +1438,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    'Preview: ${_resolvePreview(item['vault_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text)}',
+                    'Preview: ${_resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text)}',
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -1560,7 +1550,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     setDialogState(() {
       controller.text = newText;
       controller.selection = TextSelection.collapsed(offset: newCursorPosition);
-      item['vault_file_template'] = newText;
+      item['archive_file_template'] = newText;
     });
   }
 

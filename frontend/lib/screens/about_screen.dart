@@ -67,7 +67,7 @@ class AboutScreen extends StatelessWidget {
               const SizedBox(height: 12),
               ...[
                 (Icons.gavel_rounded, 'Defense Evaluation', 'Rubric-based grading with grade lock protection.'),
-                (Icons.folder_special_rounded, 'Digital Vault', 'Secure document archiving with watermarking.'),
+                (Icons.folder_special_rounded, 'Project Repository', 'Secure document archiving with watermarking.'),
                 (Icons.people_rounded, 'Peer Evaluation', 'Student-to-student criterion-based scoring.'),
                 (Icons.bar_chart_rounded, 'Curriculum Analytics', 'Technology trend analysis from archived projects.'),
                 (Icons.lock_rounded, 'Role-Based Access', 'Separate views for Admin, Faculty, and Students.'),

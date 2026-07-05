@@ -4,18 +4,18 @@ from pathlib import Path
 from django.core.files.storage import default_storage
 from django.core.management.base import BaseCommand
 
-from repository.vault.models import VaultEntry
-from repository.vault.upload_paths import vault_entry_upload_to
+from repository.archive.models import ArchiveEntry
+from repository.archive.upload_paths import archive_entry_upload_to
 
 LEGACY_PATH_RE = re.compile(
-    r'^vault_entries/\d{4}/\d{2}/',
+    r'^vault_entries/',
 )
 
 
 class Command(BaseCommand):
     help = (
-        'Move legacy vault_entries/YYYY/MM/ files into '
-        'vault_entries/{pit|capstone}/{year-level}/{academic_year}/{month}/.'
+        'Move legacy vault_entries/ files into '
+        'archive_entries/{pit|capstone}/{year-level}/{academic_year}/{month}/.'
     )
 
     def add_arguments(self, parser):
@@ -31,7 +31,7 @@ class Command(BaseCommand):
         skipped = 0
         errors = 0
 
-        queryset = VaultEntry.objects.exclude(file='').exclude(file__isnull=True)
+        queryset = ArchiveEntry.objects.exclude(file='').exclude(file__isnull=True)
         for entry in queryset.iterator():
             old_name = entry.file.name
             if not old_name or not LEGACY_PATH_RE.match(old_name):
@@ -39,7 +39,7 @@ class Command(BaseCommand):
                 continue
 
             filename = Path(old_name).name
-            new_name = vault_entry_upload_to(entry, filename)
+            new_name = archive_entry_upload_to(entry, filename)
             if new_name == old_name:
                 skipped += 1
                 continue

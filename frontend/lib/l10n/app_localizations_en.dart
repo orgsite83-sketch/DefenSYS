@@ -122,7 +122,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navRubricEngine => 'Rubric Engine';
 
   @override
-  String get navRepositoryAudit => 'Repository Vault';
+  String get navRepositoryAudit => 'Project Archive';
 
   @override
   String get navCurriculumAnalytics => 'Curriculum Analytics';
@@ -143,7 +143,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navTeam => 'Team';
 
   @override
-  String get navDigitalVault => 'Digital Vault';
+  String get navRepository => 'Repository';
 
   @override
   String get navWeeklyReport => 'Weekly Report';
@@ -185,10 +185,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get clearSearchTooltip => 'Clear search';
 
   @override
-  String get digitalVaultTitle => 'Digital Vault';
+  String get repositoryTitle => 'Repository';
 
   @override
-  String get failedToLoadVault => 'Failed to load vault';
+  String get failedToLoadRepository => 'Failed to load repository';
 
   @override
   String get leaveBulkImportTitle => 'Leave bulk import?';

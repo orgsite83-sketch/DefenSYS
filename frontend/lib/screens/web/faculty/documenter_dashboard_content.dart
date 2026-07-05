@@ -5,6 +5,7 @@ import '../../../services/documenter_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../utils/pdf_viewer.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
+import '../../../widgets/feedback_toast.dart';
 
 class DocumenterDashboardContent extends ConsumerStatefulWidget {
   final Map<String, dynamic>? data;
@@ -438,9 +439,7 @@ class _DocumenterDashboardContentState
       );
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to download PDF.')),
-        );
+        showErrorToast(context, 'Failed to download PDF.');
       }
     }
   }

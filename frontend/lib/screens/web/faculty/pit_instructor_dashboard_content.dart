@@ -55,13 +55,19 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
       }
     }).toList();
 
+    final isCapstoneWorkspace = rawTeams.any((t) => t['isCapstone'] == true);
+    final titleLabel = isCapstoneWorkspace ? 'Section Instructor workspace' : 'PIT Instructor workspace';
+    final subtitleLabel = isCapstoneWorkspace
+        ? 'Review deliverables and monitor progress for your assigned sections.'
+        : 'Review deliverables and manage pre-defense endorsement for your assigned PIT teams.';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const DefensysPageHeader(
+        DefensysPageHeader(
           icon: Icons.school_outlined,
-          title: 'PIT Instructor workspace',
-          subtitle: 'Review deliverables and manage pre-defense endorsement for your assigned PIT teams.',
+          title: titleLabel,
+          subtitle: subtitleLabel,
         ),
         const SizedBox(height: 8),
         Text(
@@ -133,9 +139,9 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'My Assigned PIT Teams',
-                        style: TextStyle(
+                      Text(
+                        isCapstoneWorkspace ? 'My Assigned Teams' : 'My Assigned PIT Teams',
+                        style: const TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.bold,
                           color: Color(0xFF1F2937),
@@ -412,6 +418,10 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     final status = team['status']?.toString() ?? 'pending';
     final isEndorsed = status.toLowerCase() == 'approved';
     final deliverableCount = team['deliverableCount'] as int? ?? 0;
+    final isCapstone = team['isCapstone'] == true;
+    final statusLabel = isCapstone
+        ? status
+        : (isEndorsed ? 'Endorsed' : 'Awaiting Review');
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -492,6 +502,15 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
                         'Leader: ${team['leaderName'] ?? 'N/A'}',
                         style: const TextStyle(fontSize: 11, color: Colors.grey),
                       ),
+                      if (isCapstone && team['adviserName'] != null) ...[
+                        const SizedBox(width: 16),
+                        const Icon(Icons.person_outline_rounded, size: 14, color: Colors.grey),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Adviser: ${team['adviserName']}',
+                          style: const TextStyle(fontSize: 11, color: Colors.grey),
+                        ),
+                      ],
                       const SizedBox(width: 16),
                       const Icon(Icons.file_present_outlined, size: 14, color: Colors.grey),
                       const SizedBox(width: 4),
@@ -517,7 +536,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Text(
-                    isEndorsed ? 'Endorsed' : 'Awaiting Review',
+                    statusLabel,
                     style: TextStyle(
                       color: isEndorsed ? const Color(0xFF065F46) : const Color(0xFF92400E),
                       fontSize: 11,

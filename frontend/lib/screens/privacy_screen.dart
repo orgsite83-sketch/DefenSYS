@@ -23,7 +23,7 @@ class PrivacyScreen extends StatelessWidget {
           '• Authenticating users and enforcing role-based access\n'
           '• Processing and recording defense evaluations\n'
           '• Generating grade summaries and academic reports\n'
-          '• Maintaining the digital vault and document archive\n'
+          '• Maintaining the project repository and document archive\n'
           '• Supporting curriculum analytics and trend reporting\n'
           '• Auditing system activity for institutional compliance',
     ),
@@ -40,7 +40,7 @@ class PrivacyScreen extends StatelessWidget {
     _PolicySection(
       title: '4. Document Security',
       content:
-          'All uploaded documents in the Digital Vault are protected by:\n\n'
+          'All uploaded documents in the Project Repository are protected by:\n\n'
           '• Dynamic watermarking on every viewed page\n'
           '• Read-only browser viewer enforcement\n'
           '• Disabled copy and download functionality for students\n'

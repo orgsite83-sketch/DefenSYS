@@ -3,10 +3,9 @@ import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../../services/authenticated_client.dart';
-import '../../../services/digital_vault_provider.dart';
+import '../../../services/repository_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/empty_state.dart';
@@ -85,6 +84,9 @@ class RepositoryTab extends ConsumerStatefulWidget {
 
 class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   String _selectedYear = '';
+  String _selectedType = ''; // '', 'capstone', 'pit', 'uploader'
+  final Set<String> _collapsedStages = {};
+  bool _defaultYearApplied = false;
   String _searchQuery = '';
   final TextEditingController _searchController = TextEditingController();
   Timer? _searchDebounce;
@@ -93,7 +95,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(digitalVaultProvider.notifier).fetchForStudent();
+      ref.read(repositoryProvider.notifier).fetchForStudent();
     });
   }
 
@@ -110,7 +112,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     _searchDebounce?.cancel();
     _searchDebounce = Timer(const Duration(milliseconds: 350), () {
       if (!mounted) return;
-      ref.read(digitalVaultProvider.notifier).fetchForStudent(search: query);
+      ref.read(repositoryProvider.notifier).fetchForStudent(search: query);
     });
   }
 
@@ -118,13 +120,14 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     _searchDebounce?.cancel();
     _searchController.clear();
     setState(() => _searchQuery = '');
-    ref.read(digitalVaultProvider.notifier).fetchForStudent(search: '');
+    ref.read(repositoryProvider.notifier).fetchForStudent(search: '');
   }
 
   List<VaultEntry> _filteredEntries(List<VaultEntry> allEntries) {
     return allEntries.where((e) {
       final matchYear = _selectedYear.isEmpty || e.academicYear == _selectedYear;
-      return matchYear;
+      final matchType = _selectedType.isEmpty || e.type == _selectedType;
+      return matchYear && matchType;
     }).toList();
   }
 
@@ -136,7 +139,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   Future<void> _refreshVault() async {
     await Future.wait([
       ref
-          .read(digitalVaultProvider.notifier)
+          .read(repositoryProvider.notifier)
           .fetchForStudent(search: _searchQuery),
       ref
           .read(dashboardProvider('student').notifier)
@@ -149,7 +152,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
       child: Padding(
         padding: const EdgeInsets.all(24),
         child: ErrorBanner(
-          title: context.l10n.failedToLoadVault,
+          title: context.l10n.failedToLoadRepository,
           message: message,
           onRetry: _refreshVault,
         ),
@@ -225,20 +228,90 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
           );
         }
 
+        // Group entries by stage/milestone
+        final Map<String, List<VaultEntry>> grouped = {};
+        for (var entry in entries) {
+          final stageName = entry.stage.isEmpty || entry.stage == '—' ? 'General' : entry.stage;
+          grouped.putIfAbsent(stageName, () => []).add(entry);
+        }
+
+        final List<Widget> listItems = [];
+        if (error != null) {
+          listItems.add(_buildErrorBanner(error));
+        }
+
+        grouped.forEach((stage, stageEntries) {
+          final isCollapsed = _collapsedStages.contains(stage);
+          listItems.add(
+            GestureDetector(
+              onTap: () {
+                setState(() {
+                  if (isCollapsed) {
+                    _collapsedStages.remove(stage);
+                  } else {
+                    _collapsedStages.add(stage);
+                  }
+                });
+              },
+              child: Container(
+                margin: const EdgeInsets.only(top: 14, bottom: 8),
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Icon(
+                      isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
+                      color: DefensysTokens.textSecondary,
+                      size: 20,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      stage.toUpperCase(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 12,
+                        color: DefensysTokens.textSecondary,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade100,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.grey.shade200, width: 0.5),
+                      ),
+                      child: Text(
+                        '${stageEntries.length} ${stageEntries.length == 1 ? "file" : "files"}',
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+
+          if (!isCollapsed) {
+            listItems.addAll(stageEntries.map(_entryCard));
+          }
+        });
+
         return ListView(
           physics: const AlwaysScrollableScrollPhysics(),
           padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: [
-            if (error != null) _buildErrorBanner(error),
-            ...entries.map(_entryCard),
-          ],
+          children: listItems,
         );
       },
     );
   }
 
   void _applyDefaultYearIfNeeded(List<VaultEntry> allEntries) {
-    if (_selectedYear.isNotEmpty || allEntries.isEmpty) {
+    if (_defaultYearApplied || allEntries.isEmpty) {
       return;
     }
     final years = allEntries
@@ -248,6 +321,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
         .toList()
       ..sort();
     if (years.isNotEmpty) {
+      _defaultYearApplied = true;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) {
           setState(() => _selectedYear = years.last);
@@ -256,9 +330,53 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     }
   }
 
+  String _cleanFileName(String fileName) {
+    var name = fileName;
+    final lastDot = name.lastIndexOf('.');
+    if (lastDot != -1) {
+      name = name.substring(0, lastDot);
+    }
+    name = name.replaceAll(RegExp(r'[._\-]'), ' ');
+    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return name;
+  }
+
+  Widget _buildSegmentTab({required String label, required String typeValue}) {
+    final isSelected = _selectedType == typeValue;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedType = typeValue),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 3,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected ? DefensysTokens.maroon : Colors.grey.shade600,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final vaultState = ref.watch(digitalVaultProvider);
+    final vaultState = ref.watch(repositoryProvider);
     final allEntries = vaultState.entries
         .map((e) => VaultEntry.fromJson(e))
         .toList();
@@ -276,13 +394,14 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
           child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
                   const Icon(Icons.folder_special, color: DefensysTokens.maroon, size: 18),
                   const SizedBox(width: 8),
                   Text(
-                    context.l10n.digitalVaultTitle,
+                    context.l10n.repositoryTitle,
                     style: const TextStyle(
                       fontWeight: FontWeight.bold,
                       fontSize: 16,
@@ -297,8 +416,8 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
                   hintText: 'Smart search: PDF content, topics, file, team...',
-                  hintStyle: const TextStyle(fontSize: 13, color: Colors.grey),
-                  prefixIcon: const Icon(Icons.auto_awesome, size: 20, color: DefensysTokens.gold),
+                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
+                  prefixIcon: const Icon(Icons.auto_awesome, size: 20, color: DefensysTokens.maroon),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
                           tooltip: 'Clear search',
@@ -309,27 +428,101 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                           child: Icon(Icons.psychology, size: 18, color: Colors.grey),
                         ),
                   isDense: true,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  filled: true,
+                  fillColor: Colors.grey.shade50,
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+                    borderSide: BorderSide(color: Colors.grey.shade200, width: 1.5),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+                    borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                 ),
               ),
               if (!isSearching && years.isNotEmpty) ...[
-                const SizedBox(height: 10),
-                DropdownButtonFormField<String>(
-                  initialValue: _selectedYear.isEmpty ? null : _selectedYear,
-                  isDense: true,
-                  decoration: InputDecoration(
-                    labelText: 'Academic Year',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                const SizedBox(height: 12),
+                SizedBox(
+                  height: 32,
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(right: 8),
+                        child: ChoiceChip(
+                          label: const Text('All Years', style: TextStyle(fontSize: 12)),
+                          selected: _selectedYear.isEmpty,
+                          selectedColor: DefensysTokens.maroon,
+                          backgroundColor: Colors.grey.shade50,
+                          labelStyle: TextStyle(
+                            color: _selectedYear.isEmpty ? Colors.white : Colors.grey.shade700,
+                            fontWeight: _selectedYear.isEmpty ? FontWeight.bold : FontWeight.normal,
+                          ),
+                          onSelected: (selected) {
+                            if (selected) {
+                              setState(() => _selectedYear = '');
+                            }
+                          },
+                          showCheckmark: false,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(20),
+                            side: BorderSide(
+                              color: _selectedYear.isEmpty ? DefensysTokens.maroon : Colors.grey.shade200,
+                              width: 1,
+                            ),
+                          ),
+                        ),
+                      ),
+                      ...years.map((y) {
+                        final isSelected = _selectedYear == y;
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: ChoiceChip(
+                            label: Text('SY $y', style: const TextStyle(fontSize: 12)),
+                            selected: isSelected,
+                            selectedColor: DefensysTokens.maroon,
+                            backgroundColor: Colors.grey.shade50,
+                            labelStyle: TextStyle(
+                              color: isSelected ? Colors.white : Colors.grey.shade700,
+                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                            ),
+                            onSelected: (selected) {
+                              if (selected) {
+                                setState(() => _selectedYear = y);
+                              }
+                            },
+                            showCheckmark: false,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
+                              side: BorderSide(
+                                color: isSelected ? DefensysTokens.maroon : Colors.grey.shade200,
+                                width: 1,
+                              ),
+                            ),
+                          ),
+                        );
+                      }),
+                    ],
                   ),
-                  items: years.map((y) => DropdownMenuItem(
-                    value: y,
-                    child: Text('SY $y', style: const TextStyle(fontSize: 13)),
-                  )).toList(),
-                  onChanged: (v) => setState(() => _selectedYear = v ?? ''),
                 ),
               ],
+              const SizedBox(height: 12),
+              Container(
+                height: 38,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                padding: const EdgeInsets.all(3),
+                child: Row(
+                  children: [
+                    _buildSegmentTab(label: 'All', typeValue: ''),
+                    _buildSegmentTab(label: 'Capstone', typeValue: 'capstone'),
+                    _buildSegmentTab(label: 'PIT', typeValue: 'pit'),
+                  ],
+                ),
+              ),
             ],
           ),
         ),
@@ -337,20 +530,31 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
         // ── Notice ──
         Container(
           margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          padding: const EdgeInsets.all(10),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.amber.shade50,
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.amber.shade300),
+            color: DefensysTokens.maroon.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+            border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15), width: 1),
           ),
-          child: const Row(
+          child: Row(
             children: [
-              Icon(Icons.lock, color: Colors.amber, size: 16),
-              SizedBox(width: 8),
-              Expanded(
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.lock_outline_rounded, color: DefensysTokens.maroon, size: 14),
+              ),
+              const SizedBox(width: 10),
+              const Expanded(
                 child: Text(
-                  'Public vault - view-only access to all team submissions.',
-                  style: TextStyle(fontSize: 11, color: Colors.brown),
+                  'Public repository · View-only access to all team submissions.',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: DefensysTokens.maroon,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
               ),
             ],
@@ -396,96 +600,484 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   Widget _entryCard(VaultEntry e) {
     final isCapstone = e.type == 'capstone';
     final isUploader = e.type == 'uploader';
-    final color = isCapstone ? DefensysTokens.maroon : (isUploader ? Colors.blue : DefensysTokens.gold);
+    final color = isCapstone ? DefensysTokens.maroon : (isUploader ? DefensysTokens.techBlue : DefensysTokens.maroonLight);
     final label = e.deliverableLabel ?? e.fileName;
-    final shortName = label.length > 40 ? '${label.substring(0, 40)}…' : label;
+    final cleanTitle = (label == e.fileName || e.deliverableLabel == null) 
+        ? _cleanFileName(label) 
+        : label;
     final hasTopics = e.topics.isNotEmpty;
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 2,
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        leading: Container(
-          width: 42, height: 42,
-          decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.1),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(
-            e.fileName.toLowerCase().endsWith('.mp4') ? Icons.videocam
-              : e.fileName.toLowerCase().endsWith('.zip') ? Icons.folder_zip
-              : e.fileName.toLowerCase().endsWith('.ppt') || e.fileName.toLowerCase().endsWith('.pptx') ? Icons.slideshow
-              : e.fileName.toLowerCase().endsWith('.doc') || e.fileName.toLowerCase().endsWith('.docx') ? Icons.description
-              : Icons.picture_as_pdf,
-            color: color, size: 22,
-          ),
-        ),
-        title: Text(shortName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-        subtitle: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const SizedBox(height: 3),
-            Text(e.teamName, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: color.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    isCapstone ? 'Capstone' : (isUploader ? 'Uploaded' : 'PIT'),
-                    style: TextStyle(fontSize: 9, color: color, fontWeight: FontWeight.w700),
-                  ),
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        side: BorderSide(color: Colors.grey.shade200, width: 1),
+      ),
+      color: Colors.white,
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: () => _showEntryDetailsDialog(e),
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Leading Icon Container
+              Container(
+                width: 44,
+                height: 44,
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
                 ),
-                const SizedBox(width: 6),
-                if (e.stage != '—' && e.stage.isNotEmpty)
-                  Text(e.stage, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-                const Spacer(),
-                if (e.academicYear != '—')
-                  Text(e.academicYear, style: const TextStyle(fontSize: 10, color: Colors.grey)),
-              ],
-            ),
-            // Display topics as chips
-            if (hasTopics) ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: e.topics.take(3).map((topic) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.gold.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.3), width: 0.5),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.label, size: 8, color: DefensysTokens.gold),
-                      const SizedBox(width: 2),
-                      Text(
-                        topic.length > 15 ? '${topic.substring(0, 15)}…' : topic,
-                        style: const TextStyle(fontSize: 8, color: DefensysTokens.gold, fontWeight: FontWeight.w600),
+                child: Icon(
+                  e.fileName.toLowerCase().endsWith('.mp4') ? Icons.videocam_rounded
+                    : e.fileName.toLowerCase().endsWith('.zip') ? Icons.folder_zip_rounded
+                    : e.fileName.toLowerCase().endsWith('.ppt') || e.fileName.toLowerCase().endsWith('.pptx') ? Icons.slideshow_rounded
+                    : e.fileName.toLowerCase().endsWith('.doc') || e.fileName.toLowerCase().endsWith('.docx') ? Icons.description_rounded
+                    : Icons.picture_as_pdf_rounded,
+                  color: color,
+                  size: 22,
+                ),
+              ),
+              const SizedBox(width: 14),
+
+              // Main details
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      cleanTitle,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: DefensysTokens.textDark,
+                        height: 1.25,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      e.teamName,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.grey.shade600,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: color.withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            isCapstone ? 'Capstone' : (isUploader ? 'Uploaded' : 'PIT'),
+                            style: TextStyle(
+                              fontSize: 9,
+                              color: color,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        if (e.stage != '—' && e.stage.isNotEmpty) ...[
+                          Container(
+                            width: 4,
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: Colors.grey.shade400,
+                              shape: BoxShape.circle,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            e.stage,
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          ),
+                        ],
+                        if (e.academicYear != '—' && e.academicYear.isNotEmpty) ...[
+                          const Spacer(),
+                          Text(
+                            'SY ${e.academicYear}',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          ),
+                        ],
+                      ],
+                    ),
+                    if (hasTopics) ...[
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: e.topics.take(3).map((topic) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: Colors.grey.shade200, width: 0.8),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.tag_rounded, size: 9, color: Colors.grey),
+                              const SizedBox(width: 2),
+                              Text(
+                                topic.length > 15 ? '${topic.substring(0, 15)}…' : topic,
+                                style: const TextStyle(
+                                  fontSize: 9,
+                                  color: Colors.grey,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        )).toList(),
                       ),
                     ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              // Trailing View Indicator
+              Align(
+                alignment: Alignment.centerRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.grey.shade400,
+                    size: 20,
                   ),
-                )).toList(),
+                ),
               ),
             ],
-          ],
-        ),
-        trailing: IconButton(
-          icon: const Icon(Icons.visibility, color: DefensysTokens.maroon, size: 20),
-          tooltip: 'View',
-          onPressed: () => _showViewer(e),
+          ),
         ),
       ),
     );
+  }
+
+  void _showEntryDetailsDialog(VaultEntry e) {
+    final isCapstone = e.type == 'capstone';
+    final isUploader = e.type == 'uploader';
+    final color = isCapstone ? DefensysTokens.maroon : (isUploader ? DefensysTokens.techBlue : DefensysTokens.maroonLight);
+    final label = e.deliverableLabel ?? e.fileName;
+    final cleanTitle = (label == e.fileName || e.deliverableLabel == null) 
+        ? _cleanFileName(label) 
+        : label;
+    final hasTopics = e.topics.isNotEmpty;
+    final hasSummary = e.summary.isNotEmpty && e.summary != '—';
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
+          ),
+          clipBehavior: Clip.antiAlias,
+          backgroundColor: Colors.white,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.75,
+              maxWidth: 450,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Header row with close button
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      // Badge
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: color.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isCapstone ? 'Capstone' : (isUploader ? 'Uploaded File' : 'PIT Project'),
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: color,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.3,
+                          ),
+                        ),
+                      ),
+                      // Close button
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 22),
+                        onPressed: () => Navigator.pop(context),
+                      ),
+                    ],
+                  ),
+                ),
+
+                // Scrollable content
+                Expanded(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Document Title
+                        Text(
+                          cleanTitle,
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textDark,
+                            height: 1.3,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+
+                        // Badges/Tags (Academic Year & Stage)
+                        Row(
+                          children: [
+                            if (e.stage != '—' && e.stage.isNotEmpty) ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.grey.shade200, width: 0.5),
+                                ),
+                                child: Text(
+                                  e.stage,
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                            ],
+                            if (e.academicYear != '—') ...[
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: Colors.grey.shade200, width: 0.5),
+                                ),
+                                child: Text(
+                                  'SY ${e.academicYear}',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    color: Colors.grey.shade600,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Project Details card
+                        Container(
+                          width: double.infinity,
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade50,
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+                            border: Border.all(color: Colors.grey.shade100, width: 1),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'PROJECT DETAILS',
+                                style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.w800,
+                                  color: Colors.grey,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDetailRow(
+                                icon: Icons.group_rounded,
+                                label: 'Team Name',
+                                value: e.teamName,
+                              ),
+                              const SizedBox(height: 8),
+                              _buildDetailRow(
+                                icon: Icons.person_rounded,
+                                label: 'Uploaded By',
+                                value: e.uploadedBy,
+                              ),
+                              if (e.timestamp.isNotEmpty) ...[
+                                const SizedBox(height: 8),
+                                _buildDetailRow(
+                                  icon: Icons.calendar_today_rounded,
+                                  label: 'Date Uploaded',
+                                  value: _formatTimestamp(e.timestamp),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Summary Section
+                        const Row(
+                          children: [
+                            Icon(Icons.auto_awesome_rounded, color: DefensysTokens.maroon, size: 14),
+                            SizedBox(width: 6),
+                            Text(
+                              'Document Summary',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                                color: DefensysTokens.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          hasSummary ? e.summary : 'No summary details available for this upload.',
+                          style: TextStyle(
+                            fontSize: 12,
+                            height: 1.4,
+                            color: Colors.grey.shade700,
+                            fontStyle: hasSummary ? FontStyle.normal : FontStyle.italic,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Topics Section
+                        if (hasTopics) ...[
+                          const Text(
+                            'Keywords & Topics',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: DefensysTokens.textDark,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: e.topics.map((topic) => Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: Colors.grey.shade50,
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: Colors.grey.shade200, width: 0.8),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.tag_rounded, size: 8, color: Colors.grey),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    topic,
+                                    style: const TextStyle(
+                                      fontSize: 9,
+                                      color: Colors.grey,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )).toList(),
+                          ),
+                          const SizedBox(height: 16),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Action Button footer
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(context); // Close dialog first
+                            _showViewer(e); // Then open viewer
+                          },
+                          icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
+                          label: const Text('Read Document', style: TextStyle(fontWeight: FontWeight.bold)),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: DefensysTokens.maroon,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            elevation: 0,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildDetailRow({
+    required IconData icon,
+    required String label,
+    required String value,
+  }) {
+    return Row(
+      children: [
+        Icon(icon, size: 16, color: Colors.grey.shade600),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              label,
+              style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              value,
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  String _formatTimestamp(String ts) {
+    try {
+      final dt = DateTime.parse(ts);
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+    } catch (_) {
+      return ts;
+    }
   }
 
   void _showViewer(VaultEntry e) {
@@ -712,7 +1304,7 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                       ),
                       const SizedBox(height: 4),
                       const Text(
-                        'DIGITAL VAULT - READ ONLY',
+                        'REPOSITORY - READ ONLY',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w700,

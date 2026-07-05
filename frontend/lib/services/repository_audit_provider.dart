@@ -645,7 +645,7 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
       return (
         message: null,
         error: skipped.isEmpty
-            ? 'No files were saved to the vault.'
+            ? 'No files were saved to the archive.'
             : _formatSkippedSummary(skipped, header: 'No files were saved.'),
       );
     }
@@ -653,8 +653,8 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     if (skipped.isEmpty) {
       return (
         message: createdCount == 1
-            ? '1 $uploadLabel file saved to the vault.'
-            : '$createdCount $uploadLabel files saved to the vault.',
+            ? '1 $uploadLabel file saved to the archive.'
+            : '$createdCount $uploadLabel files saved to the archive.',
         error: null,
       );
     }

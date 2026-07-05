@@ -8,6 +8,7 @@ import '../../../services/auth_provider.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/reports_provider.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AuditComplianceScreen extends ConsumerStatefulWidget {
@@ -879,9 +880,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
     if (endpoint == 'team-grade') {
       if (_selectedTeamId == null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Please select a student team.')),
-        );
+        showValidationToast(context, 'Please select a student team.');
         return;
       }
       final fullEndpoint = 'team-grade/$_selectedTeamId/';
@@ -940,19 +939,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     if (!mounted) return;
     final error = ref.read(reportsProvider).error;
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('PDF report generated and downloaded successfully!'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      showSuccessToast(context, 'PDF report generated and downloaded successfully!');
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Failed to generate PDF: ${error ?? "Unknown error"}'),
-          backgroundColor: Colors.red,
-        ),
-      );
+      showErrorToast(context, 'Failed to generate PDF: ${error ?? "Unknown error"}');
     }
   }
 

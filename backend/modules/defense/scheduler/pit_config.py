@@ -55,7 +55,7 @@ def upsert_pit_event_config(
     peer_rubric,
     panel_weight,
     peer_weight,
-    vault_file_template=None,
+    archive_file_template=None,
     deliverables=None,
 ):
     event_name = (event_name or '').strip()
@@ -70,8 +70,8 @@ def upsert_pit_event_config(
         'panel_weight': panel_weight,
         'peer_weight': peer_weight,
     }
-    if vault_file_template is not None:
-        defaults['vault_file_template'] = vault_file_template.strip()
+    if archive_file_template is not None:
+        defaults['archive_file_template'] = archive_file_template.strip()
 
     with transaction.atomic():
         config, _created = PitEventGradingConfig.objects.update_or_create(
@@ -99,8 +99,8 @@ def upsert_pit_event_config(
                 deliv_type = d.get('deliverable_type', 'pre').strip()
                 required = bool(d.get('required', True))
                 display_order = int(d.get('display_order', index))
-                vault_note = d.get('vault_note', '').strip()
-                vault_file_template = d.get('vault_file_template', '').strip()
+                archive_note = d.get('archive_note', '').strip()
+                archive_file_template = d.get('archive_file_template', '').strip()
                 is_restricted = bool(d.get('is_restricted', False))
                 
                 # Check client-provided deliverable_id (usually empty/generated)
@@ -114,8 +114,8 @@ def upsert_pit_event_config(
                         deliv.deliverable_type = deliv_type
                         deliv.required = required
                         deliv.display_order = display_order
-                        deliv.vault_note = vault_note
-                        deliv.vault_file_template = vault_file_template
+                        deliv.archive_note = archive_note
+                        deliv.archive_file_template = archive_file_template
                         deliv.is_restricted = is_restricted
                         
                         # Use provided ID if non-empty, otherwise fallback to database ID string
@@ -133,8 +133,8 @@ def upsert_pit_event_config(
                         deliverable_type=deliv_type,
                         required=required,
                         display_order=display_order,
-                        vault_note=vault_note,
-                        vault_file_template=vault_file_template,
+                        archive_note=archive_note,
+                        archive_file_template=archive_file_template,
                         is_restricted=is_restricted,
                     )
                     # If deliverable_id is empty, use the stringified database primary key ID
@@ -155,8 +155,8 @@ def pit_event_config_payload(config):
             'deliverable_type': d.deliverable_type,
             'required': d.required,
             'display_order': d.display_order,
-            'vault_note': d.vault_note,
-            'vault_file_template': d.vault_file_template,
+            'archive_note': d.archive_note,
+            'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
@@ -170,6 +170,6 @@ def pit_event_config_payload(config):
         'peer_weight': config.peer_weight,
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
-        'vault_file_template': config.vault_file_template,
+        'archive_file_template': config.archive_file_template,
         'deliverables': deliverables_data,
     }

@@ -5,7 +5,7 @@ from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
 
 from .ml_search import filter_and_rank_entries
-from .models import VaultEntry
+from .models import ArchiveEntry
 
 
 CAPSTONE_VISIBLE_IDS = ['D4.1', 'D10', 'D17', 'D18', 'D19']
@@ -13,8 +13,8 @@ DEFAULT_YEAR_LEVELS = ['1st Year', '2nd Year', '3rd Year', '4th Year']
 
 TYPE_OPTIONS = [
     {'value': '', 'label': 'All Types'},
-    {'value': VaultEntry.TYPE_CAPSTONE, 'label': 'Capstone'},
-    {'value': VaultEntry.TYPE_PIT, 'label': 'PIT'},
+    {'value': ArchiveEntry.TYPE_CAPSTONE, 'label': 'Capstone'},
+    {'value': ArchiveEntry.TYPE_PIT, 'label': 'PIT'},
 ]
 
 
@@ -37,7 +37,7 @@ def pit_visible_deliverables_queryset():
             'uploaded_by',
         )
         .filter(
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             team__level__icontains='PIT',
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
@@ -59,7 +59,7 @@ def capstone_visible_queryset():
             'uploaded_by',
         )
         .filter(
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             team__level__icontains='Capstone',
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
@@ -74,7 +74,7 @@ def capstone_restricted_queryset():
     from defense.stages.models import StageDeliverable
     restricted_ids = StageDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
     return DeliverableSubmission.objects.filter(
-        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        deliverable_type=DeliverableSubmission.TYPE_POST,
         deliverable_id__in=restricted_ids,
         team__level__icontains='Capstone',
         status=DeliverableSubmission.STATUS_ACCEPTED,
@@ -85,7 +85,7 @@ def pit_restricted_queryset():
     from defense.scheduler.models import PitEventDeliverable
     restricted_ids = PitEventDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
     return DeliverableSubmission.objects.filter(
-        deliverable_type=DeliverableSubmission.TYPE_VAULT,
+        deliverable_type=DeliverableSubmission.TYPE_POST,
         deliverable_id__in=restricted_ids,
         team__level__icontains='PIT',
         status=DeliverableSubmission.STATUS_ACCEPTED,
@@ -93,12 +93,12 @@ def pit_restricted_queryset():
 
 
 def pit_queryset():
-    return VaultEntry.objects.select_related('team', 'uploaded_by').filter(
-        entry_type=VaultEntry.TYPE_PIT,
+    return ArchiveEntry.objects.select_related('team', 'uploaded_by').filter(
+        entry_type=ArchiveEntry.TYPE_PIT,
     )
 
 
-def visible_vault_entries_count():
+def visible_archive_entries_count():
     return pit_queryset().count() + capstone_visible_queryset().count() + pit_visible_deliverables_queryset().count()
 
 
@@ -106,23 +106,23 @@ def capstone_visible_entries_count():
     return capstone_visible_queryset().count()
 
 
-def pit_vault_entries_count():
+def pit_archive_entries_count():
     return pit_queryset().count() + pit_visible_deliverables_queryset().count()
 
 
-def restricted_vault_entries_count():
+def restricted_archive_entries_count():
     return capstone_restricted_queryset().count() + pit_restricted_queryset().count()
 
 
 def capstone_entry_payload(submission):
     team = submission.team
     is_pit = team.is_pit if team else False
-    entry_type = VaultEntry.TYPE_PIT if is_pit else VaultEntry.TYPE_CAPSTONE
+    entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
     entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
     viewer_notice = (
         'Read-only PIT archive preview. Audit actions are handled in the Repository Audit phase.'
         if is_pit
-        else 'Read-only vault preview. Source downloads are disabled from this public archive.'
+        else 'Read-only archive preview. Source downloads are disabled from this public archive.'
     )
     return {
         'id': entry_id,
@@ -140,7 +140,7 @@ def capstone_entry_payload(submission):
         'academic_year': team.semester.school_year.label if team.semester else '',
         'semester': team.semester.label if team.semester else '',
         'stage': submission.stage_label,
-        'status': 'Vault Submission' if not is_pit else submission.status,
+        'status': 'Post-Defense' if not is_pit else submission.status,
         'uploaded_by': display_name(submission.uploaded_by) or 'System',
         'uploaded_at': submission.uploaded_at,
         'restricted': False,
@@ -158,7 +158,7 @@ def pit_entry_payload(entry):
     return {
         'id': f'pit-{entry.id}',
         'source_id': entry.id,
-        'type': VaultEntry.TYPE_PIT,
+        'type': ArchiveEntry.TYPE_PIT,
         'file_name': entry.file_name,
         'file_size': entry.file_size,
         'file_url': entry.file_url,  # Add file URL for PIT entries
@@ -195,7 +195,7 @@ def all_visible_entries():
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True)
 
 
-def search_vault_payload(request):
+def search_archive_payload(request):
     entries = all_visible_entries()
     filtered, suggestions = filter_and_rank_entries(entries, request.query_params)
     return {
@@ -229,17 +229,17 @@ def counts_payload(entries, filtered_entries):
     return {
         'total': len(entries),
         'filtered': len(filtered_entries),
-        'capstone': sum(1 for entry in entries if entry['type'] == VaultEntry.TYPE_CAPSTONE),
-        'pit': sum(1 for entry in entries if entry['type'] == VaultEntry.TYPE_PIT),
-        'restricted': restricted_vault_entries_count(),
+        'capstone': sum(1 for entry in entries if entry['type'] == ArchiveEntry.TYPE_CAPSTONE),
+        'pit': sum(1 for entry in entries if entry['type'] == ArchiveEntry.TYPE_PIT),
+        'restricted': restricted_archive_entries_count(),
     }
 
 
-def digital_vault_payload(request):
+def project_archive_payload(request):
     entries = all_visible_entries()
     
-    # Note: Vault is public - all authenticated users can see all visible entries
-    # No team filtering applied - students can see vault submissions from all teams
+    # Note: Archive is public - all authenticated users can see all visible entries
+    # No team filtering applied - students can see archive submissions from all teams
     
     filtered_entries, suggestions = filter_and_rank_entries(entries, request.query_params)
     
@@ -261,5 +261,5 @@ def digital_vault_payload(request):
             'academic_year': request.query_params.get('academic_year', ''),
         },
         'restricted_deliverable_ids': restricted_ids,
-        'notice': 'Digital Vault is read-only. Restricted deliverables are intentionally hidden.',
+        'notice': 'Repository is read-only. Restricted deliverables are intentionally hidden.',
     }

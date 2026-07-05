@@ -312,12 +312,8 @@ def prepare_bulk_row(
             )
             if issues:
                 return None, issues
-            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-            if pit_year and inferred != pit_year:
-                return None, [
-                    f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
-                ]
             data['year_level'] = inferred
+            data['level'] = f'{inferred} PIT'
             section, section_issues = infer_section_from_members(
                 member_user_ids,
                 semester,
@@ -327,6 +323,12 @@ def prepare_bulk_row(
                 return None, section_issues
             if section:
                 data['section'] = section
+
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if pit_year and inferred != pit_year:
+                return data, [
+                    f'Students are enrolled in {inferred} but your PIT scope is {pit_year}.'
+                ]
         elif explicit_year:
             data['year_level'] = explicit_year
         else:

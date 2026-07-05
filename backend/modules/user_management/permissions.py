@@ -117,11 +117,11 @@ class CanManageTeams(BasePermission):
         if getattr(user, 'is_pit_lead', False):
             return True
 
-        # Allow PIT Instructors to read/update assigned-section teams.
+        # Allow PIT/Section Instructors to read/update assigned-section teams.
         if request.method in ('GET', 'PATCH', 'DELETE'):
-            from user_management.models import PitInstructorAssignment
+            from user_management.models import SectionInstructorAssignment
 
-            if PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
+            if SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
                 return True
         
         # Allow uploaders (read-only access for GET requests)

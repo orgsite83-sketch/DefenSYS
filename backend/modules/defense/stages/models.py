@@ -10,11 +10,11 @@ DEFAULT_PEER_WEIGHT = 20
 
 class StageDeliverable(models.Model):
     TYPE_PRE = 'pre'
-    TYPE_VAULT = 'vault'
+    TYPE_POST = 'post'
 
     TYPE_CHOICES = (
         (TYPE_PRE, 'Pre-Defense'),
-        (TYPE_VAULT, 'Vault'),
+        (TYPE_POST, 'Post-Defense'),
     )
 
     defense_stage = models.ForeignKey(
@@ -31,16 +31,16 @@ class StageDeliverable(models.Model):
     )
     required = models.BooleanField(default=False)
     display_order = models.PositiveSmallIntegerField(default=1)
-    vault_note = models.TextField(blank=True)
-    vault_file_template = models.CharField(
+    archive_note = models.TextField(blank=True)
+    archive_file_template = models.CharField(
         max_length=255,
         blank=True,
         default='',
-        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {stage}, {deliverable}, {semester}',
+        help_text='Template for archive filename. Variables: {year}, {course}, {project}, {stage}, {deliverable}, {semester}',
     )
     is_restricted = models.BooleanField(
         default=False,
-        help_text='If checked, this post-defense deliverable will be hidden from the public Digital Vault.',
+        help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

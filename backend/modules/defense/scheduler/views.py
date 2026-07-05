@@ -165,7 +165,7 @@ class PitEventConfigLookupView(APIView):
                 'peer_weight': 20,
                 'is_officially_complete': False,
                 'peer_grading_enabled': False,
-                'vault_file_template': '',
+                'archive_file_template': '',
                 'deliverables': [],
             }
             return Response({'config': default_config})
@@ -213,7 +213,7 @@ class PitEventConfigLookupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        vault_file_template = request.data.get('vault_file_template')
+        archive_file_template = request.data.get('archive_file_template')
         deliverables = request.data.get('deliverables')
         if deliverables is not None and not isinstance(deliverables, list):
             return Response(
@@ -233,7 +233,7 @@ class PitEventConfigLookupView(APIView):
                 peer_rubric=peer_rubric,
                 panel_weight=panel_weight,
                 peer_weight=peer_weight,
-                vault_file_template=vault_file_template,
+                archive_file_template=archive_file_template,
                 deliverables=deliverables,
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)

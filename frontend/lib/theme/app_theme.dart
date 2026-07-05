@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'defensys_tokens.dart';
 
@@ -21,7 +22,7 @@ class AppColors {
 class AppTheme {
   static ThemeData get theme => ThemeData(
         useMaterial3: true,
-        fontFamily: DefensysTokens.fontFamily,
+        fontFamily: GoogleFonts.inter().fontFamily,
         scaffoldBackgroundColor: DefensysTokens.background,
         colorScheme: ColorScheme.fromSeed(
           seedColor: DefensysTokens.maroon,

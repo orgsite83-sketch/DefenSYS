@@ -560,7 +560,7 @@ class _SidebarState extends State<_Sidebar> {
                 _NavItem(
                   section: DefensysAdminSection.repositoryAudit,
                   activeSection: widget.activeSection,
-                  icon: Icons.camera_alt_rounded,
+                  icon: Icons.folder_rounded,
                   label: l10n.navRepositoryAudit,
                   onTap: widget.onNavigate,
                 ),

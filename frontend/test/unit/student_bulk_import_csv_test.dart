@@ -23,7 +23,7 @@ void main() {
                   line.contains('@ustp.edu.ph'),
             )
             .length,
-        4,
+        12,
         reason: year,
       );
     }

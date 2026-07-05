@@ -24,7 +24,7 @@ from curriculum_analytics.services import (
 )
 from defense.scheduler.models import DefenseSchedule
 from defense.stages.models import DefenseStage
-from repository.vault.services import restricted_vault_entries_count, visible_vault_entries_count
+from repository.archive.services import restricted_archive_entries_count, visible_archive_entries_count
 from grading.grades.models import TeamGrade
 from grading.grades.services import default_weights, weights_for_schedule
 from grading.grades.peer_eval import peer_criteria_payload, peer_submissions_for_evaluator
@@ -34,7 +34,7 @@ from repository.audit.services import (
     repository_pending_count,
 )
 from grading.rubrics.models import Rubric
-from user_management.models import PitInstructorAssignment
+from user_management.models import SectionInstructorAssignment
 from user_management.academic_records.models import StudentAcademicRecord
 from user_management.academic_records.rollover import next_academic_step
 from user_management.academic_records.serializers import StudentAcademicRecordSerializer
@@ -103,7 +103,7 @@ def _user_payload(user, active_semester=None):
 
 
 def _faculty_roles(user):
-    is_pit_instructor = PitInstructorAssignment.objects.filter(
+    is_pit_instructor = SectionInstructorAssignment.objects.filter(
         faculty=user,
         is_active=True,
     ).exists()
@@ -127,8 +127,8 @@ def _active_role_labels(user):
         if user.pit_lead_year:
             label = f'{label}: {user.pit_lead_year}'
         labels.append(label)
-    if PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
-        labels.append('PIT Instructor')
+    if SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists():
+        labels.append('Section Instructor')
     if user.is_adviser:
         labels.append('Project Adviser')
     if user.is_documenter:
@@ -611,8 +611,8 @@ class AdminDashboardView(APIView):
         published_grade_count = TeamGrade.objects.filter(status=TeamGrade.STATUS_PUBLISHED).count()
         pending_grade_count = TeamGrade.objects.exclude(status=TeamGrade.STATUS_PUBLISHED).count()
         submitted_deliverable_count = DeliverableSubmission.objects.count()
-        vault_file_count = visible_vault_entries_count()
-        restricted_vault_file_count = restricted_vault_entries_count()
+        archive_file_count = visible_archive_entries_count()
+        restricted_archive_file_count = restricted_archive_entries_count()
         repository_file_count = repository_entries_count()
         pending_repository_file_count = repository_pending_count()
         approved_repository_file_count = repository_approved_count()
@@ -638,8 +638,8 @@ class AdminDashboardView(APIView):
                 'published_grades': published_grade_count,
                 'pending_grades': pending_grade_count,
                 'submitted_deliverables': submitted_deliverable_count,
-                'vault_files': vault_file_count,
-                'restricted_vault_files': restricted_vault_file_count,
+                'archive_files': archive_file_count,
+                'restricted_archive_files': restricted_archive_file_count,
                 'repository_files': repository_file_count,
                 'pending_repository_files': pending_repository_file_count,
                 'approved_repository_files': approved_repository_file_count,
@@ -780,10 +780,10 @@ class FacultyDashboardView(APIView):
             'leader',
             'adviser',
         ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
-        is_pit_instructor = PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+        is_pit_instructor = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
         if is_pit_instructor:
             from student_teams.team_levels import normalize_year_level
-            assignments = PitInstructorAssignment.objects.filter(faculty=user, is_active=True)
+            assignments = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
             q = Q()
             for assign in assignments:
                 norm_year = normalize_year_level(assign.year_level)
@@ -791,7 +791,7 @@ class FacultyDashboardView(APIView):
                     semester=assign.semester,
                     section=assign.section,
                     level__icontains=norm_year
-                ) & Q(level__icontains='PIT')
+                )
             pit_teams = StudentTeam.objects.filter(q).select_related(
                 'semester',
                 'semester__school_year',

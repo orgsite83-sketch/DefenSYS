@@ -13,7 +13,7 @@ from academic_period_management.models import SchoolYear, Semester
 from defense.scheduler.models import DefenseSchedule
 from grading.grades.models import TeamGrade
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 from student_teams.models import StudentTeam, TeamMembership
 
 
@@ -70,7 +70,7 @@ class Command(BaseCommand):
                 f'deliverables={DeliverableSubmission.objects.filter(team=team).count()}, '
                 f'schedules={DefenseSchedule.objects.filter(team=team).count()}, '
                 f'grades={TeamGrade.objects.filter(team=team).count()}, '
-                f'vault={VaultEntry.objects.filter(team=team).count()}'
+                f'archive={ArchiveEntry.objects.filter(team=team).count()}'
             )
         for user in probe_users:
             self.stdout.write(f'  User: {user.username} (id={user.id})')
@@ -84,7 +84,7 @@ class Command(BaseCommand):
                 TeamGrade.objects.filter(team=team).delete()
                 DeliverableSubmission.objects.filter(team=team).delete()
                 DefenseSchedule.objects.filter(team=team).delete()
-                VaultEntry.objects.filter(team=team).delete()
+                ArchiveEntry.objects.filter(team=team).delete()
                 team.delete()
 
             if school_year:

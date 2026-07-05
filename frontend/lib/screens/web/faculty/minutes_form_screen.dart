@@ -6,6 +6,7 @@ import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../utils/pdf_viewer.dart';
 import 'e_signature_upload_dialog.dart';
+import '../../../widgets/feedback_toast.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 class MinutesFormScreen extends ConsumerStatefulWidget {
@@ -87,12 +88,11 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         _isSavingDraft = false;
       });
       if (!silent) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(ok ? 'Draft comments saved successfully.' : 'Failed to save draft.'),
-            backgroundColor: ok ? Colors.green : Colors.red,
-          ),
-        );
+        if (ok) {
+          showSuccessToast(context, 'Draft comments saved successfully.');
+        } else {
+          showErrorToast(context, 'Failed to save draft.');
+        }
       }
     }
   }
@@ -133,12 +133,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         _isSubmitting = false;
       });
       if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Minutes submitted and signed successfully.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        showSuccessToast(context, 'Minutes submitted and signed successfully.');
         _fetchDetail();
       } else {
         final error = ref.read(documenterProvider).error ?? 'Submission failed';
@@ -171,12 +166,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         _isSubmitting = false;
       });
       if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signed as Project Adviser successfully.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        showSuccessToast(context, 'Signed as Project Adviser successfully.');
         _fetchDetail();
       }
     }
@@ -194,12 +184,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
         _isSubmitting = false;
       });
       if (ok) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Signed as Chairman successfully. PDF generated.'),
-            backgroundColor: Colors.green,
-          ),
-        );
+        showSuccessToast(context, 'Signed as Chairman successfully. PDF generated.');
         _fetchDetail();
       }
     }
@@ -218,9 +203,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
       );
     } else {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to load PDF.')),
-        );
+        showErrorToast(context, 'Failed to load PDF.');
       }
     }
   }

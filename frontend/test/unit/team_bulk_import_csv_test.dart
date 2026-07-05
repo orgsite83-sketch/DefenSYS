@@ -130,14 +130,16 @@ Team Cap,Title,3rd Year,101,101,
   });
 
   group('sampleTeamCsvForYear', () {
-    test('each year level has one team with four members', () {
+    test('each year level has three teams with four members', () {
       for (final year in teamSampleYearLevels) {
         final result = parseTeamBulkCsv(sampleTeamCsvForYear(
           year,
           isCapstoneAdmin: true,
         ));
-        expect(result.rows, hasLength(1), reason: year);
-        expect(result.rows.first['member_ids'], hasLength(4));
+        expect(result.rows, hasLength(3), reason: year);
+        for (final row in result.rows) {
+          expect(row['member_ids'], hasLength(4));
+        }
       }
     });
 

@@ -291,6 +291,7 @@ class RubricDetailView(APIView):
         })
 
     def delete(self, request, rubric_id):
+        from django.db.models import ProtectedError
         rubric = self.get_object(request, rubric_id)
         old_values = {
             'name': rubric.name,
@@ -299,7 +300,13 @@ class RubricDetailView(APIView):
             'semester': rubric.semester.display_name,
         }
         rubric_pk = rubric.pk
-        rubric.delete()
+        try:
+            rubric.delete()
+        except ProtectedError:
+            return Response(
+                {'error': 'This rubric is in use by defense stages or scheduled events and cannot be deleted.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
         from authentication_access_control.audit import log_high_impact_action
         from authentication_access_control.models import SystemAuditLog

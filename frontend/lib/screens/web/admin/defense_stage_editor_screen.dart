@@ -385,7 +385,7 @@ class _DefenseStageEditorScreenState
                         TextField(
                           controller: _order,
                           keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Display order'),
+                          decoration: const InputDecoration(labelText: 'Stage order'),
                         ),
                         const SizedBox(height: 12),
                         TextField(

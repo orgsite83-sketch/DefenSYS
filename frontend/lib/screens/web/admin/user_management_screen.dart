@@ -44,7 +44,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     '1st Year',
     '2nd Year',
     '3rd Year',
-    '4th Year',
   ];
 
   static String? _normalizePitLeadYear(String? raw) {
@@ -115,14 +114,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     super.dispose();
   }
 
-  void _dismissNotice() {
-    _successNoticeTimer?.cancel();
-    ref.read(userManagementProvider.notifier).clearNotice();
-  }
 
-  void _dismissError() {
-    ref.read(userManagementProvider.notifier).clearError();
-  }
 
   void _scheduleSuccessNoticeAutoDismiss(String message) {
     _successNoticeTimer?.cancel();
@@ -379,19 +371,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
-  Widget? _errorNotice(String? error) {
-    if (error == null) {
-      return null;
-    }
-    return _notice(error, warning: true, onDismiss: _dismissError);
-  }
 
-  Widget? _successNotice(String? message) {
-    if (message == null) {
-      return null;
-    }
-    return _notice(message, onDismiss: _dismissNotice);
-  }
 
   void _ensurePageInRange(int userCount) {
     final pages = userCount == 0 ? 1 : (userCount / _rowsPerPage).ceil();
@@ -454,14 +434,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ),
           const SizedBox(height: 28),
           _summaryCards(state),
-          if (_errorNotice(state.error) != null) ...[
-            const SizedBox(height: 14),
-            _errorNotice(state.error)!,
-          ],
-          if (_successNotice(state.message) != null) ...[
-            const SizedBox(height: 14),
-            _successNotice(state.message)!,
-          ],
           if (_savedBulkDraft != null) ...[
             const SizedBox(height: 14),
             _draftResumeBanner(),
@@ -1358,14 +1330,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 onTap: state.isSaving ? null : _requestCloseBulkImport,
               ),
             ),
-            if (_errorNotice(state.error) != null) ...[
-              const SizedBox(height: 14),
-              _errorNotice(state.error)!,
-            ],
-            if (_successNotice(state.message) != null) ...[
-              const SizedBox(height: 14),
-              _successNotice(state.message)!,
-            ],
             const SizedBox(height: 28),
             _csvFormatCard(),
             const SizedBox(height: 20),
@@ -2791,49 +2755,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
-  Widget _notice(
-    String message, {
-    bool warning = false,
-    VoidCallback? onDismiss,
-  }) {
-    final color = warning ? DefensysUi.warningText : DefensysUi.successText;
-    final background = warning ? DefensysUi.warningBg : DefensysUi.successBg;
-    final border = warning
-        ? DefensysUi.warningBorder
-        : DefensysUi.successBorder;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(14, 8, 4, 8),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: border),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 3),
-              child: Text(
-                message,
-                style: TextStyle(color: color, fontWeight: FontWeight.w700),
-              ),
-            ),
-          ),
-          if (onDismiss != null)
-            IconButton(
-              onPressed: onDismiss,
-              tooltip: 'Dismiss',
-              icon: Icon(Icons.close_rounded, size: 18, color: color),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
-            ),
-        ],
-      ),
-    );
-  }
 
   List<Map<String, dynamic>> _pageUsers(List<Map<String, dynamic>> users) {
     final pages = users.isEmpty ? 1 : (users.length / _rowsPerPage).ceil();
@@ -3447,14 +3369,6 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   : () => _closeAccessControlPage(),
             ),
           ),
-          if (_errorNotice(state.error) != null) ...[
-            const SizedBox(height: 14),
-            _errorNotice(state.error)!,
-          ],
-          if (_successNotice(state.message) != null) ...[
-            const SizedBox(height: 14),
-            _successNotice(state.message)!,
-          ],
           const SizedBox(height: 22),
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,

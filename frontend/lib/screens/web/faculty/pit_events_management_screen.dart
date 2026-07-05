@@ -4,6 +4,7 @@ import '../../../services/defense_scheduler_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/feedback_toast.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
@@ -57,12 +58,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
     final success = await ref.read(defenseSchedulerProvider.notifier).deletePitEventConfig(configId);
     if (success && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Configuration deleted successfully.'),
-          backgroundColor: AppColors.success,
-        ),
-      );
+      showSuccessToast(context, 'Configuration deleted successfully.');
       _loadData();
     }
   }
@@ -179,20 +175,10 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
       defenseSchedulerProvider,
       (previous, next) {
         if (next.error != null && next.error != previous?.error) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.error!),
-              backgroundColor: AppColors.danger,
-            ),
-          );
+          showErrorToast(context, next.error!);
         }
         if (next.message != null && next.message != previous?.message) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(next.message!),
-              backgroundColor: AppColors.success,
-            ),
-          );
+          showSuccessToast(context, next.message!);
         }
       },
     );
@@ -753,21 +739,15 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     if (_panelRubricId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a Panel Rubric.'), backgroundColor: Colors.red),
-      );
+      showValidationToast(context, 'Please select a Panel Rubric.');
       return;
     }
     if (_peerRubricId == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select a Peer Rubric.'), backgroundColor: Colors.red),
-      );
+      showValidationToast(context, 'Please select a Peer Rubric.');
       return;
     }
     if (_panelWeight + _peerWeight != 100) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Weights must total exactly 100%.'), backgroundColor: Colors.red),
-      );
+      showValidationToast(context, 'Weights must total exactly 100%.');
       return;
     }
 

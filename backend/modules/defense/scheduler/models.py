@@ -288,11 +288,11 @@ class PitEventGradingConfig(models.Model):
     peer_weight = models.PositiveSmallIntegerField(default=20)
     is_officially_complete = models.BooleanField(default=False)
     peer_grading_enabled = models.BooleanField(default=False)
-    vault_file_template = models.CharField(
+    archive_file_template = models.CharField(
         max_length=255,
         blank=True,
         default='',
-        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {event}, {semester}',
+        help_text='Template for archive filename. Variables: {year}, {course}, {project}, {event}, {semester}',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -348,11 +348,11 @@ class PitEventGradingConfig(models.Model):
 
 class PitEventDeliverable(models.Model):
     TYPE_PRE = 'pre'
-    TYPE_VAULT = 'vault'
+    TYPE_POST = 'post'
 
     TYPE_CHOICES = (
         (TYPE_PRE, 'Pre-Defense'),
-        (TYPE_VAULT, 'Vault'),
+        (TYPE_POST, 'Post-Defense'),
     )
 
     pit_event_config = models.ForeignKey(
@@ -369,16 +369,16 @@ class PitEventDeliverable(models.Model):
     )
     required = models.BooleanField(default=True)
     display_order = models.PositiveSmallIntegerField(default=1)
-    vault_note = models.TextField(blank=True)
-    vault_file_template = models.CharField(
+    archive_note = models.TextField(blank=True)
+    archive_file_template = models.CharField(
         max_length=255,
         blank=True,
         default='',
-        help_text='Template for vault filename. Variables: {year}, {course}, {project}, {event}, {semester}',
+        help_text='Template for archive filename. Variables: {year}, {course}, {project}, {event}, {semester}',
     )
     is_restricted = models.BooleanField(
         default=False,
-        help_text='If checked, this post-defense deliverable will be hidden from the public Digital Vault.',
+        help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)

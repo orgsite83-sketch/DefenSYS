@@ -114,7 +114,7 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         await fetchAssignments();
-        state = state.copyWith(message: 'PIT Instructor assigned.');
+        state = state.copyWith(message: 'Instructor assigned.');
         return true;
       }
 
@@ -146,8 +146,8 @@ class PitInstructorNotifier extends Notifier<PitInstructorState> {
         await fetchAssignments();
         state = state.copyWith(
           message: isActive
-              ? 'PIT Instructor restored.'
-              : 'PIT Instructor deactivated.',
+              ? 'Instructor restored.'
+              : 'Instructor deactivated.',
         );
         return true;
       }

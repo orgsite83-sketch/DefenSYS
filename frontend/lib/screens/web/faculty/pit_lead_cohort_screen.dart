@@ -7,6 +7,7 @@ import '../../../services/pit_instructor_provider.dart';
 import '../../../services/pit_lead_cohort_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/csv_file_io.dart';
+import '../../../widgets/feedback_toast.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 enum _CohortViewMode { sections, students }
@@ -1042,12 +1043,9 @@ class _PitLeadCohortScreenState extends ConsumerState<PitLeadCohortScreen> {
           final targetLabel =
               target['display_name']?.toString() ?? 'the target term';
           if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(
-                content: Text(
-                  'Rollover complete. $created created, $skipped skipped for $targetLabel.',
-                ),
-              ),
+            showSuccessToast(
+              context,
+              'Rollover complete. $created created, $skipped skipped for $targetLabel.',
             );
           }
         },

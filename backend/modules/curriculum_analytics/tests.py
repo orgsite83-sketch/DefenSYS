@@ -3,7 +3,7 @@ from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 from student_teams.models import StudentTeam, TeamMembership
 from .services import UNCLASSIFIED_TECH_STACK, extract_tech, stack_color
 
@@ -64,7 +64,7 @@ class CurriculumAnalyticsApiTests(APITestCase):
             stage_label='Final Defense',
             deliverable_id='D17',
             label='D17 - 7-Page Executive Journal',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_CloudSync_Executive_Journal.pdf',
             uploaded_by=self.faculty,
@@ -74,16 +74,16 @@ class CurriculumAnalyticsApiTests(APITestCase):
             stage_label='Concept Proposal',
             deliverable_id='D4.1',
             label='D4.1 - Approved Concept Paper',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_MobileAid_Flutter_Attendance.pdf',
             uploaded_by=self.faculty,
         )
-        VaultEntry.objects.create(
+        ArchiveEntry.objects.create(
             file_name='3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf',
             team_name='Team VaultSync',
             academic_year='2026-2027',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.faculty,
         )
 

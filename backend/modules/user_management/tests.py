@@ -8,7 +8,7 @@ from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
 from user_management.academic_records.models import StudentAcademicRecord
 from student_teams.models import StudentTeam, TeamAdviserAssignment
-from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
+from .models import FacultyRoleAssignment, GuestPanelistCode, SectionInstructorAssignment
 
 
 User = get_user_model()
@@ -135,7 +135,7 @@ class UserManagementApiTests(APITestCase):
             {
                 'is_panelist': True,
                 'is_pit_lead': True,
-                'pit_lead_year': '4th Year',
+                'pit_lead_year': '3rd Year',
                 'is_documenter': True,
             },
             format='json',
@@ -145,7 +145,7 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertTrue(faculty.is_panelist)
         self.assertTrue(faculty.is_pit_lead)
-        self.assertEqual(faculty.pit_lead_year, '4th Year')
+        self.assertEqual(faculty.pit_lead_year, '3rd Year')
         self.assertTrue(response.data['user']['facultyRoles']['documenter'])
 
     def test_save_backfills_role_history_when_flag_already_on(self):
@@ -567,7 +567,7 @@ class UserManagementApiTests(APITestCase):
             ).count(),
             2,
         )
-        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        assignment = SectionInstructorAssignment.objects.get(faculty=instructor)
         self.assertEqual(assignment.semester, semester)
         self.assertEqual(assignment.year_level, StudentAcademicRecord.FIRST_YEAR)
         self.assertEqual(assignment.section, 'BSIT-1A')
@@ -680,7 +680,7 @@ class UserManagementApiTests(APITestCase):
 
         self.assertEqual(allowed.status_code, 201)
         self.assertEqual(allowed.data['created_count'], 1)
-        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        assignment = SectionInstructorAssignment.objects.get(faculty=instructor)
         self.assertEqual(assignment.semester, semester)
         self.assertEqual(assignment.year_level, StudentAcademicRecord.THIRD_YEAR)
         self.assertEqual(assignment.section, 'BSIT-3A')
@@ -754,7 +754,7 @@ class UserManagementApiTests(APITestCase):
         )
 
         self.assertEqual(response.status_code, 201)
-        assignment = PitInstructorAssignment.objects.get(faculty=instructor)
+        assignment = SectionInstructorAssignment.objects.get(faculty=instructor)
         self.assertEqual(assignment.semester, semester)
         self.assertEqual(assignment.year_level, StudentAcademicRecord.THIRD_YEAR)
         self.assertEqual(assignment.section, 'BSIT 3A')

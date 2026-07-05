@@ -12,7 +12,7 @@ from user_management.academic_records.models import StudentAcademicRecord
 from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 from defense.stages.models import DefenseStage
 from repository.deliverables.models import DeliverableSubmission
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 from authentication_access_control.models import SystemAuditLog
 from authentication_access_control.audit import audit_scope_metadata
 
@@ -192,7 +192,7 @@ def log_historical_action(
 
 
 class Command(BaseCommand):
-    help = 'Populates the database with consecutive academic progression of 4 students, PIT Vault entries, and Capstone deliverables'
+    help = 'Populates the database with consecutive academic progression of 4 students, PIT Archive entries, and Capstone deliverables'
 
     @transaction.atomic
     def handle(self, *args, **options):
@@ -348,7 +348,7 @@ class Command(BaseCommand):
             "DataQuest PIT", "Team Apex Capstone"
         ]).delete()
         StudentAcademicRecord.objects.filter(student__in=students).delete()
-        VaultEntry.objects.filter(team_name__in=[
+        ArchiveEntry.objects.filter(team_name__in=[
             "ByteSized PIT 1", "ByteSized PIT 2",
             "LogicCraft PIT 1", "LogicCraft PIT 2",
             "DataQuest PIT"
@@ -393,7 +393,7 @@ class Command(BaseCommand):
             )
 
         # 5. Populate Chronological PIT Teams & Vault Entries (ML Classified)
-        self.stdout.write("Creating historical PIT teams and Vault archives...")
+        self.stdout.write("Creating historical PIT teams and Archive archives...")
         
         def log_team_milestone(team, leader_user):
             log_historical_action(
@@ -440,9 +440,9 @@ class Command(BaseCommand):
             log_team_milestone(team_obj, leader_user)
 
         # Helper to seed a PIT vault entry programmatically (triggers ML text extraction & classification on save)
-        def seed_pit_vault_entry(team, academic_year, semester_label, file_name, file_obj, course_code):
-            entry = VaultEntry.objects.create(
-                entry_type=VaultEntry.TYPE_PIT,
+        def seed_pit_archive_entry(team, academic_year, semester_label, file_name, file_obj, course_code):
+            entry = ArchiveEntry.objects.create(
+                entry_type=ArchiveEntry.TYPE_PIT,
                 file_name=file_name,
                 academic_year=academic_year,
                 team=team,
@@ -451,7 +451,7 @@ class Command(BaseCommand):
                 course_code=course_code,
                 semester_label=semester_label,
                 stage_label=course_code,
-                status=VaultEntry.STATUS_APPROVED,
+                status=ArchiveEntry.STATUS_APPROVED,
                 uploaded_by=pit_lead,
                 uploaded_by_name=f"{pit_lead.first_name} {pit_lead.last_name}",
                 metadata={
@@ -468,8 +468,8 @@ class Command(BaseCommand):
             log_historical_action(
                 semester=team.semester,
                 category=SystemAuditLog.CATEGORY_REPOSITORY,
-                action="repository.vault_upload",
-                target_type="VaultEntry",
+                action="repository.archive_upload",
+                target_type="ArchiveEntry",
                 target_id=entry.pk,
                 actor=pit_lead,
                 new_values={
@@ -501,7 +501,7 @@ class Command(BaseCommand):
             ["variables", "loops", "logic", "flowcharts"],
             tech_focus="prog"
         )
-        seed_pit_vault_entry(t_pit1, "2023-2024", "1st Semester", "1stYear.PIT101.ByteSizedPIT1.1stSemester.pdf", pdf_pit1, "PIT101")
+        seed_pit_archive_entry(t_pit1, "2023-2024", "1st Semester", "1stYear.PIT101.ByteSizedPIT1.1stSemester.pdf", pdf_pit1, "PIT101")
 
         # Year 1 Sem 2: 1st Year PIT 2
         t_pit2 = StudentTeam.objects.create(
@@ -521,7 +521,7 @@ class Command(BaseCommand):
             ["python", "command line", "scripts"],
             tech_focus="desktop"
         )
-        seed_pit_vault_entry(t_pit2, "2023-2024", "2nd Semester", "1stYear.PIT102.ByteSizedPIT2.2ndSemester.pdf", pdf_pit2, "PIT102")
+        seed_pit_archive_entry(t_pit2, "2023-2024", "2nd Semester", "1stYear.PIT102.ByteSizedPIT2.2ndSemester.pdf", pdf_pit2, "PIT102")
 
         # Year 2 Sem 1: 2nd Year PIT 1
         t_pit3 = StudentTeam.objects.create(
@@ -541,7 +541,7 @@ class Command(BaseCommand):
             ["GUI", "sqlite", "local database", "widgets"],
             tech_focus="desktop"
         )
-        seed_pit_vault_entry(t_pit3, "2024-2025", "1st Semester", "2ndYear.PIT201.LogicCraftPIT1.1stSemester.pdf", pdf_pit3, "PIT201")
+        seed_pit_archive_entry(t_pit3, "2024-2025", "1st Semester", "2ndYear.PIT201.LogicCraftPIT1.1stSemester.pdf", pdf_pit3, "PIT201")
 
         # Year 2 Sem 2: 2nd Year PIT 2
         t_pit4 = StudentTeam.objects.create(
@@ -561,7 +561,7 @@ class Command(BaseCommand):
             ["tcp ip", "sockets", "networking"],
             tech_focus="network"
         )
-        seed_pit_vault_entry(t_pit4, "2024-2025", "2nd Semester", "2ndYear.PIT202.LogicCraftPIT2.2ndSemester.pdf", pdf_pit4, "PIT202")
+        seed_pit_archive_entry(t_pit4, "2024-2025", "2nd Semester", "2ndYear.PIT202.LogicCraftPIT2.2ndSemester.pdf", pdf_pit4, "PIT202")
 
         # Year 3 Sem 1: 3rd Year PIT
         t_pit5 = StudentTeam.objects.create(
@@ -581,7 +581,7 @@ class Command(BaseCommand):
             ["web framework", "dashboard", "react", "django", "html", "css"],
             tech_focus="web"
         )
-        seed_pit_vault_entry(t_pit5, "2025-2026", "1st Semester", "3rdYear.PIT301.DataQuestPIT.1stSemester.pdf", pdf_pit5, "PIT301")
+        seed_pit_archive_entry(t_pit5, "2025-2026", "1st Semester", "3rdYear.PIT301.DataQuestPIT.1stSemester.pdf", pdf_pit5, "PIT301")
 
 
         # 6. Populate Capstone Timeline (Capstone 1 -> Capstone 2 Continuation)
@@ -799,4 +799,4 @@ class Command(BaseCommand):
             reason=f"Upload capstone deliverable: {od_sub.file_name}"
         )
 
-        self.stdout.write(self.style.SUCCESS("Success! Populated database with full 7-semester student progression, PIT Vault entries, and Capstone deliverables."))
+        self.stdout.write(self.style.SUCCESS("Success! Populated database with full 7-semester student progression, PIT Archive entries, and Capstone deliverables."))

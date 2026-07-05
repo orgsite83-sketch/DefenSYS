@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import '../widgets/feedback_toast.dart';
 
 import '../screens/web/admin/defense_stage_editor_screen.dart';
 import '../screens/web/admin/grade_center_event_teams_screen.dart';
@@ -204,10 +205,52 @@ class AdminRubricEditorRoute extends ConsumerWidget {
         }
       }
     }
+
+    final rubricId = rubric != null ? int.tryParse(rubric['id']?.toString() ?? '') : null;
+
+    Future<void> handleDelete() async {
+      if (rubricId == null) return;
+      final rubricName = rubric?['name']?.toString() ?? 'rubric';
+
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Delete Rubric'),
+          content: Text('Delete $rubricName? This removes its criteria too.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFEF4444)),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: const Text('Delete'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true) {
+        return;
+      }
+
+      final success = await ref.read(rubricEngineProvider.notifier).deleteRubric(rubricId);
+      if (!context.mounted) return;
+      if (success) {
+        showSuccessToast(context, 'Rubric deleted.');
+        context.pop();
+      } else {
+        final error = ref.read(rubricEngineProvider).error ?? 'Could not delete rubric.';
+        showErrorToast(context, error);
+      }
+    }
+
     return RubricFullPageEditor(
       rubric: rubric,
       readOnly: rubric?['status']?.toString() == 'published',
       onBack: () => context.pop(),
+      onDelete: rubricId != null ? handleDelete : null,
     );
   }
 }

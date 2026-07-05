@@ -5,11 +5,11 @@ from django.db import models
 
 class DeliverableSubmission(models.Model):
     TYPE_PRE = 'pre'
-    TYPE_VAULT = 'vault'
+    TYPE_POST = 'post'
 
     TYPE_CHOICES = (
         (TYPE_PRE, 'Pre-Defense'),
-        (TYPE_VAULT, 'Vault'),
+        (TYPE_POST, 'Post-Defense'),
     )
 
     STATUS_PENDING = 'pending'

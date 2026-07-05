@@ -6,12 +6,12 @@ import '../config/api_config.dart';
 import 'authenticated_client.dart';
 import 'session_expired.dart';
 
-final digitalVaultProvider =
-    NotifierProvider<DigitalVaultNotifier, DigitalVaultState>(
-      DigitalVaultNotifier.new,
+final repositoryProvider =
+    NotifierProvider<RepositoryNotifier, RepositoryState>(
+      RepositoryNotifier.new,
     );
 
-class DigitalVaultState {
+class RepositoryState {
   final bool isLoading;
   final List<Map<String, dynamic>> entries;
   final Map<String, dynamic> counts;
@@ -23,7 +23,7 @@ class DigitalVaultState {
   final String academicYear;
   final String? error;
 
-  const DigitalVaultState({
+  const RepositoryState({
     this.isLoading = false,
     this.entries = const [],
     this.counts = const {},
@@ -36,7 +36,7 @@ class DigitalVaultState {
     this.error,
   });
 
-  DigitalVaultState copyWith({
+  RepositoryState copyWith({
     bool? isLoading,
     List<Map<String, dynamic>>? entries,
     Map<String, dynamic>? counts,
@@ -49,7 +49,7 @@ class DigitalVaultState {
     String? error,
     bool clearError = false,
   }) {
-    return DigitalVaultState(
+    return RepositoryState(
       isLoading: isLoading ?? this.isLoading,
       entries: entries ?? this.entries,
       counts: counts ?? this.counts,
@@ -64,15 +64,15 @@ class DigitalVaultState {
   }
 }
 
-class DigitalVaultNotifier extends Notifier<DigitalVaultState> {
-    static String get baseUrl => ApiConfig.digitalVaultUrl;
+class RepositoryNotifier extends Notifier<RepositoryState> {
+  static String get baseUrl => ApiConfig.repositoryUrl;
 
   @override
-  DigitalVaultState build() {
-    return const DigitalVaultState();
+  RepositoryState build() {
+    return const RepositoryState();
   }
 
-  /// Mobile student Repository tab: vault archives plus team document uploads.
+  /// Mobile student Repository tab: project archives plus team document uploads.
   Future<void> fetchForStudent({String? search}) {
     return fetchEntries(search: search, includeTeamDocuments: true);
   }

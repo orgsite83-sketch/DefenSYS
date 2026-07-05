@@ -317,7 +317,7 @@ abstract class AppLocalizations {
   /// No description provided for @navRepositoryAudit.
   ///
   /// In en, this message translates to:
-  /// **'Repository Vault'**
+  /// **'Project Archive'**
   String get navRepositoryAudit;
 
   /// No description provided for @navCurriculumAnalytics.
@@ -356,11 +356,11 @@ abstract class AppLocalizations {
   /// **'Team'**
   String get navTeam;
 
-  /// No description provided for @navDigitalVault.
+  /// No description provided for @navRepository.
   ///
   /// In en, this message translates to:
-  /// **'Digital Vault'**
-  String get navDigitalVault;
+  /// **'Repository'**
+  String get navRepository;
 
   /// No description provided for @navWeeklyReport.
   ///
@@ -440,17 +440,17 @@ abstract class AppLocalizations {
   /// **'Clear search'**
   String get clearSearchTooltip;
 
-  /// No description provided for @digitalVaultTitle.
+  /// No description provided for @repositoryTitle.
   ///
   /// In en, this message translates to:
-  /// **'Digital Vault'**
-  String get digitalVaultTitle;
+  /// **'Repository'**
+  String get repositoryTitle;
 
-  /// No description provided for @failedToLoadVault.
+  /// No description provided for @failedToLoadRepository.
   ///
   /// In en, this message translates to:
-  /// **'Failed to load vault'**
-  String get failedToLoadVault;
+  /// **'Failed to load repository'**
+  String get failedToLoadRepository;
 
   /// No description provided for @leaveBulkImportTitle.
   ///

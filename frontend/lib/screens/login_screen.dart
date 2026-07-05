@@ -762,275 +762,393 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildMobileLayout(AuthState authState) {
     return Scaffold(
-      backgroundColor: AppColors.maroon,
-      body: SafeArea(
-        child: MediaQuery.withClampedTextScaling(
-          maxScaleFactor: 1.3,
-          child: SingleChildScrollView(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 48, 24, 32),
-                  child: Column(
-                    children: [
-                      _sealLogo(),
-                      const SizedBox(height: 16),
-                      const Text(
-                        'DefenSYS',
-                        style: TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 1.5,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Capstone & PIT Management',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.white.withValues(alpha: 0.7),
-                          letterSpacing: 0.3,
-                        ),
-                      ),
+      backgroundColor: Colors.white, // Pure white background to match bottom card and avoid color bleed
+      body: MediaQuery.withClampedTextScaling(
+        maxScaleFactor: 1.3,
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Top header with maroon-to-burgundy gradient
+              Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      Color(0xFF1E0302), // Deep near-black burgundy
+                      DefensysTokens.maroon,     // Corporate maroon
                     ],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                   ),
                 ),
-                Container(
+                child: SafeArea(
+                  bottom: false,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 36, 24, 40),
+                    child: Column(
+                      children: [
+                        _sealLogo(size: 80), // Slightly larger logo for premium presence
+                        const SizedBox(height: 16),
+                        const Text(
+                          'DefenSYS',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 28,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 1.2,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        // Glassmorphic tagline badge
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: Colors.white.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(30), // Pill shape matching mockup
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.25),
+                              width: 1.2,
+                            ),
+                          ),
+                          child: const Text(
+                            'Capstone & PIT Management',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                              color: Color(0xFFFDE68A), // Warm light gold
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              // Main white card area (wrapped in a maroon container to provide background for curved top corners)
+              Container(
+                color: DefensysTokens.maroon, // Matches bottom of header gradient
+                child: Container(
                   decoration: const BoxDecoration(
-                    color: AppColors.background,
+                    color: Colors.white,
                     borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(28),
+                      top: Radius.circular(32), // Curved top corners matching mockup
                     ),
                   ),
                   padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Welcome back',
-                        style: TextStyle(
-                          fontSize: 22,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
+                  children: [
+                    const Text(
+                      'Welcome back',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 24,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textDark,
+                        letterSpacing: -0.5,
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        context.l10n.loginSignIn,
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
-                        ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      context.l10n.loginSignIn,
+                      style: const TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 14,
+                        color: DefensysTokens.textSecondary,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 28),
-                      if (_buildSessionBanner() != null) _buildSessionBanner()!,
-                      Form(
-                        key: _formKey,
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            TextFormField(
-                              controller: _emailCtrl,
-                              keyboardType: TextInputType.text,
-                              decoration: InputDecoration(
-                                labelText: context.l10n.loginStudentIdLabel,
-                                prefixIcon: const Icon(
-                                  Icons.badge_outlined,
-                                  size: 20,
-                                ),
-                              ),
-                              validator: (v) => v == null || v.trim().isEmpty
-                                  ? context.l10n.loginRequiredField
-                                  : null,
+                    ),
+                    const SizedBox(height: 28),
+                    if (_buildSessionBanner() != null) _buildSessionBanner()!,
+                    Form(
+                      key: _formKey,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          TextFormField(
+                            controller: _emailCtrl,
+                            keyboardType: TextInputType.text,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 15,
+                              color: DefensysTokens.textDark,
                             ),
-                            const SizedBox(height: 14),
-                            TextFormField(
-                              controller: _passCtrl,
-                              obscureText: _obscure,
-                              decoration: InputDecoration(
-                                labelText: context.l10n.loginPasswordLabel,
-                                prefixIcon: const Icon(
-                                  Icons.lock_outline,
-                                  size: 20,
-                                ),
-                                suffixIcon: IconButton(
-                                  tooltip: _obscure
-                                      ? 'Show password'
-                                      : 'Hide password',
-                                  icon: Icon(
-                                    _obscure
-                                        ? Icons.visibility_off_outlined
-                                        : Icons.visibility_outlined,
-                                    size: 20,
-                                  ),
-                                  onPressed: () =>
-                                      setState(() => _obscure = !_obscure),
-                                ),
-                              ),
-                              validator: (v) => v == null || v.trim().isEmpty
-                                  ? 'Enter your password'
-                                  : null,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: () {},
-                          child: const Text(
-                            'Forgot password?',
-                            style: TextStyle(
-                              color: AppColors.maroon,
-                              fontSize: 13,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: authState.isLoading ? null : _login,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.maroon,
-                            padding: const EdgeInsets.symmetric(vertical: 16),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            elevation: 0,
-                          ),
-                          child: authState.isLoading
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(
-                                    color: Colors.white,
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : const Text(
-                                  'Sign In',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w700,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (!kIsWeb)
-                        SizedBox(
-                          width: double.infinity,
-                          child: OutlinedButton.icon(
-                            onPressed: _showGuestDialog,
-                            icon: const Icon(Icons.vpn_key_rounded, size: 18),
-                            label: const Text(
-                              'Guest Panelist Access',
-                              style: TextStyle(
+                            decoration: InputDecoration(
+                              labelText: context.l10n.loginStudentIdLabel,
+                              labelStyle: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.grey[500],
                                 fontSize: 14,
+                              ),
+                              floatingLabelStyle: const TextStyle(
+                                fontFamily: 'Poppins',
+                                color: DefensysTokens.maroon,
                                 fontWeight: FontWeight.w600,
                               ),
-                            ),
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: const Color(0xFF92400E),
-                              side: const BorderSide(
-                                color: Color(0xFFFDE68A),
-                                width: 1.5,
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC), // Ultra-clean light slate fill
+                              prefixIcon: const Icon(
+                                Icons.badge_outlined,
+                                color: Color(0xFF64748B),
+                                size: 20,
                               ),
-                              backgroundColor: const Color(0xFFFFFBEB),
-                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2.0),
+                              ),
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 2.0),
+                              ),
                             ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? context.l10n.loginRequiredField
+                                : null,
                           ),
-                        ),
-                      const SizedBox(height: 24),
-                      Center(
-                        child: Text(
-                          'Department of Information Technology',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondary.withValues(
-                              alpha: 0.7,
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _passCtrl,
+                            obscureText: _obscure,
+                            style: const TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 15,
+                              color: DefensysTokens.textDark,
                             ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const AboutScreen(),
+                            decoration: InputDecoration(
+                              labelText: context.l10n.loginPasswordLabel,
+                              labelStyle: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Colors.grey[500],
+                                fontSize: 14,
+                              ),
+                              floatingLabelStyle: const TextStyle(
+                                fontFamily: 'Poppins',
+                                color: DefensysTokens.maroon,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              filled: true,
+                              fillColor: const Color(0xFFF8FAFC), // Ultra-clean light slate fill
+                              prefixIcon: const Icon(
+                                Icons.lock_outline,
+                                color: Color(0xFF64748B),
+                                size: 20,
+                              ),
+                              suffixIcon: IconButton(
+                                tooltip: _obscure ? 'Show password' : 'Hide password',
+                                icon: Icon(
+                                  _obscure
+                                      ? Icons.visibility_off_outlined
+                                      : Icons.visibility_outlined,
+                                  color: const Color(0xFF64748B),
+                                  size: 20,
+                                ),
+                                onPressed: () => setState(() => _obscure = !_obscure),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                              enabledBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
+                              ),
+                              focusedBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2.0),
+                              ),
+                              errorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                              ),
+                              focusedErrorBorder: OutlineInputBorder(
+                                borderRadius: BorderRadius.circular(16),
+                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 2.0),
                               ),
                             ),
-                            child: const Text(
-                              'About Us',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.maroon,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '|',
-                            style: TextStyle(
-                              color: AppColors.textSecondary.withValues(
-                                alpha: 0.5,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const PrivacyScreen(),
-                              ),
-                            ),
-                            child: const Text(
-                              'Privacy Policy',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.maroon,
-                              ),
-                            ),
-                          ),
-                          Text(
-                            '|',
-                            style: TextStyle(
-                              color: AppColors.textSecondary.withValues(
-                                alpha: 0.5,
-                              ),
-                            ),
-                          ),
-                          TextButton(
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const TermsScreen(),
-                              ),
-                            ),
-                            child: const Text(
-                              'Terms',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: AppColors.maroon,
-                              ),
-                            ),
+                            validator: (v) => v == null || v.trim().isEmpty
+                                ? 'Enter your password'
+                                : null,
                           ),
                         ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: () {},
+                        style: TextButton.styleFrom(
+                          foregroundColor: DefensysTokens.maroon,
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                    // Primary Sign In Button (Solid background to eliminate emulator banding)
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: authState.isLoading ? null : _login,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroon,
+                          foregroundColor: Colors.white,
+                          elevation: 2,
+                          shadowColor: DefensysTokens.maroon.withValues(alpha: 0.35),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                        ),
+                        child: authState.isLoading
+                            ? const SizedBox(
+                                width: 20,
+                                height: 20,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 2.5,
+                                ),
+                              )
+                            : const Text(
+                                'Sign In',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.5,
+                                ),
+                              ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    if (!kIsWeb)
+                      // Premium Restyled Guest Panelist Access Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 50,
+                        child: OutlinedButton.icon(
+                          onPressed: _showGuestDialog,
+                          icon: const Icon(Icons.vpn_key_rounded, size: 18),
+                          label: const Text(
+                            'Guest Panelist Access',
+                            style: TextStyle(
+                              fontFamily: 'Poppins',
+                              fontSize: 14,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: const Color(0xFFB45309), // Contrast darkGold
+                            side: const BorderSide(
+                              color: Color(0xFFFDE68A), // Warm gold border
+                              width: 1.5,
+                            ),
+                            backgroundColor: const Color(0xFFFFFBEB), // Warm cream background
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(height: 32),
+                    Center(
+                      child: Text(
+                        'Department of Information Technology',
+                        style: TextStyle(
+                          fontFamily: 'Poppins',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary.withValues(
+                            alpha: 0.6,
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    // Refined dot-separated footer links
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildFooterLink('About Us', () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const AboutScreen(),
+                          ),
+                        )),
+                        _buildFooterDivider(),
+                        _buildFooterLink('Privacy Policy', () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const PrivacyScreen(),
+                          ),
+                        )),
+                        _buildFooterDivider(),
+                        _buildFooterLink('Terms', () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const TermsScreen(),
+                          ),
+                        )),
+                      ],
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
+          ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooterLink(String label, VoidCallback onTap) {
+    return TextButton(
+      onPressed: onTap,
+      style: TextButton.styleFrom(
+        foregroundColor: DefensysTokens.maroon,
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        minimumSize: Size.zero,
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontFamily: 'Poppins',
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFooterDivider() {
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 4),
+      child: Text(
+        '•',
+        style: TextStyle(
+          color: Color(0xFFCBD5E1),
+          fontSize: 12,
         ),
       ),
     );
@@ -1112,11 +1230,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: Colors.white,
+          border: Border.all(
+            color: const Color(0xFFFDE68A).withValues(alpha: 0.5), // Softer delicate gold ring
+            width: 1.5,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.14),
+              color: Colors.black.withValues(alpha: 0.12),
               blurRadius: 12,
-              offset: const Offset(0, 5),
+              offset: const Offset(0, 4),
             ),
           ],
         ),
@@ -1134,11 +1256,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         color: Colors.white,
+        border: Border.all(
+          color: const Color(0xFFFDE68A).withValues(alpha: 0.5), // Softer delicate gold ring
+          width: 1.5,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.14),
+            color: Colors.black.withValues(alpha: 0.12),
             blurRadius: 12,
-            offset: const Offset(0, 5),
+            offset: const Offset(0, 4),
           ),
         ],
       ),

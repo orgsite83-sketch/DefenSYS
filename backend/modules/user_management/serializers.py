@@ -2,7 +2,7 @@ from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
 from defense.scheduler.models import DefenseSchedule
-from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
+from .models import FacultyRoleAssignment, GuestPanelistCode, SectionInstructorAssignment
 from .role_assignments import (
     ROLE_LABELS,
     compute_display_role,
@@ -63,14 +63,14 @@ def user_display_name(user):
     return full_name or user.username
 
 
-class PitInstructorAssignmentSerializer(serializers.ModelSerializer):
+class SectionInstructorAssignmentSerializer(serializers.ModelSerializer):
     faculty_name = serializers.SerializerMethodField()
     faculty_username = serializers.CharField(source='faculty.username', read_only=True)
     assigned_by_name = serializers.SerializerMethodField()
     semester_label = serializers.CharField(source='semester.display_name', read_only=True)
 
     class Meta:
-        model = PitInstructorAssignment
+        model = SectionInstructorAssignment
         fields = [
             'id',
             'faculty',

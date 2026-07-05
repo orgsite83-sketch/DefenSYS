@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:toastification/toastification.dart';
 
 import '../theme/defensys_tokens.dart';
@@ -24,7 +25,8 @@ void _showFeedbackToast(
   String message, {
   required ToastificationType type,
   required Color primaryColor,
-  Duration duration = const Duration(seconds: 3),
+  String? descriptionText,
+  Duration? duration = const Duration(seconds: 3),
   FeedbackToastAction? action,
 }) {
   dismissFeedbackToasts();
@@ -35,21 +37,36 @@ void _showFeedbackToast(
     style: ToastificationStyle.flatColored,
     alignment: Alignment.topRight,
     title: Text(message),
-    description: action == null
-        ? null
-        : Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton(
-              onPressed: action.onPressed,
-              style: TextButton.styleFrom(
-                foregroundColor: action.textColor ?? primaryColor,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
-              child: Text(action.label),
-            ),
-          ),
+    description: descriptionText != null || action != null
+        ? Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (descriptionText != null)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 6.0),
+                  child: Text(
+                    descriptionText,
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                ),
+              if (action != null)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton(
+                    onPressed: action.onPressed,
+                    style: TextButton.styleFrom(
+                      foregroundColor: action.textColor ?? primaryColor,
+                      padding: EdgeInsets.zero,
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(action.label),
+                  ),
+                ),
+            ],
+          )
+        : null,
     primaryColor: primaryColor,
     autoCloseDuration: duration,
   );
@@ -73,23 +90,52 @@ void showSuccessToast(
 }
 
 /// Network/server failure or unexpected errors.
-void showErrorToast(BuildContext context, String message) {
+/// Shows a title and description with an automatic copy button for long messages.
+/// Short messages auto-close in 8 seconds; long messages persist until dismissed.
+void showErrorToast(
+  BuildContext context,
+  String message, {
+  Duration? duration,
+}) {
+  final isLong = message.contains('\n') || message.length > 80;
+  final titleText = isLong ? 'Operation Failed' : message;
+  final descText = isLong ? message : null;
+
+  // Stays on screen if long so the user can copy/read, or 8s if short.
+  final autoClose = duration ?? (isLong ? null : const Duration(seconds: 8));
+
   _showFeedbackToast(
     context,
-    message,
+    titleText,
     type: ToastificationType.error,
     primaryColor: DefensysTokens.danger,
-    duration: const Duration(seconds: 4),
+    descriptionText: descText,
+    duration: autoClose,
+    action: isLong
+        ? FeedbackToastAction(
+            label: 'Copy Error Details',
+            textColor: DefensysTokens.gold,
+            onPressed: () {
+              Clipboard.setData(ClipboardData(text: message));
+              showInfoToast(context, 'Error details copied to clipboard.', duration: const Duration(seconds: 2));
+            },
+          )
+        : null,
   );
 }
 
 /// Client-side validation before submit (missing fields, unrated criteria).
-void showValidationToast(BuildContext context, String message) {
+void showValidationToast(
+  BuildContext context,
+  String message, {
+  Duration duration = const Duration(seconds: 5),
+}) {
   _showFeedbackToast(
     context,
     message,
     type: ToastificationType.warning,
     primaryColor: DefensysTokens.warning,
+    duration: duration,
   );
 }
 

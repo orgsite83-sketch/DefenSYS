@@ -138,7 +138,7 @@ class ApiConfig {
   static String get rubricsUrl => '$baseUrl/grading/rubrics';
   static String get repositoryAuditUrl => '$baseUrl/repository/audit';
   static String get gradeCenterUrl => '$baseUrl/grading/grades';
-  static String get digitalVaultUrl => '$baseUrl/repository/vault';
+  static String get repositoryUrl => '$baseUrl/repository/archive';
   static String get defenseStagesUrl => '$baseUrl/defense/stages';
   static String get defenseSchedulesUrl => '$baseUrl/defense/schedules';
   static String get defenseBoardUrl => '$baseUrl/defense/board';

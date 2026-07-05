@@ -1,6 +1,6 @@
 import requests
 
-url = 'http://10.60.121.199:8000/api/repository/vault/'
+url = 'http://10.60.121.199:8000/api/repository/archive/'
 print(f'Testing URL: {url}')
 
 try:

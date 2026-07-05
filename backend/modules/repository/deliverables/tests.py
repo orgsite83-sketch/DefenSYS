@@ -50,7 +50,7 @@ def seed_stage_deliverables(stage, templates):
 
             display_order=order,
 
-            vault_note=item.get('vault_note', ''),
+            archive_note=item.get('archive_note', ''),
 
         )
 
@@ -563,7 +563,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
 
 
-    def test_vault_submission_is_locked_until_defense_done(self):
+    def test_archive_submission_is_locked_until_defense_done(self):
         locked = self.client.post(
 
             '/api/repository/deliverables/upload/',
@@ -614,12 +614,12 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
         self.assertEqual(unlocked.status_code, 200)
 
-        self.assertEqual(DeliverableSubmission.objects.filter(deliverable_type='vault').count(), 1)
+        self.assertEqual(DeliverableSubmission.objects.filter(deliverable_type='post').count(), 1)
 
 
 
 
-    def test_vault_required_progress_connected_to_defense_done(self):
+    def test_archive_required_progress_connected_to_defense_done(self):
 
         StageDeliverable.objects.update_or_create(
 
@@ -631,7 +631,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
                 'label': 'Approved Concept Paper',
 
-                'deliverable_type': 'vault',
+                'deliverable_type': 'post',
 
                 'required': True,
 
@@ -657,13 +657,13 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
         stage = stage_for_team(response.data, self.team.id)
 
-        self.assertFalse(stage['vault_unlocked'])
+        self.assertFalse(stage['archive_unlocked'])
 
-        self.assertEqual(stage['vault_required_total'], 1)
+        self.assertEqual(stage['archive_required_total'], 1)
 
-        self.assertEqual(stage['vault_required_uploaded'], 0)
+        self.assertEqual(stage['archive_required_uploaded'], 0)
 
-        self.assertFalse(stage['vault_complete'])
+        self.assertFalse(stage['archive_complete'])
 
 
 
@@ -711,11 +711,11 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
         stage = stage_for_team(response.data, self.team.id)
 
-        self.assertTrue(stage['vault_unlocked'])
+        self.assertTrue(stage['archive_unlocked'])
 
-        self.assertEqual(stage['vault_required_uploaded'], 1)
+        self.assertEqual(stage['archive_required_uploaded'], 1)
 
-        self.assertTrue(stage['vault_complete'])
+        self.assertTrue(stage['archive_complete'])
 
 
 
@@ -790,9 +790,9 @@ class CapstoneDeliverablesApiTests(APITestCase):
         progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
         self.assertEqual(progress.status, TeamStageProgress.STATUS_LOCKED)
 
-    def test_suggested_file_name_uses_vault_file_template(self):
+    def test_suggested_file_name_uses_archive_file_template(self):
         d = StageDeliverable.objects.get(defense_stage=self.stage, deliverable_id='D4.1')
-        d.vault_file_template = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}'
+        d.archive_file_template = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}'
         d.save()
 
         response = self.client.get('/api/repository/deliverables/', {'stage_label': 'Concept Proposal'})
@@ -817,7 +817,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
             '3rdYear.CAP301.CloudFileSync.ConceptProposal.D41ApprovedConceptPaper.2ndSemester.pdf'
         )
 
-    def test_vault_submission_enforces_naming_convention(self):
+    def test_archive_submission_enforces_naming_convention(self):
         DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_CAPSTONE,
             semester=self.semester,
@@ -999,13 +999,13 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertEqual(response.status_code, 403)
 
     def test_pit_instructor_scoping(self):
-        from user_management.models import PitInstructorAssignment
+        from user_management.models import SectionInstructorAssignment
         instructor = User.objects.create_user(
             username='instructor-1',
             password='pass12345',
             role='faculty',
         )
-        PitInstructorAssignment.objects.create(
+        SectionInstructorAssignment.objects.create(
             faculty=instructor,
             semester=self.semester,
             year_level='3rd Year',

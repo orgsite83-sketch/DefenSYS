@@ -5,13 +5,13 @@ from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage, StageDeliverable
 from repository.deliverables.models import DeliverableSubmission
 from student_teams.models import StudentTeam, TeamMembership
-from .models import VaultEntry
+from .models import ArchiveEntry
 
 
 User = get_user_model()
 
 
-class DigitalVaultApiTests(APITestCase):
+class ProjectArchiveApiTests(APITestCase):
     def setUp(self):
         self.admin = User.objects.create_user(
             username='admin-user',
@@ -48,14 +48,14 @@ class DigitalVaultApiTests(APITestCase):
             defense_stage=self.concept_stage,
             deliverable_id='D4.1',
             label='D4.1 - Approved Concept Paper',
-            deliverable_type=StageDeliverable.TYPE_VAULT,
+            deliverable_type=StageDeliverable.TYPE_POST,
             is_restricted=False,
         )
         StageDeliverable.objects.create(
             defense_stage=self.final_stage,
             deliverable_id='D15',
             label='D15 - Fully Functional Software System and Source Code',
-            deliverable_type=StageDeliverable.TYPE_VAULT,
+            deliverable_type=StageDeliverable.TYPE_POST,
             is_restricted=True,
         )
 
@@ -75,7 +75,7 @@ class DigitalVaultApiTests(APITestCase):
             stage_label='Concept Proposal',
             deliverable_id='D4.1',
             label='D4.1 - Approved Concept Paper',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_Cipher_Approved_Concept.pdf',
             file_size='512 KB',
@@ -87,32 +87,32 @@ class DigitalVaultApiTests(APITestCase):
             stage_label='Final Defense',
             deliverable_id='D15',
             label='D15 - Fully Functional Software System and Source Code',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_Cipher_Source_Code.zip',
             file_size='24 MB',
             uploaded_by=self.faculty,
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
-        VaultEntry.objects.create(
+        ArchiveEntry.objects.create(
             file_name='3rdYear.PIT301.CloudFileSyncSystem.1stSemester.pdf',
             team_name='Team VaultSync',
             academic_year='2026-2027',
-            status=VaultEntry.STATUS_APPROVED,
+            status=ArchiveEntry.STATUS_APPROVED,
             uploaded_by=self.faculty,
         )
 
-    def test_all_roles_can_read_public_vault(self):
+    def test_all_roles_can_read_public_archive(self):
         for user in [self.admin, self.faculty, self.student]:
             self.client.force_authenticate(user=user)
-            response = self.client.get('/api/repository/vault/')
+            response = self.client.get('/api/repository/archive/')
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response.data['counts']['total'], 2)
 
-    def test_public_vault_hides_restricted_capstone_deliverables(self):
+    def test_public_archive_hides_restricted_capstone_deliverables(self):
         self.client.force_authenticate(user=self.admin)
 
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
 
         self.assertIn('Team_Cipher_Approved_Concept.pdf', file_names)
@@ -123,9 +123,9 @@ class DigitalVaultApiTests(APITestCase):
     def test_search_and_filters_apply_to_unified_entries(self):
         self.client.force_authenticate(user=self.admin)
 
-        pit_response = self.client.get('/api/repository/vault/', {'type': 'pit', 'year_level': '3rd Year'})
-        capstone_response = self.client.get('/api/repository/vault/', {'search': 'concept', 'stage': 'Concept Proposal'})
-        empty_response = self.client.get('/api/repository/vault/', {'academic_year': '2025-2026'})
+        pit_response = self.client.get('/api/repository/archive/', {'type': 'pit', 'year_level': '3rd Year'})
+        capstone_response = self.client.get('/api/repository/archive/', {'search': 'concept', 'stage': 'Concept Proposal'})
+        empty_response = self.client.get('/api/repository/archive/', {'academic_year': '2025-2026'})
 
         self.assertEqual(pit_response.data['counts']['filtered'], 1)
         self.assertEqual(pit_response.data['entries'][0]['stage'], 'PIT301')
@@ -136,12 +136,12 @@ class DigitalVaultApiTests(APITestCase):
     def test_stage_options_include_admin_stages_and_historical_vault_stages(self):
         self.client.force_authenticate(user=self.admin)
         DefenseStage.objects.create(
-            label='Admin Configured Vault Stage',
+            label='Admin Configured Archive Stage',
             display_order=50,
             is_active=True,
         )
         DefenseStage.objects.create(
-            label='Inactive Vault Stage',
+            label='Inactive Archive Stage',
             display_order=51,
             is_active=False,
         )
@@ -149,8 +149,8 @@ class DigitalVaultApiTests(APITestCase):
             team=self.team,
             stage_label='Archived Legacy Stage',
             deliverable_id='D10',
-            label='D10 - Legacy Vault Document',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            label='D10 - Legacy Archive Document',
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_Cipher_Legacy.pdf',
             file_size='256 KB',
@@ -158,27 +158,27 @@ class DigitalVaultApiTests(APITestCase):
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
 
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
 
         self.assertEqual(response.status_code, 200)
         options = response.data['options']['stage_options']
-        self.assertIn('Admin Configured Vault Stage', options)
+        self.assertIn('Admin Configured Archive Stage', options)
         self.assertIn('Archived Legacy Stage', options)
         self.assertIn('Concept Proposal', options)
         self.assertIn('PIT301', options)
-        self.assertNotIn('Inactive Vault Stage', options)
+        self.assertNotIn('Inactive Archive Stage', options)
 
-    def test_admin_dashboard_reports_current_phase_vault_counts(self):
+    def test_admin_dashboard_reports_current_phase_archive_counts(self):
         self.client.force_authenticate(user=self.admin)
 
         response = self.client.get('/api/dashboards/admin/')
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.data['stats']['vault_files'], 2)
-        self.assertEqual(response.data['stats']['restricted_vault_files'], 1)
+        self.assertEqual(response.data['stats']['archive_files'], 2)
+        self.assertEqual(response.data['stats']['restricted_archive_files'], 1)
         self.assertEqual(response.data['migration']['phase'], 15)
 
-    def test_student_pit_vault_uploads_visibility(self):
+    def test_student_pit_archive_uploads_visibility(self):
         # Create a PIT team
         self.pit_team = StudentTeam.objects.create(
             name='Team PIT Cipher',
@@ -196,7 +196,7 @@ class DigitalVaultApiTests(APITestCase):
             stage_label='PIT Event 1',
             deliverable_id='D_PIT_1',
             label='PIT Project Doc',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_PIT_Cipher_Pending.pdf',
             file_size='256 KB',
@@ -205,7 +205,7 @@ class DigitalVaultApiTests(APITestCase):
         )
 
         self.client.force_authenticate(user=self.admin)
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertNotIn('Team_PIT_Cipher_Pending.pdf', file_names)
 
@@ -215,7 +215,7 @@ class DigitalVaultApiTests(APITestCase):
             stage_label='PIT Event 1',
             deliverable_id='D_PIT_2',
             label='PIT Project Doc 2',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_PIT_Cipher_Accepted.pdf',
             file_size='256 KB',
@@ -223,7 +223,7 @@ class DigitalVaultApiTests(APITestCase):
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
 
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn('Team_PIT_Cipher_Accepted.pdf', file_names)
 
@@ -245,7 +245,7 @@ class DigitalVaultApiTests(APITestCase):
             pit_event_config=pit_config,
             deliverable_id='D_PIT_2',
             label='PIT Project Doc 2',
-            deliverable_type=PitEventDeliverable.TYPE_VAULT,
+            deliverable_type=PitEventDeliverable.TYPE_POST,
             required=False,
             is_restricted=False,
         )
@@ -266,7 +266,7 @@ class DigitalVaultApiTests(APITestCase):
             stage_label='PIT Event 1',
             deliverable_id='D_PIT_2',
             label='PIT Project Doc 2',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='Team_PIT_Cipher_Accepted.pdf',
             file_size='256 KB',
@@ -277,7 +277,7 @@ class DigitalVaultApiTests(APITestCase):
         self.client.force_authenticate(user=self.admin)
 
         # Initially visible
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn('Team_PIT_Cipher_Accepted.pdf', file_names)
 
@@ -285,13 +285,13 @@ class DigitalVaultApiTests(APITestCase):
         pit_deliv.is_restricted = True
         pit_deliv.save()
 
-        # Now hidden from public vault
-        response = self.client.get('/api/repository/vault/')
+        # Now hidden from public archive
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertNotIn('Team_PIT_Cipher_Accepted.pdf', file_names)
 
         # 2. Capstone Track testing (D4.1 is initially public)
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn('Team_Cipher_Approved_Concept.pdf', file_names)
 
@@ -301,11 +301,11 @@ class DigitalVaultApiTests(APITestCase):
         stage_deliv.save()
 
         # D4.1 should now be hidden
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertNotIn('Team_Cipher_Approved_Concept.pdf', file_names)
 
-    def test_vault_de_duplication(self):
+    def test_archive_de_duplication(self):
         team = StudentTeam.objects.create(
             name='Team SyncDupe',
             project_title='Search Sync',
@@ -316,7 +316,7 @@ class DigitalVaultApiTests(APITestCase):
             adviser=self.faculty,
             status=StudentTeam.STATUS_APPROVED,
         )
-        VaultEntry.objects.create(
+        ArchiveEntry.objects.create(
             file_name='3rdYear.PIT301.SearchSync.1stSemester.pdf',
             team=team,
             team_name='Team SyncDupe',
@@ -324,15 +324,15 @@ class DigitalVaultApiTests(APITestCase):
             semester_label='1st Semester',
             year_level='3rd Year',
             stage_label='PIT Event 1',
-            entry_type=VaultEntry.TYPE_PIT,
-            status=VaultEntry.STATUS_APPROVED,
+            entry_type=ArchiveEntry.TYPE_PIT,
+            status=ArchiveEntry.STATUS_APPROVED,
         )
         DeliverableSubmission.objects.create(
             team=team,
             stage_label='PIT Event 1',
             deliverable_id='D_PIT_Sync',
             label='PIT Sync File',
-            deliverable_type=DeliverableSubmission.TYPE_VAULT,
+            deliverable_type=DeliverableSubmission.TYPE_POST,
             required=False,
             file_name='StudentSyncFile.pdf',
             file_size='120 KB',
@@ -340,7 +340,7 @@ class DigitalVaultApiTests(APITestCase):
             status=DeliverableSubmission.STATUS_ACCEPTED,
         )
         self.client.force_authenticate(user=self.admin)
-        response = self.client.get('/api/repository/vault/')
+        response = self.client.get('/api/repository/archive/')
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn('StudentSyncFile.pdf', file_names)
         self.assertNotIn('3rdYear.PIT301.SearchSync.1stSemester.pdf', file_names)

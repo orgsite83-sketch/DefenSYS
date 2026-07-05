@@ -25,7 +25,7 @@ print()
 # Now simulate the HTTP request
 import requests
 
-url = 'http://10.60.121.199:8000/api/repository/vault/'
+url = 'http://10.60.121.199:8000/api/repository/archive/'
 headers = {
     'Content-Type': 'application/json',
     'Authorization': f'Bearer {access_token}'

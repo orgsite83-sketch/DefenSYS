@@ -25,7 +25,7 @@ from .services import (
 
 
 class CanManageDeliverables(BasePermission):
-    message = 'Only administrators, assigned advisers, PIT leads, PIT instructors, and team members can manage deliverables.'
+    message = 'Only administrators, assigned advisers, PIT leads, Section instructors, and team members can manage deliverables.'
 
     def has_permission(self, request, view):
         user = request.user
@@ -38,9 +38,47 @@ class CanManageDeliverables(BasePermission):
         if getattr(user, 'role', None) == 'faculty':
             if getattr(user, 'is_adviser', False) or getattr(user, 'is_pit_lead', False):
                 return True
-            from user_management.models import PitInstructorAssignment
-            return PitInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+            from user_management.models import SectionInstructorAssignment
+            return SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
         return False
+
+
+def check_deliverable_write_permission(user, team):
+    # Admins and superusers can always manage
+    if getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False):
+        return True
+    
+    # Team members (students) can upload/manage their own deliverables
+    if getattr(user, 'role', None) == 'student':
+        if team.memberships.filter(student=user).exists():
+            return True
+        return False
+        
+    if getattr(user, 'role', None) == 'faculty':
+        # Advisers can manage deliverables for teams they advise
+        if getattr(user, 'is_adviser', False) and team.adviser == user:
+            return True
+            
+        # PIT Leads can manage deliverables for PIT teams in their year
+        if getattr(user, 'is_pit_lead', False) and team.is_pit:
+            pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if not pit_year or team.year_level == pit_year:
+                return True
+                
+        # Section Instructors can manage deliverables for PIT teams in their section
+        if team.is_pit:
+            from user_management.models import SectionInstructorAssignment
+            from student_teams.team_levels import normalize_year_level
+            if SectionInstructorAssignment.objects.filter(
+                faculty=user,
+                semester=team.semester,
+                year_level=normalize_year_level(team.year_level),
+                section=team.section,
+                is_active=True
+            ).exists():
+                return True
+                
+    return False
 
 
 def deliverables_payload(request, queryset=None, selected_stage=None, scope=None):
@@ -120,6 +158,9 @@ class CapstoneDeliverableUploadView(APIView):
         attrs = serializer.validated_data
         team = get_allowed_team(request, attrs['team_id'])
         
+        if not check_deliverable_write_permission(request.user, team):
+            return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
+        
         # Get uploaded file from request
         uploaded_file = request.FILES.get('file')
         
@@ -154,6 +195,10 @@ class CapstoneDeliverableRemoveView(APIView):
         if not attrs.get('deliverable_id'):
             return Response({'deliverable_id': 'This field is required.'}, status=status.HTTP_400_BAD_REQUEST)
         team = get_allowed_team(request, attrs['team_id'])
+        
+        if not check_deliverable_write_permission(request.user, team):
+            return Response({'detail': 'You do not have permission to manage deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
+            
         remove_submission(team, attrs['stage_label'], attrs['deliverable_id'])
         return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
 
@@ -168,6 +213,10 @@ class CapstoneDeliverableEndorseView(APIView):
         serializer.is_valid(raise_exception=True)
         attrs = serializer.validated_data
         team = get_allowed_team(request, attrs['team_id'])
+        
+        if not check_deliverable_write_permission(request.user, team):
+            return Response({'detail': 'You do not have permission to endorse deliverables for this team.'}, status=status.HTTP_403_FORBIDDEN)
+            
         try:
             endorse_team(team, attrs['stage_label'])
         except ValueError as exc:

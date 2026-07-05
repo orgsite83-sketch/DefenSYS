@@ -5,7 +5,7 @@ from django.core.exceptions import PermissionDenied
 
 from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name
-from repository.vault.models import VaultEntry
+from repository.archive.models import ArchiveEntry
 
 
 UNCLASSIFIED_TECH_STACK = 'Unclassified'
@@ -75,8 +75,8 @@ def ensure_admin(user):
 
 def source_entries():
     entries = []
-    pit_entries = VaultEntry.objects.select_related('team', 'uploaded_by').filter(
-        entry_type=VaultEntry.TYPE_PIT,
+    pit_entries = ArchiveEntry.objects.select_related('team', 'uploaded_by').filter(
+        entry_type=ArchiveEntry.TYPE_PIT,
     )
     for entry in pit_entries:
         entries.append({
@@ -120,7 +120,7 @@ def source_entries():
             'academic_year': team.semester.school_year.label,
             'year_level': team.year_level,
             'stage': submission.stage_label,
-            'status': 'Vault Submission' if submission.deliverable_type == DeliverableSubmission.TYPE_VAULT else 'Pre-Defense',
+            'status': 'Post-Defense' if submission.deliverable_type == DeliverableSubmission.TYPE_POST else 'Pre-Defense',
             'uploaded_by': display_name(submission.uploaded_by) or 'System',
             'uploaded_at': submission.uploaded_at,
             'extracted_text': submission.extracted_text or '',

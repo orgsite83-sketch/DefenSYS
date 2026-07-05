@@ -4,7 +4,7 @@ from rest_framework.test import APITestCase
 from academic_period_management.models import SchoolYear, Semester
 from defense.stages.models import DefenseStage
 from user_management.academic_records.models import StudentAcademicRecord
-from user_management.models import PitInstructorAssignment
+from user_management.models import SectionInstructorAssignment
 from .models import StudentTeam, TeamAdviserAssignment, TeamMembership, TeamStageProgress
 from .services import mark_stage_ready
 from .weekly_progress.models import WeeklyProgressReport
@@ -954,6 +954,45 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(team.year_level, '3rd Year')
         self.assertIsNone(team.adviser_id)
 
+    def test_pit_lead_bulk_import_preview_mismatch_program_label(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-mismatch',
+            password='pass12345',
+            role='faculty',
+            first_name='Pat',
+            last_name='Lead',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        self.client.force_authenticate(user=pit_lead)
+
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team PIT CSV',
+                        'project_title': 'PIT CSV',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data['rows']
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertFalse(row['ready'])
+        self.assertEqual(row['year_level'], '3rd Year')
+        self.assertEqual(row['program_label'], '3rd Year PIT')
+        self.assertIn(
+            'Students are enrolled in 3rd Year but your PIT scope is 1st Year.',
+            row['issues']
+        )
+
     def test_pit_instructor_sees_only_assigned_section_pit_teams(self):
         instructor = User.objects.create_user(
             username='pit-instructor-3a',
@@ -962,7 +1001,7 @@ class StudentTeamApiTests(APITestCase):
             first_name='Ivy',
             last_name='Instructor',
         )
-        PitInstructorAssignment.objects.create(
+        SectionInstructorAssignment.objects.create(
             faculty=instructor,
             semester=self.first_semester,
             year_level='3rd Year',

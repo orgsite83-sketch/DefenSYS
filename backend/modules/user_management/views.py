@@ -21,7 +21,7 @@ from authentication_access_control.guest_tokens import (
     guest_user_payload,
 )
 from authentication_access_control.models import SystemAuditLog
-from .models import FacultyRoleAssignment, GuestPanelistCode, PitInstructorAssignment
+from .models import FacultyRoleAssignment, GuestPanelistCode, SectionInstructorAssignment
 from .permissions import IsFacultyRole, IsPitLead, IsPitLeadOrAdmin, IsSystemAdmin
 from student_teams.models import TeamAdviserAssignment
 from student_teams.serializers import TeamAdviserAssignmentSerializer
@@ -34,7 +34,7 @@ from .serializers import (
     GuestPanelistCodeSerializer,
     ManagedUserSerializer,
     OfficialClassListStudentSerializer,
-    PitInstructorAssignmentSerializer,
+    SectionInstructorAssignmentSerializer,
 )
 
 
@@ -300,7 +300,7 @@ def _match_faculty_by_name(faculty_name):
     return None, 'not_found'
 
 
-class PitInstructorAssignmentView(APIView):
+class SectionInstructorAssignmentView(APIView):
     permission_classes = [IsPitLeadOrAdmin]
 
     def get(self, request):
@@ -309,7 +309,7 @@ class PitInstructorAssignmentView(APIView):
             request.user,
             request.query_params.get('year_level', ''),
         )
-        assignments = PitInstructorAssignment.objects.select_related(
+        assignments = SectionInstructorAssignment.objects.select_related(
             'faculty',
             'semester',
             'semester__school_year',
@@ -326,7 +326,7 @@ class PitInstructorAssignmentView(APIView):
         )
 
         return Response({
-            'assignments': PitInstructorAssignmentSerializer(assignments, many=True).data,
+            'assignments': SectionInstructorAssignmentSerializer(assignments, many=True).data,
             'faculty': ManagedUserSerializer(faculty, many=True, context={'request': request}).data,
             'active_semester': active.display_name if active else None,
             'year_level': year_level,
@@ -350,7 +350,7 @@ class PitInstructorAssignmentView(APIView):
         if faculty is None:
             return Response({'faculty_id': ['Select an active faculty user.']}, status=status.HTTP_400_BAD_REQUEST)
 
-        assignment, _created = PitInstructorAssignment.objects.update_or_create(
+        assignment, _created = SectionInstructorAssignment.objects.update_or_create(
             faculty=faculty,
             semester=active,
             year_level=year_level,
@@ -361,16 +361,16 @@ class PitInstructorAssignmentView(APIView):
             },
         )
         return Response(
-            {'assignment': PitInstructorAssignmentSerializer(assignment).data},
+            {'assignment': SectionInstructorAssignmentSerializer(assignment).data},
             status=status.HTTP_201_CREATED,
         )
 
 
-class PitInstructorAssignmentDetailView(APIView):
+class SectionInstructorAssignmentDetailView(APIView):
     permission_classes = [IsPitLeadOrAdmin]
 
     def patch(self, request, assignment_id):
-        assignment = get_object_or_404(PitInstructorAssignment, pk=assignment_id)
+        assignment = get_object_or_404(SectionInstructorAssignment, pk=assignment_id)
         if not _is_admin(request.user):
             pit_year = (getattr(request.user, 'pit_lead_year', None) or '').strip()
             if assignment.year_level != pit_year:
@@ -382,7 +382,7 @@ class PitInstructorAssignmentDetailView(APIView):
             assignment.section = request.data.get('section')
         assignment.assigned_by = request.user
         assignment.save()
-        return Response({'assignment': PitInstructorAssignmentSerializer(assignment).data})
+        return Response({'assignment': SectionInstructorAssignmentSerializer(assignment).data})
 
 
 class BulkImportUsersMixin:
@@ -492,7 +492,7 @@ class BulkImportUsersMixin:
                 ))
 
         if require_faculty_match:
-            instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
+            instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
                 faculty=faculty,
                 semester=context_semester,
                 year_level=context_year_level,
@@ -513,7 +513,7 @@ class BulkImportUsersMixin:
             'error_count': len(errors),
             'faculty_match_status': faculty_match_status,
             'instructor_assignment': (
-                PitInstructorAssignmentSerializer(instructor_assignment).data
+                SectionInstructorAssignmentSerializer(instructor_assignment).data
                 if instructor_assignment is not None
                 else None
             ),
@@ -692,7 +692,7 @@ class PitLeadOfficialClassListImportView(APIView):
                     records_updated += 1
 
         instructor_assignment = None
-        instructor_assignment, _assignment_created = PitInstructorAssignment.objects.update_or_create(
+        instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
             faculty=faculty,
             semester=active,
             year_level=pit_year,
@@ -715,7 +715,7 @@ class PitLeadOfficialClassListImportView(APIView):
             'warning_count': len(warnings),
             'faculty_match_status': faculty_match_status,
             'instructor_assignment': (
-                PitInstructorAssignmentSerializer(instructor_assignment).data
+                SectionInstructorAssignmentSerializer(instructor_assignment).data
                 if instructor_assignment is not None
                 else None
             ),

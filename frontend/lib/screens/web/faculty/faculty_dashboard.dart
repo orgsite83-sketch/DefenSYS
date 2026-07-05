@@ -46,7 +46,6 @@ class FacultyDashboard extends ConsumerStatefulWidget {
 
 class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   String _activeSection = 'dashboard';
-  bool _schedulingExpanded = false;
   bool _userManagementExpanded = true;
   FacultyWorkspace? _activeWorkspace;
   int? _selectedMinutesScheduleId;
@@ -85,9 +84,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 sectionFromRoute == 'defense_board';
             if (isUserMgmt) {
               _userManagementExpanded = true;
-              _schedulingExpanded = false;
             } else if (isSched) {
-              _schedulingExpanded = true;
               _userManagementExpanded = false;
             }
           });
@@ -217,7 +214,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     setState(() {
       _activeWorkspace = workspace;
       _activeSection = 'dashboard';
-      _schedulingExpanded = false;
       _userManagementExpanded = true;
     });
     context.go(FacultyRoutes.dashboard);
@@ -598,9 +594,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               isWide,
               () => setState(() {
                 _userManagementExpanded = !_userManagementExpanded;
-                if (_userManagementExpanded) {
-                  _schedulingExpanded = false;
-                }
               }),
             ),
           ),
@@ -634,43 +627,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               isActive: _activeSection == 'pit_events',
             ),
           ],
-          _buildSectionHeader('Operations'),
-          _buildExpandableSidebarItem(
-            icon: Icons.calendar_month_outlined,
-            label: 'Scheduling',
-            isExpanded: _schedulingExpanded,
-            isActive: _activeSection == 'defense_scheduler' ||
-                _activeSection == 'defense_board',
+          _buildSectionHeader('Scheduling'),
+          _buildSidebarItem(
+            icon: Icons.event_outlined,
+            label: 'Defense Scheduler',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => setState(() {
-                _schedulingExpanded = !_schedulingExpanded;
-                if (_schedulingExpanded) {
-                  _userManagementExpanded = false;
-                }
-              }),
+              () => _goToSection('defense_scheduler'),
             ),
+            isActive: _activeSection == 'defense_scheduler',
           ),
-          if (_schedulingExpanded) ...[
-            _buildSubSidebarItem(
-              icon: Icons.event_outlined,
-              label: 'Defense Scheduler',
-              onTap: () => _afterSidebarAction(
-                isWide,
-                () => _goToSection('defense_scheduler'),
-              ),
-              isActive: _activeSection == 'defense_scheduler',
+          _buildSidebarItem(
+            icon: Icons.view_list_outlined,
+            label: 'Defense Board',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('defense_board'),
             ),
-            _buildSubSidebarItem(
-              icon: Icons.view_list_outlined,
-              label: 'Defense Board',
-              onTap: () => _afterSidebarAction(
-                isWide,
-                () => _goToSection('defense_board'),
-              ),
-              isActive: _activeSection == 'defense_board',
-            ),
-          ],
+            isActive: _activeSection == 'defense_board',
+          ),
           _buildSectionHeader('Evaluation'),
           _buildSidebarItem(
             icon: Icons.grading_outlined,
@@ -800,7 +775,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'dashboard',
           ),
-          _buildSectionHeader('Operations'),
+          _buildSectionHeader('Scheduling'),
           _buildSidebarItem(
             icon: Icons.view_list_outlined,
             label: 'Defense Board',
@@ -1123,12 +1098,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           onOpenStudentTeams: () => _goToSection('student_teams'),
           onOpenCohort: () => _goToSection('cohort'),
-          onOpenScheduler: () {
-            setState(() {
-              _schedulingExpanded = true;
-              _activeSection = 'defense_scheduler';
-            });
-          },
+          onOpenScheduler: () => _goToSection('defense_scheduler'),
           onOpenGradeCenter: () => _goToSection('grade_center'),
           onOpenRubrics: () => _goToSection('rubric_engine'),
         );
