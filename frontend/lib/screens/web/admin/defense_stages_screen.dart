@@ -1185,6 +1185,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           return;
                         }
                       }
+                      // Validate deliverables labels
+                      for (int i = 0; i < deliverables.length; i++) {
+                        final dLabel = deliverables[i]['label']?.toString().trim() ?? '';
+                        if (dLabel.isEmpty) {
+                          showValidationToast(context, 'Deliverable label cannot be empty (item ${i + 1}).');
+                          return;
+                        }
+                      }
                       Navigator.pop(dialogContext, true);
                     },
                     icon: const Icon(Icons.save, size: 18),
@@ -1329,7 +1337,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     setDialogState(() {
                       item['deliverable_type'] = value;
                       if (value == 'post') {
-                        item['required'] = false;
+                        item['required'] = true;
                       } else if (value == 'pre') {
                         item['required'] = true;
                       }

@@ -115,6 +115,17 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('A defense stage with this label already exists.')
         return value.strip()
 
+    def validate_deliverables(self, value):
+        if value is not None:
+            for item in value:
+                label = item.get('label', '')
+                if isinstance(label, str):
+                    label = label.strip()
+                if not label:
+                    raise serializers.ValidationError('Deliverable label cannot be blank.')
+        return value
+
+
     def create(self, validated_data):
         deliverables_data = validated_data.pop('deliverables', [])
         

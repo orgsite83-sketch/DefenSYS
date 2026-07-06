@@ -332,15 +332,26 @@ class StudentTeamWriteSerializer(serializers.Serializer):
                 attrs['year_level'] = self.instance.year_level
         from .team_levels import normalize_year_level
 
-        if user_is_admin(user) and not normalize_year_level(attrs.get('year_level', '')):
-            inferred, year_issues = infer_year_level_from_members(
-                member_ids,
-                semester,
-                leader_id=attrs['leader_id'],
-            )
-            if year_issues:
-                raise serializers.ValidationError({'member_ids': year_issues})
-            attrs['year_level'] = inferred
+        if user_is_admin(user):
+            if not normalize_year_level(attrs.get('year_level', '')):
+                inferred, year_issues = infer_year_level_from_members(
+                    member_ids,
+                    semester,
+                    leader_id=attrs['leader_id'],
+                )
+                if year_issues:
+                    raise serializers.ValidationError({'member_ids': year_issues})
+                attrs['year_level'] = inferred
+            if not attrs.get('section'):
+                section, section_issues = infer_section_from_members(
+                    member_ids,
+                    semester,
+                    required=False,
+                )
+                if section_issues:
+                    raise serializers.ValidationError({'member_ids': section_issues})
+                if section:
+                    attrs['section'] = section
         elif user_is_pit_lead_only(user):
             inferred, year_issues = infer_year_level_from_members(
                 member_ids,
@@ -495,6 +506,13 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             for index, student_id in enumerate(member_ids)
         ]
         TeamMembership.objects.bulk_create(memberships)
+
+        # Update the student academic records' section to match the team's section
+        if team.section:
+            StudentAcademicRecord.objects.filter(
+                student_id__in=member_ids,
+                semester=team.semester,
+            ).update(section=team.section)
 
 
 class BulkTeamRowSerializer(serializers.Serializer):

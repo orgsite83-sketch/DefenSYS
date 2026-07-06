@@ -402,26 +402,13 @@ class _Sidebar extends StatefulWidget {
 
 class _SidebarState extends State<_Sidebar> {
   late bool _isUserManagementOpen;
-  late bool _isSchedulingOpen;
 
   @override
   void initState() {
     super.initState();
-    final inUserMgmt = widget.activeSection == DefensysAdminSection.userManagement ||
+    _isUserManagementOpen = widget.activeSection == DefensysAdminSection.userManagement ||
         widget.activeSection == DefensysAdminSection.studentTeams ||
         widget.activeSection == DefensysAdminSection.studentAcademicRecords;
-    final inSched = widget.activeSection == DefensysAdminSection.scheduling ||
-        widget.activeSection == DefensysAdminSection.defenseBoard ||
-        widget.activeSection == DefensysAdminSection.defenseStages;
-
-    _isUserManagementOpen = inUserMgmt;
-    _isSchedulingOpen = inSched;
-
-    if (inUserMgmt) {
-      _isSchedulingOpen = false;
-    } else if (inSched) {
-      _isUserManagementOpen = false;
-    }
   }
 
   @override
@@ -437,19 +424,6 @@ class _SidebarState extends State<_Sidebar> {
 
       if (nowInUserMgmt && !wasInUserMgmt) {
         _isUserManagementOpen = true;
-        _isSchedulingOpen = false;
-      }
-
-      final wasInSched = oldWidget.activeSection == DefensysAdminSection.scheduling ||
-          oldWidget.activeSection == DefensysAdminSection.defenseBoard ||
-          oldWidget.activeSection == DefensysAdminSection.defenseStages;
-      final nowInSched = widget.activeSection == DefensysAdminSection.scheduling ||
-          widget.activeSection == DefensysAdminSection.defenseBoard ||
-          widget.activeSection == DefensysAdminSection.defenseStages;
-
-      if (nowInSched && !wasInSched) {
-        _isSchedulingOpen = true;
-        _isUserManagementOpen = false;
       }
     }
   }
@@ -494,6 +468,7 @@ class _SidebarState extends State<_Sidebar> {
                   label: l10n.navOverview,
                   onTap: widget.onNavigate,
                 ),
+                const _SectionHeader(title: 'Setup & Configuration'),
                 _NavItem(
                   section: DefensysAdminSection.academicPeriods,
                   activeSection: widget.activeSection,
@@ -501,7 +476,21 @@ class _SidebarState extends State<_Sidebar> {
                   label: l10n.navAcademicPeriods,
                   onTap: widget.onNavigate,
                 ),
-                const _SectionHeader(title: 'Management'),
+                _NavItem(
+                  section: DefensysAdminSection.rubricEngine,
+                  activeSection: widget.activeSection,
+                  icon: Icons.checklist_rounded,
+                  label: l10n.navRubricEngine,
+                  onTap: widget.onNavigate,
+                ),
+                _NavItem(
+                  section: DefensysAdminSection.defenseStages,
+                  activeSection: widget.activeSection,
+                  icon: Icons.layers_rounded,
+                  label: l10n.navDefenseStages,
+                  onTap: widget.onNavigate,
+                ),
+                const _SectionHeader(title: 'People & Teams'),
                 _NavItem(
                   section: DefensysAdminSection.userManagement,
                   activeSection: widget.activeSection,
@@ -513,9 +502,6 @@ class _SidebarState extends State<_Sidebar> {
                   onTap: (_) {
                     setState(() {
                       _isUserManagementOpen = !_isUserManagementOpen;
-                      if (_isUserManagementOpen) {
-                        _isSchedulingOpen = false;
-                      }
                     });
                   },
                 ),
@@ -542,18 +528,26 @@ class _SidebarState extends State<_Sidebar> {
                     onTap: widget.onNavigate,
                   ),
                 ],
+                const _SectionHeader(title: 'Defense Operations'),
+                _NavItem(
+                  section: DefensysAdminSection.scheduling,
+                  activeSection: widget.activeSection,
+                  icon: Icons.event_note_rounded,
+                  label: l10n.navDefenseScheduler,
+                  onTap: widget.onNavigate,
+                ),
+                _NavItem(
+                  section: DefensysAdminSection.defenseBoard,
+                  activeSection: widget.activeSection,
+                  icon: Icons.view_column_rounded,
+                  label: l10n.navDefenseBoard,
+                  onTap: widget.onNavigate,
+                ),
                 _NavItem(
                   section: DefensysAdminSection.gradeCenter,
                   activeSection: widget.activeSection,
                   icon: Icons.grade_rounded,
                   label: l10n.navGradeCenter,
-                  onTap: widget.onNavigate,
-                ),
-                _NavItem(
-                  section: DefensysAdminSection.rubricEngine,
-                  activeSection: widget.activeSection,
-                  icon: Icons.checklist_rounded,
-                  label: l10n.navRubricEngine,
                   onTap: widget.onNavigate,
                 ),
                 const _SectionHeader(title: 'Analytics & Audit'),
@@ -578,47 +572,6 @@ class _SidebarState extends State<_Sidebar> {
                   label: 'Audit Trail',
                   onTap: widget.onNavigate,
                 ),
-                const _SectionHeader(title: 'Operations'),
-                _NavItem(
-                  section: DefensysAdminSection.scheduling,
-                  activeSection: widget.activeSection,
-                  icon: Icons.event_note_rounded,
-                  label: l10n.navScheduling,
-                  trailing: _isSchedulingOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  onTap: (_) {
-                    setState(() {
-                      _isSchedulingOpen = !_isSchedulingOpen;
-                      if (_isSchedulingOpen) {
-                        _isUserManagementOpen = false;
-                      }
-                    });
-                  },
-                ),
-                if (_isSchedulingOpen) ...[
-                  _SubNavItem(
-                    section: DefensysAdminSection.scheduling,
-                    activeSection: widget.activeSection,
-                    icon: Icons.auto_awesome_rounded,
-                    label: l10n.navDefenseScheduler,
-                    onTap: widget.onNavigate,
-                  ),
-                  _SubNavItem(
-                    section: DefensysAdminSection.defenseBoard,
-                    activeSection: widget.activeSection,
-                    icon: Icons.view_column_rounded,
-                    label: l10n.navDefenseBoard,
-                    onTap: widget.onNavigate,
-                  ),
-                  _SubNavItem(
-                    section: DefensysAdminSection.defenseStages,
-                    activeSection: widget.activeSection,
-                    icon: Icons.layers_rounded,
-                    label: l10n.navDefenseStages,
-                    onTap: widget.onNavigate,
-                  ),
-                ],
               ],
             ),
           ),

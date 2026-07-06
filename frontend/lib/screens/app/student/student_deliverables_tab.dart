@@ -141,7 +141,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final configured = selectedStage['deliverables_configured'] == true;
     final endorsed = selectedStage['endorsed'] == true;
     final pre = _deliverables(selectedStage, 'pre');
-    final vault = _deliverables(selectedStage, 'vault');
+    final vault = _deliverables(selectedStage, 'post');
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -262,7 +262,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
                 const SizedBox(height: 20),
                 if (vault.isNotEmpty) ...[
-                  _sectionTitle('Post-Defense Vault Submissions'),
+                  _sectionTitle('Post-Defense Submissions'),
                   const SizedBox(height: 8),
                   if (selectedStage['vault_unlocked'] != true)
                     _lockedVaultNotice(state.selectedStage)
@@ -307,7 +307,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
             const SizedBox(width: 12),
             Expanded(
               child: Text(
-                'Vault submissions are locked. They will open once your defense for $stage is complete.',
+                'Post-Defense submissions are locked. They will open once your defense for $stage is complete.',
                 style: const TextStyle(color: Colors.grey, fontSize: 13),
               ),
             ),
@@ -321,7 +321,14 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final list = stage['deliverables'] as List?;
     if (list == null) return [];
     return list
-        .where((item) => item is Map && item['type']?.toString() == type)
+        .where((item) {
+          if (item is! Map) return false;
+          final itemType = item['type']?.toString();
+          if (type == 'post') {
+            return itemType == 'post' || itemType == 'vault';
+          }
+          return itemType == type;
+        })
         .cast<Map<String, dynamic>>()
         .toList();
   }
@@ -381,9 +388,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                               : '${submission['file_name'] ?? ''} - ${submission['uploaded_by_name'] ?? ''}',
                           style: const TextStyle(color: Colors.grey, fontSize: 12),
                         )
-                      else if ((item['vault_note']?.toString() ?? '').isNotEmpty)
+                      else if ((item['archive_note'] ?? item['vault_note'])?.toString().isNotEmpty ?? false)
                         Text(
-                          item['vault_note'].toString(),
+                          (item['archive_note'] ?? item['vault_note']).toString(),
                           style: const TextStyle(color: Colors.grey, fontSize: 12),
                         )
                       else if (isWPR)
@@ -790,7 +797,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
               onPressed: (selectedFileName != null && !isUploading)
                   ? () async {
                       final suggestedName = item['suggested_file_name']?.toString() ?? '';
-                      if (item['type'] == 'vault' && suggestedName.isNotEmpty) {
+                      if ((item['type'] == 'post' || item['type'] == 'vault') && suggestedName.isNotEmpty) {
                         if (selectedFileName!.trim().toLowerCase() != suggestedName.trim().toLowerCase()) {
                           setState(() {
                             uploadError = "File name must match exactly.\nExpected: '$suggestedName'";

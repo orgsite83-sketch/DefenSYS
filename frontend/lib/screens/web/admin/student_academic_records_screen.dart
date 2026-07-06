@@ -1396,7 +1396,7 @@ class _StudentAcademicRecordsScreenState
                 cell.contains('no') ||
                 cell == 'student n'),
       );
-      final hasFullName = normalized.contains('full name');
+      final hasFullName = normalized.contains('full name') || normalized.contains('name');
       if (hasStudentNumber && hasFullName) {
         headerIndex = i;
         break;
@@ -1425,7 +1425,7 @@ class _StudentAcademicRecordsScreenState
               value.contains('no') ||
               value == 'student n'),
     );
-    final nameIndex = findHeader((value) => value == 'full name');
+    final nameIndex = findHeader((value) => value == 'full name' || value == 'name');
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');
     final section = metadata['section']?.toString() ?? '';

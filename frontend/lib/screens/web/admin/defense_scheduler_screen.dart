@@ -1801,7 +1801,7 @@ class _DefenseSchedulerScreenState
           int.tryParse(_panelWeightController.text.trim()) ?? 80;
       payload['peer_weight'] =
           int.tryParse(_peerWeightController.text.trim()) ?? 20;
-      payload['vault_file_template'] = _pitTemplateController.text.trim();
+      payload['archive_file_template'] = _pitTemplateController.text.trim();
     }
     return payload;
   }
@@ -1839,7 +1839,7 @@ class _DefenseSchedulerScreenState
       _panelWeightController.text = config['panel_weight']?.toString() ?? '80';
       _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
       _pitTemplateController.text =
-          config['vault_file_template']?.toString() ?? '';
+          (config['archive_file_template'] ?? config['vault_file_template'])?.toString() ?? '';
       _pitDeliverables = [];
       if (config['deliverables'] is List) {
         for (final d in config['deliverables']) {
@@ -1847,7 +1847,7 @@ class _DefenseSchedulerScreenState
             'deliverable_id': d['deliverable_id']?.toString() ?? '',
             'label': d['label']?.toString() ?? '',
             'required': d['required'] == true,
-            'vault_note': d['vault_note']?.toString() ?? '',
+            'archive_note': (d['archive_note'] ?? d['vault_note'])?.toString() ?? '',
             'display_order': _asInt(d['display_order']) ?? 1,
           });
         }
@@ -2092,7 +2092,7 @@ class _DefenseSchedulerScreenState
                                   peerWeight.text =
                                       config['peer_weight']?.toString() ?? '20';
                                   vaultFileTemplate.text =
-                                      config['vault_file_template']
+                                      (config['archive_file_template'] ?? config['vault_file_template'])
                                           ?.toString() ??
                                       '';
                                 });
@@ -2272,7 +2272,7 @@ class _DefenseSchedulerScreenState
       schedulePayload['peer_rubric_id'] = peerRubricId;
       schedulePayload['panel_weight'] = int.tryParse(panelWeightText) ?? 80;
       schedulePayload['peer_weight'] = int.tryParse(peerWeightText) ?? 20;
-      schedulePayload['vault_file_template'] = vaultFileTemplate.text.trim();
+      schedulePayload['archive_file_template'] = vaultFileTemplate.text.trim();
     }
     await ref
         .read(defenseSchedulerProvider.notifier)
@@ -4368,7 +4368,7 @@ class _DefenseSchedulerScreenState
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     const SizedBox(height: 4),
-                                    Text('Type: ${type == 'pre' ? 'Pre-Defense' : 'Vault File'}', style: const TextStyle(fontSize: 12)),
+                                    Text('Type: ${type == 'pre' ? 'Pre-Defense' : 'Post-Defense'}', style: const TextStyle(fontSize: 12)),
                                     if (uploaded &&
                                         submission != null &&
                                         submission['feedback'] != null &&

@@ -579,7 +579,26 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'dashboard',
           ),
-          _buildSectionHeader('Management'),
+          _buildSectionHeader('Setup & Configuration'),
+          _buildSidebarItem(
+            icon: Icons.event_note_outlined,
+            label: 'PIT Events',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('pit_events'),
+            ),
+            isActive: _activeSection == 'pit_events',
+          ),
+          _buildSidebarItem(
+            icon: Icons.rule_outlined,
+            label: 'Rubric Engine',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('rubric_engine'),
+            ),
+            isActive: _activeSection == 'rubric_engine',
+          ),
+          _buildSectionHeader('People & Teams'),
           _buildExpandableSidebarItem(
             icon: Icons.manage_accounts_outlined,
             label: 'User Management',
@@ -587,9 +606,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             isActive: _activeSection == 'cohort' ||
                 _activeSection == 'pit_student_import' ||
                 _activeSection == 'pit_instructors' ||
-                _activeSection == 'student_teams' ||
-                _activeSection == 'deliverables' ||
-                _activeSection == 'pit_events',
+                _activeSection == 'student_teams',
             onTap: () => _afterSidebarAction(
               isWide,
               () => setState(() {
@@ -617,17 +634,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               ),
               isActive: _activeSection == 'student_teams',
             ),
-            _buildSubSidebarItem(
-              icon: Icons.event_note_outlined,
-              label: 'PIT Events',
-              onTap: () => _afterSidebarAction(
-                isWide,
-                () => _goToSection('pit_events'),
-              ),
-              isActive: _activeSection == 'pit_events',
-            ),
           ],
-          _buildSectionHeader('Scheduling'),
+          _buildSectionHeader('Defense Operations'),
           _buildSidebarItem(
             icon: Icons.event_outlined,
             label: 'Defense Scheduler',
@@ -646,7 +654,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'defense_board',
           ),
-          _buildSectionHeader('Evaluation'),
           _buildSidebarItem(
             icon: Icons.grading_outlined,
             label: 'Grade Center',
@@ -654,16 +661,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 _afterSidebarAction(isWide, () => _goToSection('grade_center')),
             isActive: _activeSection == 'grade_center',
           ),
-          _buildSidebarItem(
-            icon: Icons.rule_outlined,
-            label: 'Rubric Engine',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('rubric_engine'),
-            ),
-            isActive: _activeSection == 'rubric_engine',
-          ),
-          _buildSectionHeader('Archive & Audit'),
+          _buildSectionHeader('Archives & Audit'),
           _buildSidebarItem(
             icon: Icons.manage_search,
             label: 'Repository Vault',

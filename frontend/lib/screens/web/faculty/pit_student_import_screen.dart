@@ -498,7 +498,7 @@ class _PitStudentImportScreenState
                 cell.contains('no') ||
                 cell == 'student n'),
       );
-      final hasFullName = normalized.contains('full name');
+      final hasFullName = normalized.contains('full name') || normalized.contains('name');
       if (hasStudentNumber && hasFullName) {
         headerIndex = i;
         break;
@@ -527,7 +527,7 @@ class _PitStudentImportScreenState
               value.contains('no') ||
               value == 'student n'),
     );
-    final nameIndex = findHeader((value) => value == 'full name');
+    final nameIndex = findHeader((value) => value == 'full name' || value == 'name');
     final programIndex = findHeader((value) => value == 'program');
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');

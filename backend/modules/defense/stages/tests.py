@@ -55,6 +55,26 @@ class DefenseStageApiTests(APITestCase):
         self.assertEqual(response.data['counts']['total'], 4)
         self.assertTrue(DefenseStage.objects.filter(label='Prototype Demo').exists())
 
+    def test_create_stage_with_blank_deliverable_label_is_rejected(self):
+        response = self.client.post(
+            '/api/defense/stages/',
+            {
+                'label': 'Test Stage with Blank Deliverable',
+                'deliverables': [
+                    {
+                        'deliverable_id': 'D1',
+                        'label': '  ',
+                        'deliverable_type': 'pre',
+                        'required': True,
+                    }
+                ]
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('deliverables', response.data)
+
     def test_duplicate_label_is_rejected_case_insensitive(self):
         response = self.client.post(
             '/api/defense/stages/',

@@ -234,7 +234,7 @@ class _TeamDeliverablesScreenState
     final title = state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables';
     final defaultSubtitle = state.scope == 'pit'
         ? 'Upload pre-event requirements and complete deliverables for PIT events.'
-        : 'Upload pre-defense requirements and unlock vault submissions after defense.';
+        : 'Upload pre-defense requirements and unlock post-defense submissions after defense.';
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

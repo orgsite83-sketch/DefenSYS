@@ -216,6 +216,15 @@ class _DefenseStageEditorScreenState
       return;
     }
 
+    // Validate deliverables labels
+    for (int i = 0; i < _deliverables.length; i++) {
+      final labelVal = _deliverables[i]['label']?.toString().trim() ?? '';
+      if (labelVal.isEmpty) {
+        setState(() => _error = 'Deliverable label cannot be empty (item ${i + 1}).');
+        return;
+      }
+    }
+
     setState(() {
       _saving = true;
       _error = null;
@@ -575,8 +584,8 @@ class _DefenseStageEditorScreenState
                             'deliverable_type': 'pre',
                             'required': true,
                             'display_order': _deliverables.length + 1,
-                            'vault_note': '',
-                            'vault_file_template': '',
+                            'archive_note': '',
+                            'archive_file_template': '',
                             'is_restricted': false,
                           });
                         });
@@ -588,7 +597,7 @@ class _DefenseStageEditorScreenState
                     child: Column(
                       children: [
                         _notice(
-                          'Pre-Defense items gate endorsement. Vault items unlock after defense is approved.',
+                          'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is approved.',
                         ),
                         const SizedBox(height: 12),
                         if (_deliverables.isEmpty)
@@ -675,9 +684,9 @@ class _DefenseStageEditorScreenState
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
-        (item['_templateController'] = TextEditingController(text: item['vault_file_template']?.toString() ?? ''));
+        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
 
-    final isVault = item['deliverable_type'] == 'vault';
+    final isPost = item['deliverable_type'] == 'post';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -703,7 +712,7 @@ class _DefenseStageEditorScreenState
                   onChanged: (v) {
                     item['label'] = v;
                     _markDirty();
-                    if (isVault) {
+                    if (isPost) {
                       setState(() {});
                     }
                   },
@@ -721,13 +730,13 @@ class _DefenseStageEditorScreenState
                   ),
                   items: const [
                     DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
-                    DropdownMenuItem(value: 'vault', child: Text('Vault')),
+                    DropdownMenuItem(value: 'post', child: Text('Post-Defense')),
                   ],
                   onChanged: (v) {
                     setState(() {
                       item['deliverable_type'] = v;
-                      if (v == 'vault') {
-                        item['required'] = false;
+                      if (v == 'post') {
+                        item['required'] = true;
                       } else if (v == 'pre') {
                         item['required'] = true;
                       }
@@ -757,7 +766,7 @@ class _DefenseStageEditorScreenState
               ),
             ],
           ),
-          if (isVault) ...[
+          if (isPost) ...[
             const SizedBox(height: 12),
             Row(
               children: [
@@ -771,7 +780,7 @@ class _DefenseStageEditorScreenState
                   },
                 ),
                 const Text(
-                  'Restricted (Private in Vault)',
+                  'Restricted (Private in Archive)',
                   style: TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w600,
@@ -784,14 +793,14 @@ class _DefenseStageEditorScreenState
             TextField(
               controller: templateController,
               decoration: const InputDecoration(
-                labelText: 'Vault File Template',
+                labelText: 'Archive File Template',
                 isDense: true,
                 border: OutlineInputBorder(),
                 hintText: '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
               ),
               onChanged: (v) {
                 setState(() {
-                  item['vault_file_template'] = v;
+                  item['archive_file_template'] = v;
                 });
                 _markDirty();
               },
@@ -821,7 +830,7 @@ class _DefenseStageEditorScreenState
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    'Preview: ${_resolvePreview(item['vault_file_template']?.toString() ?? '', item['label']?.toString() ?? '')}',
+                    'Preview: ${_resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '')}',
                     style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
@@ -923,7 +932,7 @@ class _DefenseStageEditorScreenState
     setState(() {
       controller.text = newText;
       controller.selection = TextSelection.collapsed(offset: newCursorPosition);
-      item['vault_file_template'] = newText;
+      item['archive_file_template'] = newText;
     });
     _markDirty();
   }

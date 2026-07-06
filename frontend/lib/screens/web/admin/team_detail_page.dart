@@ -783,7 +783,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         .map((item) => Map<String, dynamic>.from(item))
         .toList();
     final pre = deliverables.where((d) => d['type'] == 'pre').toList();
-    final vault = deliverables.where((d) => d['type'] == 'vault').toList();
+    final vault = deliverables.where((d) => d['type'] == 'post' || d['type'] == 'vault').toList();
 
     return SingleChildScrollView(
       child: Container(
@@ -823,7 +823,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             ...pre.map((item) => _deliverableRow(item)),
             const SizedBox(height: 20),
             const Text(
-              'Post-Defense Vault Submissions',
+              'Post-Defense Submissions',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
@@ -831,7 +831,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
-                  'Vault items unlock after the defense for this stage is completed.',
+                  'Post-Defense items unlock after the defense for this stage is completed.',
                   style: TextStyle(color: _muted, fontSize: 12.5),
                 ),
               )

@@ -351,7 +351,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
               final config = _configs[index];
               final delivs = config['deliverables'] as List? ?? [];
               final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
-              final vaultCount = delivs.where((d) => d['deliverable_type'] == 'vault').length;
+              final postCount = delivs.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').length;
 
               return Padding(
                 padding: const EdgeInsets.only(bottom: 12),
@@ -421,7 +421,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         child: _buildConfigRow(
                           icon: Icons.folder_outlined,
                           label: 'Deliverables: ',
-                          value: '$preCount Pre-Defense, $vaultCount Vault',
+                          value: '$preCount Pre-Defense, $postCount Post-Defense',
                         ),
                       ),
                       const SizedBox(width: 16),
@@ -468,7 +468,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             final config = _configs[index];
             final delivs = config['deliverables'] as List? ?? [];
             final preCount = delivs.where((d) => d['deliverable_type'] == 'pre').length;
-            final vaultCount = delivs.where((d) => d['deliverable_type'] == 'vault').length;
+            final postCount = delivs.where((d) => d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault').length;
 
             return DefensysCard(
               padding: const EdgeInsets.all(20.0),
@@ -531,7 +531,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                         _buildConfigRow(
                           icon: Icons.folder_outlined,
                           label: 'Deliverables: ',
-                          value: '$preCount Pre-Defense, $vaultCount Vault Template',
+                          value: '$preCount Pre-Defense, $postCount Post-Defense Template',
                         ),
                       ],
                     ),
@@ -625,7 +625,7 @@ class _EventConfigEditDialog extends ConsumerStatefulWidget {
 class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _eventNameController = TextEditingController();
-  final _vaultFileTemplateController = TextEditingController();
+  final _archiveFileTemplateController = TextEditingController();
   late final TextEditingController _panelWeightController;
   late final TextEditingController _peerWeightController;
 
@@ -643,7 +643,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     super.initState();
     if (widget.config != null) {
       _eventNameController.text = widget.config!['event_name']?.toString() ?? '';
-      _vaultFileTemplateController.text = widget.config!['vault_file_template']?.toString() ?? '';
+      _archiveFileTemplateController.text = (widget.config!['archive_file_template'] ?? widget.config!['vault_file_template'])?.toString() ?? '';
       _panelRubricId = int.tryParse(widget.config!['panel_rubric_id']?.toString() ?? '');
       _peerRubricId = int.tryParse(widget.config!['peer_rubric_id']?.toString() ?? '');
       _panelWeight = int.tryParse(widget.config!['panel_weight']?.toString() ?? '') ?? 80;
@@ -657,14 +657,15 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     for (final d in _deliverables) {
       _labelControllers.add(TextEditingController(text: d['label']?.toString() ?? ''));
-      _templateControllers.add(TextEditingController(text: d['vault_file_template']?.toString() ?? ''));
+      _templateControllers.add(TextEditingController(
+          text: (d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? ''));
     }
   }
 
   @override
   void dispose() {
     _eventNameController.dispose();
-    _vaultFileTemplateController.dispose();
+    _archiveFileTemplateController.dispose();
     _panelWeightController.dispose();
     _peerWeightController.dispose();
     for (final ctrl in _labelControllers) {
@@ -696,8 +697,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         'deliverable_type': 'pre',
         'required': true,
         'display_order': _deliverables.length + 1,
-        'vault_note': '',
-        'vault_file_template': '',
+        'archive_note': '',
+        'archive_file_template': '',
         'is_restricted': false,
       });
       _labelControllers.add(TextEditingController(text: ''));
@@ -762,7 +763,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'peer_rubric_id': _peerRubricId,
       'panel_weight': _panelWeight,
       'peer_weight': _peerWeight,
-      'vault_file_template': _vaultFileTemplateController.text.trim(),
+      'archive_file_template': _archiveFileTemplateController.text.trim(),
       'deliverables': _deliverables,
     };
 
@@ -1313,7 +1314,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         itemCount: _deliverables.length,
                         itemBuilder: (context, idx) {
                           final d = _deliverables[idx];
-                          final isVault = d['deliverable_type'] == 'vault';
+                          final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault';
 
                           // Controllers for each item
                           final labelCtrl = _labelControllers[idx];
@@ -1352,7 +1353,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                         onChanged: (val) {
                                           d['label'] = val.trim();
                                           // Re-evaluate template preview
-                                          if (isVault) {
+                                          if (isPost) {
                                             setState(() {});
                                           }
                                         },
@@ -1362,12 +1363,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                     Expanded(
                                       flex: 2,
                                       child: DropdownButtonFormField<String>(
-                                        initialValue: d['deliverable_type']?.toString(),
+                                        initialValue: d['deliverable_type']?.toString() == 'vault' ? 'post' : d['deliverable_type']?.toString(),
                                         decoration: _dialogInputDecoration(labelText: 'Type'),
                                         style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13, color: DefensysTokens.textPrimary),
                                         items: const [
                                           DropdownMenuItem(value: 'pre', child: Text('Pre-Defense', style: TextStyle(fontSize: 13, fontFamily: DefensysTokens.fontFamily))),
-                                          DropdownMenuItem(value: 'vault', child: Text('Vault', style: TextStyle(fontSize: 13, fontFamily: DefensysTokens.fontFamily))),
+                                          DropdownMenuItem(value: 'post', child: Text('Post-Defense', style: TextStyle(fontSize: 13, fontFamily: DefensysTokens.fontFamily))),
                                         ],
                                         onChanged: (val) {
                                           if (val != null) {
@@ -1424,7 +1425,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                     ),
                                   ],
                                 ),
-                                if (isVault) ...[
+                                if (isPost) ...[
                                   const SizedBox(height: 12),
                                   Row(
                                     children: [
@@ -1438,7 +1439,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                         },
                                       ),
                                       const Text(
-                                        'Restricted (Private in Vault)',
+                                        'Restricted (Private in Archive)',
                                         style: TextStyle(
                                           fontSize: 13,
                                           fontWeight: FontWeight.w600,
@@ -1460,13 +1461,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                             TextFormField(
                                               controller: templateCtrl,
                                               decoration: _dialogInputDecoration(
-                                                labelText: 'Vault Naming Template',
+                                                labelText: 'Archive Naming Template',
                                                 hintText: 'e.g. {year}.{course}.{project}.{semester}',
                                               ),
                                               style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 13),
                                               onChanged: (val) {
                                                 setState(() {
-                                                  d['vault_file_template'] = val.trim();
+                                                  d['archive_file_template'] = val.trim();
                                                 });
                                               },
                                             ),
@@ -1493,7 +1494,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                                           final next = current + varName;
                                                           templateCtrl.text = next;
                                                           setState(() {
-                                                            d['vault_file_template'] = next;
+                                                            d['archive_file_template'] = next;
                                                           });
                                                         },
                                                       ))
@@ -1532,7 +1533,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                               ),
                                               const SizedBox(height: 8),
                                               SelectableText(
-                                                _resolveFilenamePreview(d['vault_file_template'] ?? '', d['label'] ?? ''),
+                                                _resolveFilenamePreview((d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? '', d['label'] ?? ''),
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   fontFamily: 'monospace',

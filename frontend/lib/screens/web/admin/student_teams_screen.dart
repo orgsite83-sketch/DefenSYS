@@ -593,7 +593,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Widget _miniTeamRow(Map<String, dynamic> team, {required bool showSection}) {
     final leader = team['leader_name']?.toString() ?? 'N/A';
     final adviser = team['adviser_name']?.toString() ?? 'No Adviser Assigned';
-    final section = team['section']?.toString() ?? 'N/A';
+    final rawSection = team['section']?.toString().trim() ?? '';
+    final section = rawSection.isEmpty ? 'N/A' : rawSection;
     final status = team['status']?.toString() ?? 'Pending';
     final id = _asInt(team['id'])!;
 
@@ -699,7 +700,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Widget _buildSectionGroupingView(StudentTeamsState state) {
     final Map<String, List<Map<String, dynamic>>> sectionsMap = {};
     for (final team in state.teams) {
-      final section = team['section']?.toString().trim() ?? 'Unassigned Section';
+      final sectionVal = team['section']?.toString().trim() ?? '';
+      final section = sectionVal.isEmpty ? 'Unassigned Section' : sectionVal;
       sectionsMap.putIfAbsent(section, () => []).add(team);
     }
 
@@ -721,10 +723,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       itemBuilder: (context, index) {
         final section = sortedSections[index];
         final teams = sectionsMap[section]!;
-        final instructorName = teams.firstWhere(
-          (t) => t['instructor_name'] != null,
-          orElse: () => {},
-        )['instructor_name']?.toString() ?? 'No instructor';
 
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
@@ -761,7 +759,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             subtitle: Padding(
               padding: const EdgeInsets.only(top: 4, left: 32),
               child: Text(
-                'Instructor: $instructorName',
+                'Section: $section',
                 style: const TextStyle(fontSize: 12, color: _muted),
               ),
             ),
@@ -1402,16 +1400,25 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Future<void> _downloadCsvTemplate() async {
     if (_isPitLeadManager) {
       final year = _pitLeadYear ?? '3rd Year';
+      final content = sampleTeamCsvForYear(year, isCapstoneAdmin: false);
+      final sectionPrefix = year.contains('2') 
+          ? 'Section,BSIT-2A\n' 
+          : year.contains('3') 
+              ? 'Section,BSIT-3A\n'
+              : year.contains('4')
+                  ? 'Section,BSIT-4A\n'
+                  : 'Section,BSIT-1A\n';
       await downloadTextFile(
         filename: sampleTeamCsvFilenameForYear(year),
-        content: sampleTeamCsvForYear(year, isCapstoneAdmin: false),
+        content: '$sectionPrefix$content',
       );
       return;
     }
 
     await downloadTextFile(
       filename: 'defensys-official-capstone-template.csv',
-      content: 'Team Name,Capstone Project,Adviser,Team Members\n'
+      content: 'Section,BSIT-4A\n'
+          'Team Name,Capstone Project,Adviser,Team Members\n'
           'Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,"VILLAR, Marcus"\n'
           ',,,"ONG, Patricia"\n'
           ',,,"SALAZAR, Ethan"\n'
