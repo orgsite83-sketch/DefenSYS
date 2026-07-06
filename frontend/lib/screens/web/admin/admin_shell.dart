@@ -6,6 +6,8 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../navigation/app_router.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/auth_provider.dart';
+import '../../../services/unsaved_changes_provider.dart';
+import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/dashboard_provider.dart';
 import 'academic_periods_screen.dart';
@@ -86,7 +88,18 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     );
   }
 
-  void _goToSection(DefensysAdminSection section) {
+  void _goToSection(DefensysAdminSection section) async {
+    final hasUnsaved = ref.read(unsavedChangesProvider);
+    if (hasUnsaved) {
+      final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      if (action == UnsavedChangesAction.cancel || !mounted) return;
+      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+        final ok = await saveDraftCallback();
+        if (!ok || !mounted) return;
+      }
+    }
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
     ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
   }
 
@@ -139,7 +152,18 @@ class _AdminShellState extends ConsumerState<AdminShell> {
 
   Future<void> _logout() async {
     final router = GoRouter.of(context);
+    final hasUnsaved = ref.read(unsavedChangesProvider);
+    if (hasUnsaved) {
+      final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      if (action == UnsavedChangesAction.cancel || !mounted) return;
+      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+        final ok = await saveDraftCallback();
+        if (!ok || !mounted) return;
+      }
+    }
     if (!await confirmLogout(context)) return;
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
     await ref.read(authProvider.notifier).logout();
     router.go(AppRoutes.login);
   }

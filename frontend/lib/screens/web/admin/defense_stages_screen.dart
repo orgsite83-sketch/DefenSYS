@@ -1465,7 +1465,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   String _resolvePreview(String template, String deliverableLabel, String stageLabel) {
     final cleanTemplate = template.trim();
     final finalTemplate = cleanTemplate.isEmpty 
-        ? '{year}.{course}.{project}.{semester}.pdf'
+        ? '{project}.pdf'
         : cleanTemplate;
 
     String slugify(String val) {

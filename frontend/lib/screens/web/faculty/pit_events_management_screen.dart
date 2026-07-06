@@ -5,6 +5,7 @@ import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../services/unsaved_changes_provider.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
@@ -638,6 +639,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   final List<TextEditingController> _labelControllers = [];
   final List<TextEditingController> _templateControllers = [];
 
+  bool _isDirty = false;
+  void _markDirty() {
+    if (_isDirty) return;
+    _isDirty = true;
+    ref.read(unsavedChangesProvider.notifier).setDirty(true);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -660,6 +668,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       _templateControllers.add(TextEditingController(
           text: (d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? ''));
     }
+    _eventNameController.addListener(_markDirty);
+    _archiveFileTemplateController.addListener(_markDirty);
+    _panelWeightController.addListener(_markDirty);
+    _peerWeightController.addListener(_markDirty);
   }
 
   @override
@@ -674,6 +686,9 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     for (final ctrl in _templateControllers) {
       ctrl.dispose();
     }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    });
     super.dispose();
   }
 
@@ -681,12 +696,14 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     setState(() {
       _panelWeight = int.tryParse(value.trim()) ?? 0;
     });
+    _markDirty();
   }
 
   void _onPeerWeightChanged(String value) {
     setState(() {
       _peerWeight = int.tryParse(value.trim()) ?? 0;
     });
+    _markDirty();
   }
 
   void _addDeliverable() {
@@ -704,6 +721,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       _labelControllers.add(TextEditingController(text: ''));
       _templateControllers.add(TextEditingController(text: ''));
     });
+    _markDirty();
   }
 
   void _removeDeliverable(int index) {
@@ -714,12 +732,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       lCtrl.dispose();
       tCtrl.dispose();
     });
+    _markDirty();
   }
 
   String _resolveFilenamePreview(String template, String label) {
     var result = template.trim();
     if (result.isEmpty) {
-      result = '{year}.{course}.{project}.{semester}';
+      result = '{project}';
     }
     result = result.replaceAll('{year}', '2ndYear');
     result = result.replaceAll('{course}', 'PIT201');
@@ -769,6 +788,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
     if (success) {
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
       widget.onSaveSuccess();
     }
   }
@@ -1077,6 +1097,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   }(),
                                   onChanged: (value) {
                                     setState(() => _panelRubricId = value);
+                                    _markDirty();
                                   },
                                 ),
                               ),
@@ -1107,6 +1128,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   }(),
                                   onChanged: (value) {
                                     setState(() => _peerRubricId = value);
+                                    _markDirty();
                                   },
                                 ),
                               ),
@@ -1217,6 +1239,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                   _panelWeightController.text = panelVal.toString();
                                   _peerWeightController.text = peerVal.toString();
                                 });
+                                _markDirty();
                               },
                             ),
                           ),
@@ -1245,6 +1268,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                     _panelWeightController.text = '80';
                                     _peerWeightController.text = '20';
                                   });
+                                  _markDirty();
                                 },
                                 icon: const Icon(Icons.restore, size: 14, color: DefensysTokens.maroon),
                                 label: const Text('Reset to 80 / 20'),
@@ -1356,6 +1380,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                           if (isPost) {
                                             setState(() {});
                                           }
+                                          _markDirty();
                                         },
                                       ),
                                     ),
@@ -1375,6 +1400,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                             setState(() {
                                               d['deliverable_type'] = val;
                                             });
+                                            _markDirty();
                                           }
                                         },
                                       ),
@@ -1398,6 +1424,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                               setState(() {
                                                 d['required'] = val == true;
                                               });
+                                              _markDirty();
                                             },
                                           ),
                                           const Text(
@@ -1436,6 +1463,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                           setState(() {
                                             d['is_restricted'] = val == true;
                                           });
+                                          _markDirty();
                                         },
                                       ),
                                       const Text(
@@ -1469,6 +1497,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                                 setState(() {
                                                   d['archive_file_template'] = val.trim();
                                                 });
+                                                _markDirty();
                                               },
                                             ),
                                             const SizedBox(height: 8),
@@ -1496,6 +1525,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                                           setState(() {
                                                             d['archive_file_template'] = next;
                                                           });
+                                                          _markDirty();
                                                         },
                                                       ))
                                                   .toList(),

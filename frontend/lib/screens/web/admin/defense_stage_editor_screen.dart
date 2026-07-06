@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/defense_stages_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
+import '../../../services/unsaved_changes_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
 import 'widgets/defensys_admin_shell.dart';
@@ -53,6 +54,7 @@ class _DefenseStageEditorScreenState
   void _markDirty() {
     if (_loading || _isDirty) return;
     setState(() => _isDirty = true);
+    ref.read(unsavedChangesProvider.notifier).setDirty(true);
   }
 
   Future<void> _handleBack() async {
@@ -100,6 +102,9 @@ class _DefenseStageEditorScreenState
       (item['_templateController'] as TextEditingController?)?.dispose();
     }
     super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    });
   }
 
   Future<void> _load() async {
@@ -146,6 +151,7 @@ class _DefenseStageEditorScreenState
       _loading = false;
       _isDirty = false;
     });
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
   }
 
   void _applyStage(Map<String, dynamic> stage) {
@@ -849,7 +855,7 @@ class _DefenseStageEditorScreenState
   String _resolvePreview(String template, String deliverableLabel) {
     final cleanTemplate = template.trim();
     final finalTemplate = cleanTemplate.isEmpty 
-        ? '{year}.{course}.{project}.{semester}.pdf'
+        ? '{project}.pdf'
         : cleanTemplate;
 
     String slugify(String val) {

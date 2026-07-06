@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
+import '../../../services/unsaved_changes_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/feedback_toast.dart';
@@ -88,6 +89,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   void _markDirty() {
     if (widget.readOnly || _isDirty) return;
     setState(() => _isDirty = true);
+    ref.read(unsavedChangesProvider.notifier).setDirty(true);
   }
 
   void _attachCriteriaListeners() {
@@ -110,6 +112,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       context,
       isDirty: _isDirty,
       onExit: widget.onBack,
+      onSaveDraft: () => _save('draft', showConfirmation: false),
     );
   }
 
@@ -221,14 +224,30 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       if (s.rubrics.isEmpty) {
         ref.read(rubricEngineProvider.notifier).fetchRubrics();
       }
+      if (mounted) {
+        ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(
+            () => _save('draft', showConfirmation: false));
+      }
     });
   }
 
   @override
   void dispose() {
+    _name.removeListener(_markDirty);
     _name.dispose();
+    for (final draft in _criteria) {
+      draft.name.removeListener(_markDirty);
+      draft.description.removeListener(_markDirty);
+      draft.maxScore.removeListener(_markDirty);
+      draft.weight.removeListener(_markDirty);
+      draft.displayOrder.removeListener(_markDirty);
+    }
     _disposeCriteriaList(_criteria);
     super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+    });
   }
 
   String _evaluationLabel(String? value) {
@@ -700,11 +719,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     return null;
   }
 
-  Future<void> _save(String status) async {
+  Future<bool> _save(String status, {bool showConfirmation = true}) async {
     final validationMessage = _validationMessage();
     if (validationMessage != null) {
       showValidationToast(context, validationMessage);
-      return;
+      return false;
     }
 
     setState(() {
@@ -763,118 +782,119 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       confirmLabel = 'Save Draft';
     }
 
-    if (!mounted) return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogContext) {
-        return AlertDialog(
-          surfaceTintColor: Colors.transparent,
-          backgroundColor: Colors.white,
-          title: Text(
-            title,
-            style: const TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              fontWeight: FontWeight.bold,
-              fontSize: 16.5,
-              color: Color(0xFF111827),
+    if (showConfirmation && !mounted) return false;
+
+    if (showConfirmation) {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        barrierDismissible: false,
+        builder: (dialogContext) {
+          return AlertDialog(
+            surfaceTintColor: Colors.transparent,
+            backgroundColor: Colors.white,
+            title: Text(
+              title,
+              style: const TextStyle(
+                fontFamily: DefensysUi.fontFamily,
+                fontWeight: FontWeight.bold,
+                fontSize: 16.5,
+                color: Color(0xFF111827),
+              ),
             ),
-          ),
-          content: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 550),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (duplicate != null) ...[
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF7ED),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFFED7AA)),
-                    ),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Icon(
-                          Icons.warning_amber_rounded,
-                          color: Color(0xFFEA580C),
-                          size: 20,
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            status == 'published'
-                                ? (duplicate['status']?.toString() == 'published'
-                                    ? 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\'). Published rubrics are locked and cannot be edited (deletion is blocked if tied to any schedules or events). Saving this may result in duplicate rubrics.'
-                                    : 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'${duplicate['name']}\').')
-                                : 'Warning: A rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\').',
-                            style: const TextStyle(
-                              fontFamily: DefensysUi.fontFamily,
-                              fontSize: 12.5,
-                              color: Color(0xFF9A3412),
-                              height: 1.4,
-                              fontWeight: FontWeight.w600,
+            content: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 550),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (duplicate != null) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF7ED),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFFED7AA)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Color(0xFFEA580C),
+                            size: 19,
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              duplicate['status']?.toString() == 'published'
+                                  ? 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\'). Published rubrics are locked and cannot be edited (deletion is blocked if tied to any schedules or events). Saving this may result in duplicate rubrics.'
+                                  : 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'${duplicate['name']}\').',
+                              style: const TextStyle(
+                                fontFamily: DefensysUi.fontFamily,
+                                fontSize: 12.5,
+                                color: Color(0xFF9A3412),
+                                height: 1.4,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
+                  Text(
+                    status == 'published'
+                        ? 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited (deletion is only allowed if not tied to any Capstone schedules or PIT events).'
+                        : 'Are you sure you want to save this rubric draft?',
+                    style: const TextStyle(
+                      fontFamily: DefensysUi.fontFamily,
+                      fontSize: 13.5,
+                      color: Color(0xFF374151),
+                      height: 1.4,
                     ),
                   ),
-                  const SizedBox(height: 14),
                 ],
-                Text(
-                  status == 'published'
-                      ? 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited (deletion is only allowed if not tied to any Capstone schedules or PIT events).'
-                      : 'Are you sure you want to save this rubric draft?',
-                  style: const TextStyle(
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(
+                  'Cancel',
+                  style: TextStyle(
                     fontFamily: DefensysUi.fontFamily,
-                    fontSize: 13.5,
-                    color: Color(0xFF374151),
-                    height: 1.4,
+                    color: Colors.grey[600],
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogContext, false),
-              child: Text(
-                'Cancel',
-                style: TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  color: Colors.grey[600],
-                  fontWeight: FontWeight.w600,
+              ),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DefensysUi.primaryMaroon,
+                  foregroundColor: Colors.white,
+                  elevation: 0,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                ),
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(
+                  confirmLabel,
+                  style: const TextStyle(
+                    fontFamily: DefensysUi.fontFamily,
+                    fontWeight: FontWeight.bold,
+                  ),
                 ),
               ),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: DefensysUi.primaryMaroon,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              ),
-              onPressed: () => Navigator.pop(dialogContext, true),
-              child: Text(
-                confirmLabel,
-                style: const TextStyle(
-                  fontFamily: DefensysUi.fontFamily,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-          ],
-        );
-      },
-    );
+            ],
+          );
+        },
+      );
 
-    if (confirmed != true) return;
+      if (confirmed != true) return false;
+    }
 
     final payload = {
       'name': _name.text.trim(),
@@ -893,22 +913,25 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         ? await notifier.updateRubric(_asInt(widget.rubric!['id'])!, payload)
         : await notifier.addRubric(payload);
 
-    if (!mounted) return;
+    if (!mounted) return ok;
     if (ok) {
       await notifier.fetchRubrics();
-      if (!mounted) return;
+      if (!mounted) return ok;
       showSuccessToast(
         context,
         status == 'published'
             ? 'Rubric published and locked.'
             : 'Rubric draft saved.',
       );
-      widget.onBack();
+      if (showConfirmation) {
+        widget.onBack();
+      }
     } else {
       final error =
           ref.read(rubricEngineProvider).error ?? 'Rubric could not be saved.';
       showErrorToast(context, error);
     }
+    return ok;
   }
 
   Widget _lockedBanner() {

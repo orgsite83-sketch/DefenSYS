@@ -19,9 +19,11 @@ import 'student_teams_provider.dart';
 import 'user_management_provider.dart';
 import 'weekly_progress_provider.dart';
 import 'documenter_provider.dart';
+import 'unsaved_changes_provider.dart';
 
 /// Clears cached API state when the session ends so disposed screens do not rebuild.
 void invalidateSessionProviders(Ref ref) {
+  ref.invalidate(unsavedChangesProvider);
   ref.invalidate(activeAdminSectionProvider);
   ref.invalidate(gradeCenterProvider);
   ref.invalidate(academicPeriodProvider);

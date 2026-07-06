@@ -8,6 +8,8 @@ import '../../../theme/defensys_tokens.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/offline_banner.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../services/unsaved_changes_provider.dart';
+import '../../../utils/unsaved_changes.dart';
 import '../../../services/notifications_provider.dart';
 import '../../../widgets/notifications_modal.dart';
 import '../shared/team_deliverables_screen.dart';
@@ -210,7 +212,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     }
   }
 
-  void _switchWorkspace(FacultyWorkspace workspace) {
+  void _switchWorkspace(FacultyWorkspace workspace) async {
+    final hasUnsaved = ref.read(unsavedChangesProvider);
+    if (hasUnsaved) {
+      final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      if (action == UnsavedChangesAction.cancel || !mounted) return;
+      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+        final ok = await saveDraftCallback();
+        if (!ok || !mounted) return;
+      }
+      if (saveDraftCallback == null && action == UnsavedChangesAction.discard) {
+        Navigator.of(context).pop();
+      }
+    }
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
     setState(() {
       _activeWorkspace = workspace;
       _activeSection = 'dashboard';
@@ -219,7 +235,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     context.go(FacultyRoutes.dashboard);
   }
 
-  void _goToSection(String section) {
+  void _goToSection(String section) async {
+    final hasUnsaved = ref.read(unsavedChangesProvider);
+    if (hasUnsaved) {
+      final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+      final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+      if (action == UnsavedChangesAction.cancel || !mounted) return;
+      if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+        final ok = await saveDraftCallback();
+        if (!ok || !mounted) return;
+      }
+      if (saveDraftCallback == null && action == UnsavedChangesAction.discard) {
+        Navigator.of(context).pop();
+      }
+    }
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
     context.go(FacultyRoutes.pathForSection(section));
   }
 
@@ -531,7 +561,21 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 if (!isWide) {
                   Navigator.of(context).pop();
                 }
+                final hasUnsaved = ref.read(unsavedChangesProvider);
+                if (hasUnsaved) {
+                  final saveDraftCallback = ref.read(unsavedChangesSaveDraftProvider);
+                  final action = await showDiscardUnsavedChangesDialog(context, onSaveDraft: saveDraftCallback);
+                  if (action == UnsavedChangesAction.cancel || !mounted) return;
+                  if (action == UnsavedChangesAction.saveDraft && saveDraftCallback != null) {
+                    final ok = await saveDraftCallback();
+                    if (!ok || !mounted) return;
+                  }
+                  if (saveDraftCallback == null && action == UnsavedChangesAction.discard) {
+                    Navigator.of(context).pop();
+                  }
+                }
                 if (await confirmLogout(context)) {
+                  ref.read(unsavedChangesProvider.notifier).setDirty(false);
                   await ref.read(authProvider.notifier).logout();
                 }
               },
