@@ -216,7 +216,7 @@ def suggested_pit_file_name(team, year_level, semester_label='1st Semester', eve
             resolved += '.pdf'
         return resolved
 
-    return f'{prefix}.{course}.{project}.{semester_key}.pdf'
+    return f'{project}.pdf'
 
 
 def pit_archive_upload_queue(year_level, semester=None):
@@ -390,7 +390,7 @@ def suggested_capstone_file_name(team, stage_label, semester_label='1st Semester
         if label == semester_label:
             semester_key = key
             break
-    return f'{CAPSTONE_YEAR_PREFIX}.{CAPSTONE_DEFAULT_COURSE}.{project}.{semester_key}.pdf'
+    return f'{project}.pdf'
 
 
 def _stage_slug(stage_label):
@@ -599,20 +599,36 @@ def capstone_upload_window_payload(semester=None):
 
 
 def validate_capstone_file_name(file_name):
-    match = CAPSTONE_FILENAME_RE.fullmatch((file_name or '').strip())
-    if not match:
-        raise ValidationError(
-            'Use format: 3rdYear.CAP301.ProjectTitle.1stSemester.pdf'
-        )
-    prefix = _canonical_year_prefix(match.group('prefix'))
-    semester = _canonical_semester_key(match.group('semester'))
-    return {
-        'prefix': prefix,
-        'year_level': PIT_YEAR_PREFIX_LABELS.get(prefix, CAPSTONE_YEAR_LEVEL),
-        'course_code': match.group('course').upper(),
-        'project_slug': match.group('project'),
-        'semester_label': PIT_SEMESTER_LABELS[semester],
-    }
+    clean_name = (file_name or '').strip()
+    match = CAPSTONE_FILENAME_RE.fullmatch(clean_name)
+    if match:
+        prefix = _canonical_year_prefix(match.group('prefix'))
+        semester = _canonical_semester_key(match.group('semester'))
+        return {
+            'prefix': prefix,
+            'year_level': PIT_YEAR_PREFIX_LABELS.get(prefix, CAPSTONE_YEAR_LEVEL),
+            'course_code': match.group('course').upper(),
+            'project_slug': match.group('project'),
+            'semester_label': PIT_SEMESTER_LABELS[semester],
+        }
+    
+    # Fallback to project-name-only format
+    if clean_name.lower().endswith('.pdf'):
+        project_slug = clean_name[:-4]
+        if project_slug and re.match(r'^[A-Za-z0-9_-]+$', project_slug):
+            active_sem = get_active_semester()
+            semester_label = active_sem.label if active_sem else '1st Semester'
+            return {
+                'prefix': CAPSTONE_YEAR_PREFIX,
+                'year_level': CAPSTONE_YEAR_LEVEL,
+                'course_code': CAPSTONE_DEFAULT_COURSE,
+                'project_slug': project_slug,
+                'semester_label': semester_label,
+            }
+            
+    raise ValidationError(
+        'Use format: ProjectTitle.pdf or 3rdYear.CAP301.ProjectTitle.1stSemester.pdf'
+    )
 
 
 def repository_scope(user):
@@ -673,20 +689,36 @@ def _canonical_semester_key(raw_semester):
 
 
 def validate_pit_file_name(file_name):
-    match = PIT_FILENAME_RE.fullmatch((file_name or '').strip())
-    if not match:
-        raise ValidationError(
-            'Use format: 3rdYear.PIT301.ProjectTitle.1stSemester.pdf'
-        )
-    prefix = _canonical_year_prefix(match.group('prefix'))
-    semester = _canonical_semester_key(match.group('semester'))
-    return {
-        'prefix': prefix,
-        'year_level': PIT_YEAR_PREFIX_LABELS[prefix],
-        'course_code': match.group('course').upper(),
-        'project_slug': match.group('project'),
-        'semester_label': PIT_SEMESTER_LABELS[semester],
-    }
+    clean_name = (file_name or '').strip()
+    match = PIT_FILENAME_RE.fullmatch(clean_name)
+    if match:
+        prefix = _canonical_year_prefix(match.group('prefix'))
+        semester = _canonical_semester_key(match.group('semester'))
+        return {
+            'prefix': prefix,
+            'year_level': PIT_YEAR_PREFIX_LABELS[prefix],
+            'course_code': match.group('course').upper(),
+            'project_slug': match.group('project'),
+            'semester_label': PIT_SEMESTER_LABELS[semester],
+        }
+    
+    # Fallback to project-name-only format
+    if clean_name.lower().endswith('.pdf'):
+        project_slug = clean_name[:-4]
+        if project_slug and re.match(r'^[A-Za-z0-9_-]+$', project_slug):
+            active_sem = get_active_semester()
+            semester_label = active_sem.label if active_sem else '1st Semester'
+            return {
+                'prefix': '3rdYear',
+                'year_level': '3rd Year',
+                'course_code': 'PIT301',
+                'project_slug': project_slug,
+                'semester_label': semester_label,
+            }
+            
+    raise ValidationError(
+        'Use format: ProjectTitle.pdf or 3rdYear.PIT301.ProjectTitle.1stSemester.pdf'
+    )
 
 
 def pit_queryset_for_scope(scope):

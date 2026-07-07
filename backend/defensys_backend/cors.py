@@ -38,7 +38,17 @@ def _is_allowed_origin(origin):
 
 
 def _is_local_origin(origin):
-    return (origin.startswith('http://localhost') or 
-            origin.startswith('http://127.0.0.1') or 
-            origin.startswith('http://192.168.') or 
-            origin.startswith('http://10.'))
+    is_loopback = (
+        origin.startswith('http://localhost')
+        or origin.startswith('http://127.0.0.1')
+    )
+    if is_loopback:
+        return True
+    # LAN origins (192.168.*, 10.*) require explicit opt-in via settings
+    # to prevent accidental exposure if DEBUG=True leaks to production.
+    if getattr(settings, 'CORS_ALLOW_LAN', False):
+        return (
+            origin.startswith('http://192.168.')
+            or origin.startswith('http://10.')
+        )
+    return False

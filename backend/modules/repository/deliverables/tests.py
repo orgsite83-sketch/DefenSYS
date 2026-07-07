@@ -568,7 +568,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='CloudFileSync.pdf'),
 
             format='json',
 
@@ -602,7 +602,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='CloudFileSync.pdf'),
 
             format='json',
 
@@ -695,7 +695,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
 
             '/api/repository/deliverables/upload/',
 
-            self.upload_payload(deliverable_id='D4.1', file_name='3rdYear.CAP301.CloudFileSync.2ndSemester.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='CloudFileSync.pdf'),
 
             format='json',
 
@@ -843,7 +843,7 @@ class CapstoneDeliverablesApiTests(APITestCase):
         # Test 2: Uploading with correct suggested name (case-insensitive) should succeed
         response_success = self.client.post(
             '/api/repository/deliverables/upload/',
-            self.upload_payload(deliverable_id='D4.1', file_name='3RDYEAR.CAP301.CLOUDFILESYNC.2NDSEMESTER.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='CLOUDFILESYNC.pdf'),
             format='json',
         )
         self.assertEqual(response_success.status_code, 200)
