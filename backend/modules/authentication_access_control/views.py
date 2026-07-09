@@ -11,6 +11,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from rest_framework_simplejwt.views import TokenBlacklistView
 
 from .serializers import (
+    ChangePasswordSerializer,
     CustomTokenObtainPairSerializer,
     CustomTokenRefreshSerializer,
     SystemAuditLogSerializer,
@@ -56,7 +57,90 @@ class CurrentUserView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(UserSerializer(request.user).data)
+        return Response(UserSerializer(request.user, context={'request': request}).data)
+
+    def patch(self, request):
+        user = request.user
+        
+        # Check if we are removing the avatar
+        remove_avatar = (
+            request.data.get('remove_avatar') == 'true' or
+            request.data.get('avatar') == '' or
+            request.data.get('avatar') is None
+        )
+        
+        if 'avatar' in request.data or 'avatar' in request.FILES or remove_avatar:
+            if remove_avatar:
+                if user.avatar:
+                    user.avatar.delete(save=False)
+                user.avatar = None
+            else:
+                avatar_file = request.FILES.get('avatar')
+                if avatar_file:
+                    # Validate size (10MB limit)
+                    if avatar_file.size > 10 * 1024 * 1024:
+                        return Response(
+                            {'detail': 'Avatar file size must not exceed 10MB.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # Validate extension
+                    import os
+                    ext = os.path.splitext(avatar_file.name)[1].lower().replace('.', '')
+                    if ext not in ['png', 'jpg', 'jpeg', 'webp']:
+                        return Response(
+                            {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    
+                    # Delete old avatar file if it exists
+                    if user.avatar:
+                        user.avatar.delete(save=False)
+                    
+                    user.avatar = avatar_file
+
+        serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+
+class ChangePasswordView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        serializer = ChangePasswordSerializer(
+            data=request.data, context={'request': request}
+        )
+        serializer.is_valid(raise_exception=True)
+
+        user = request.user
+        user.set_password(serializer.validated_data['new_password'])
+        user.save(update_fields=['password'])
+
+        # Send confirmation email (best-effort).
+        from notifications.email_service import send_password_changed_email
+        send_password_changed_email(user)
+
+        return Response({'detail': 'Password changed successfully.'})
+
+
+class UserHistoryView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        queryset = SystemAuditLog.objects.filter(actor=request.user)
+        limit = 50
+        try:
+            limit = min(max(int(request.query_params.get('limit', 50)), 1), 200)
+        except (TypeError, ValueError):
+            pass
+        logs = list(queryset[:limit])
+        return Response({
+            'history': SystemAuditLogSerializer(logs, many=True).data,
+            'limit': limit,
+        })
+
 
 
 class SystemAuditLogListView(APIView):

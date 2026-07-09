@@ -33,6 +33,12 @@ class User(AbstractUser):
         blank=True,
         help_text='Uploaded e-signature image (PNG/JPG) for document signing.',
     )
+    avatar = models.ImageField(
+        upload_to='avatars/',
+        null=True,
+        blank=True,
+        help_text='User profile picture.',
+    )
 
     def __str__(self):
         return f"{self.first_name} {self.last_name} ({self.username})"

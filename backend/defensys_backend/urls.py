@@ -20,6 +20,10 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from defensys_backend.media_views import AuthenticatedMediaFileView
+from authentication_access_control.password_reset import (
+    ConfirmPasswordResetAPIView,
+    RequestPasswordResetView,
+)
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -39,6 +43,9 @@ urlpatterns = [
         AuthenticatedMediaFileView.as_view(),
         name='media_file_serve',
     ),
+    # Password reset (email flow)
+    path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),
+    path('api/password-reset/confirm/', ConfirmPasswordResetAPIView.as_view(), name='password_reset_confirm'),
 ]
 
 # Serve media files in development (local disk only)

@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
+import 'student/profile_edit_screen.dart';
 import 'panelist/panelist_models.dart';
 import 'panelist/assignments_tab.dart';
 import 'panelist/grade_sheet_tab.dart';
@@ -307,92 +308,126 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: DefensysTokens.maroon,
-                  child: Text(
-                    (widget.userData?['name'] ?? 'P')[0].toUpperCase(),
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
+      builder: (_) => Consumer(
+        builder: (context, ref, _) {
+          final user = ref.watch(authProvider).user;
+          final displayName = user != null && user['name'] != null
+              ? user['name'] as String
+              : (widget.userData?['name'] ?? 'Prof. Panelist');
+          final avatarUrl = user?['avatar'] != null
+              ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+              : null;
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
                     ),
                   ),
-                ),
-                title: Text(
-                  widget.userData?['name'] ?? 'Prof. Panelist',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  'Panelist · ID ${widget.userData?['id'] ?? '—'}',
-                  style: const TextStyle(fontSize: 12),
-                ),
+                  ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                      backgroundImage: avatarUrl != null
+                          ? NetworkImage(avatarUrl)
+                          : null,
+                      child: avatarUrl == null
+                          ? Text(
+                              displayName.isNotEmpty ? displayName[0].toUpperCase() : 'P',
+                              style: const TextStyle(
+                                color: DefensysTokens.maroon,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            )
+                          : null,
+                    ),
+                    title: Text(
+                      displayName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Panelist · ID ${widget.userData?['id'] ?? '—'}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.person_outline, color: DefensysTokens.maroon),
+                    title: const Text(
+                      'Profile',
+                      style: TextStyle(
+                        color: DefensysTokens.maroon,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: const Text('About DefenSYS'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AboutScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip_outlined),
+                    title: const Text('Privacy Policy'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.gavel_rounded),
+                    title: const Text('Terms & Conditions'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TermsScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text(
+                      'Logout',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      if (await confirmLogout(context)) {
+                        await ref.read(authProvider.notifier).logout();
+                      }
+                    },
+                  ),
+                ],
               ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('About DefenSYS'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AboutScreen()),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined),
-                title: const Text('Privacy Policy'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.gavel_rounded),
-                title: const Text('Terms & Conditions'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const TermsScreen()),
-                  );
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text(
-                  'Logout',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  if (await confirmLogout(context)) {
-                    await ref.read(authProvider.notifier).logout();
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

@@ -9,6 +9,7 @@ import 'student/student_deliverables_tab.dart';
 import 'student/section_integration_tab.dart';
 import 'student/profile_edit_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../config/api_config.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
 import '../../theme/defensys_tokens.dart';
@@ -57,6 +58,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('student'));
+    final user = ref.watch(authProvider).user;
+    final avatarUrl = user?['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+        : null;
+    final studentName = user != null && user['name'] != null
+        ? user['name'] as String
+        : _profile.name;
 
     final dataToPass = Map<String, dynamic>.from(
       dashState.data ?? <String, dynamic>{},
@@ -274,119 +282,130 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 8),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 40,
-                height: 4,
-                margin: const EdgeInsets.only(bottom: 16),
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
-                ),
-              ),
-              ListTile(
-                leading: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
-                  backgroundImage: _profile.avatarBytes != null
-                      ? MemoryImage(_profile.avatarBytes!)
-                      : null,
-                  child: _profile.avatarBytes == null
-                      ? Text(
-                          _profile.name[0].toUpperCase(),
-                          style: const TextStyle(
-                            color: DefensysTokens.maroon,
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
-                          ),
-                        )
-                      : null,
-                ),
-                title: Text(
-                  _profile.name,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(
-                  'Student · ${_profile.team}',
-                  style: const TextStyle(fontSize: 12),
-                ),
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.edit_outlined, color: DefensysTokens.maroon),
-                title: const Text(
-                  'Edit Profile',
-                  style: TextStyle(
-                    color: DefensysTokens.maroon,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  final updated = await Navigator.push<StudentProfile>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => ProfileEditScreen(profile: _profile),
+      builder: (_) => Consumer(
+        builder: (context, ref, _) {
+          final user = ref.watch(authProvider).user;
+          final avatarUrl = user?['avatar'] != null
+              ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+              : null;
+          final studentName = user != null && user['name'] != null
+              ? user['name'] as String
+              : _profile.name;
+
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 16),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                  );
-                  if (updated != null) setState(() {});
-                },
+                  ),
+                  ListTile(
+                    leading: CircleAvatar(
+                      radius: 24,
+                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                      backgroundImage: avatarUrl != null
+                          ? NetworkImage(avatarUrl)
+                          : null,
+                      child: avatarUrl == null
+                          ? Text(
+                              studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                              style: const TextStyle(
+                                color: DefensysTokens.maroon,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 18,
+                              ),
+                            )
+                          : null,
+                    ),
+                    title: Text(
+                      studentName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    subtitle: Text(
+                      'Student · ${_profile.team}',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.person_outline, color: DefensysTokens.maroon),
+                    title: const Text(
+                      'Profile',
+                      style: TextStyle(
+                        color: DefensysTokens.maroon,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const ProfileScreen(),
+                        ),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.info_outline_rounded),
+                    title: const Text('About DefenSYS'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const AboutScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.privacy_tip_outlined),
+                    title: const Text('Privacy Policy'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+                      );
+                    },
+                  ),
+                  ListTile(
+                    leading: const Icon(Icons.gavel_rounded),
+                    title: const Text('Terms & Conditions'),
+                    onTap: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (_) => const TermsScreen()),
+                      );
+                    },
+                  ),
+                  const Divider(),
+                  ListTile(
+                    leading: const Icon(Icons.logout, color: Colors.red),
+                    title: const Text(
+                      'Logout',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    onTap: () async {
+                      Navigator.pop(context);
+                      if (await confirmLogout(context)) {
+                        await ref.read(authProvider.notifier).logout();
+                      }
+                    },
+                  ),
+                ],
               ),
-              ListTile(
-                leading: const Icon(Icons.info_outline_rounded),
-                title: const Text('About DefenSYS'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const AboutScreen()),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.privacy_tip_outlined),
-                title: const Text('Privacy Policy'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const PrivacyScreen()),
-                  );
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.gavel_rounded),
-                title: const Text('Terms & Conditions'),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(builder: (_) => const TermsScreen()),
-                  );
-                },
-              ),
-              const Divider(),
-              ListTile(
-                leading: const Icon(Icons.logout, color: Colors.red),
-                title: const Text(
-                  'Logout',
-                  style: TextStyle(color: Colors.red),
-                ),
-                onTap: () async {
-                  Navigator.pop(context);
-                  if (await confirmLogout(context)) {
-                    await ref.read(authProvider.notifier).logout();
-                  }
-                },
-              ),
-            ],
-          ),
-        ),
+            ),
+          );
+        },
       ),
     );
   }

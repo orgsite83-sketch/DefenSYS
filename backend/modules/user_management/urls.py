@@ -1,6 +1,7 @@
 from django.urls import include, path
 
 from .views import (
+    AdminResetPasswordView,
     BulkImportUsersView,
     GuestCodeExchangeView,
     GuestCodeValidateView,
@@ -48,6 +49,11 @@ urlpatterns = [
         '<int:user_id>/role-assignments/',
         UserRoleAssignmentHistoryView.as_view(),
         name='user_role_assignments',
+    ),
+    path(
+        '<int:user_id>/reset-password/',
+        AdminResetPasswordView.as_view(),
+        name='admin_reset_password',
     ),
     path('<int:user_id>/', UserDetailView.as_view(), name='user_detail'),
 ]

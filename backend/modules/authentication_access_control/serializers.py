@@ -1,11 +1,32 @@
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 from rest_framework_simplejwt.serializers import TokenObtainPairSerializer, TokenRefreshSerializer
 from rest_framework_simplejwt.settings import api_settings
 
 from .models import SystemAuditLog, User
 from .tokens import DefensysRefreshToken, REMEMBER_ME_CLAIM
+
+
+class ChangePasswordSerializer(serializers.Serializer):
+    current_password = serializers.CharField(write_only=True)
+    new_password = serializers.CharField(write_only=True)
+    confirm_password = serializers.CharField(write_only=True)
+
+    def validate_current_password(self, value):
+        user = self.context['request'].user
+        if not user.check_password(value):
+            raise serializers.ValidationError('Current password is incorrect.')
+        return value
+
+    def validate(self, attrs):
+        if attrs['new_password'] != attrs['confirm_password']:
+            raise serializers.ValidationError(
+                {'confirm_password': 'New password and confirmation do not match.'}
+            )
+        validate_password(attrs['new_password'], user=self.context['request'].user)
+        return attrs
 
 
 def _coerce_bool(value) -> bool:
@@ -30,7 +51,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'username', 'email', 'first_name', 'last_name', 'name', 'role',
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
-            'is_documenter', 'is_uploader', 'e_signature', 'facultyRoles',
+            'is_documenter', 'is_uploader', 'e_signature', 'avatar', 'facultyRoles',
             'is_project_manager', 'managed_section',
         ]
 
@@ -115,7 +136,7 @@ class CustomTokenObtainPairSerializer(TokenObtainPairSerializer):
         refresh = DefensysRefreshToken.for_user(self.user, remember_me=remember_me)
         data['refresh'] = str(refresh)
         data['access'] = str(refresh.access_token)
-        data['user'] = UserSerializer(self.user).data
+        data['user'] = UserSerializer(self.user, context=self.context).data
         return data
 
 

@@ -239,6 +239,25 @@ class AuthNotifier extends Notifier<AuthState> {
     }
   }
 
+  void updateCurrentUser(Map<String, dynamic> userData) {
+    final updatedUser = Map<String, dynamic>.from(userData);
+    state = state.copyWith(user: updatedUser);
+
+    if (_sessionStorage != null) {
+      _sessionStorage!.writeUserJson(jsonEncode(updatedUser));
+      final rememberMe = _sessionStorage!.rememberMe;
+      _sessionStorage!.readRefresh().then((refreshVal) {
+        if (kIsWeb && rememberMe && refreshVal != null && state.token != null) {
+          broadcastAuthToOtherTabs(
+            access: state.token!,
+            refresh: refreshVal,
+            userJson: jsonEncode(updatedUser),
+          );
+        }
+      });
+    }
+  }
+
   Future<bool> refreshTokens({bool silent = false}) async {
     final storage = _sessionStorage ?? await SessionStorage.createForRestore();
     if (storage == null) return false;

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
@@ -11,6 +12,8 @@ import '../services/session_storage.dart';
 import '../theme/defensys_tokens.dart';
 import '../theme/app_theme.dart';
 import '../widgets/feedback_toast.dart';
+import '../config/api_config.dart';
+import '../services/api_http.dart';
 import 'about_screen.dart';
 import 'privacy_screen.dart';
 import 'terms_screen.dart';
@@ -80,6 +83,123 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _showForgotPasswordDialog() async {
+    final identifierCtrl = TextEditingController();
+    final dialogFormKey = GlobalKey<FormState>();
+    bool isSubmitting = false;
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              title: const Text(
+                'Reset Password',
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontWeight: FontWeight.w700,
+                  fontSize: 18,
+                  color: Color(0xFF0F172A),
+                ),
+              ),
+              content: Form(
+                key: dialogFormKey,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    const Text(
+                      'Enter your Student/Employee ID or email address. '
+                      'If an account exists, a reset link will be sent.',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 13,
+                        color: Color(0xFF64748B),
+                        height: 1.5,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      controller: identifierCtrl,
+                      autofocus: true,
+                      decoration: InputDecoration(
+                        labelText: 'ID or Email',
+                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+                        ),
+                      ),
+                      validator: (v) => v == null || v.trim().isEmpty
+                          ? 'Please enter your ID or email'
+                          : null,
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  onPressed: isSubmitting
+                      ? null
+                      : () async {
+                          if (!dialogFormKey.currentState!.validate()) return;
+                          setDialogState(() => isSubmitting = true);
+                          try {
+                            await apiHttpClient.post(
+                              Uri.parse('${ApiConfig.baseUrl}/password-reset/'),
+                              headers: {'Content-Type': 'application/json'},
+                              body: jsonEncode({
+                                'identifier': identifierCtrl.text.trim(),
+                              }),
+                            );
+                          } catch (_) {
+                            // Best-effort; always show same success message.
+                          }
+                          if (ctx.mounted) Navigator.pop(ctx);
+                          if (mounted) {
+                            showSuccessToast(
+                              context,
+                              'If an account exists with that ID or email, '
+                              'a password reset link has been sent.',
+                            );
+                          }
+                        },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: DefensysTokens.maroon,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: isSubmitting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Text('Send Reset Link'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+    identifierCtrl.dispose();
   }
 
   Future<void> _login() async {
@@ -722,7 +842,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                         ],
                       ),
                       GestureDetector(
-                        onTap: () {},
+                        onTap: _showForgotPasswordDialog,
                         child: const Text(
                           'Forgot password?',
                           style: TextStyle(
@@ -985,7 +1105,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {},
+                        onPressed: _showForgotPasswordDialog,
                         style: TextButton.styleFrom(
                           foregroundColor: DefensysTokens.maroon,
                           padding: EdgeInsets.zero,

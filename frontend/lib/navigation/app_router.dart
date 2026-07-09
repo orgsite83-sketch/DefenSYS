@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import '../screens/app/panelist_dashboard.dart';
 import '../screens/app/student_dashboard.dart';
 import '../screens/login_screen.dart';
+import '../screens/password_reset_confirm_screen.dart';
+import '../screens/app/student/profile_edit_screen.dart';
 import '../screens/terms_agreement_screen.dart';
 import '../screens/web/admin/admin_shell.dart';
 import '../screens/web/faculty/faculty_dashboard.dart';
@@ -37,9 +39,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
 
     final location = state.uri.path;
     final onLogin = location == AppRoutes.login;
-
+    final isPasswordReset = location.startsWith('/password-reset/confirm');
     if (auth.token == null || auth.user == null) {
-      return onLogin ? null : AppRoutes.login;
+      return (onLogin || isPasswordReset) ? null : AppRoutes.login;
     }
 
     final user = auth.user!;
@@ -92,6 +94,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) {
           final auth = ref.read(authProvider);
           return LoginScreen(sessionMessage: auth.sessionExpiredMessage);
+        },
+      ),
+      GoRoute(
+        path: AppRoutes.passwordResetConfirm,
+        builder: (context, state) {
+          final uid = state.pathParameters['uid']!;
+          final token = state.pathParameters['token']!;
+          return ConfirmPasswordResetScreen(uid: uid, token: token);
         },
       ),
       GoRoute(
@@ -221,6 +231,10 @@ List<RouteBase> _adminRoutes() {
       redirect: (_, state) => _redirectAdminParentOnly(state),
       routes: [
         GoRoute(path: 'overview', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'profile',
+          builder: (_, __) => const ProfileScreen(),
+        ),
         GoRoute(
           path: 'academic-periods',
           builder: (_, __) => const SizedBox.shrink(),

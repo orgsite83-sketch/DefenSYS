@@ -106,6 +106,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
   /// Detail / nested routes use [routeChild] from go_router; top-level sections
   /// are built locally so sidebar navigation works even when shell child is empty.
   bool _isAdminDetailRoute(GoRouterState state) {
+    if (state.uri.path == '/admin/profile') return true;
     final params = state.pathParameters;
     return params.containsKey('teamId') ||
         params.containsKey('gradeId') ||

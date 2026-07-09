@@ -918,3 +918,35 @@ class UserESignatureView(APIView):
             'message': 'E-signature removed successfully.'
         }, status=status.HTTP_200_OK)
 
+
+class AdminResetPasswordView(APIView):
+    """
+    POST /api/users/<user_id>/reset-password/
+    Resets a user's password back to their username (student/employee ID).
+    Admin only.
+    """
+    permission_classes = [IsSystemAdmin]
+
+    def post(self, request, user_id):
+        user = get_object_or_404(User, pk=user_id)
+
+        if user.pk == request.user.pk:
+            return Response(
+                {'detail': 'You cannot reset your own password from this screen. Use the Change Password feature.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        user.set_password(user.username)
+        user.save(update_fields=['password'])
+
+        # Send notification email (best-effort).
+        send_email = request.data.get('send_email', True)
+        email_sent = False
+        if send_email and user.email:
+            from notifications.email_service import send_admin_password_reset_email
+            email_sent = send_admin_password_reset_email(user)
+
+        return Response({
+            'detail': f'Password for {user.username} has been reset to their ID.',
+            'email_sent': email_sent,
+        })

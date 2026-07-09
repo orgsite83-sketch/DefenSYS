@@ -3441,6 +3441,30 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                           ),
                         ),
                       ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 42,
+                        child: OutlinedButton.icon(
+                          onPressed: state.isSaving ? null : () => _confirmResetPassword(u),
+                          icon: const Icon(Icons.lock_reset_outlined, size: 18),
+                          label: const Text('Reset Password'),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(
+                              color: Colors.red,
+                              width: 1,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            textStyle: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -4545,6 +4569,39 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     last.dispose();
     email.dispose();
     password.dispose();
+  }
+
+  Future<void> _confirmResetPassword(Map<String, dynamic> user) async {
+    final name = (user['name']?.toString().trim().isNotEmpty == true)
+        ? user['name']!.toString().trim()
+        : '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+    final username = user['username']?.toString() ?? '—';
+    final id = _asInt(user['id']);
+    if (id == null) return;
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Reset Password?',
+      message: 'Are you sure you want to reset $name\'s password to their Student/Employee ID ($username)?',
+      confirmLabel: 'Reset Password',
+      cancelLabel: 'Cancel',
+      icon: Icons.lock_reset_outlined,
+    );
+
+    if (!confirmed || !mounted) return;
+
+    final success = await ref
+        .read(userManagementProvider.notifier)
+        .resetUserPassword(id);
+
+    if (mounted) {
+      if (success) {
+        showSuccessToast(context, 'Password reset to Student/Employee ID.');
+      } else {
+        final errorMsg = ref.read(userManagementProvider).error ?? 'Failed to reset password.';
+        showErrorToast(context, errorMsg);
+      }
+    }
   }
 
   Future<void> _showUserDialog([Map<String, dynamic>? user]) async {

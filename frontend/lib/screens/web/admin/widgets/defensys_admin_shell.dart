@@ -1,11 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../../l10n/l10n_ext.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/offline_banner.dart';
 import '../../../../services/notifications_provider.dart';
 import '../../../../widgets/notifications_modal.dart';
+import '../../../../services/auth_provider.dart';
+import '../../../../config/api_config.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
 
 export '../../../../widgets/status_badge.dart';
@@ -260,7 +263,7 @@ class DefensysCard extends StatelessWidget {
   }
 }
 
-class _TopNav extends StatelessWidget {
+class _TopNav extends ConsumerWidget {
   final String activeSemesterLabel;
   final bool showMenuButton;
 
@@ -270,7 +273,16 @@ class _TopNav extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authProvider).user;
+    final displayName = user != null && user['name'] != null
+        ? user['name'] as String
+        : 'Administrator';
+
+    final avatarUrl = user?['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+        : null;
+
     return Container(
       height: DefensysUi.topNavHeight,
       padding: EdgeInsets.only(
@@ -303,27 +315,47 @@ class _TopNav extends StatelessWidget {
           const SizedBox(width: 20),
           const _NotificationsBell(),
           const SizedBox(width: 20),
-          Container(
-            width: 36,
-            height: 36,
-            decoration: const BoxDecoration(
-              color: DefensysUi.primaryMaroon,
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.admin_panel_settings_rounded,
-              color: Colors.white,
-              size: 19,
-            ),
-          ),
-          const SizedBox(width: 14),
-          const Text(
-            'Administrator',
-            style: TextStyle(
-              fontFamily: DefensysUi.fontFamily,
-              color: DefensysUi.textDark,
-              fontWeight: FontWeight.w700,
-              fontSize: 15,
+          InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => context.go('/admin/profile'),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: DefensysUi.primaryMaroon,
+                      shape: BoxShape.circle,
+                      image: avatarUrl != null
+                          ? DecorationImage(
+                              image: NetworkImage(avatarUrl),
+                              fit: BoxFit.cover,
+                            )
+                          : null,
+                    ),
+                    child: avatarUrl == null
+                        ? const Icon(
+                            Icons.admin_panel_settings_rounded,
+                            color: Colors.white,
+                            size: 19,
+                          )
+                        : null,
+                  ),
+                  const SizedBox(width: 14),
+                  Text(
+                    displayName,
+                    style: const TextStyle(
+                      fontFamily: DefensysUi.fontFamily,
+                      color: DefensysUi.textDark,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -605,13 +637,22 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _UserProfileCard extends StatelessWidget {
+class _UserProfileCard extends ConsumerWidget {
   final VoidCallback onLogout;
 
   const _UserProfileCard({required this.onLogout});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authProvider).user;
+    final displayName = user != null && user['name'] != null
+        ? user['name'] as String
+        : 'Administrator';
+
+    final avatarUrl = user?['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+        : null;
+
     return Container(
       margin: const EdgeInsets.fromLTRB(12, 12, 12, 16),
       padding: const EdgeInsets.all(12),
@@ -625,53 +666,74 @@ class _UserProfileCard extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Container(
-            width: 36,
-            height: 36,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: DefensysUi.accentGold.withValues(alpha: 0.5),
-                width: 1.5,
-              ),
-              color: Colors.white.withValues(alpha: 0.1),
-            ),
-            child: const Center(
-              child: Icon(
-                Icons.admin_panel_settings_rounded,
-                color: Colors.white,
-                size: 18,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          const Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  'Administrator',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(8),
+              onTap: () => context.go('/admin/profile'),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          color: DefensysUi.accentGold.withValues(alpha: 0.5),
+                          width: 1.5,
+                        ),
+                        color: Colors.white.withValues(alpha: 0.1),
+                        image: avatarUrl != null
+                            ? DecorationImage(
+                                image: NetworkImage(avatarUrl),
+                                fit: BoxFit.cover,
+                              )
+                            : null,
+                      ),
+                      child: avatarUrl == null
+                          ? const Center(
+                              child: Icon(
+                                Icons.admin_panel_settings_rounded,
+                                color: Colors.white,
+                                size: 18,
+                              ),
+                            )
+                          : null,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            displayName,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 2),
+                          const Text(
+                            'Academic Portal',
+                            style: TextStyle(
+                              color: Color(0xFF9CA3AF),
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 2),
-                Text(
-                  'Academic Portal',
-                  style: TextStyle(
-                    color: Color(0xFF9CA3AF),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w500,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
             ),
           ),
           Material(

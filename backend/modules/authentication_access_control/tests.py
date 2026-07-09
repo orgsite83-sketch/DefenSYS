@@ -502,3 +502,200 @@ class SystemAuditLogApiTests(APITestCase):
         self.assertNotIn('repository.pit_upload_2nd', actions)
         self.assertNotIn('repository.capstone_upload', actions)
 
+    def test_user_history_api(self):
+        SystemAuditLog.objects.create(
+            actor=self.documenter,
+            category=SystemAuditLog.CATEGORY_REPOSITORY,
+            action='repository.upload',
+            target_type='VaultEntry',
+            target_id='1',
+        )
+        SystemAuditLog.objects.create(
+            actor=self.admin,
+            category=SystemAuditLog.CATEGORY_ACADEMIC_PERIOD,
+            action='academic.create',
+            target_type='AcademicPeriod',
+            target_id='2',
+        )
+
+        # Logged in as documenter
+        self.client.force_authenticate(user=self.documenter)
+        response = self.client.get('/api/me/history/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        logs = response.data['history']
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]['action'], 'repository.upload')
+
+        # Logged in as admin
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/me/history/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        logs = response.data['history']
+        self.assertEqual(len(logs), 1)
+        self.assertEqual(logs[0]['action'], 'academic.create')
+
+        # Unauthenticated user
+        self.client.logout()
+        response = self.client.get('/api/me/history/')
+        self.assertEqual(response.status_code, status.HTTP_401_UNAUTHORIZED)
+
+
+class PasswordManagementTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='student-test',
+            password='oldpassword123',
+            email='student@example.com',
+            role='student',
+        )
+        self.admin = User.objects.create_user(
+            username='admin-test',
+            password='adminpassword123',
+            email='admin@example.com',
+            role='admin',
+            is_staff=True,
+            is_superuser=True,
+        )
+
+    def test_change_password_success(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            '/api/change-password/',
+            {
+                'current_password': 'oldpassword123',
+                'new_password': 'newpassword123',
+                'confirm_password': 'newpassword123',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Check that the password was actually updated
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('newpassword123'))
+
+    def test_change_password_wrong_current(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            '/api/change-password/',
+            {
+                'current_password': 'wrongpassword',
+                'new_password': 'newpassword123',
+                'confirm_password': 'newpassword123',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_change_password_mismatch(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            '/api/change-password/',
+            {
+                'current_password': 'oldpassword123',
+                'new_password': 'newpassword123',
+                'confirm_password': 'differentpassword',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_request_password_reset_success(self):
+        response = self.client.post(
+            '/api/password-reset/',
+            {'identifier': 'student-test'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('link has been sent', response.data['detail'])
+
+    def test_request_password_reset_nonexistent_user(self):
+        # Should still return 200 to prevent user enumeration
+        response = self.client.post(
+            '/api/password-reset/',
+            {'identifier': 'nonexistent'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_admin_reset_password_success(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            f'/api/users/{self.user.pk}/reset-password/',
+            {'send_email': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        # Admin reset sets the password to their username (student-test)
+        self.assertTrue(self.user.check_password('student-test'))
+
+    def test_admin_reset_password_unauthorized(self):
+        self.client.force_authenticate(user=self.user)
+        response = self.client.post(
+            f'/api/users/{self.admin.pk}/reset-password/',
+            {'send_email': False},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_api_confirm_password_reset_success(self):
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        from django.contrib.auth.tokens import default_token_generator
+
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+
+        response = self.client.post(
+            '/api/password-reset/confirm/',
+            {
+                'uidb64': uidb64,
+                'token': token,
+                'new_password': 'newpassword123',
+                'confirm_password': 'newpassword123',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password('newpassword123'))
+
+    def test_api_confirm_password_reset_mismatch(self):
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+        from django.contrib.auth.tokens import default_token_generator
+
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+        token = default_token_generator.make_token(self.user)
+
+        response = self.client.post(
+            '/api/password-reset/confirm/',
+            {
+                'uidb64': uidb64,
+                'token': token,
+                'new_password': 'newpassword123',
+                'confirm_password': 'mismatchpassword',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_api_confirm_password_reset_invalid_token(self):
+        from django.utils.http import urlsafe_base64_encode
+        from django.utils.encoding import force_bytes
+
+        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
+
+        response = self.client.post(
+            '/api/password-reset/confirm/',
+            {
+                'uidb64': uidb64,
+                'token': 'invalid-token',
+                'new_password': 'newpassword123',
+                'confirm_password': 'newpassword123',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+

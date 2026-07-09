@@ -258,6 +258,41 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     }
   }
 
+  Future<bool> resetUserPassword(int userId, {bool sendEmail = true}) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/$userId/reset-password/'),
+        body: jsonEncode({'send_email': sendEmail}),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = jsonDecode(response.body);
+        final detail = payload['detail'] ?? 'Password reset successfully.';
+        state = state.copyWith(
+          isSaving: false,
+          message: detail,
+          clearError: true,
+        );
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<bool> bulkImport(
     List<Map<String, dynamic>> rows, {
     Map<String, dynamic>? studentContext,

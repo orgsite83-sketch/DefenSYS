@@ -129,6 +129,19 @@ class ApiConfig {
     return '$mediaUrl$path';
   }
 
+  /// Absolute URL for public/unprotected media files (e.g. avatars).
+  static String publicMediaUrl(String fileRef) {
+    if (fileRef.isEmpty) return fileRef;
+
+    final parsed = Uri.tryParse(fileRef);
+    if (parsed != null && parsed.hasScheme) {
+      return fileRef;
+    }
+
+    final path = fileRef.startsWith('/') ? fileRef : '/$fileRef';
+    return '$mediaUrl$path';
+  }
+
   static String get authUrl => baseUrl;
   static String get usersUrl => '$baseUrl/users';
   static String get teamsUrl => '$baseUrl/teams';

@@ -194,4 +194,5 @@ abstract final class AppRoutes {
   static const student = '/student';
   static const panelist = '/panelist';
   static const terms = '/terms';
+  static const passwordResetConfirm = '/password-reset/confirm/:uid/:token';
 }
