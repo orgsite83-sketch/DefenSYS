@@ -21,7 +21,6 @@ import '../admin/grade_center_screen.dart';
 import '../admin/rubric_engine_screen.dart';
 import '../admin/student_teams_screen.dart';
 import '../uploader/uploader_dashboard.dart';
-import 'adviser_grading_screen.dart';
 import 'weekly_progress_reports_screen.dart';
 import 'pit_lead_dashboard_content.dart';
 import 'pit_lead_cohort_screen.dart';
@@ -740,7 +739,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _buildSectionHeader('Advising'),
           _buildSidebarItem(
             icon: Icons.folder_open_outlined,
-            label: 'Capstone Deliverables',
+            label: 'Capstone Teams',
             onTap: () =>
                 _afterSidebarAction(isWide, () => _goToSection('deliverables')),
             isActive: _activeSection == 'deliverables',
@@ -753,15 +752,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               () => _goToSection('weekly_reports'),
             ),
             isActive: _activeSection == 'weekly_reports',
-          ),
-          _buildSidebarItem(
-            icon: Icons.rate_review_rounded,
-            label: 'Grade Students',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('adviser_grading'),
-            ),
-            isActive: _activeSection == 'adviser_grading',
           ),
           _buildSidebarItem(
             icon: Icons.summarize_rounded,
@@ -788,7 +778,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _buildSectionHeader('Instruction'),
           _buildSidebarItem(
             icon: Icons.folder_open_outlined,
-            label: 'PIT Deliverables',
+            label: 'PIT Teams',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('deliverables'),
@@ -1032,17 +1022,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'deliverables':
         final ws = _resolvedWorkspace(roles);
         final initialScope = (ws == FacultyWorkspace.pitLead || ws == FacultyWorkspace.pitInstructor) ? 'pit' : 'capstone';
-        return Container(
-          color: Colors.white,
-          child: TeamDeliverablesScreen(initialScope: initialScope),
-        );
+        return TeamDeliverablesScreen(initialScope: initialScope);
       case 'weekly_reports':
         return Container(
           color: Colors.white,
           child: const WeeklyProgressReportsScreen(),
         );
       case 'adviser_grading':
-        return const AdviserGradingScreen();
+        return const TeamDeliverablesScreen(initialScope: 'capstone');
       case 'cohort':
         return Container(
           color: Colors.white,
@@ -1150,7 +1137,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           facultyName: facultyName,
           onOpenDeliverables: () => _goToSection('deliverables'),
           onOpenWeeklyReports: () => _goToSection('weekly_reports'),
-          onOpenGrading: () => _goToSection('adviser_grading'),
+          onOpenGrading: () => _goToSection('deliverables'),
         );
       case FacultyWorkspace.pitInstructor:
         return PitInstructorDashboardContent(

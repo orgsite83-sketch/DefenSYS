@@ -22,7 +22,6 @@ class _StudentAcademicRecordsScreenState
   static const _maroon = DefensysUi.primaryMaroon;
   static const _gold = DefensysUi.accentGold;
   static const _blue = DefensysUi.techBlue;
-  static const _green = Color(0xFF10B981);
   static const _red = Color(0xFFDC2626);
   static const _line = Color(0xFFE5E7EB);
 
@@ -63,7 +62,8 @@ class _StudentAcademicRecordsScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
-    _ensurePageInRange(state.records.length);
+    final groupedRecords = _groupRecordsByStudent(state.records);
+    _ensurePageInRange(groupedRecords.length);
 
     ref.listen(studentAcademicRecordsProvider, (previous, next) {
       final error = next.error;
@@ -123,7 +123,7 @@ class _StudentAcademicRecordsScreenState
           _buildStats(state),
 
           const SizedBox(height: 22),
-          _recordsTableCard(state),
+          _recordsTableCard(state, groupedRecords),
         ],
       ),
     );
@@ -314,8 +314,8 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  Widget _recordsTableCard(StudentAcademicRecordsState state) {
-    final visibleRecords = _pageRecords(state.records);
+  Widget _recordsTableCard(StudentAcademicRecordsState state, List<Map<String, dynamic>> groupedRecords) {
+    final visibleRecords = _pageRecords(groupedRecords);
     return DefensysCard(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
       child: Column(
@@ -337,7 +337,7 @@ class _StudentAcademicRecordsScreenState
               height: 150,
               child: Center(child: CircularProgressIndicator(color: _maroon)),
             )
-          else if (state.records.isEmpty)
+          else if (groupedRecords.isEmpty)
             _buildEmptyState()
         else
           ConstrainedBox(
@@ -352,7 +352,7 @@ class _StudentAcademicRecordsScreenState
           const SizedBox(height: 18),
           Container(height: 1, color: _line),
           const SizedBox(height: 15),
-          _pagination(state),
+          _pagination(state, groupedRecords),
         ],
       ),
     );
@@ -513,10 +513,9 @@ class _StudentAcademicRecordsScreenState
       children: [
         _tableHeader(const [
           _ColumnSpec('Student', 1.35),
-          _ColumnSpec('School Year', 1.05),
-          _ColumnSpec('Semester', 1.05),
           _ColumnSpec('Year Level', 0.95),
-          _ColumnSpec('Created', 0.85),
+          _ColumnSpec('Section', 1.05),
+          _ColumnSpec('Latest Period', 1.85),
           _ColumnSpec('Action', 0.7),
         ]),
         ...visibleRecords.map((record) => _recordRow(state, record)),
@@ -532,8 +531,8 @@ class _StudentAcademicRecordsScreenState
     return records.sublist(start, end);
   }
 
-  Widget _pagination(StudentAcademicRecordsState state) {
-    final total = state.records.length;
+  Widget _pagination(StudentAcademicRecordsState state, List<Map<String, dynamic>> groupedRecords) {
+    final total = groupedRecords.length;
     final pages = total == 0 ? 1 : (total / _rowsPerPage).ceil();
     final safePage = _page.clamp(0, pages - 1);
     final start = total == 0 ? 0 : safePage * _rowsPerPage + 1;
@@ -544,7 +543,7 @@ class _StudentAcademicRecordsScreenState
     return Row(
       children: [
         Text(
-          'Showing $start-$end of $total records',
+          'Showing $start-$end of $total students',
           style: const TextStyle(
             color: Color(0xFF5D6678),
             fontSize: 12,
@@ -750,18 +749,17 @@ class _StudentAcademicRecordsScreenState
             flex: 1.35,
           ),
           _tableCell(
-            _bodyText(record['school_year']?.toString() ?? ''),
-            flex: 1.05,
-          ),
-          _tableCell(
-            _bodyText(record['semester']?.toString() ?? ''),
-            flex: 1.05,
-          ),
-          _tableCell(
             _yearLevelBadge(record['year_level']?.toString() ?? ''),
             flex: 0.95,
           ),
-          _tableCell(_bodyText(_dateLabel(record['created_at'])), flex: 0.85),
+          _tableCell(
+            _bodyText(record['section']?.toString() ?? '-'),
+            flex: 1.05,
+          ),
+          _tableCell(
+            _bodyText(record['display_semester']?.toString() ?? record['semester']?.toString() ?? ''),
+            flex: 1.85,
+          ),
           _tableCell(_buildActions(state, record), flex: 0.7),
         ],
       ),
@@ -795,34 +793,32 @@ class _StudentAcademicRecordsScreenState
     StudentAcademicRecordsState state,
     Map<String, dynamic> record,
   ) {
-    final recordId = _asInt(record['id']);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        InkWell(
-          onTap: state.isSaving ? null : () => _showRecordDialog(record),
+    return InkWell(
+      onTap: () => _showStudentDetailsDialog(record),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF4F4),
+          border: Border.all(color: _maroon.withValues(alpha: 0.2)),
           borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.edit_square, color: _blue, size: 18),
-          ),
         ),
-        const SizedBox(width: 3),
-        InkWell(
-          onTap: state.isSaving || recordId == null
-              ? null
-              : () => _confirmDelete(
-                  recordId,
-                  record['student_name']?.toString() ?? 'student',
-                ),
-          borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.delete_rounded, color: _red, size: 18),
-          ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_open_rounded, color: _maroon, size: 15),
+            SizedBox(width: 4),
+            Text(
+              'Details',
+              style: TextStyle(
+                color: _maroon,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 
@@ -871,11 +867,14 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  Future<void> _showRecordDialog([Map<String, dynamic>? record]) async {
+  Future<void> _showRecordDialog({
+    Map<String, dynamic>? record,
+    int? overrideStudentId,
+  }) async {
     final editing = record != null;
     final state = ref.read(studentAcademicRecordsProvider);
     int? selectedStudentId =
-        _asInt(record?['student_id']) ?? _firstStudentId(state);
+        overrideStudentId ?? _asInt(record?['student_id']) ?? _firstStudentId(state);
     String? selectedSchoolYear =
         record?['school_year']?.toString() ??
         state.activeSemester?['school_year']?.toString();
@@ -883,6 +882,8 @@ class _StudentAcademicRecordsScreenState
         _asInt(record?['semester_id']) ?? _asInt(state.activeSemester?['id']);
     String selectedYearLevel =
         record?['year_level']?.toString() ?? _yearLevels.first;
+    String selectedSection =
+        record?['section']?.toString() ?? '';
 
     final saved = await showDialog<bool>(
       context: context,
@@ -905,6 +906,13 @@ class _StudentAcademicRecordsScreenState
                       DropdownButtonFormField<int>(
                         initialValue: selectedStudentId,
                         decoration: const InputDecoration(labelText: 'Student'),
+                        onChanged: (overrideStudentId != null || editing)
+                            ? null
+                            : (value) {
+                                setDialogState(() {
+                                  selectedStudentId = value;
+                                });
+                              },
                         items: state.students
                             .map(
                               (student) => DropdownMenuItem(
@@ -915,11 +923,6 @@ class _StudentAcademicRecordsScreenState
                               ),
                             )
                             .toList(),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            selectedStudentId = value;
-                          });
-                        },
                       ),
                       const SizedBox(height: 12),
                       DropdownButtonFormField<String>(
@@ -989,6 +992,17 @@ class _StudentAcademicRecordsScreenState
                           });
                         },
                       ),
+                      const SizedBox(height: 12),
+                      TextFormField(
+                        initialValue: selectedSection,
+                        decoration: const InputDecoration(
+                          labelText: 'Section',
+                          hintText: 'e.g. CS4A, Section 1',
+                        ),
+                        onChanged: (value) {
+                          selectedSection = value;
+                        },
+                      ),
                     ],
                   ),
                 ),
@@ -1020,6 +1034,7 @@ class _StudentAcademicRecordsScreenState
       'student_id': selectedStudentId,
       'semester_id': selectedSemesterId,
       'year_level': selectedYearLevel,
+      'section': selectedSection,
     };
 
     if (editing) {
@@ -1638,13 +1653,6 @@ class _StudentAcademicRecordsScreenState
     );
   }
 
-  String _dateLabel(dynamic value) {
-    final text = value?.toString() ?? '';
-    if (text.length >= 10) {
-      return text.substring(0, 10);
-    }
-    return text;
-  }
 
   int _count(StudentAcademicRecordsState state, String key) {
     final value = state.counts[key];
@@ -1657,7 +1665,7 @@ class _StudentAcademicRecordsScreenState
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  int? _asInt(dynamic value) {
+    int? _asInt(dynamic value) {
     if (value is int) {
       return value;
     }
@@ -1666,6 +1674,295 @@ class _StudentAcademicRecordsScreenState
     }
     return int.tryParse(value?.toString() ?? '');
   }
+
+  List<Map<String, dynamic>> _groupRecordsByStudent(List<Map<String, dynamic>> records) {
+    if (records.isEmpty) return [];
+    final Map<int, Map<String, dynamic>> uniqueStudents = {};
+    for (final record in records) {
+      final studentId = _asInt(record['student_id']);
+      if (studentId == null) continue;
+
+      final existing = uniqueStudents[studentId];
+      if (existing == null) {
+        uniqueStudents[studentId] = record;
+      } else {
+        final existingCreated = DateTime.tryParse(existing['created_at']?.toString() ?? '') ?? DateTime(0);
+        final recordCreated = DateTime.tryParse(record['created_at']?.toString() ?? '') ?? DateTime(0);
+        if (recordCreated.isAfter(existingCreated)) {
+          uniqueStudents[studentId] = record;
+        }
+      }
+    }
+    final list = uniqueStudents.values.toList();
+    list.sort((a, b) => (a['student_name']?.toString() ?? '').toLowerCase().compareTo((b['student_name']?.toString() ?? '').toLowerCase()));
+    return list;
+  }
+
+  Future<void> _showStudentDetailsDialog(Map<String, dynamic> studentData) async {
+    final studentId = _asInt(studentData['student_id']);
+    final username = studentData['student_username']?.toString() ?? '';
+    final name = studentData['student_name']?.toString() ?? '';
+    final email = studentData['student_email']?.toString() ?? '';
+
+    List<Map<String, dynamic>> history = [];
+    bool isLoadingHistory = true;
+
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            Future<void> loadHistory() async {
+              setDialogState(() => isLoadingHistory = true);
+              final list = await ref.read(studentAcademicRecordsProvider.notifier).fetchStudentHistory(username);
+              list.sort((a, b) {
+                final syA = a['school_year']?.toString() ?? '';
+                final syB = b['school_year']?.toString() ?? '';
+                if (syA != syB) return syB.compareTo(syA);
+                final semA = a['semester']?.toString() ?? '';
+                final semB = b['semester']?.toString() ?? '';
+                return semB.compareTo(semA);
+              });
+              setDialogState(() {
+                history = list;
+                isLoadingHistory = false;
+              });
+            }
+
+            if (isLoadingHistory && history.isEmpty) {
+              WidgetsBinding.instance.addPostFrameCallback((_) => loadHistory());
+            }
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Icon(Icons.school_outlined, color: _maroon, size: 24),
+                  const SizedBox(width: 10),
+                  Text(
+                    'Student Academic History',
+                    style: TextStyle(
+                      fontFamily: DefensysUi.fontFamily,
+                      color: _ink,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.pop(dialogContext),
+                    icon: const Icon(Icons.close_rounded, color: _muted, size: 20),
+                  ),
+                ],
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(24, 20, 16, 8),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+              content: SizedBox(
+                width: 720,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF9FAFB),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: _line),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  name,
+                                  style: const TextStyle(
+                                    color: _ink,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Text(
+                                      'ID: $username',
+                                      style: const TextStyle(
+                                        color: _muted,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    const Text('•', style: TextStyle(color: _muted)),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      email,
+                                      style: const TextStyle(
+                                        color: _muted,
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          _primaryButton(
+                            icon: Icons.add_rounded,
+                            label: 'Add Period Record',
+                            onTap: () async {
+                              await _showRecordDialog(overrideStudentId: studentId);
+                              await loadHistory();
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                    const Text(
+                      'Historical Enrollments & Periods',
+                      style: TextStyle(
+                        color: _ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    if (isLoadingHistory)
+                      const SizedBox(
+                        height: 180,
+                        child: Center(
+                          child: CircularProgressIndicator(color: _maroon),
+                        ),
+                      )
+                    else if (history.isEmpty)
+                      Container(
+                        height: 120,
+                        alignment: Alignment.center,
+                        child: const Text(
+                          'No academic periods recorded for this student.',
+                          style: TextStyle(color: _muted, fontSize: 13),
+                        ),
+                      )
+                    else
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxHeight: 280),
+                        child: Scrollbar(
+                          thumbVisibility: true,
+                          child: SingleChildScrollView(
+                            child: Table(
+                              columnWidths: const {
+                                0: FlexColumnWidth(2.2),
+                                1: FlexColumnWidth(1.2),
+                                2: FlexColumnWidth(1.2),
+                                3: FlexColumnWidth(1.0),
+                              },
+                              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                              children: [
+                                TableRow(
+                                  decoration: const BoxDecoration(
+                                    border: Border(bottom: BorderSide(color: _line, width: 2)),
+                                  ),
+                                  children: [
+                                    _thCell('Semester / School Year'),
+                                    _thCell('Year Level'),
+                                    _thCell('Section'),
+                                    _thCell('Actions'),
+                                  ],
+                                ),
+                                ...history.map((record) {
+                                  final recordId = _asInt(record['id']);
+                                  return TableRow(
+                                    decoration: const BoxDecoration(
+                                      border: Border(bottom: BorderSide(color: _line)),
+                                    ),
+                                    children: [
+                                      Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 10),
+                                        child: Text(
+                                          record['display_semester']?.toString() ?? record['semester']?.toString() ?? '',
+                                          style: const TextStyle(
+                                            color: _ink,
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                          ),
+                                        ),
+                                      ),
+                                      _yearLevelBadge(record['year_level']?.toString() ?? ''),
+                                      Text(
+                                        record['section']?.toString() ?? '-',
+                                        style: const TextStyle(
+                                          color: _ink,
+                                          fontSize: 12.5,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          IconButton(
+                                            icon: const Icon(Icons.edit_square, color: _blue, size: 17),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: () async {
+                                              await _showRecordDialog(record: record, overrideStudentId: studentId);
+                                              await loadHistory();
+                                            },
+                                          ),
+                                          const SizedBox(width: 6),
+                                          IconButton(
+                                            icon: const Icon(Icons.delete_rounded, color: _red, size: 17),
+                                            padding: EdgeInsets.zero,
+                                            constraints: const BoxConstraints(),
+                                            onPressed: recordId == null
+                                                ? null
+                                                : () async {
+                                                    await _confirmDelete(recordId, name);
+                                                    await loadHistory();
+                                                  },
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  );
+                                }),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _thCell(String label) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: Color(0xFF5D6678),
+          fontSize: 11.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
 }
 
 class _ColumnSpec {

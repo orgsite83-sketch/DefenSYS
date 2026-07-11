@@ -542,7 +542,7 @@ class _SidebarState extends State<_Sidebar> {
                     section: DefensysAdminSection.userManagement,
                     activeSection: widget.activeSection,
                     icon: Icons.person_rounded,
-                    label: l10n.navUserManagement,
+                    label: l10n.navUsers,
                     onTap: widget.onNavigate,
                   ),
                   _SubNavItem(

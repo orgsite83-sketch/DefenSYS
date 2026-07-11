@@ -358,12 +358,24 @@ def stage_payload(team, stage_label):
 def submission_payload(submission):
     if submission is None:
         return None
+        
+    files_data = []
+    for f in submission.files.all().order_by('uploaded_at'):
+        files_data.append({
+            'id': f.id,
+            'file_name': f.file_name,
+            'file_size': f.file_size,
+            'file_url': f.file.url if f.file else None,
+            'uploaded_at': f.uploaded_at,
+        })
+        
     return {
         'id': submission.id,
         'deliverable_id': submission.deliverable_id,
-        'file_name': submission.file_name,
-        'file_size': submission.file_size,
-        'file_url': submission.file_url,
+        'files': files_data,
+        'file_name': files_data[0]['file_name'] if files_data else '',
+        'file_size': files_data[0]['file_size'] if files_data else '',
+        'file_url': files_data[0]['file_url'] if files_data else None,
         'uploaded_by_name': display_name(submission.uploaded_by),
         'uploaded_at': submission.uploaded_at,
         'status': submission.status,
@@ -492,7 +504,7 @@ def counts_payload(teams):
 
 
 @transaction.atomic
-def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None):
+def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, user, file=None, file_id=None):
     deliverable_id = (deliverable_id or '').strip()
     if not team.is_capstone and not team.is_pit:
         raise PermissionError('Only Capstone or PIT teams can submit deliverables.')
@@ -514,56 +526,143 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             semester_label,
             deliverable_label=definition['label'],
         )
-        if suggested and file_name.strip().lower() != suggested.strip().lower():
-            raise ValidationError({'file_name': f"Filename must match the naming convention exactly. Expected: '{suggested}'"})
+        if suggested:
+            import os
+            suggested_base, _ = os.path.splitext(suggested.lower())
+            uploaded_name = file_name.strip().lower()
+            if not uploaded_name.startswith(suggested_base):
+                raise ValidationError({'file_name': f"Filename must start with the naming convention prefix. Expected prefix: '{suggested_base}'"})
 
-
-    existing = DeliverableSubmission.objects.filter(
+    # Ensure DeliverableSubmission container exists
+    submission, created = DeliverableSubmission.objects.get_or_create(
         team=team,
         stage_label=stage_label,
         deliverable_id=deliverable_id,
-    ).first()
+        defaults={
+            'label': definition['label'],
+            'deliverable_type': definition['type'],
+            'required': definition['required'],
+            'uploaded_by': user,
+            'status': DeliverableSubmission.STATUS_PENDING,
+            'feedback': '',
+        }
+    )
 
-    target_file_name = file_name
-    if existing and existing.file and file is not None:
+    # Reset status to pending on new uploads
+    if not created:
+        submission.status = DeliverableSubmission.STATUS_PENDING
+        submission.feedback = ''
+        submission.uploaded_by = user
+        submission.save(update_fields=['status', 'feedback', 'uploaded_by', 'uploaded_at'])
+
+    # Create/update file in DeliverableSubmissionFile
+    from django.core.files.base import ContentFile
+    from repository.deliverables.models import DeliverableSubmissionFile
+
+    file_obj = None
+    if file_id:
+        file_obj = submission.files.filter(id=file_id).first()
+        
+    if not file_obj and file:
+        file_obj = submission.files.filter(file_name=file_name.strip()).first()
+
+    target_file_name = file_name.strip()
+    if file_obj and file_obj.file and file is not None:
         import os
-        target_file_name = os.path.basename(existing.file.name)
+        target_file_name = os.path.basename(file_obj.file.name)
         try:
-            existing.file.delete(save=False)
+            file_obj.file.delete(save=False)
         except Exception:
             pass
 
-    defaults = {
-        'label': definition['label'],
-        'deliverable_type': definition['type'],
-        'required': definition['required'],
-        'file_name': file_name.strip(),
-        'file_size': (file_size or '').strip(),
-        'uploaded_by': user,
-        'status': DeliverableSubmission.STATUS_PENDING,
-        'feedback': '',
-    }
-    
-    if file is not None:
-        from django.core.files.base import ContentFile
-        defaults['file'] = ContentFile(file.read(), name=target_file_name)
+    if file_obj:
+        file_obj.file_name = file_name.strip()
+        file_obj.file_size = (file_size or '').strip()
+        if file is not None:
+            file_obj.file = ContentFile(file.read(), name=target_file_name)
+            file_obj.extracted_text = ''
+            file_obj.topics = []
+            file_obj.summary = ''
+            file_obj.category = ''
+            file_obj.category_confidence = None
+        file_obj.save()
+    else:
+        file_obj = DeliverableSubmissionFile(
+            submission=submission,
+            file_name=file_name.strip(),
+            file_size=(file_size or '').strip(),
+        )
+        if file is not None:
+            file_obj.file = ContentFile(file.read(), name=target_file_name)
+        file_obj.save()
 
-    submission, _ = DeliverableSubmission.objects.update_or_create(
-        team=team,
-        stage_label=stage_label,
-        deliverable_id=deliverable_id,
-        defaults=defaults,
-    )
+    # Sync latest file to the parent submission for backward compatibility
+    latest_file = submission.files.order_by('-uploaded_at').first()
+    if latest_file:
+        submission.file_name = latest_file.file_name
+        submission.file_size = latest_file.file_size
+        submission.file = latest_file.file
+        submission.extracted_text = latest_file.extracted_text
+        submission.topics = latest_file.topics
+        submission.summary = latest_file.summary
+        submission.category = latest_file.category
+        submission.category_confidence = latest_file.category_confidence
+        submission.save(update_fields=[
+            'file_name', 'file_size', 'file', 'extracted_text',
+            'topics', 'summary', 'category', 'category_confidence', 'uploaded_at'
+        ])
+
     return submission
 
 
 @transaction.atomic
-def remove_submission(team, stage_label, deliverable_id):
-    deleted, _ = DeliverableSubmission.objects.filter(
-        team=team,
-        stage_label=stage_label,
-        deliverable_id=deliverable_id,
-    ).delete()
+def remove_submission(team, stage_label, deliverable_id, file_id=None):
+    try:
+        submission = DeliverableSubmission.objects.get(
+            team=team,
+            stage_label=stage_label,
+            deliverable_id=deliverable_id,
+        )
+    except DeliverableSubmission.DoesNotExist:
+        return 0
+
+    deleted = 0
+    if file_id:
+        file_to_delete = submission.files.filter(id=file_id).first()
+        if file_to_delete:
+            if file_to_delete.file:
+                try:
+                    file_to_delete.file.delete(save=False)
+                except Exception:
+                    pass
+            file_to_delete.delete()
+            deleted = 1
+            
+        # Delete submission container if no files remain
+        if not submission.files.exists():
+            submission.delete()
+        else:
+            # Sync backward compatibility fields with the remaining latest file
+            latest_file = submission.files.order_by('-uploaded_at').first()
+            submission.file_name = latest_file.file_name
+            submission.file_size = latest_file.file_size
+            submission.file = latest_file.file
+            submission.extracted_text = latest_file.extracted_text
+            submission.topics = latest_file.topics
+            submission.summary = latest_file.summary
+            submission.category = latest_file.category
+            submission.category_confidence = latest_file.category_confidence
+            submission.save()
+    else:
+        for f in submission.files.all():
+            if f.file:
+                try:
+                    f.file.delete(save=False)
+                except Exception:
+                    pass
+        submission.delete()
+        deleted = 1
+
     if hasattr(team, '_prefetched_objects_cache'):
         team._prefetched_objects_cache.pop('deliverable_submissions', None)
     if team.ready_for_stage == stage_label and not required_complete(team, stage_label):

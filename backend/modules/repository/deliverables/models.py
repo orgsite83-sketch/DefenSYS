@@ -65,8 +65,8 @@ class DeliverableSubmission(models.Model):
     )
     
     # Metadata (kept for backward compatibility and display)
-    file_name = models.CharField(max_length=255)
-    file_size = models.CharField(max_length=40, blank=True)
+    file_name = models.CharField(max_length=255, blank=True, default='')
+    file_size = models.CharField(max_length=40, blank=True, default='')
     
     # ML-powered search fields
     extracted_text = models.TextField(
@@ -127,8 +127,6 @@ class DeliverableSubmission(models.Model):
     def clean(self):
         if self.team_id and not (self.team.is_capstone or self.team.is_pit):
             raise ValidationError({'team': 'Only Capstone or PIT teams can submit deliverables.'})
-        if not self.file_name.strip():
-            raise ValidationError({'file_name': 'File name is required.'})
 
     def save(self, *args, **kwargs):
         self.full_clean()
@@ -168,3 +166,96 @@ class DeliverableSubmission(models.Model):
         if self.file:
             return self.file.url
         return None
+
+
+class DeliverableSubmissionFile(models.Model):
+    submission = models.ForeignKey(
+        'DeliverableSubmission',
+        related_name='files',
+        on_delete=models.CASCADE,
+    )
+    # Actual file storage
+    file = models.FileField(
+        upload_to='deliverables/%Y/%m/',
+        null=True,
+        blank=True,
+        help_text='Actual uploaded file'
+    )
+    
+    # Metadata
+    file_name = models.CharField(max_length=255)
+    file_size = models.CharField(max_length=40, blank=True)
+    
+    # ML-powered search fields
+    extracted_text = models.TextField(
+        blank=True,
+        default='',
+        help_text='Full text extracted from PDF for ML search'
+    )
+    topics = models.JSONField(
+        blank=True,
+        default=list,
+        help_text='Auto-extracted keywords/topics from PDF content'
+    )
+    summary = models.TextField(
+        blank=True,
+        default='',
+        help_text='Auto-generated summary of PDF content'
+    )
+    
+    # Naive Bayes classification fields
+    category = models.CharField(
+        max_length=100,
+        blank=True,
+        default='',
+        help_text='ML-predicted technology category'
+    )
+    category_confidence = models.FloatField(
+        blank=True,
+        null=True,
+        help_text='Classification confidence score (0-100)'
+    )
+    
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        app_label = 'repository'
+        db_table = 'capstone_deliverables_deliverablesubmissionfile'
+        ordering = ['uploaded_at']
+
+    def clean(self):
+        if not self.file_name.strip():
+            raise ValidationError({'file_name': 'File name is required.'})
+
+    def save(self, *args, **kwargs):
+        self.full_clean()
+        
+        # Extract PDF content if file exists and hasn't been extracted yet
+        if self.file and not self.extracted_text:
+            from .pdf_processor import extract_pdf_from_file_object
+            try:
+                with self.file.open('rb') as stored:
+                    result = extract_pdf_from_file_object(
+                        stored,
+                        self.file.name or self.file_name,
+                        classify=True,
+                    )
+                    if hasattr(stored, 'seek'):
+                        try:
+                            stored.seek(0)
+                        except Exception:
+                            pass
+                self.extracted_text = result.get('text', '')
+                self.topics = result.get('topics', [])
+                self.summary = result.get('summary', '')
+                self.category = result.get('category', '') or ''
+                classification = result.get('classification') or {}
+                self.category_confidence = classification.get('confidence_score')
+            except Exception as e:
+                print(f'Warning: PDF extraction failed for {self.file_name}: {e}')
+        
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.submission} - {self.file_name}'
+

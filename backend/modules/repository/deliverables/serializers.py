@@ -11,6 +11,7 @@ class DeliverableUploadSerializer(serializers.Serializer):
     deliverable_id = serializers.CharField(max_length=20)
     file_name = serializers.CharField(max_length=255)
     file_size = serializers.CharField(max_length=40, required=False, allow_blank=True)
+    file_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, attrs):
         attrs['deliverable_id'] = (attrs.get('deliverable_id') or '').strip()
@@ -44,6 +45,7 @@ class DeliverableActionSerializer(serializers.Serializer):
     team_id = serializers.IntegerField()
     stage_label = serializers.CharField(max_length=120)
     deliverable_id = serializers.CharField(max_length=20, required=False)
+    file_id = serializers.IntegerField(required=False, allow_null=True)
 
     def validate(self, attrs):
         deliverable_id = (attrs.get('deliverable_id') or '').strip()

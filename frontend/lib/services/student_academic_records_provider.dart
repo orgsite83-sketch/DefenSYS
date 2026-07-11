@@ -139,7 +139,24 @@ class StudentAcademicRecordsNotifier
     }
   }
 
+  Future<List<Map<String, dynamic>>> fetchStudentHistory(String username) async {
+    try {
+      final uri = Uri.parse(baseUrl).replace(
+        queryParameters: {
+          'search': username,
+        },
+      );
+      final response = await _client.get(uri);
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        return _readMapList(payload['records']);
+      }
+    } catch (_) {}
+    return [];
+  }
+
   Future<bool> addRecord(Map<String, dynamic> payload) async {
+
     state = state.copyWith(
       isSaving: true,
       clearError: true,

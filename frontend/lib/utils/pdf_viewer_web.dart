@@ -88,6 +88,14 @@ Future<void> viewPdfInDialog({
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
+                  // Open in New Tab button
+                  IconButton(
+                    icon: const Icon(Icons.open_in_new, color: Colors.white),
+                    tooltip: 'Open in New Tab',
+                    onPressed: () {
+                      html.window.open(blobUrl, '_blank');
+                    },
+                  ),
                   // Download button
                   IconButton(
                     icon: const Icon(Icons.download, color: Colors.white),

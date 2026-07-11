@@ -10,6 +10,7 @@ import '../../../config/api_config.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/weekly_progress_provider.dart';
+import '../../../services/adviser_grading_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/confirm_dialog.dart';
@@ -68,6 +69,20 @@ class _TeamDeliverablesScreenState
   final _searchController = TextEditingController();
   Timer? _pendingRemoveTimer;
   bool _pendingRemoveCancelled = false;
+  
+  // State for master-detail split layout and stage selections
+  int? _selectedTeamId;
+  bool _showMobileDetail = false;
+  final Map<int, String> _cardSelectedStages = {};
+  Timer? _searchDebounceTimer;
+
+  // State for inner tabs within expanded cards
+  final Map<int, int> _cardActiveTabs = {}; // teamId -> tabIndex
+  
+  // Scoring text controllers and selected rubrics mapped by "$teamId-$stageLabel"
+  final Map<String, Map<String, TextEditingController>> _teamCriteriaScoreCtrls = {};
+  final Map<String, TextEditingController> _teamManualScoreCtrls = {};
+  final Map<String, Map<String, dynamic>?> _teamSelectedRubrics = {};
 
   @override
   void initState() {
@@ -76,13 +91,23 @@ class _TeamDeliverablesScreenState
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
         scope: widget.initialScope,
       );
+      ref.read(adviserGradingProvider.notifier).fetchAll();
     });
   }
 
   @override
   void dispose() {
+    _searchDebounceTimer?.cancel();
     _pendingRemoveTimer?.cancel();
     _searchController.dispose();
+    for (final c in _teamManualScoreCtrls.values) {
+      c.dispose();
+    }
+    for (final subMap in _teamCriteriaScoreCtrls.values) {
+      for (final c in subMap.values) {
+        c.dispose();
+      }
+    }
     super.dispose();
   }
 
@@ -90,221 +115,606 @@ class _TeamDeliverablesScreenState
   Widget build(BuildContext context) {
     final state = ref.watch(capstoneDeliverablesProvider);
 
-    return DefaultTabController(
-      length: 2,
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text(state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables'),
-          actions: [
-            IconButton(
-              tooltip: 'Refresh',
-              onPressed: state.isSaving
-                  ? null
-                  : () => ref
-                        .read(capstoneDeliverablesProvider.notifier)
-                        .fetchDeliverables(),
-              icon: const Icon(Icons.refresh),
-            ),
+    // Auto-select the first team if none is selected or selected team is not present in the current list
+    if (state.teams.isNotEmpty) {
+      final teamIds = state.teams.map((t) => _asInt(t['id'])).toList();
+      if (_selectedTeamId == null || !teamIds.contains(_selectedTeamId)) {
+        _selectedTeamId = teamIds.first;
+      }
+    } else {
+      _selectedTeamId = null;
+    }
+
+    final isWide = MediaQuery.of(context).size.width >= 900;
+
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      appBar: AppBar(
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams'),
+            if (state.activeSemester?['display_name'] != null) ...[
+              const SizedBox(height: 2),
+              Text(
+                state.activeSemester!['display_name'].toString(),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+            ],
           ],
         ),
-        body: RefreshIndicator(
-          onRefresh: () =>
-              ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
-          child: SingleChildScrollView(
-            physics: const AlwaysScrollableScrollPhysics(),
-            padding: const EdgeInsets.all(24),
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 1440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildHeader(state),
-                    const SizedBox(height: 20),
-                    _buildStats(state),
-                    if (state.error != null) ...[
+        actions: [
+          IconButton(
+            tooltip: 'Refresh',
+            onPressed: state.isSaving
+                ? null
+                : () => ref
+                      .read(capstoneDeliverablesProvider.notifier)
+                      .fetchDeliverables(),
+            icon: const Icon(Icons.refresh),
+          ),
+        ],
+      ),
+      body: isWide 
+          ? _buildDesktopLayout(state) 
+          : RefreshIndicator(
+              onRefresh: () =>
+                  ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(),
+              child: _buildMobileLayout(state),
+            ),
+    );
+  }
+  Widget _buildDesktopLayout(CapstoneDeliverablesState state) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Stats at the top
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 20, 24, 0),
+          child: _buildStats(state),
+        ),
+        if (state.error != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: _notice(Icons.error_outline, state.error!, AppColors.danger),
+          ),
+        ],
+        if (state.message != null) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: _notice(Icons.check_circle_outline, state.message!, AppColors.success),
+          ),
+        ],
+        if (_stageNotConfigured(state)) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
+            child: _notice(
+              Icons.info_outline,
+              state.scope == 'pit'
+                  ? 'No deliverables configured for ${state.selectedStage}. Add them in PIT Event Settings.'
+                  : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages so Required progress can be tracked.',
+              AppColors.gold,
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        // Split Pane view
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left pane: Team list & search toolbar
+                SizedBox(
+                  width: 380,
+                  child: Column(
+                    children: [
+                      _buildToolbar(state),
                       const SizedBox(height: 12),
-                      _notice(
-                        Icons.error_outline,
-                        state.error!,
-                        AppColors.danger,
+                      Expanded(
+                        child: state.isLoading
+                            ? const Center(child: CircularProgressIndicator())
+                            : SingleChildScrollView(
+                                child: _buildTeamListCompact(state),
+                              ),
                       ),
                     ],
-                    if (state.message != null) ...[
-                      const SizedBox(height: 12),
-                      _notice(
-                        Icons.check_circle_outline,
-                        state.message!,
-                        AppColors.success,
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    Container(
-                      height: 48,
-                      padding: const EdgeInsets.all(4),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: TabBar(
-                        labelColor: Colors.white,
-                        unselectedLabelColor: AppColors.textSecondary,
-                        indicatorSize: TabBarIndicatorSize.tab,
-                        indicator: BoxDecoration(
-                          borderRadius: BorderRadius.circular(8),
-                          color: AppColors.maroon,
-                          boxShadow: [
-                            BoxShadow(
-                              color: AppColors.maroon.withValues(alpha: 0.20),
-                              blurRadius: 6,
-                              offset: const Offset(0, 2),
+                  ),
+                ),
+                const SizedBox(width: 20),
+                // Right pane: Detail View
+                Expanded(
+                  child: state.isLoading
+                      ? const Center(child: CircularProgressIndicator())
+                      : _selectedTeamId == null
+                          ? _buildNoSelectionDetailPane(state)
+                          : SingleChildScrollView(
+                              child: _buildTeamDetailPane(
+                                state,
+                                state.teams.firstWhere(
+                                  (t) => _asInt(t['id']) == _selectedTeamId,
+                                  orElse: () => state.teams.first,
+                                ),
+                              ),
                             ),
-                          ],
-                        ),
-                        labelStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 14,
-                        ),
-                        unselectedLabelStyle: const TextStyle(
-                          fontWeight: FontWeight.w600,
-                          fontSize: 14,
-                        ),
-                        dividerColor: Colors.transparent,
-                        tabs: const [
-                          Tab(text: 'Deliverables'),
-                          Tab(text: 'Teams & Grades'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMobileLayout(CapstoneDeliverablesState state) {
+    if (_showMobileDetail && _selectedTeamId != null) {
+      final team = state.teams.firstWhere(
+        (t) => _asInt(t['id']) == _selectedTeamId,
+        orElse: () => state.teams.isNotEmpty ? state.teams.first : const <String, dynamic>{},
+      );
+      if (team.isEmpty) {
+        return _buildNoSelectionDetailPane(state);
+      }
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            child: TextButton.icon(
+              onPressed: () {
+                setState(() {
+                  _showMobileDetail = false;
+                });
+              },
+              icon: const Icon(Icons.arrow_back, color: AppColors.maroon),
+              label: const Text(
+                'Back to Teams List',
+                style: TextStyle(color: AppColors.maroon, fontWeight: FontWeight.bold),
+              ),
+              style: TextButton.styleFrom(
+                alignment: Alignment.centerLeft,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: _buildTeamDetailPane(state, team),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return SingleChildScrollView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildStats(state),
+          if (state.error != null) ...[
+            const SizedBox(height: 12),
+            _notice(Icons.error_outline, state.error!, AppColors.danger),
+          ],
+          if (state.message != null) ...[
+            const SizedBox(height: 12),
+            _notice(Icons.check_circle_outline, state.message!, AppColors.success),
+          ],
+          const SizedBox(height: 16),
+          _buildToolbar(state),
+          if (_stageNotConfigured(state)) ...[
+            const SizedBox(height: 12),
+            _notice(
+              Icons.info_outline,
+              state.scope == 'pit'
+                  ? 'No deliverables configured for ${state.selectedStage}. Add them in PIT Event Settings.'
+                  : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages so Required progress can be tracked.',
+              AppColors.gold,
+            ),
+          ],
+          const SizedBox(height: 16),
+          if (state.isLoading)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.all(32),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            _buildTeamListCompact(state),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTeamListCompact(CapstoneDeliverablesState state) {
+    if (state.teams.isEmpty) {
+      final emptyTitle = state.scope == 'pit' ? 'No PIT teams found' : 'No Capstone teams found';
+      final emptySubtitle = state.scope == 'pit' ? 'Assign PIT teams first.' : 'Assign Capstone teams and advisers first.';
+      return Container(
+        decoration: _cardDecoration(),
+        width: double.infinity,
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            const Icon(Icons.folder_open_outlined, size: 36, color: AppColors.textSecondary),
+            const SizedBox(height: 10),
+            Text(emptyTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
+            const SizedBox(height: 4),
+            Text(emptySubtitle, style: const TextStyle(color: AppColors.textSecondary, fontSize: 12), textAlign: TextAlign.center),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      children: state.teams.map((team) {
+        final teamId = _asInt(team['id']);
+        final isSelected = teamId == _selectedTeamId;
+        return _buildCompactTeamCard(state, team, isSelected);
+      }).toList(),
+    );
+  }
+
+  Widget _buildCompactTeamCard(CapstoneDeliverablesState state, Map<String, dynamic> team, bool isSelected) {
+    final teamId = _asInt(team['id']);
+    final stages = _stageList(team);
+    final cardSelectedStageLabel = _cardSelectedStages[teamId] ?? state.selectedStage;
+    final stagePayload = _stagePayload(stages, cardSelectedStageLabel);
+    final complete = stagePayload['required_complete'] == true;
+    final endorsed = stagePayload['endorsed'] == true;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      decoration: BoxDecoration(
+        color: isSelected ? AppColors.maroon.withValues(alpha: 0.06) : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+          width: isSelected ? 1.8 : 1.0,
+        ),
+        boxShadow: isSelected
+            ? [
+                BoxShadow(
+                  color: AppColors.maroon.withValues(alpha: 0.08),
+                  blurRadius: 8,
+                  offset: const Offset(0, 4),
+                )
+              ]
+            : null,
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (isSelected)
+                Container(
+                  width: 5,
+                  color: AppColors.maroon,
+                ),
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedTeamId = teamId;
+                        _showMobileDetail = true;
+                      });
+                    },
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(isSelected ? 10 : 12, 12, 12, 12),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            team['name']?.toString() ?? '',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: isSelected ? AppColors.maroon : AppColors.textPrimary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            team['project_title']?.toString() ?? '',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Adviser: ${team['adviser_name'] ?? 'Unassigned'}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: AppColors.textSecondary,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _statusChip(complete, endorsed),
+                            ],
+                          ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 20),
-                    Consumer(
-                      builder: (context, ref, _) {
-                        final tabController = DefaultTabController.of(context);
-                        return AnimatedBuilder(
-                          animation: tabController,
-                          builder: (context, _) {
-                            final index = tabController.index;
-                            if (index == 0) {
-                              return Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  _buildToolbar(state),
-                                  if (_stageNotConfigured(state)) ...[
-                                    const SizedBox(height: 12),
-                                    _notice(
-                                      Icons.info_outline,
-                                      state.scope == 'pit'
-                                          ? 'No deliverables configured for ${state.selectedStage}. '
-                                            'Add them in PIT Event Settings.'
-                                          : 'No deliverables configured for ${state.selectedStage}. '
-                                            'Add them in Defense Stages so Required progress can be tracked.',
-                                      AppColors.gold,
-                                    ),
-                                  ],
-                                  const SizedBox(height: 16),
-                                  if (state.isLoading)
-                                    const Center(
-                                      child: Padding(
-                                        padding: EdgeInsets.all(32),
-                                        child: CircularProgressIndicator(),
-                                      ),
-                                    )
-                                  else
-                                    _buildTeamList(state),
-                                ],
-                              );
-                            } else {
-                              return _buildTeamsAndGradesTab(state);
-                            }
-                          },
-                        );
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildHeader(CapstoneDeliverablesState state) {
-    final title = state.scope == 'pit' ? 'PIT Deliverables' : 'Capstone Deliverables';
-    final defaultSubtitle = state.scope == 'pit'
-        ? 'Upload pre-event requirements and complete deliverables for PIT events.'
-        : 'Upload pre-defense requirements and unlock post-defense submissions after defense.';
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: Column(
+  Widget _buildTeamDetailPane(CapstoneDeliverablesState state, Map<String, dynamic> team) {
+    final teamId = _asInt(team['id']);
+    
+    // Determine which stage we are focusing on for this card
+    final cardSelectedStageLabel = _cardSelectedStages[teamId] ?? state.selectedStage;
+
+    final stages = _stageList(team);
+    final stagePayload = _stagePayload(stages, cardSelectedStageLabel);
+
+    final configured = stagePayload['deliverables_configured'] == true;
+    final complete = stagePayload['required_complete'] == true;
+    final endorsed = stagePayload['endorsed'] == true;
+    final canEndorse = configured && complete && !endorsed;
+
+    final gradingState = ref.watch(adviserGradingProvider);
+    final gradeRecord = gradingState.grades.firstWhere(
+      (g) => _asInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
+      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Top Section: Team details & status badge
+          Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 24,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      team['name']?.toString() ?? '',
+                      style: const TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.maroon,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      team['project_title']?.toString() ?? '',
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        _chip(
+                          team['year_level']?.toString() ?? '',
+                          AppColors.gold,
+                        ),
+                        _chip(
+                          'Adviser: ${team['adviser_name'] ?? 'Unassigned'}',
+                          AppColors.maroon,
+                        ),
+                        _chip(
+                          '${team['submitted_count'] ?? 0} submitted',
+                          Colors.blue,
+                        ),
+                        if (gradeRecord['final_grade'] != null)
+                          _chip(
+                            'Grade: ${_asDouble(gradeRecord['final_grade'])?.toStringAsFixed(2) ?? ''} (${gradeRecord['result']?.toString().toUpperCase() ?? ''})',
+                            gradeRecord['result'] == 'passed' ? AppColors.success : AppColors.danger,
+                            icon: gradeRecord['result'] == 'passed' ? Icons.check_circle : Icons.error_outline,
+                          ),
+                      ],
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                state.activeSemester?['display_name']?.toString() ?? defaultSubtitle,
-                style: const TextStyle(color: AppColors.textSecondary),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  _statusChip(complete, endorsed),
+                  if (canEndorse) ...[
+                    const SizedBox(height: 12),
+                    ElevatedButton.icon(
+                      onPressed: state.isSaving
+                          ? null
+                          : () async {
+                              final confirmed = await showDialog<bool>(
+                                context: context,
+                                builder: (dialogContext) => AlertDialog(
+                                  title: const Text('Endorse Team'),
+                                  content: Text(
+                                    'Endorse ${team['name']} for $cardSelectedStageLabel? '
+                                    'This confirms all required deliverables are complete '
+                                    'and the team is ready for defense scheduling.',
+                                  ),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, false),
+                                      child: const Text('Cancel'),
+                                    ),
+                                    ElevatedButton.icon(
+                                      onPressed: () =>
+                                          Navigator.pop(dialogContext, true),
+                                      icon: const Icon(Icons.verified_outlined),
+                                      label: const Text('Endorse'),
+                                      style: ElevatedButton.styleFrom(
+                                        backgroundColor: AppColors.success,
+                                        foregroundColor: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              );
+                              if (confirmed == true && mounted) {
+                                await ref
+                                    .read(capstoneDeliverablesProvider.notifier)
+                                    .endorseTeam(
+                                      _asInt(team['id']),
+                                      cardSelectedStageLabel,
+                                    );
+                              }
+                            },
+                      icon: const Icon(Icons.verified_outlined, size: 16),
+                      label: const Text(
+                        'Endorse Team',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                        ),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.success,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
           ),
-        ),
-      ],
+          
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 16),
+            child: Divider(color: Color(0xFFE2E8F0), height: 1),
+          ),
+
+          // Detailed section with stage selection, tabs, deliverables etc.
+          _buildExpandedSection(team, state),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildNoSelectionDetailPane(CapstoneDeliverablesState state) {
+    return Container(
+      decoration: _cardDecoration(),
+      padding: const EdgeInsets.all(32),
+      alignment: Alignment.center,
+      child: const Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(Icons.people_outline, size: 64, color: AppColors.textSecondary),
+          SizedBox(height: 16),
+          Text(
+            'No Team Selected',
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+          ),
+          SizedBox(height: 6),
+          Text(
+            'Select a team from the list to view deliverables, grades, and roster details.',
+            textAlign: TextAlign.center,
+            style: TextStyle(color: AppColors.textSecondary),
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildStats(CapstoneDeliverablesState state) {
     final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
-    return Wrap(
-      spacing: 14,
-      runSpacing: 14,
-      children: [
-        _stat(
-          teamLabel,
-          _count(state, 'teams'),
-          Icons.groups_2_outlined,
-          AppColors.maroon,
-        ),
-        _stat(
-          'Ready',
-          _count(state, 'ready'),
-          Icons.verified_outlined,
-          AppColors.success,
-        ),
-        _stat(
-          'Missing',
-          _count(state, 'missing_requirements'),
-          Icons.warning_amber_outlined,
-          AppColors.warning,
-        ),
-        _stat(
-          'Files',
-          _count(state, 'submitted_files'),
-          Icons.folder_copy_outlined,
-          Colors.blue,
-        ),
-        _stat(
-          'Archive Files',
-          _count(state, 'archive_files'),
-          Icons.inventory_2_outlined,
-          AppColors.gold,
-        ),
-      ],
+    final items = [
+      _stat(teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, AppColors.maroon),
+      _stat('Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
+      _stat('Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
+      _stat('Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
+      _stat('Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
+    ];
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          return Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: items.map((widget) {
+              final calculatedWidth = (constraints.maxWidth - 12) / 2;
+              final itemWidth = calculatedWidth.clamp(0.0, double.infinity);
+              return SizedBox(
+                width: itemWidth > 180 ? itemWidth : double.infinity,
+                child: widget,
+              );
+            }).toList(),
+          );
+        }
+        return Row(
+          children: List.generate(items.length, (index) {
+            final isFirst = index == 0;
+            final isLast = index == items.length - 1;
+            return Expanded(
+              child: Padding(
+                padding: EdgeInsets.only(
+                  left: isFirst ? 0 : 8,
+                  right: isLast ? 0 : 8,
+                ),
+                child: items[index],
+              ),
+            );
+          }),
+        );
+      },
     );
   }
 
   Widget _stat(String label, int count, IconData icon, Color color) {
     return Container(
-      width: 220,
       padding: const EdgeInsets.all(16),
       decoration: _cardDecoration(),
       child: Row(
@@ -381,123 +791,159 @@ class _TeamDeliverablesScreenState
           ]
         : state.statuses;
 
+    final searchField = TextField(
+      controller: _searchController,
+      decoration: _toolbarInputDec(
+        label: 'Search team, project, adviser',
+        prefixIcon: Icons.search,
+      ),
+      style: const TextStyle(
+        fontSize: 13,
+      ),
+      onChanged: (value) {
+        if (_searchDebounceTimer?.isActive ?? false) {
+          _searchDebounceTimer!.cancel();
+        }
+        _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
+          ref
+              .read(capstoneDeliverablesProvider.notifier)
+              .fetchDeliverables(search: value);
+        });
+      },
+      onSubmitted: (value) {
+        if (_searchDebounceTimer?.isActive ?? false) {
+          _searchDebounceTimer!.cancel();
+        }
+        ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .fetchDeliverables(search: value);
+      },
+    );
+
+    final stageDropdown = DropdownButtonFormField<String>(
+      initialValue: selectedStage,
+      decoration: _toolbarInputDec(
+        label: state.scope == 'pit' ? 'PIT Event' : 'Stage View',
+      ),
+      style: const TextStyle(
+        fontSize: 13,
+        color: AppColors.textPrimary,
+      ),
+      hint: Text(
+        stageOptions.isEmpty
+            ? (state.scope == 'pit' ? 'No events configured' : 'No stages configured')
+            : 'Select stage',
+        style: const TextStyle(fontSize: 13),
+      ),
+      items: stageOptions
+          .map(
+            (stage) => DropdownMenuItem(
+              value: stage,
+              child: Text(
+                stage,
+                style: const TextStyle(
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: stageOptions.isEmpty
+          ? null
+          : (value) => ref
+                .read(capstoneDeliverablesProvider.notifier)
+                .fetchDeliverables(
+                  selectedStage: value ?? selectedStage ?? '',
+                ),
+    );
+
+    final statusDropdown = DropdownButtonFormField<String>(
+      initialValue: state.status,
+      decoration: _toolbarInputDec(label: 'Status'),
+      style: const TextStyle(
+        fontSize: 13,
+        color: AppColors.textPrimary,
+      ),
+      isExpanded: true,
+      items: statuses
+          .map(
+            (item) => DropdownMenuItem(
+              value: item['value']?.toString() ?? '',
+              child: Text(
+                item['label']?.toString() ?? '',
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 13,
+                ),
+              ),
+            ),
+          )
+          .toList(),
+      onChanged: (value) => ref
+          .read(capstoneDeliverablesProvider.notifier)
+          .fetchDeliverables(status: value ?? ''),
+    );
+
+    final clearButton = OutlinedButton.icon(
+      onPressed: () {
+        _searchController.clear();
+        if (_searchDebounceTimer?.isActive ?? false) {
+          _searchDebounceTimer!.cancel();
+        }
+        ref
+            .read(capstoneDeliverablesProvider.notifier)
+            .fetchDeliverables(search: '', status: '');
+      },
+      icon: const Icon(Icons.clear_all_rounded, size: 18),
+      label: const Text(
+        'Clear Filters',
+        style: TextStyle(
+          fontWeight: FontWeight.bold,
+          fontSize: 13,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        foregroundColor: const Color(0xFF64748B),
+        side: const BorderSide(color: Color(0xFFCBD5E1)),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(10),
+        ),
+      ),
+    );
+
     return Container(
       decoration: _cardDecoration(),
       padding: const EdgeInsets.all(16),
-      child: Wrap(
-        spacing: 16,
-        runSpacing: 16,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        children: [
-          SizedBox(
-            width: 300,
-            child: TextField(
-              controller: _searchController,
-              decoration: _toolbarInputDec(
-                label: 'Search team, project, adviser',
-                prefixIcon: Icons.search,
-              ),
-              style: const TextStyle(
-                fontSize: 13,
-              ),
-              onSubmitted: (value) => ref
-                  .read(capstoneDeliverablesProvider.notifier)
-                  .fetchDeliverables(search: value),
-            ),
-          ),
-          SizedBox(
-            width: 220,
-            child: DropdownButtonFormField<String>(
-              initialValue: selectedStage,
-              decoration: _toolbarInputDec(
-                label: state.scope == 'pit' ? 'PIT Event' : 'Stage View',
-              ),
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textPrimary,
-              ),
-              hint: Text(
-                stageOptions.isEmpty
-                    ? (state.scope == 'pit' ? 'No events configured' : 'No stages configured')
-                    : 'Select stage',
-                style: const TextStyle(fontSize: 13),
-              ),
-              items: stageOptions
-                  .map(
-                    (stage) => DropdownMenuItem(
-                      value: stage,
-                      child: Text(
-                        stage,
-                        style: const TextStyle(
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: stageOptions.isEmpty
-                  ? null
-                  : (value) => ref
-                        .read(capstoneDeliverablesProvider.notifier)
-                        .fetchDeliverables(
-                          selectedStage: value ?? selectedStage ?? '',
-                        ),
-            ),
-          ),
-          SizedBox(
-            width: 240,
-            child: DropdownButtonFormField<String>(
-              initialValue: state.status,
-              decoration: _toolbarInputDec(label: 'Status'),
-              style: const TextStyle(
-                fontSize: 13,
-                color: AppColors.textPrimary,
-              ),
-              isExpanded: true,
-              items: statuses
-                  .map(
-                    (item) => DropdownMenuItem(
-                      value: item['value']?.toString() ?? '',
-                      child: Text(
-                        item['label']?.toString() ?? '',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 13,
-                        ),
-                      ),
-                    ),
-                  )
-                  .toList(),
-              onChanged: (value) => ref
-                  .read(capstoneDeliverablesProvider.notifier)
-                  .fetchDeliverables(status: value ?? ''),
-            ),
-          ),
-          OutlinedButton.icon(
-            onPressed: () {
-              _searchController.clear();
-              ref
-                  .read(capstoneDeliverablesProvider.notifier)
-                  .fetchDeliverables(search: '', status: '');
-            },
-            icon: const Icon(Icons.clear_all_rounded, size: 18),
-            label: const Text(
-              'Clear Filters',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 13,
-              ),
-            ),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF64748B),
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(10),
-              ),
-            ),
-          ),
-        ],
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth < 900) {
+            final calculatedWidth = (constraints.maxWidth - 48) / 2;
+            final dropdownWidth = calculatedWidth.clamp(0.0, double.infinity);
+            return Wrap(
+              spacing: 16,
+              runSpacing: 16,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                SizedBox(width: double.infinity, child: searchField),
+                SizedBox(width: dropdownWidth, child: stageDropdown),
+                SizedBox(width: dropdownWidth, child: statusDropdown),
+                SizedBox(width: double.infinity, child: clearButton),
+              ],
+            );
+          }
+          return Row(
+            children: [
+              Expanded(child: searchField),
+              const SizedBox(width: 16),
+              SizedBox(width: 220, child: stageDropdown),
+              const SizedBox(width: 16),
+              SizedBox(width: 220, child: statusDropdown),
+              const SizedBox(width: 16),
+              clearButton,
+            ],
+          );
+        },
       ),
     );
   }
@@ -513,276 +959,9 @@ class _TeamDeliverablesScreenState
     return result;
   }
 
-  Widget _buildTeamList(CapstoneDeliverablesState state) {
-    if (state.teams.isEmpty) {
-      final emptyTitle = state.scope == 'pit' ? 'No PIT teams found' : 'No Capstone teams found';
-      final emptySubtitle = state.scope == 'pit'
-          ? 'Assign PIT teams first.'
-          : 'Assign Capstone teams and advisers first.';
-      return Container(
-        decoration: _cardDecoration(),
-        width: double.infinity,
-        padding: const EdgeInsets.all(34),
-        child: Column(
-            children: [
-              const Icon(
-                Icons.folder_open_outlined,
-                size: 42,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(height: 10),
-              Text(
-                emptyTitle,
-                style: const TextStyle(fontWeight: FontWeight.w800),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                emptySubtitle,
-                style: const TextStyle(color: AppColors.textSecondary),
-              ),
-            ],
-          ),
-      );
-    }
 
-    return Column(
-      children: state.teams.map((team) => _teamCard(state, team)).toList(),
-    );
-  }
 
-  Widget _teamCard(CapstoneDeliverablesState state, Map<String, dynamic> team) {
-    final selectedStage = Map<String, dynamic>.from(
-      team['selected_stage'] as Map? ?? const {},
-    );
-    final requiredUploaded = _asInt(selectedStage['required_uploaded']);
-    final requiredTotal = _asInt(selectedStage['required_total']);
-    final configured = selectedStage['deliverables_configured'] == true;
-    final complete = selectedStage['required_complete'] == true;
-    final endorsed = selectedStage['endorsed'] == true;
-    final canEndorse = configured && complete && !endorsed;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Top Section: Team details & status badge
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        team['name']?.toString() ?? '',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        team['project_title']?.toString() ?? '',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          _chip(
-                            team['year_level']?.toString() ?? '',
-                            AppColors.gold,
-                          ),
-                          _chip(
-                            'Adviser: ${team['adviser_name'] ?? 'Unassigned'}',
-                            AppColors.maroon,
-                          ),
-                          _chip(
-                            '${team['submitted_count'] ?? 0} submitted',
-                            Colors.blue,
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-                _statusChip(complete, endorsed),
-              ],
-            ),
-            
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Divider(color: Color(0xFFF1F5F9), height: 1),
-            ),
-            
-            // Progress blocks layout (Two columns wrapped in Row/Wrap)
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final useVerticalLayout = constraints.maxWidth < 600;
-                
-                final reqBlock = Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
-                  ),
-                  child: _requiredProgressBlock(
-                    configured: configured,
-                    done: requiredUploaded,
-                    total: requiredTotal,
-                  ),
-                );
-                
-                final archiveBlock = Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: const Color(0xFFF1F5F9)),
-                  ),
-                  child: _archiveProgressBlock(selectedStage),
-                );
-
-                if (useVerticalLayout) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      reqBlock,
-                      const SizedBox(height: 12),
-                      archiveBlock,
-                    ],
-                  );
-                }
-                
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: reqBlock),
-                    const SizedBox(width: 14),
-                    Expanded(child: archiveBlock),
-                  ],
-                );
-              },
-            ),
-            
-            const SizedBox(height: 18),
-            
-            // Action buttons row
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                if (canEndorse) ...[
-                  ElevatedButton.icon(
-                    onPressed: state.isSaving
-                        ? null
-                        : () async {
-                            final confirmed = await showDialog<bool>(
-                              context: context,
-                              builder: (dialogContext) => AlertDialog(
-                                title: const Text('Endorse Team'),
-                                content: Text(
-                                  'Endorse ${team['name']} for ${state.selectedStage}? '
-                                  'This confirms all required deliverables are complete '
-                                  'and the team is ready for defense scheduling.',
-                                ),
-                                actions: [
-                                  TextButton(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, false),
-                                    child: const Text('Cancel'),
-                                  ),
-                                  ElevatedButton.icon(
-                                    onPressed: () =>
-                                        Navigator.pop(dialogContext, true),
-                                    icon: const Icon(Icons.verified_outlined),
-                                    label: const Text('Endorse'),
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: AppColors.success,
-                                      foregroundColor: Colors.white,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            );
-                            if (confirmed == true && mounted) {
-                              await ref
-                                  .read(capstoneDeliverablesProvider.notifier)
-                                  .endorseTeam(
-                                    _asInt(team['id']),
-                                    state.selectedStage,
-                                  );
-                            }
-                          },
-                    icon: const Icon(Icons.verified_outlined, size: 16),
-                    label: const Text(
-                      'Endorse Team',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                      ),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.success,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                ],
-                ElevatedButton.icon(
-                  onPressed: state.isSaving
-                      ? null
-                      : () => _showTeamDialog(team),
-                  icon: const Icon(Icons.folder_open_outlined, size: 16),
-                  label: const Text(
-                    'Manage Files',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.maroon,
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 
   bool _stageNotConfigured(CapstoneDeliverablesState state) {
     if (state.teams.isEmpty) {
@@ -911,126 +1090,6 @@ class _TeamDeliverablesScreenState
     );
   }
 
-  void _showTeamDialog(Map<String, dynamic> team) {
-    final teamId = team['id'];
-    String selectedStage = ref.read(capstoneDeliverablesProvider).selectedStage;
-
-    showDialog<void>(
-      context: context,
-      builder: (dialogContext) {
-        return Consumer(
-          builder: (context, ref, child) {
-            final state = ref.watch(capstoneDeliverablesProvider);
-            final currentTeam = state.teams.firstWhere(
-              (t) => t['id'] == teamId,
-              orElse: () => team,
-            );
-            final stages = _stageList(currentTeam);
-
-            return StatefulBuilder(
-              builder: (context, setDialogState) {
-                final stage = _stagePayload(stages, selectedStage);
-                final pre = _deliverables(stage, 'pre');
-                final vault = _deliverables(stage, 'post');
-                final configured = stage['deliverables_configured'] == true;
-                final complete = stage['required_complete'] == true;
-                final endorsed = stage['endorsed'] == true;
-                final canEndorse = configured && complete && !endorsed;
-
-                return AlertDialog(
-                  title: Text('Deliverables - ${currentTeam['name'] ?? ''}'),
-                  content: SizedBox(
-                    width: 780,
-                    child: SingleChildScrollView(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Wrap(
-                            spacing: 8,
-                            runSpacing: 8,
-                            children: stages.map((item) {
-                              final label =
-                                  item['stage_label']?.toString() ?? '';
-                              final active = label == selectedStage;
-                              return ChoiceChip(
-                                label: Text(label),
-                                selected: active,
-                                onSelected: (_) {
-                                  setDialogState(() {
-                                    selectedStage = label;
-                                  });
-                                },
-                              );
-                            }).toList(),
-                          ),
-                          const SizedBox(height: 18),
-                          _sectionTitle('Pre-Defense Requirements'),
-                          ...pre.map(
-                            (item) => _deliverableRow(
-                              currentTeam,
-                              selectedStage,
-                              item,
-                              setDialogState,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-                          _sectionTitle('Post-Defense Deliverables'),
-                          if (stage['archive_unlocked'] != true)
-                            _lockedArchiveNotice(selectedStage)
-                          else
-                            ...vault.map(
-                              (item) => _deliverableRow(
-                                currentTeam,
-                                selectedStage,
-                                item,
-                                setDialogState,
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(dialogContext),
-                      child: const Text('Close'),
-                    ),
-                    ElevatedButton.icon(
-                      onPressed: canEndorse
-                          ? () async {
-                              await ref
-                                  .read(capstoneDeliverablesProvider.notifier)
-                                  .endorseTeam(
-                                    _asInt(currentTeam['id']),
-                                    selectedStage,
-                                  );
-                              // We don't pop the dialogContext here, but wait, the plan says we can pop here because it's the "endorse" action which is complete.
-                              // Actually, if we pop, that's fine or we don't have to pop. Wait, line 725 in original popped. So keeping pop on endorse is okay.
-                              if (context.mounted) {
-                                Navigator.pop(dialogContext);
-                              }
-                            }
-                          : null,
-                      icon: const Icon(Icons.verified_outlined),
-                      label: Text(
-                        endorsed
-                            ? 'Already Endorsed'
-                            : (configured
-                                  ? 'Endorse'
-                                  : 'Configure Stage First'),
-                      ),
-                    ),
-                  ],
-                );
-              },
-            );
-          },
-        );
-      },
-    );
-  }
-
   Widget _deliverableRow(
     Map<String, dynamic> team,
     String stageLabel,
@@ -1064,10 +1123,14 @@ class _TeamDeliverablesScreenState
             border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
           ),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(
-                uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
-                color: uploaded ? AppColors.success : AppColors.textSecondary,
+              Padding(
+                padding: const EdgeInsets.only(top: 2),
+                child: Icon(
+                  uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
+                  color: uploaded ? AppColors.success : AppColors.textSecondary,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1079,17 +1142,30 @@ class _TeamDeliverablesScreenState
                       style: const TextStyle(fontWeight: FontWeight.w700),
                     ),
                     if (uploaded) ...[
-                      Text(
-                        isWPR
-                            ? 'All weekly reports approved - ${submission['uploaded_by_name'] ?? ''}'
-                            : '${submission['file_name'] ?? ''} - ${submission['uploaded_by_name'] ?? ''}',
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
+                      if (isWPR) ...[
+                        Text(
+                          'All weekly reports approved - ${submission['uploaded_by_name'] ?? ''}',
+                          style: const TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 12,
+                          ),
                         ),
-                      ),
+                      ] else ...[
+                        const SizedBox(height: 6),
+                        ..._buildFileList(
+                          team,
+                          stageLabel,
+                          item,
+                          submission,
+                          locked,
+                          isFaculty,
+                          isAdmin,
+                          endorsed,
+                          setDialogState,
+                        ),
+                      ],
                       if (submission['reviewed_by_name'] != null && (submission['reviewed_by_name']?.toString() ?? '').isNotEmpty) ...[
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 4),
                         Text(
                           'Reviewed by: ${submission['reviewed_by_name']}',
                           style: const TextStyle(
@@ -1156,7 +1232,10 @@ class _TeamDeliverablesScreenState
                   ],
                 ),
               ),
-              if (item['required'] == true) _chip('Required', AppColors.danger),
+              if (item['required'] == true) ...[
+                const SizedBox(width: 8),
+                _chip('Required', AppColors.danger),
+              ],
               const SizedBox(width: 8),
               if (isFaculty && !isAdmin) ...[
                 if (isWPR) ...[
@@ -1180,15 +1259,6 @@ class _TeamDeliverablesScreenState
                   ),
                 ] else ...[
                   if (uploaded) ...[
-                    OutlinedButton.icon(
-                      onPressed: () => _viewPdf(
-                        submission['file_url'] ?? '',
-                        submission['file_name'] ?? 'document.pdf',
-                      ),
-                      icon: const Icon(Icons.picture_as_pdf),
-                      label: const Text('View PDF'),
-                    ),
-                    const SizedBox(width: 8),
                     if (submission['status'] == 'pending') ...[
                       OutlinedButton.icon(
                         onPressed: () => _reviewSubmission(
@@ -1300,15 +1370,6 @@ class _TeamDeliverablesScreenState
                   ],
                 ],
               ] else ...[
-                if (uploaded && !isWPR)
-                  IconButton(
-                    tooltip: 'Remove',
-                    onPressed: () => _removeFile(team, stageLabel, item),
-                    icon: const Icon(
-                      Icons.delete_outline,
-                      color: AppColors.danger,
-                    ),
-                  ),
                 if (isWPR)
                   OutlinedButton.icon(
                     onPressed: () => _showApproveWPRDialog(
@@ -1333,8 +1394,8 @@ class _TeamDeliverablesScreenState
                     onPressed: locked
                         ? null
                         : () => _promptUploadOrReplace(team, stageLabel, item),
-                    icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file),
-                    label: Text(uploaded ? 'Replace' : 'Upload'),
+                    icon: Icon(uploaded ? Icons.add : Icons.upload_file),
+                    label: Text(uploaded ? 'Upload More' : 'Upload'),
                   ),
               ],
             ],
@@ -1459,13 +1520,15 @@ class _TeamDeliverablesScreenState
 
       if (mounted) Navigator.pop(context);
 
-      if (success) {
+      if (success && mounted) {
         showSuccessToast(context, 'Deliverable review status updated.');
         setDialogState(() {});
       }
     } catch (e) {
-      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
-      showErrorToast(context, 'Failed to update review status: $e');
+      if (mounted) {
+        if (Navigator.canPop(context)) Navigator.pop(context);
+        showErrorToast(context, 'Failed to update review status: $e');
+      }
     }
   }
 
@@ -1601,28 +1664,139 @@ class _TeamDeliverablesScreenState
     }
   }
 
-  Future<void> _promptUploadOrReplace(
+  List<Widget> _buildFileList(
     Map<String, dynamic> team,
     String stageLabel,
     Map<String, dynamic> item,
-  ) async {
-    if (item['uploaded'] == true) {
+    Map<String, dynamic> submission,
+    bool locked,
+    bool isFaculty,
+    bool isAdmin,
+    bool endorsed,
+    void Function(void Function()) setDialogState,
+  ) {
+    final filesList = submission['files'] as List? ?? [];
+    
+    if (filesList.isEmpty) {
+      final legacyFile = {
+        'id': null,
+        'file_name': submission['file_name'] ?? 'document.pdf',
+        'file_size': submission['file_size'] ?? '',
+        'file_url': submission['file_url'] ?? '',
+      };
+      return [_buildFileRow(team, stageLabel, item, submission, legacyFile, locked, isFaculty, isAdmin, endorsed, setDialogState)];
+    }
+    
+    return filesList.map((f) {
+      final fileMap = Map<String, dynamic>.from(f as Map);
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 6),
+        child: _buildFileRow(team, stageLabel, item, submission, fileMap, locked, isFaculty, isAdmin, endorsed, setDialogState),
+      );
+    }).toList();
+  }
+
+  Widget _buildFileRow(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item,
+    Map<String, dynamic> submission,
+    Map<String, dynamic> fileMap,
+    bool locked,
+    bool isFaculty,
+    bool isAdmin,
+    bool endorsed,
+    void Function(void Function()) setDialogState,
+  ) {
+    final fileId = fileMap['id'];
+    final fileName = fileMap['file_name']?.toString() ?? 'document.pdf';
+    final fileSize = fileMap['file_size']?.toString() ?? '';
+    final fileUrl = fileMap['file_url']?.toString() ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: AppColors.background.withValues(alpha: 0.5),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.insert_drive_file_outlined, size: 16, color: AppColors.textSecondary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  fileName,
+                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                if (fileSize.isNotEmpty)
+                  Text(
+                    fileSize,
+                    style: const TextStyle(fontSize: 10, color: AppColors.textSecondary),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            iconSize: 18,
+            visualDensity: VisualDensity.compact,
+            tooltip: 'View PDF',
+            icon: const Icon(Icons.picture_as_pdf, color: Colors.blue),
+            onPressed: () => _viewPdf(fileUrl, fileName),
+          ),
+          if (!isFaculty || isAdmin) ...[
+            if (!locked) ...[
+              IconButton(
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Replace File',
+                icon: const Icon(Icons.swap_horiz, color: AppColors.gold),
+                onPressed: () => _promptUploadOrReplace(team, stageLabel, item, fileId: fileId),
+              ),
+              IconButton(
+                iconSize: 18,
+                visualDensity: VisualDensity.compact,
+                tooltip: 'Remove File',
+                icon: const Icon(Icons.delete_outline, color: AppColors.danger),
+                onPressed: () => _removeFile(team, stageLabel, item, fileId: fileId),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+
+  Future<void> _promptUploadOrReplace(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item, {
+    int? fileId,
+  }) async {
+    if (fileId != null) {
       final ok = await confirmDestructive(
         context,
         title: 'Replace file?',
-        message: 'The current upload will be replaced. This cannot be undone.',
+        message: 'The current file will be replaced. This cannot be undone.',
         confirmLabel: 'Replace',
       );
       if (!ok || !mounted) return;
     }
-    await _showUploadDialog(team, stageLabel, item);
+    await _showUploadDialog(team, stageLabel, item, fileId: fileId);
   }
 
   Future<void> _showUploadDialog(
     Map<String, dynamic> team,
     String stageLabel,
-    Map<String, dynamic> item,
-  ) async {
+    Map<String, dynamic> item, {
+    int? fileId,
+  }) async {
     String? selectedFileName;
     String? selectedFileSize;
     List<int>? selectedFileBytes;
@@ -1853,6 +2027,9 @@ class _TeamDeliverablesScreenState
                             .toString();
                         request.fields['file_name'] = selectedFileName!;
                         request.fields['file_size'] = selectedFileSize ?? '';
+                        if (fileId != null) {
+                          request.fields['file_id'] = fileId.toString();
+                        }
 
                         // Add file
                         request.files.add(
@@ -1908,14 +2085,17 @@ class _TeamDeliverablesScreenState
   Future<void> _removeFile(
     Map<String, dynamic> team,
     String stageLabel,
-    Map<String, dynamic> item,
-  ) async {
+    Map<String, dynamic> item, {
+    int? fileId,
+  }) async {
     final label =
         item['label']?.toString() ?? item['id']?.toString() ?? 'this file';
     final teamName = team['name']?.toString();
-    final message = teamName != null && teamName.isNotEmpty
-        ? 'Remove $label for $teamName? This cannot be undone.'
-        : 'Remove $label? This cannot be undone.';
+    final message = fileId != null
+        ? 'Remove this file? This cannot be undone.'
+        : (teamName != null && teamName.isNotEmpty
+            ? 'Remove $label for $teamName? This cannot be undone.'
+            : 'Remove $label? This cannot be undone.');
 
     final ok = await confirmDestructive(
       context,
@@ -1931,6 +2111,7 @@ class _TeamDeliverablesScreenState
       'team_id': _asInt(team['id']),
       'stage_label': stageLabel,
       'deliverable_id': item['id'],
+      if (fileId != null) 'file_id': fileId,
     };
 
     showUndoToast(
@@ -2794,80 +2975,221 @@ class _TeamDeliverablesScreenState
     }
   }
 
-  Widget _buildTeamsAndGradesTab(CapstoneDeliverablesState state) {
-    if (state.teams.isEmpty) {
-      final emptyTitle = state.scope == 'pit' ? 'No PIT teams found' : 'No Capstone teams found';
-      return Card(
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(34),
-          child: Column(
-            children: [
-              const Icon(Icons.folder_open_outlined, size: 42, color: AppColors.textSecondary),
-              const SizedBox(height: 10),
-              Text(emptyTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
-            ],
+  Widget _expandedTabButton(int teamId, int tabIndex, String label) {
+    final activeTab = _cardActiveTabs[teamId] ?? 0;
+    final isActive = activeTab == tabIndex;
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _cardActiveTabs[teamId] = tabIndex;
+        });
+      },
+      child: Container(
+        height: 38,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          border: isActive
+              ? const Border(
+                  bottom: BorderSide(
+                    color: AppColors.maroon,
+                    width: 2,
+                  ),
+                )
+              : null,
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+            color: isActive ? AppColors.maroon : AppColors.textSecondary,
+            fontSize: 13,
           ),
         ),
-      );
-    }
-
-    final totalTeams = state.teams.length;
-    final publishedTeamsCount = state.teams.where((team) {
-      final grade = team['grade'] as Map?;
-      return grade != null && grade['status'] == 'published';
-    }).length;
-    final pendingCount = totalTeams - publishedTeamsCount;
-    final completionRate = totalTeams > 0 ? (publishedTeamsCount / totalTeams * 100).round() : 0;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Wrap(
-          spacing: 14,
-          runSpacing: 14,
-          children: [
-            _stat(
-              'Total Teams',
-              totalTeams,
-              Icons.groups_2_outlined,
-              AppColors.maroon,
-            ),
-            _stat(
-              'Published Grades',
-              publishedTeamsCount,
-              Icons.verified_outlined,
-              AppColors.success,
-            ),
-            _stat(
-              'Awaiting Publication',
-              pendingCount,
-              Icons.warning_amber_outlined,
-              AppColors.warning,
-            ),
-            _stat(
-              'Completion Rate',
-              completionRate,
-              Icons.donut_large_outlined,
-              Colors.blue,
-            ),
-          ],
-        ),
-        const SizedBox(height: 24),
-        ...state.teams.map((team) => _teamGradeCard(state, team)),
-      ],
+      ),
     );
   }
 
-  Widget _teamGradeCard(CapstoneDeliverablesState state, Map<String, dynamic> team) {
-    final grade = team['grade'] != null ? Map<String, dynamic>.from(team['grade'] as Map) : null;
-    final status = grade?['status']?.toString() ?? 'pending';
+  Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
+    final rubricId = grade['assigned_adviser_rubric_id'];
+    if (rubricId == null) {
+      return null;
+    }
+    final criteria = grade['assigned_adviser_criteria'];
+    return {
+      'id': rubricId,
+      'name': grade['assigned_adviser_rubric_name']?.toString() ?? 'Adviser rubric',
+      'scale': grade['assigned_adviser_rubric_scale'],
+      'criteria': criteria is List ? criteria : [],
+    };
+  }
 
-    final panelScore = grade?['panel_score'];
-    final peerScore = grade?['peer_score'];
-    final adviserScore = grade?['adviser_score'];
-    final finalGrade = grade?['final_grade'];
-    final result = grade?['result']?.toString() ?? 'pending';
+  void _initializeGradingControllersForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+    final key = '$teamId-$stageLabel';
+    if (_teamManualScoreCtrls.containsKey(key)) {
+      return; // Already initialized for this team and stage
+    }
+
+    final manualCtrl = TextEditingController();
+    final existing = gradeRecord['adviser_score'];
+    if (existing != null) {
+      manualCtrl.text = existing.toString();
+    }
+    _teamManualScoreCtrls[key] = manualCtrl;
+
+    final criteriaCtrls = <String, TextEditingController>{};
+    final assigned = _assignedRubricFromGrade(gradeRecord);
+    _teamSelectedRubrics[key] = assigned;
+
+    if (assigned != null) {
+      final savedScores = <String, String>{};
+      if (gradeRecord['breakdowns'] is List) {
+        for (final row in gradeRecord['breakdowns'] as List) {
+          if (row is! Map) continue;
+          if (row['evaluation_type']?.toString() != 'adviser') continue;
+          final name = row['criterion_name']?.toString() ?? '';
+          if (name.isNotEmpty) {
+            savedScores[name] = row['score']?.toString() ?? '';
+          }
+        }
+      }
+
+      for (final c in (assigned['criteria'] as List? ?? [])) {
+        final cMap = c as Map;
+        final name = cMap['name']?.toString() ?? '';
+        criteriaCtrls[name] = TextEditingController(text: savedScores[name] ?? '');
+      }
+    }
+    _teamCriteriaScoreCtrls[key] = criteriaCtrls;
+  }
+
+  double _computeTotalScoreForTeam(int teamId, String stageLabel) {
+    final key = '$teamId-$stageLabel';
+    final rubric = _teamSelectedRubrics[key];
+    if (rubric == null) return 0;
+    final criteria = (rubric['criteria'] as List? ?? []);
+    if (criteria.isEmpty) return 0;
+    double total = 0;
+    double maxTotal = 0;
+    final subMap = _teamCriteriaScoreCtrls[key] ?? const {};
+    for (final c in criteria) {
+      final name = (c as Map)['name']?.toString() ?? '';
+      final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+      final entered = double.tryParse(subMap[name]?.text ?? '') ?? 0;
+      total += entered.clamp(0, maxScore);
+      maxTotal += maxScore;
+    }
+    if (maxTotal == 0) return 0;
+    return (total / maxTotal * 100).clamp(0, 100);
+  }
+
+  bool _allCriteriaFilledForTeam(int teamId, String stageLabel) {
+    final key = '$teamId-$stageLabel';
+    final rubric = _teamSelectedRubrics[key];
+    if (rubric == null) return false;
+    final criteria = (rubric['criteria'] as List? ?? []);
+    if (criteria.isEmpty) return false;
+    final subMap = _teamCriteriaScoreCtrls[key] ?? const {};
+    for (final c in criteria) {
+      final name = (c as Map)['name']?.toString() ?? '';
+      final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+      final text = subMap[name]?.text.trim() ?? '';
+      if (text.isEmpty) return false;
+      final value = double.tryParse(text);
+      if (value == null || value < 0 || value > maxScore) return false;
+    }
+    return true;
+  }
+
+  int _filledCountForTeam(int teamId, String stageLabel) {
+    final key = '$teamId-$stageLabel';
+    final rubric = _teamSelectedRubrics[key];
+    if (rubric == null) return 0;
+    final criteria = (rubric['criteria'] as List? ?? []);
+    int count = 0;
+    final subMap = _teamCriteriaScoreCtrls[key] ?? const {};
+    for (final c in criteria) {
+      final name = (c as Map)['name']?.toString() ?? '';
+      final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+      final text = subMap[name]?.text.trim() ?? '';
+      final value = double.tryParse(text);
+      if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) count++;
+    }
+    return count;
+  }
+
+  Future<void> _submitAdviserGrade({
+    required int teamId,
+    required String stageLabel,
+    required Map<String, dynamic> gradeRecord,
+  }) async {
+    final key = '$teamId-$stageLabel';
+    final gradeId = gradeRecord['id'] as int?;
+    if (gradeId == null) {
+      showErrorToast(context, 'No grading record available for this team and stage.');
+      return;
+    }
+
+    final rubric = _teamSelectedRubrics[key];
+    final subMap = _teamCriteriaScoreCtrls[key] ?? const {};
+    final manualCtrl = _teamManualScoreCtrls[key];
+
+    double adviserScore;
+    List<Map<String, dynamic>> criteriaScores = [];
+    int? rubricId;
+
+    if (rubric != null) {
+      final criteria = (rubric['criteria'] as List? ?? []);
+      for (final c in criteria) {
+        final cMap = c as Map;
+        final name = cMap['name']?.toString() ?? '';
+        final maxScore = ((cMap['max_score'] as num?) ?? 10).toDouble();
+        final entered = (double.tryParse(subMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
+        criteriaScores.add({
+          'criterion_name': name,
+          'score': entered,
+          'max_score': maxScore,
+          'display_order': cMap['display_order'] ?? 0,
+        });
+      }
+      adviserScore = _computeTotalScoreForTeam(teamId, stageLabel);
+      rubricId = rubric['id'] as int?;
+    } else {
+      if (manualCtrl == null) return;
+      adviserScore = double.tryParse(manualCtrl.text) ?? 0;
+      adviserScore = adviserScore.clamp(0, 100);
+    }
+
+    final success = await ref.read(adviserGradingProvider.notifier).submitGrade(
+          gradeId: gradeId,
+          adviserScore: adviserScore,
+          rubricId: rubricId,
+          criteriaScores: criteriaScores,
+        );
+
+    if (success && mounted) {
+      showSuccessToast(context, 'Grade submitted successfully!');
+      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables();
+    }
+  }
+
+  Widget _buildGradesAndRubricTab(Map<String, dynamic> team, String selectedStage) {
+    final teamId = _asInt(team['id']);
+    final gradingState = ref.watch(adviserGradingProvider);
+    
+    final gradeRecord = gradingState.grades.firstWhere(
+      (g) => _asInt(g['team_id']) == teamId && g['stage_label']?.toString() == selectedStage,
+      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
+    );
+
+    // Initialize scoring controllers for this team/stage
+    _initializeGradingControllersForTeam(teamId, selectedStage, gradeRecord);
+
+    final status = gradeRecord['status']?.toString() ?? 'pending';
+    final panelScore = gradeRecord['panel_score'];
+    final peerScore = gradeRecord['peer_score'];
+    final adviserScore = gradeRecord['adviser_score'];
+    final finalGrade = gradeRecord['final_grade'];
+    final result = gradeRecord['result']?.toString() ?? 'pending';
 
     Color statusBg = const Color(0xFFFEF3C7);
     Color statusText = const Color(0xFFD97706);
@@ -2883,87 +3205,292 @@ class _TeamDeliverablesScreenState
       statusLabel = 'Awaiting Peers';
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      decoration: _cardDecoration(),
-      child: Padding(
-        padding: const EdgeInsets.all(20),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
+    final key = '$teamId-$selectedStage';
+    final assignedRubric = _teamSelectedRubrics[key];
+    final isAlreadyGraded = adviserScore != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Overall Grade Badges
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            const Text(
+              'Grade Overview',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: statusBg,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                statusLabel,
+                style: TextStyle(
+                  color: statusText,
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 10,
+          children: [
+            _gradeBadge('Panel', panelScore),
+            _gradeBadge('Peer', peerScore),
+            _gradeBadge('Adviser', adviserScore),
+            _overallGradeBadge(finalGrade, result),
+          ],
+        ),
+        const SizedBox(height: 24),
+        const Divider(color: Color(0xFFF1F5F9), height: 1),
+        const SizedBox(height: 16),
+
+        // Rubric Grading Form
+        if (!gradingState.adviserGradingEnabled) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF9FAFB),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
+            ),
+            child: const Column(
+              children: [
+                Icon(Icons.lock_outline_rounded, size: 48, color: AppColors.textSecondary),
+                SizedBox(height: 12),
+                Text(
+                  'Adviser Grading is Disabled',
+                  style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                ),
+                SizedBox(height: 6),
+                Text(
+                  'Adviser grading is currently turned off by the administrator for this stage/period.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
+                ),
+              ],
+            ),
+          ),
+        ] else if (assignedRubric == null) ...[
+          _sectionTitle('Manual Adviser Score (0 – 100)'),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              SizedBox(
+                width: 160,
+                child: TextFormField(
+                  controller: _teamManualScoreCtrls[key],
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    hintText: 'e.g. 85.0',
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    isDense: true,
+                  ),
+                  onChanged: (_) => setState(() {}),
+                ),
+              ),
+              const SizedBox(width: 12),
+              ElevatedButton(
+                onPressed: gradingState.isSaving
+                    ? null
+                    : () => _submitAdviserGrade(
+                          teamId: teamId,
+                          stageLabel: selectedStage,
+                          gradeRecord: gradeRecord,
+                        ),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.maroon,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+                child: Text(isAlreadyGraded ? 'Update Grade' : 'Submit Grade'),
+              ),
+            ],
+          ),
+        ] else ...[
+          Row(
+            children: [
+              _sectionTitle('Rubric: ${assignedRubric['name']} (${assignedRubric['scale'] ?? ''})'),
+              const Spacer(),
+              Builder(builder: (_) {
+                final total = (assignedRubric['criteria'] as List? ?? []).length;
+                final filled = _filledCountForTeam(teamId, selectedStage);
+                final allDone = filled == total && total > 0;
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: allDone
+                        ? AppColors.success.withValues(alpha: 0.1)
+                        : AppColors.warning.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '$filled / $total scored',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: allDone ? AppColors.success : AppColors.warning,
+                    ),
+                  ),
+                );
+              }),
+            ],
+          ),
+          const SizedBox(height: 10),
+          _buildCriteriaTableForTeam(teamId, selectedStage, assignedRubric),
+          const SizedBox(height: 16),
+          // Computed score
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: AppColors.maroon.withValues(alpha: 0.06),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              children: [
+                const Text(
+                  'Computed Adviser Score:',
+                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                ),
+                const Spacer(),
+                Text(
+                  _computeTotalScoreForTeam(teamId, selectedStage).toStringAsFixed(2),
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maroon),
+                ),
+                const Text(' / 100', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+          // Submit Button
+          Builder(builder: (_) {
+            final canSubmit = _allCriteriaFilledForTeam(teamId, selectedStage);
+            return SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: (gradingState.isSaving || !canSubmit)
+                    ? null
+                    : () => _submitAdviserGrade(
+                          teamId: teamId,
+                          stageLabel: selectedStage,
+                          gradeRecord: gradeRecord,
+                        ),
+                icon: gradingState.isSaving
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.save_rounded, size: 14),
+                label: Text(isAlreadyGraded ? 'Update Adviser Grade' : 'Submit Adviser Grade'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: canSubmit ? AppColors.maroon : Colors.grey.shade300,
+                  foregroundColor: canSubmit ? Colors.white : Colors.grey.shade500,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  elevation: 0,
+                ),
+              ),
+            );
+          }),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildCriteriaTableForTeam(int teamId, String stageLabel, Map<String, dynamic> rubric) {
+    final criteria = (rubric['criteria'] as List? ?? []);
+    if (criteria.isEmpty) {
+      return const Text(
+        'This rubric has no criteria defined.',
+        style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+      );
+    }
+
+    final key = '$teamId-$stageLabel';
+    final subMap = _teamCriteriaScoreCtrls[key] ?? const {};
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        children: criteria.asMap().entries.map((entry) {
+          final i = entry.key;
+          final c = entry.value as Map;
+          final name = c['name']?.toString() ?? '';
+          final desc = c['description']?.toString() ?? '';
+          final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+          final ctrl = subMap[name] ?? TextEditingController();
+
+          return Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              border: i < criteria.length - 1
+                  ? const Border(bottom: BorderSide(color: Color(0xFFE2E8F0), width: 0.5))
+                  : null,
+            ),
+            child: Row(
               children: [
                 Expanded(
+                  flex: 3,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        team['name']?.toString() ?? '',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
+                        name,
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        team['project_title']?.toString() ?? '',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondary,
+                      if (desc.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          desc,
+                          style: const TextStyle(fontSize: 11, color: AppColors.textSecondary),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
-                const SizedBox(width: 16),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: statusBg,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    statusLabel,
-                    style: TextStyle(
-                      color: statusText,
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
+                const SizedBox(width: 12),
+                Text('/ $maxScore', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                const SizedBox(width: 12),
+                SizedBox(
+                  width: 80,
+                  child: TextField(
+                    controller: ctrl,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    textAlign: TextAlign.center,
+                    decoration: InputDecoration(
+                      hintText: 'Score',
+                      hintStyle: const TextStyle(fontSize: 11),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                      isDense: true,
                     ),
+                    onChanged: (_) => setState(() {}),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 16),
-            Wrap(
-              spacing: 16,
-              runSpacing: 12,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                _gradeBadge('Panel', panelScore),
-                _gradeBadge('Peer', peerScore),
-                if (state.scope == 'capstone') _gradeBadge('Adviser', adviserScore),
-                _overallGradeBadge(finalGrade, result),
-              ],
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 18),
-              child: Divider(color: Color(0xFFF1F5F9), height: 1),
-            ),
-            const Text(
-              'TEAM ROSTER & INDIVIDUAL PEER GRADES',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textSecondary,
-                letterSpacing: 1.1,
-              ),
-            ),
-            const SizedBox(height: 12),
-            _buildRosterAndIndividualGrades(team, grade),
-          ],
-        ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -3235,6 +3762,234 @@ class _TeamDeliverablesScreenState
           );
         },
       ),
+    );
+  }
+
+  Widget _buildExpandedSection(
+    Map<String, dynamic> team,
+    CapstoneDeliverablesState state,
+  ) {
+    final teamId = _asInt(team['id']);
+    final stages = _stageList(team);
+    final selectedStage = _cardSelectedStages[teamId] ?? state.selectedStage;
+
+    final stage = _stagePayload(stages, selectedStage);
+    final pre = _deliverables(stage, 'pre');
+    final vault = _deliverables(stage, 'post');
+
+    final activeTab = _cardActiveTabs[teamId] ?? 0;
+
+    final gradingState = ref.watch(adviserGradingProvider);
+    final gradeRecord = gradingState.grades.firstWhere(
+      (g) => _asInt(g['team_id']) == teamId && g['stage_label']?.toString() == selectedStage,
+      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
+    );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Inline Tab Swapping (Moved to the very top)
+        Container(
+          height: 38,
+          decoration: const BoxDecoration(
+            border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+          ),
+          child: Row(
+            children: [
+              _expandedTabButton(teamId, 0, '📁 Deliverables'),
+              const SizedBox(width: 20),
+              _expandedTabButton(teamId, 1, '📊 Grades & Rubric'),
+              const SizedBox(width: 20),
+              _expandedTabButton(teamId, 2, '👥 Team Roster'),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        if (activeTab == 0) ...[
+          // 1. Defense Stages Chips (Seen for deliverables only)
+          if (stages.isNotEmpty) ...[
+            const Text(
+              'Defense Stages',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                color: AppColors.textSecondary,
+                letterSpacing: 0.4,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: stages.map((item) {
+                final label = item['stage_label']?.toString() ?? '';
+                final active = label == selectedStage;
+
+                final isStageComplete = item['required_complete'] == true;
+                final isStageEndorsed = item['endorsed'] == true;
+
+                Widget labelWidget = Text(label);
+                if (isStageEndorsed) {
+                  labelWidget = Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.verified, size: 14, color: AppColors.success),
+                      const SizedBox(width: 4),
+                      Text(label),
+                    ],
+                  );
+                } else if (isStageComplete) {
+                  labelWidget = Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.check_circle_outline, size: 14, color: Colors.blue),
+                      const SizedBox(width: 4),
+                      Text(label),
+                    ],
+                  );
+                }
+
+                return ChoiceChip(
+                  label: labelWidget,
+                  selected: active,
+                  selectedColor: AppColors.maroon.withValues(alpha: 0.15),
+                  backgroundColor: const Color(0xFFF1F5F9),
+                  labelStyle: TextStyle(
+                    fontWeight: active ? FontWeight.bold : FontWeight.normal,
+                    color: active ? AppColors.maroon : AppColors.textPrimary,
+                    fontSize: 12,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    side: BorderSide(
+                      color: active ? AppColors.maroon : const Color(0xFFCBD5E1),
+                    ),
+                  ),
+                  onSelected: (_) {
+                    setState(() {
+                      _cardSelectedStages[teamId] = label;
+                    });
+                  },
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 18),
+          ],
+
+          // 2. Progress Blocks Layout (Seen for deliverables only)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final useVerticalLayout = constraints.maxWidth < 600;
+              final requiredUploaded = _asInt(stage['required_uploaded']);
+              final requiredTotal = _asInt(stage['required_total']);
+              final configured = stage['deliverables_configured'] == true;
+              
+              final reqBlock = Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF1F5F9)),
+                ),
+                child: _requiredProgressBlock(
+                  configured: configured,
+                  done: requiredUploaded,
+                  total: requiredTotal,
+                ),
+              );
+              
+              final archiveBlock = Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF1F5F9)),
+                ),
+                child: _archiveProgressBlock(stage),
+              );
+
+              if (useVerticalLayout) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    reqBlock,
+                    const SizedBox(height: 12),
+                    archiveBlock,
+                  ],
+                );
+              }
+              
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: reqBlock),
+                  const SizedBox(width: 14),
+                  Expanded(child: archiveBlock),
+                ],
+              );
+            },
+          ),
+          
+          const Padding(
+            padding: EdgeInsets.symmetric(vertical: 18),
+            child: Divider(color: Color(0xFFE2E8F0), height: 1),
+          ),
+
+          // 3. Pre-Defense Requirements & Post-Defense Deliverables list
+          _sectionTitle('Pre-Defense Requirements'),
+          if (pre.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No pre-defense requirements configured.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 12,
+                ),
+              ),
+            )
+          else
+            ...pre.map(
+              (item) => _deliverableRow(
+                team,
+                selectedStage,
+                item,
+                (fn) => setState(fn),
+              ),
+            ),
+          const SizedBox(height: 18),
+          _sectionTitle('Post-Defense Deliverables'),
+          if (stage['archive_unlocked'] != true)
+            _lockedArchiveNotice(selectedStage)
+          else if (vault.isEmpty)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text(
+                'No post-defense deliverables configured.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontStyle: FontStyle.italic,
+                  fontSize: 12,
+                ),
+              ),
+            )
+          else
+            ...vault.map(
+              (item) => _deliverableRow(
+                team,
+                selectedStage,
+                item,
+                (fn) => setState(fn),
+              ),
+            ),
+        ] else if (activeTab == 1) ...[
+          _buildGradesAndRubricTab(team, selectedStage),
+        ] else ...[
+          _buildRosterAndIndividualGrades(team, gradeRecord),
+        ],
+      ],
     );
   }
 

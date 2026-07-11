@@ -87,6 +87,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'project_title',
             'level',
             'year_level',
+            'section',
             'status',
             'ready_for_stage',
             'current_defense_stage',

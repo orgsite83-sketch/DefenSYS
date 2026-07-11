@@ -750,6 +750,7 @@ def capstone_deliverable_queryset_for_scope(scope):
             'team__semester__school_year',
             'uploaded_by',
         )
+        .prefetch_related('files')
         .filter(team__level__icontains='Capstone')
         .order_by('-uploaded_at', 'file_name')
     )
@@ -765,6 +766,7 @@ def pit_deliverable_queryset_for_scope(scope):
             'team__semester__school_year',
             'uploaded_by',
         )
+        .prefetch_related('files')
         .filter(team__level__icontains='PIT')
         .order_by('-uploaded_at', 'file_name')
     )
@@ -812,14 +814,10 @@ def scoped_entries(user, request=None, *, include_ml=False, include_audit_trail=
         capstone_archive_entry_payload(entry, **payload_kwargs)
         for entry in capstone_legacy
     )
-    entries.extend(
-        capstone_entry_payload(submission, **payload_kwargs)
-        for submission in capstone_submissions
-    )
-    entries.extend(
-        capstone_entry_payload(submission, **payload_kwargs)
-        for submission in pit_submissions
-    )
+    for submission in capstone_submissions:
+        entries.extend(capstone_entry_payload(submission, **payload_kwargs))
+    for submission in pit_submissions:
+        entries.extend(capstone_entry_payload(submission, **payload_kwargs))
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True), scope
 
 

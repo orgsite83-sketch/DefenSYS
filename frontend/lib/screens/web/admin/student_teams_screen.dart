@@ -7,7 +7,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../l10n/l10n_ext.dart';
 import '../../../navigation/admin_route_paths.dart';
-import '../../../navigation/app_router.dart';
+
 import '../../../services/dashboard_provider.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../utils/csv_file_io.dart';
@@ -50,12 +50,6 @@ enum TeamListMode {
 
   /// Faculty PIT Instructor workspace: PIT teams for assigned section only.
   pitInstructor,
-}
-
-enum CapstoneViewMode {
-  all,
-  bySection,
-  byAdviser,
 }
 
 class StudentTeamsScreen extends ConsumerStatefulWidget {
@@ -104,7 +98,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   String? _section;
   String? _systemName;
   String? _projectManager;
-  CapstoneViewMode _capstoneViewMode = CapstoneViewMode.all;
+  final Map<String, String?> _selectedSectionAdviserFilter = {};
+  final Map<String, bool> _sectionExpansionStates = {};
 
   bool get _isBulkImportVisible => _showBulkImport == true;
   String get _selectedBulkAdviserFilter => _bulkAdviserFilter ?? 'all';
@@ -252,10 +247,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           if (_savedDraft != null && !_isBulkImportVisible) ...[
             const SizedBox(height: 14),
             _draftResumeBanner(),
-          ],
-          if (_isCapstoneAdmin && _teamLevelFilter(state) == 'Capstone') ...[
-            const SizedBox(height: 24),
-            _capstoneTabs(state),
           ],
           const SizedBox(height: 22),
           _teamsTableCard(state),
@@ -536,168 +527,237 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
   }
 
-  Widget _capstoneTabs(StudentTeamsState state) {
-    if (!_isCapstoneAdmin || _teamLevelFilter(state) != 'Capstone') {
+  Widget _sectionTableHeaderCell(String label, {required double flex}) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Color(0xFF5D6678),
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTableCell(Widget child, {required double flex}) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: child,
+        ),
+      ),
+    );
+  }
+
+  Widget _sectionTeamRow(
+    StudentTeamsState state,
+    Map<String, dynamic> team, {
+    required bool isPit,
+  }) {
+    final teamId = _asInt(team['id']);
+    if (teamId == null) {
       return const SizedBox.shrink();
     }
+    final teamName = team['name']?.toString() ?? 'Team';
+    final projectTitle = _projectTitle(team);
+    final adviserName = team['adviser_name']?.toString().trim() ?? '';
+    final leaderName = team['leader_name']?.toString() ?? '-';
+    final members = team['members'] as List? ?? const [];
+    final leaderId = team['leader_id'];
+    final leaderMember = members.firstWhere(
+      (m) => m is Map && m['id'] == leaderId,
+      orElse: () => null,
+    );
+    final leaderEnrolled = leaderMember == null || leaderMember['is_enrolled'] == true;
+    final hasUnenrolled = members.any((m) => m is Map && m['is_enrolled'] == false);
+
+    final defenseText = isPit ? (team['pit_event_name']?.toString() ?? 'No PIT Event') : _defenseContext(team);
+    final status = team['status']?.toString() ?? 'Pending';
+
+    // 1. Team & Project Title Column (and Adviser if capstone)
+    final titleCol = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          teamName,
+          style: const TextStyle(
+            color: _ink,
+            fontSize: 13.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          projectTitle,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: _muted,
+            fontSize: 12,
+          ),
+        ),
+        if (!isPit) ...[
+          const SizedBox(height: 4),
+          Row(
+            children: [
+              const Icon(Icons.person_outline_rounded, size: 12, color: _muted),
+              const SizedBox(width: 4),
+              Text(
+                adviserName.isEmpty ? 'Adviser: Unassigned' : 'Adviser: $adviserName',
+                style: TextStyle(
+                  fontSize: 11.5,
+                  color: _muted,
+                  fontWeight: FontWeight.w500,
+                  fontStyle: adviserName.isEmpty ? FontStyle.italic : FontStyle.normal,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+
+    // 2. Leader & Members Column
+    Widget leaderWidget;
+    if (!leaderEnrolled && leaderName != '-') {
+      leaderWidget = Wrap(
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 4,
+        children: [
+          Text(
+            leaderName,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(color: _ink, fontSize: 12.5, fontWeight: FontWeight.w500),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEE2E2),
+              borderRadius: BorderRadius.circular(4),
+              border: Border.all(color: const Color(0xFFFCA5A5)),
+            ),
+            child: const Text(
+              'Not Enrolled',
+              style: TextStyle(color: Color(0xFFB91C1C), fontSize: 8.5, fontWeight: FontWeight.w800),
+            ),
+          ),
+        ],
+      );
+    } else {
+      leaderWidget = Text(
+        leaderName,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(color: _ink, fontSize: 12.5, fontWeight: FontWeight.w500),
+      );
+    }
+
+    final memberCountStr = '${team['member_count'] ?? 0} members';
+    Widget membersWidget;
+    if (hasUnenrolled) {
+      membersWidget = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            memberCountStr,
+            style: const TextStyle(color: _muted, fontSize: 11.5, fontWeight: FontWeight.w500),
+          ),
+          const SizedBox(width: 4),
+          const Tooltip(
+            message: 'Contains non-enrolled members',
+            child: Icon(Icons.warning_amber_rounded, color: Color(0xFFD97706), size: 14),
+          ),
+        ],
+      );
+    } else {
+      membersWidget = Text(
+        memberCountStr,
+        style: const TextStyle(color: _muted, fontSize: 11.5, fontWeight: FontWeight.w500),
+      );
+    }
+
+    final leaderAndMembersCol = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        leaderWidget,
+        const SizedBox(height: 2),
+        membersWidget,
+      ],
+    );
+
+    // Columns config
+    final flexes = isPit
+        ? const [4.0, 2.5, 2.5, 1.0, 0.5]
+        : const [3.5, 2.2, 2.2, 1.1, 0.5];
+
     return Container(
+      padding: const EdgeInsets.symmetric(vertical: 10),
       decoration: const BoxDecoration(
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: _line)),
       ),
       child: Row(
         children: [
-          _capstoneTabItem('All Teams', _capstoneViewMode == CapstoneViewMode.all, () {
-            setState(() => _capstoneViewMode = CapstoneViewMode.all);
-          }),
-          const SizedBox(width: 24),
-          _capstoneTabItem('By Sections', _capstoneViewMode == CapstoneViewMode.bySection, () {
-            setState(() => _capstoneViewMode = CapstoneViewMode.bySection);
-          }),
-          const SizedBox(width: 24),
-          _capstoneTabItem('By Advisers', _capstoneViewMode == CapstoneViewMode.byAdviser, () {
-            setState(() => _capstoneViewMode = CapstoneViewMode.byAdviser);
-          }),
+          _sectionTableCell(titleCol, flex: flexes[0]),
+          _sectionTableCell(leaderAndMembersCol, flex: flexes[1]),
+          _sectionTableCell(
+            Text(
+              defenseText.isEmpty ? '-' : defenseText,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: _ink, fontSize: 12.5, fontWeight: FontWeight.w500),
+            ),
+            flex: flexes[2],
+          ),
+          _sectionTableCell(
+            _statusBadge(status),
+            flex: flexes[3],
+          ),
+          _sectionTableCell(
+            Tooltip(
+              message: 'View team details',
+              child: InkWell(
+                onTap: () => _openTeamDetailRoute(teamId),
+                borderRadius: BorderRadius.circular(6),
+                child: const Padding(
+                  padding: EdgeInsets.all(6),
+                  child: Icon(Icons.info_outline, color: _blue, size: 18),
+                ),
+              ),
+            ),
+            flex: flexes[4],
+          ),
         ],
       ),
     );
   }
 
-  Widget _capstoneTabItem(String label, bool active, VoidCallback onTap) {
-    return InkWell(
-      onTap: onTap,
-      hoverColor: Colors.transparent,
-      splashColor: Colors.transparent,
-      highlightColor: Colors.transparent,
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 8),
-        decoration: BoxDecoration(
-          border: Border(
-            bottom: BorderSide(
-              color: active ? _maroon : Colors.transparent,
-              width: 2,
-            ),
-          ),
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            color: active ? _maroon : _muted,
-            fontSize: 14,
-            fontWeight: active ? FontWeight.bold : FontWeight.w500,
-          ),
-        ),
-      ),
-    );
-  }
+  Widget _buildGroupedSectionView(StudentTeamsState state) {
+    final isPit = _isPitContext(state);
 
-  Widget _miniTeamRow(Map<String, dynamic> team, {required bool showSection}) {
-    final leader = team['leader_name']?.toString() ?? 'N/A';
-    final adviser = team['adviser_name']?.toString() ?? 'No Adviser Assigned';
-    final rawSection = team['section']?.toString().trim() ?? '';
-    final section = rawSection.isEmpty ? 'N/A' : rawSection;
-    final status = team['status']?.toString() ?? 'Pending';
-    final id = _asInt(team['id'])!;
+    // Calculate global adviser workload counts from state.teams (for capstone)
+    final Map<String, int> adviserLoadCounts = {};
+    if (!isPit) {
+      for (final t in state.teams) {
+        final adviser = t['adviser_name']?.toString().trim() ?? '';
+        if (adviser.isNotEmpty) {
+          adviserLoadCounts[adviser] = (adviserLoadCounts[adviser] ?? 0) + 1;
+        }
+      }
+    }
 
-    return InkWell(
-      onTap: () {
-        final path = _isCapstoneAdmin
-            ? AdminRoutes.teamDetail(id)
-            : FacultyRoutes.teamDetail(id);
-        ref.read(appRouterProvider).go(path);
-      },
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
-        margin: const EdgeInsets.only(bottom: 8),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
-        ),
-        child: Row(
-          children: [
-            Expanded(
-              flex: 4,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    team['name']?.toString() ?? 'Team',
-                    style: const TextStyle(fontWeight: FontWeight.bold, color: _ink),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    team['project_title']?.toString() ?? 'No Project Title',
-                    style: const TextStyle(fontSize: 12, color: _muted),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            if (showSection) ...[
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('SECTION', style: TextStyle(fontSize: 9, color: _muted, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(section, style: const TextStyle(fontSize: 13, color: _ink)),
-                  ],
-                ),
-              ),
-            ] else ...[
-              Expanded(
-                flex: 2,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('ADVISER', style: TextStyle(fontSize: 9, color: _muted, fontWeight: FontWeight.bold)),
-                    const SizedBox(height: 2),
-                    Text(adviser, style: const TextStyle(fontSize: 13, color: _ink)),
-                  ],
-                ),
-              ),
-            ],
-            Expanded(
-              flex: 2,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text('LEADER', style: TextStyle(fontSize: 9, color: _muted, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text(leader, style: const TextStyle(fontSize: 13, color: _ink)),
-                ],
-              ),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-              decoration: BoxDecoration(
-                color: status.toLowerCase() == 'approved'
-                    ? const Color(0xFFD1FAE5)
-                    : const Color(0xFFFEF3C7),
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Text(
-                status,
-                style: TextStyle(
-                  color: status.toLowerCase() == 'approved'
-                      ? const Color(0xFF065F46)
-                      : const Color(0xFF92400E),
-                  fontSize: 11,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ),
-            const SizedBox(width: 8),
-            const Icon(Icons.chevron_right, color: _muted),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSectionGroupingView(StudentTeamsState state) {
+    // Group teams by section
     final Map<String, List<Map<String, dynamic>>> sectionsMap = {};
     for (final team in state.teams) {
       final sectionVal = team['section']?.toString().trim() ?? '';
@@ -711,7 +771,10 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       return const Center(
         child: Padding(
           padding: EdgeInsets.all(48),
-          child: Text('No teams found for the active filter.', style: TextStyle(color: _muted)),
+          child: Text(
+            'No teams found for the active filter.',
+            style: TextStyle(color: _muted),
+          ),
         ),
       );
     }
@@ -722,129 +785,314 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       itemCount: sortedSections.length,
       itemBuilder: (context, index) {
         final section = sortedSections[index];
-        final teams = sectionsMap[section]!;
+        final sectionTeams = sectionsMap[section]!;
 
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: _line),
+        final selectedAdviser = _selectedSectionAdviserFilter[section];
+        final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all')
+            ? sectionTeams
+            : sectionTeams.where((t) {
+                final adviser = t['adviser_name']?.toString().trim() ?? '';
+                return adviser == selectedAdviser;
+              }).toList();
+
+        final isExpanded = _sectionExpansionStates[section] ?? (_searchController.text.trim().isNotEmpty);
+
+        // Count pending teams in this section
+        final pendingCount = sectionTeams.where((t) {
+          final status = t['status']?.toString().toLowerCase() ?? '';
+          return status != 'approved' && status != 'failed';
+        }).length;
+
+        return Container(
+          margin: const EdgeInsets.only(bottom: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE5E7EB)),
           ),
-          child: ExpansionTile(
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: Row(
+          child: Theme(
+            data: Theme.of(context).copyWith(
+              dividerColor: Colors.transparent,
+            ),
+            child: ExpansionTile(
+              key: Key('${section}_${_searchController.text.trim().isNotEmpty}'),
+              initiallyExpanded: isExpanded,
+              onExpansionChanged: (expanded) {
+                setState(() {
+                  _sectionExpansionStates[section] = expanded;
+                });
+              },
+              shape: const Border(),
+              collapsedShape: const Border(),
+              leading: const Icon(
+                Icons.class_rounded,
+                color: _maroon,
+                size: 20,
+              ),
+              title: Row(
+                children: [
+                  Text(
+                    section,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 15,
+                      color: _ink,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF3F4F6),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      '${sectionTeams.length} ${sectionTeams.length == 1 ? 'team' : 'teams'}',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF4B5563),
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  if (pendingCount > 0) ...[
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.warning_amber_rounded,
+                            color: Color(0xFFB45309),
+                            size: 13,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            '$pendingCount Pending',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFFB45309),
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
               children: [
-                const Icon(Icons.class_outlined, color: _maroon, size: 20),
-                const SizedBox(width: 12),
-                Text(
-                  section,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _ink),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(12),
+                const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                // Render adviser chips if not PIT
+                if (!isPit) ...[
+                  Builder(
+                    builder: (context) {
+                      final sectionAdvisers = sectionTeams
+                          .map((t) => t['adviser_name']?.toString().trim() ?? '')
+                          .where((adv) => adv.isNotEmpty)
+                          .toSet()
+                          .toList()
+                        ..sort();
+
+                      if (sectionAdvisers.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+
+                      final isAllSelected = selectedAdviser == null || selectedAdviser == 'all';
+
+                      return Padding(
+                        padding: const EdgeInsets.only(left: 16, right: 16, top: 12, bottom: 4),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Icon(
+                              Icons.people_outline_rounded,
+                              size: 16,
+                              color: _muted,
+                            ),
+                            const SizedBox(width: 6),
+                            const Padding(
+                              padding: EdgeInsets.only(top: 2.0),
+                              child: Text(
+                                'Section Advisers:',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.bold,
+                                  color: _muted,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Wrap(
+                                spacing: 8,
+                                runSpacing: 6,
+                                children: [
+                                  GestureDetector(
+                                    onTap: () {
+                                      setState(() {
+                                        _selectedSectionAdviserFilter[section] = null;
+                                      });
+                                    },
+                                    child: MouseRegion(
+                                      cursor: SystemMouseCursors.click,
+                                      child: AnimatedContainer(
+                                        duration: const Duration(milliseconds: 150),
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: isAllSelected ? _maroon : const Color(0xFFF3F4F6),
+                                          borderRadius: BorderRadius.circular(6),
+                                          border: Border.all(
+                                            color: isAllSelected ? _maroon : const Color(0xFFE5E7EB),
+                                          ),
+                                        ),
+                                        child: Text(
+                                          'All',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                            color: isAllSelected ? Colors.white : _ink,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                  ...sectionAdvisers.map((adv) {
+                                    final isSelected = selectedAdviser == adv;
+                                    final load = adviserLoadCounts[adv] ?? 0;
+                                    final isOverloaded = load > 4;
+
+                                    Color bgColor;
+                                    Color borderColor;
+                                    Color textColor;
+                                    Color countColor;
+
+                                    if (isSelected) {
+                                      bgColor = _maroon;
+                                      borderColor = _maroon;
+                                      textColor = Colors.white;
+                                      countColor = Colors.white.withValues(alpha: 0.8);
+                                    } else if (isOverloaded) {
+                                      bgColor = const Color(0xFFFDE8E8);
+                                      borderColor = const Color(0xFFF8B4B4);
+                                      textColor = const Color(0xFF9B1C1C);
+                                      countColor = const Color(0xFFC81E1E);
+                                    } else {
+                                      bgColor = const Color(0xFFF3F4F6);
+                                      borderColor = const Color(0xFFE5E7EB);
+                                      textColor = _ink;
+                                      countColor = _muted;
+                                    }
+
+                                    return GestureDetector(
+                                      onTap: () {
+                                        setState(() {
+                                          _selectedSectionAdviserFilter[section] = isSelected ? null : adv;
+                                        });
+                                      },
+                                      child: MouseRegion(
+                                        cursor: SystemMouseCursors.click,
+                                        child: AnimatedContainer(
+                                          duration: const Duration(milliseconds: 150),
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: bgColor,
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(color: borderColor),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                adv,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: textColor,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '($load/4)',
+                                                style: TextStyle(
+                                                  fontSize: 10.5,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: countColor,
+                                                ),
+                                              ),
+                                              if (isOverloaded) ...[
+                                                const SizedBox(width: 4),
+                                                Icon(
+                                                  Icons.warning_amber_rounded,
+                                                  size: 12,
+                                                  color: isSelected ? Colors.white : const Color(0xFFC81E1E),
+                                                ),
+                                              ],
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
                   ),
-                  child: Text(
-                    '${teams.length} ${teams.length == 1 ? 'team' : 'teams'}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563), fontWeight: FontWeight.bold),
-                  ),
+                ],
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: displayedTeams.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.symmetric(vertical: 24),
+                            child: Text(
+                              'No teams matching the selected adviser filter.',
+                              style: TextStyle(color: _muted, fontSize: 13),
+                            ),
+                          ),
+                        )
+                      : Column(
+                          children: [
+                            // Table Header
+                            Builder(
+                              builder: (context) {
+                                final flexes = isPit
+                                    ? const [4.0, 2.5, 2.5, 1.0, 0.5]
+                                    : const [3.5, 2.2, 2.2, 1.1, 0.5];
+                                return Container(
+                                  height: 40,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFF9FAFB),
+                                    border: Border(bottom: BorderSide(color: _line)),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      _sectionTableHeaderCell('TEAM & PROJECT TITLE', flex: flexes[0]),
+                                      _sectionTableHeaderCell('LEADER & MEMBERS', flex: flexes[1]),
+                                      _sectionTableHeaderCell(isPit ? 'PIT EVENT' : 'DEFENSE CONTEXT', flex: flexes[2]),
+                                      _sectionTableHeaderCell('TEAM RESULT', flex: flexes[3]),
+                                      _sectionTableHeaderCell('DETAILS', flex: flexes[4]),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            // Table Body Rows
+                            ...displayedTeams.map((team) => _sectionTeamRow(state, team, isPit: isPit)),
+                          ],
+                        ),
                 ),
               ],
             ),
-            subtitle: Padding(
-              padding: const EdgeInsets.only(top: 4, left: 32),
-              child: Text(
-                'Section: $section',
-                style: const TextStyle(fontSize: 12, color: _muted),
-              ),
-            ),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                color: const Color(0xFFF9FAFB),
-                child: Column(
-                  children: teams.map((team) => _miniTeamRow(team, showSection: false)).toList(),
-                ),
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildAdviserGroupingView(StudentTeamsState state) {
-    final Map<String, List<Map<String, dynamic>>> advisersMap = {};
-    for (final team in state.teams) {
-      final adviser = team['adviser_name']?.toString().trim() ?? 'No Adviser Assigned';
-      advisersMap.putIfAbsent(adviser, () => []).add(team);
-    }
-
-    final sortedAdvisers = advisersMap.keys.toList()..sort();
-
-    if (sortedAdvisers.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(48),
-          child: Text('No teams found for the active filter.', style: TextStyle(color: _muted)),
-        ),
-      );
-    }
-
-    return ListView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
-      itemCount: sortedAdvisers.length,
-      itemBuilder: (context, index) {
-        final adviser = sortedAdvisers[index];
-        final teams = advisersMap[adviser]!;
-
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
-            side: BorderSide(color: _line),
-          ),
-          child: ExpansionTile(
-            shape: const Border(),
-            collapsedShape: const Border(),
-            title: Row(
-              children: [
-                const Icon(Icons.person_outline_rounded, color: _maroon, size: 20),
-                const SizedBox(width: 12),
-                Text(
-                  adviser,
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: _ink),
-                ),
-                const SizedBox(width: 12),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF3F4F6),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    '${teams.length} ${teams.length == 1 ? 'team' : 'teams'}',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF4B5563), fontWeight: FontWeight.bold),
-                  ),
-                ),
-              ],
-            ),
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                color: const Color(0xFFF9FAFB),
-                child: Column(
-                  children: teams.map((team) => _miniTeamRow(team, showSection: true)).toList(),
-                ),
-              ),
-            ],
           ),
         );
       },
@@ -852,23 +1100,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   }
 
   Widget _teamsTableCard(StudentTeamsState state) {
-    final showTabs = _isCapstoneAdmin && _teamLevelFilter(state) == 'Capstone';
-
     Widget content;
     if (state.isLoading) {
       content = const SizedBox(
         height: 150,
         child: Center(child: CircularProgressIndicator(color: _maroon)),
       );
-    } else if (showTabs && _capstoneViewMode == CapstoneViewMode.bySection) {
-      content = _buildSectionGroupingView(state);
-    } else if (showTabs && _capstoneViewMode == CapstoneViewMode.byAdviser) {
-      content = _buildAdviserGroupingView(state);
     } else {
-      content = SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: SizedBox(width: 1515, child: _teamsTable(state)),
-      );
+      content = _buildGroupedSectionView(state);
     }
 
     return Container(
@@ -989,7 +1228,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           onChanged: state.isSaving
               ? null
               : (value) {
-                  setState(() => _capstoneViewMode = CapstoneViewMode.all);
                   ref
                       .read(studentTeamsProvider.notifier)
                       .fetchTeams(level: value ?? '');
@@ -999,220 +1237,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
   }
 
-  Widget _teamsTable(StudentTeamsState state) {
-    final hideAdviser = _isPitContext(state);
-    final pitOnlyView = hideAdviser;
-    final columns = <_ColumnSpec>[
-      const _ColumnSpec('Project Title', 1.45),
-      const _ColumnSpec('Year Level', 1.0),
-      const _ColumnSpec('Team Result', 1.12),
-      _ColumnSpec(pitOnlyView ? 'PIT Event' : 'Defense Context', 1.42),
-      const _ColumnSpec('Leader', 0.78),
-      if (!hideAdviser) const _ColumnSpec('Adviser', 0.85),
-      const _ColumnSpec('Members', 0.98),
-      const _ColumnSpec('Details', 0.55),
-    ];
-    return Column(
-      children: [
-        _tableHeader(columns),
-        if (state.teams.isEmpty)
-          _emptyRows()
-        else
-          ...state.teams.map((team) => _teamRow(state, team, hideAdviser: hideAdviser)),
-      ],
-    );
-  }
 
-  Widget _tableHeader(List<_ColumnSpec> columns) {
-    return Container(
-      height: 51,
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.circular(5),
-      ),
-      child: Row(children: columns.map(_tableHeaderCell).toList()),
-    );
-  }
-
-  Widget _tableHeaderCell(_ColumnSpec column) {
-    return Expanded(
-      flex: (column.flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            column.label,
-            style: const TextStyle(
-              color: Color(0xFF5D6678),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _teamRow(
-    StudentTeamsState state,
-    Map<String, dynamic> team, {
-    required bool hideAdviser,
-  }) {
-    final leaderName = team['leader_name']?.toString() ?? '-';
-    final members = team['members'] as List? ?? const [];
-    final leaderId = team['leader_id'];
-    final leaderMember = members.firstWhere(
-      (m) => m is Map && m['id'] == leaderId,
-      orElse: () => null,
-    );
-    final leaderEnrolled = leaderMember == null || leaderMember['is_enrolled'] == true;
-    final hasUnenrolled = members.any((m) => m is Map && m['is_enrolled'] == false);
-
-    Widget leaderWidget;
-    if (!leaderEnrolled && leaderName != '-') {
-      leaderWidget = Wrap(
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 6,
-        children: [
-          Text(
-            leaderName,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFEE2E2),
-              borderRadius: BorderRadius.circular(4),
-              border: Border.all(color: const Color(0xFFFCA5A5)),
-            ),
-            child: const Text(
-              'Not Enrolled',
-              style: TextStyle(
-                color: Color(0xFFB91C1C),
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ),
-        ],
-      );
-    } else {
-      leaderWidget = _bodyText(leaderName);
-    }
-
-    Widget membersWidget;
-    final memberCountStr = '${team['member_count'] ?? 0}';
-    if (hasUnenrolled) {
-      membersWidget = Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            memberCountStr,
-            style: const TextStyle(
-              color: _ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
-          const SizedBox(width: 4),
-          const Tooltip(
-            message: 'Contains non-enrolled members',
-            child: Icon(
-              Icons.warning_amber_rounded,
-              color: Color(0xFFD97706),
-              size: 16,
-            ),
-          ),
-        ],
-      );
-    } else {
-      membersWidget = _bodyText(memberCountStr);
-    }
-
-    return Container(
-      constraints: const BoxConstraints(minHeight: 58),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _line)),
-      ),
-      child: Row(
-        children: [
-          _tableCell(
-            Text(
-              _projectTitle(team),
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _ink,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-            flex: 1.45,
-          ),
-          _tableCell(_bodyText(team['year_level']?.toString() ?? '-'), flex: 1),
-          _tableCell(
-            _statusBadge(team['status']?.toString() ?? 'Pending'),
-            flex: 1.12,
-          ),
-          _tableCell(_bodyText(_defenseContext(team)), flex: 1.42),
-          _tableCell(
-            leaderWidget,
-            flex: 0.78,
-          ),
-          if (!hideAdviser)
-            _tableCell(
-              _bodyText(team['adviser_name']?.toString() ?? '-'),
-              flex: 0.85,
-            ),
-          _tableCell(membersWidget, flex: 0.98),
-          _tableCell(_rowActions(state, team), flex: 0.55),
-        ],
-      ),
-    );
-  }
-
-  Widget _tableCell(Widget child, {required double flex}) {
-    return Expanded(
-      flex: (flex * 100).round(),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        child: Align(alignment: Alignment.centerLeft, child: child),
-      ),
-    );
-  }
-
-  Widget _bodyText(String value) {
-    return Text(
-      value.isEmpty ? '-' : value,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(
-        color: _ink,
-        fontSize: 13,
-        fontWeight: FontWeight.w500,
-      ),
-    );
-  }
-
-  Widget _emptyRows() {
-    return Container(
-      height: 84,
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(bottom: BorderSide(color: _line)),
-      ),
-      child: const Text(
-        'No teams found.',
-        style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
-      ),
-    );
-  }
 
   Widget _statusBadge(String status) {
     final color = switch (status) {
@@ -1246,22 +1271,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     );
   }
 
-  Widget _rowActions(StudentTeamsState state, Map<String, dynamic> team) {
-    final teamId = _asInt(team['id']);
-    return Tooltip(
-      message: 'View team details',
-      child: InkWell(
-        onTap: state.isSaving || teamId == null
-            ? null
-            : () => _openTeamDetailRoute(teamId),
-        borderRadius: BorderRadius.circular(6),
-        child: const Padding(
-          padding: EdgeInsets.all(4),
-          child: Icon(Icons.info_outline, color: _blue, size: 18),
-        ),
-      ),
-    );
-  }
+
 
   Widget _pitTeamScopeToggle(StudentTeamsState state) {
     return Row(
@@ -3056,9 +3066,4 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
 }
 
-class _ColumnSpec {
-  final String label;
-  final double flex;
 
-  const _ColumnSpec(this.label, this.flex);
-}

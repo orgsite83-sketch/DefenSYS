@@ -13,6 +13,7 @@ import '../../../utils/defense_schedule_import_parser.dart';
 import '../../../utils/csv_file_io.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../utils/pdf_viewer.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
@@ -34,6 +35,7 @@ class _DefenseSchedulerScreenState
   final _roomController = TextEditingController();
   final _pitTemplateController = TextEditingController();
   final _trackerSearchController = TextEditingController();
+  final Map<String, String?> _selectedSectionAdviserFilter = {};
 
   final Set<int> _selectedPanelistIds = {};
   List<Map<String, dynamic>> _pitDeliverables = [];
@@ -4121,148 +4123,502 @@ class _DefenseSchedulerScreenState
                 style: const TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
               ),
             )
-          else
-            Table(
-              columnWidths: const {
-                0: FlexColumnWidth(3), // Team/Project
-                1: FlexColumnWidth(1.5), // Section
-                2: FlexColumnWidth(2), // Status
-                3: FlexColumnWidth(2.5), // Actions
-              },
-              defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-              children: [
-                // Table Header
-                TableRow(
-                  decoration: const BoxDecoration(
-                    color: Color(0xFFF9FAFB),
-                    border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
-                  ),
-                  children: [
-                    _tableHeaderCell('TEAM & PROJECT TITLE'),
-                    _tableHeaderCell('SECTION'),
-                    _tableHeaderCell('READINESS STATUS'),
-                    _tableHeaderCell('ACTIONS'),
-                  ],
-                ),
-                // Table Rows
-                ...teams.map((team) {
-                  final isReady = team['ready_for_stage'] == activeStageOrEventName && activeStageOrEventName.isNotEmpty;
-                  final readyForStage = team['ready_for_stage']?.toString() ?? '';
-                  final statusText = isReady
-                      ? 'Ready'
-                      : (readyForStage.isNotEmpty
-                          ? 'Endorsed for $readyForStage'
-                          : 'Awaiting Endorsement');
+          else ...[
+            Builder(
+              builder: (context) {
+                // Precompute advisor load counts in the current active scope
+                final allScopeTeams = _teamsForScope(state, _scope);
+                final Map<String, int> adviserLoadCounts = {};
+                for (final t in allScopeTeams) {
+                  final adviser = t['adviser_name']?.toString().trim() ?? '';
+                  if (adviser.isNotEmpty) {
+                    adviserLoadCounts[adviser] = (adviserLoadCounts[adviser] ?? 0) + 1;
+                  }
+                }
 
-                  return TableRow(
-                    decoration: const BoxDecoration(
-                      border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
-                    ),
-                    children: [
-                      // Team Name / Title
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              team['name']?.toString() ?? '',
-                              style: const TextStyle(
-                                fontWeight: FontWeight.bold,
-                                fontSize: 14,
-                                color: AppColors.textPrimary,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              team['project_title']?.toString() ?? '-',
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                fontSize: 12.5,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ],
-                        ),
+                final Map<String, List<Map<String, dynamic>>> sectionsMap = {};
+                for (final team in teams) {
+                  final sectionVal = team['section']?.toString().trim() ?? '';
+                  final section = sectionVal.isEmpty ? 'No Section' : sectionVal;
+                  sectionsMap.putIfAbsent(section, () => []).add(team);
+                }
+
+                final sortedSections = sectionsMap.keys.toList()
+                  ..sort((a, b) {
+                    if (a == 'No Section') return 1;
+                    if (b == 'No Section') return -1;
+                    return a.compareTo(b);
+                  });
+
+                return Column(
+                  children: sortedSections.map((section) {
+                    final sectionTeams = sectionsMap[section]!;
+                    final selectedAdviser = _selectedSectionAdviserFilter[section];
+
+                    final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all')
+                        ? sectionTeams
+                        : sectionTeams.where((t) {
+                            final adviser = t['adviser_name']?.toString().trim() ?? '';
+                            return adviser == selectedAdviser;
+                          }).toList();
+
+                    final isSectionReady = activeStageOrEventName.isNotEmpty &&
+                        sectionTeams.every((team) =>
+                            team['ready_for_stage'] == activeStageOrEventName);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE5E7EB)),
                       ),
-                      // Section
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                        child: Text(
-                          team['section']?.toString().isNotEmpty == true
-                              ? team['section']!.toString()
-                              : 'No Section',
-                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                      child: Theme(
+                        data: Theme.of(context).copyWith(
+                          dividerColor: Colors.transparent,
                         ),
-                      ),
-                      // Status Badge
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 8,
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: isReady ? Colors.green : Colors.amber,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                statusText,
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: isReady ? Colors.green.shade800 : Colors.amber.shade900,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      // Actions
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-                        child: Row(
-                          children: [
-                            TextButton.icon(
-                              onPressed: activeStageOrEventName.isEmpty
-                                  ? null
-                                  : () => _showTeamDeliverablesReview(context, team, activeStageOrEventName),
-                              icon: const Icon(Icons.folder_open_rounded, size: 16),
-                              label: const Text('Review Files'),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppColors.maroon,
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            if (!isReady)
-                              TextButton.icon(
-                                onPressed: _isSendingReminder || activeStageOrEventName.isEmpty
-                                    ? null
-                                    : () => _sendReminder(team['id'], activeStageOrEventName),
-                                icon: const Icon(Icons.notification_important_rounded, size: 16),
-                                label: const Text('Remind'),
-                                style: TextButton.styleFrom(
-                                  foregroundColor: const Color(0xFFD97706),
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                        child: ExpansionTile(
+                          initiallyExpanded: false,
+                          leading: const Icon(
+                            Icons.class_rounded,
+                            color: AppColors.maroon,
+                            size: 20,
+                          ),
+                          title: Row(
+                            children: [
+                              Text(
+                                section,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 15,
+                                  color: AppColors.textPrimary,
                                 ),
                               ),
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF3F4F6),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Text(
+                                  '${sectionTeams.length} ${sectionTeams.length == 1 ? 'team' : 'teams'}',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    color: Color(0xFF4B5563),
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (isSectionReady) ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDEF7EC),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Icon(
+                                        Icons.check_circle_rounded,
+                                        color: Color(0xFF03543F),
+                                        size: 13,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Ready',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: Color(0xFF03543F),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ] else ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFEF3C7),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Icon(
+                                        Icons.warning_amber_rounded,
+                                        color: Color(0xFFB45309),
+                                        size: 13,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Needs Endorsement',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: Color(0xFFB45309),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          children: [
+                            const Divider(height: 1, color: Color(0xFFE5E7EB)),
+                            Builder(
+                              builder: (context) {
+                                final sectionAdvisers = sectionTeams
+                                    .map((t) => t['adviser_name']?.toString().trim() ?? '')
+                                    .where((adv) => adv.isNotEmpty)
+                                    .toSet()
+                                    .toList()
+                                  ..sort();
+
+                                if (sectionAdvisers.isEmpty) {
+                                  return const SizedBox.shrink();
+                                }
+
+                                final isAllSelected = selectedAdviser == null || selectedAdviser == 'all';
+
+                                return Padding(
+                                  padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 4),
+                                  child: Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Icon(
+                                        Icons.people_outline_rounded,
+                                        size: 16,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                      const SizedBox(width: 6),
+                                      const Padding(
+                                        padding: EdgeInsets.only(top: 2.0),
+                                        child: Text(
+                                          'Section Advisers:',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Wrap(
+                                          spacing: 8,
+                                          runSpacing: 4,
+                                          children: [
+                                            GestureDetector(
+                                              onTap: () {
+                                                setState(() {
+                                                  _selectedSectionAdviserFilter[section] = null;
+                                                });
+                                              },
+                                              child: MouseRegion(
+                                                cursor: SystemMouseCursors.click,
+                                                child: AnimatedContainer(
+                                                  duration: const Duration(milliseconds: 150),
+                                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                  decoration: BoxDecoration(
+                                                    color: isAllSelected ? AppColors.maroon : const Color(0xFFF3F4F6),
+                                                    borderRadius: BorderRadius.circular(6),
+                                                    border: Border.all(
+                                                      color: isAllSelected ? AppColors.maroon : const Color(0xFFE5E7EB),
+                                                    ),
+                                                  ),
+                                                  child: Text(
+                                                    'All',
+                                                    style: TextStyle(
+                                                      fontSize: 11,
+                                                      fontWeight: FontWeight.bold,
+                                                      color: isAllSelected ? Colors.white : AppColors.textPrimary,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            ...sectionAdvisers.map((adv) {
+                                              final isSelected = selectedAdviser == adv;
+                                              final load = adviserLoadCounts[adv] ?? 0;
+                                              final isOverloaded = load > 4;
+
+                                              Color bgColor;
+                                              Color borderColor;
+                                              Color textColor;
+                                              Color countColor;
+
+                                              if (isSelected) {
+                                                bgColor = AppColors.maroon;
+                                                borderColor = AppColors.maroon;
+                                                textColor = Colors.white;
+                                                countColor = Colors.white.withOpacity(0.8);
+                                              } else if (isOverloaded) {
+                                                bgColor = const Color(0xFFFDE8E8);
+                                                borderColor = const Color(0xFFF8B4B4);
+                                                textColor = const Color(0xFF9B1C1C);
+                                                countColor = const Color(0xFFC81E1E);
+                                              } else {
+                                                bgColor = const Color(0xFFF3F4F6);
+                                                borderColor = const Color(0xFFE5E7EB);
+                                                textColor = AppColors.textPrimary;
+                                                countColor = AppColors.textSecondary;
+                                              }
+
+                                              return GestureDetector(
+                                                onTap: () {
+                                                  setState(() {
+                                                    _selectedSectionAdviserFilter[section] = isSelected ? null : adv;
+                                                  });
+                                                },
+                                                child: MouseRegion(
+                                                  cursor: SystemMouseCursors.click,
+                                                  child: AnimatedContainer(
+                                                    duration: const Duration(milliseconds: 150),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                                    decoration: BoxDecoration(
+                                                      color: bgColor,
+                                                      borderRadius: BorderRadius.circular(6),
+                                                      border: Border.all(color: borderColor),
+                                                    ),
+                                                    child: Row(
+                                                      mainAxisSize: MainAxisSize.min,
+                                                      children: [
+                                                        Text(
+                                                          adv,
+                                                          style: TextStyle(
+                                                            fontSize: 11,
+                                                            fontWeight: FontWeight.w600,
+                                                            color: textColor,
+                                                          ),
+                                                        ),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          '($load/4)',
+                                                          style: TextStyle(
+                                                            fontSize: 10.5,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: countColor,
+                                                          ),
+                                                        ),
+                                                        if (isOverloaded) ...[
+                                                          const SizedBox(width: 4),
+                                                          Icon(
+                                                            Icons.warning_amber_rounded,
+                                                            size: 12,
+                                                            color: isSelected ? Colors.white : const Color(0xFFC81E1E),
+                                                          ),
+                                                        ],
+                                                      ],
+                                                    ),
+                                                  ),
+                                                ),
+                                              );
+                                            }),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.all(12),
+                              child: Table(
+                                columnWidths: const {
+                                  0: FlexColumnWidth(4),
+                                  1: FlexColumnWidth(2.5),
+                                  2: FlexColumnWidth(3),
+                                },
+                                defaultVerticalAlignment: TableCellVerticalAlignment.middle,
+                                children: [
+                                  TableRow(
+                                    decoration: const BoxDecoration(
+                                      color: Color(0xFFF9FAFB),
+                                      border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+                                    ),
+                                    children: [
+                                      _tableHeaderCell('TEAM & PROJECT TITLE'),
+                                      _tableHeaderCell('READINESS STATUS'),
+                                      _tableHeaderCell('ACTIONS'),
+                                    ],
+                                  ),
+                                  ...displayedTeams.map((team) {
+                                    final isReady = team['ready_for_stage'] == activeStageOrEventName && activeStageOrEventName.isNotEmpty;
+                                    final readyForStage = team['ready_for_stage']?.toString() ?? '';
+                                    final statusText = isReady
+                                        ? 'Ready'
+                                        : (readyForStage.isNotEmpty
+                                            ? 'Endorsed for $readyForStage'
+                                            : 'Awaiting Endorsement');
+
+                                    return TableRow(
+                                      decoration: const BoxDecoration(
+                                        border: Border(bottom: BorderSide(color: Color(0xFFF3F4F6))),
+                                      ),
+                                      children: [
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                team['name']?.toString() ?? '',
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 14,
+                                                  color: AppColors.textPrimary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                team['project_title']?.toString() ?? '-',
+                                                maxLines: 1,
+                                                overflow: TextOverflow.ellipsis,
+                                                style: const TextStyle(
+                                                  fontSize: 12.5,
+                                                  color: AppColors.textSecondary,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              Builder(
+                                                builder: (context) {
+                                                  final adviserName = team['adviser_name']?.toString().trim() ?? '';
+                                                  if (adviserName.isEmpty) {
+                                                    return Row(
+                                                      children: const [
+                                                        Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                                        SizedBox(width: 4),
+                                                        Text(
+                                                          'Adviser: Unassigned',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: AppColors.textSecondary,
+                                                            fontWeight: FontWeight.w500,
+                                                            fontStyle: FontStyle.italic,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }
+                                                  final load = adviserLoadCounts[adviserName] ?? 0;
+                                                  final isOverloaded = load > 4;
+                                                  return Row(
+                                                    children: [
+                                                      const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                                      const SizedBox(width: 4),
+                                                      Text(
+                                                        'Adviser: $adviserName',
+                                                        style: const TextStyle(
+                                                          fontSize: 12,
+                                                          color: AppColors.textSecondary,
+                                                          fontWeight: FontWeight.w500,
+                                                        ),
+                                                      ),
+                                                      const SizedBox(width: 4),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                        decoration: BoxDecoration(
+                                                          color: isOverloaded ? const Color(0xFFFDE8E8) : const Color(0xFFF3F4F6),
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                        child: Text(
+                                                          '$load/4 teams',
+                                                          style: TextStyle(
+                                                            fontSize: 10,
+                                                            fontWeight: FontWeight.bold,
+                                                            color: isOverloaded ? const Color(0xFF9B1C1C) : AppColors.textSecondary,
+                                                          ),
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  );
+                                                },
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                width: 8,
+                                                height: 8,
+                                                decoration: BoxDecoration(
+                                                  color: isReady ? Colors.green : Colors.amber,
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              Expanded(
+                                                child: Text(
+                                                  statusText,
+                                                  style: TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: isReady ? Colors.green.shade800 : Colors.amber.shade900,
+                                                  ),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                                          child: Row(
+                                            children: [
+                                              TextButton.icon(
+                                                onPressed: activeStageOrEventName.isEmpty
+                                                    ? null
+                                                    : () => _showTeamDeliverablesReview(context, team, activeStageOrEventName),
+                                                icon: const Icon(Icons.folder_open_rounded, size: 16),
+                                                label: const Text('Review Files'),
+                                                style: TextButton.styleFrom(
+                                                  foregroundColor: AppColors.maroon,
+                                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                                  textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                ),
+                                              ),
+                                              const SizedBox(width: 8),
+                                              if (!isReady)
+                                                TextButton.icon(
+                                                  onPressed: _isSendingReminder || activeStageOrEventName.isEmpty
+                                                      ? null
+                                                      : () => _sendReminder(team['id'], activeStageOrEventName),
+                                                  icon: const Icon(Icons.notification_important_rounded, size: 16),
+                                                  label: const Text('Remind'),
+                                                  style: TextButton.styleFrom(
+                                                    foregroundColor: const Color(0xFFD97706),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                                    textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    );
+                                  }),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
-                    ],
-                  );
-                }),
-              ],
+                    );
+                  }).toList(),
+                );
+              },
             ),
+          ],
         ],
       ),
     );
@@ -4301,7 +4657,9 @@ class _DefenseSchedulerScreenState
             );
 
             final stageData = teamData['selected_stage'] as Map? ?? {};
-            final deliverables = stageData['deliverables'] as List? ?? [];
+            final deliverables = (stageData['deliverables'] as List? ?? [])
+                .where((d) => d['type'] == 'pre')
+                .toList();
 
             return AlertDialog(
               title: Text('${team['name']} - Deliverables Review'),
@@ -4339,7 +4697,14 @@ class _DefenseSchedulerScreenState
                                 }
                               }
 
-                              return ListTile(
+                              final fileUrl = submission?['file_url'] as String? ?? '';
+                              final fileName = submission?['file_name'] as String? ?? 'document.pdf';
+
+                              final listTile = ListTile(
+                                mouseCursor: uploaded ? SystemMouseCursors.click : null,
+                                onTap: uploaded
+                                    ? () => _viewDeliverableFile(fileUrl, fileName)
+                                    : null,
                                 title: Row(
                                   children: [
                                     Expanded(
@@ -4381,19 +4746,36 @@ class _DefenseSchedulerScreenState
                                     ],
                                   ],
                                 ),
-                                trailing: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: statusColor.withOpacity(0.12),
-                                    borderRadius: BorderRadius.circular(20),
-                                    border: Border.all(color: statusColor),
-                                  ),
-                                  child: Text(
-                                    statusText,
-                                    style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
-                                  ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    if (uploaded) ...[
+                                      const Icon(Icons.remove_red_eye_rounded, size: 16, color: AppColors.maroon),
+                                      const SizedBox(width: 8),
+                                    ],
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                      decoration: BoxDecoration(
+                                        color: statusColor.withOpacity(0.12),
+                                        borderRadius: BorderRadius.circular(20),
+                                        border: Border.all(color: statusColor),
+                                      ),
+                                      child: Text(
+                                        statusText,
+                                        style: TextStyle(color: statusColor, fontSize: 11, fontWeight: FontWeight.bold),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               );
+
+                              if (uploaded) {
+                                return Tooltip(
+                                  message: 'Click to preview deliverable',
+                                  child: listTile,
+                                );
+                              }
+                              return listTile;
                             },
                           ),
               ),
@@ -4408,6 +4790,50 @@ class _DefenseSchedulerScreenState
         );
       },
     );
+  }
+
+  Future<void> _viewDeliverableFile(String fileUrl, String fileName) async {
+    if (fileUrl.isEmpty) {
+      if (mounted) showErrorToast(context, 'File URL not available');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: AppColors.maroon),
+      ),
+    );
+
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileUrl);
+      if (!mounted) return;
+      Navigator.pop(context);
+
+      final lowerName = fileName.toLowerCase();
+      if (lowerName.endsWith('.pdf')) {
+        if (!mounted) return;
+        await viewPdfInDialog(
+          context: context,
+          pdfBytes: bytes,
+          fileName: fileName,
+        );
+      } else {
+        await downloadBytesFile(
+          bytes: bytes,
+          fileName: fileName,
+        );
+        if (!mounted) return;
+        showSuccessToast(context, 'Document downloaded: $fileName');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      if (Navigator.canPop(context)) Navigator.pop(context);
+      showErrorToast(context, 'Error opening file: $e');
+    }
   }
 
   Future<void> _sendReminder(dynamic teamId, String stageLabel) async {

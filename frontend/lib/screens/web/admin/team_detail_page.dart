@@ -52,6 +52,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
   String _selectedDeliverableStage = '';
   int? _selectedReportIndex;
   bool _isEditing = false;
+  String _studentFilter = '';
 
   @override
   void initState() {
@@ -276,7 +277,10 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     if (team != null) {
       _syncFormFromTeam(team, detailState.statuses);
     }
-    setState(() => _isEditing = false);
+    setState(() {
+      _isEditing = false;
+      _studentFilter = '';
+    });
   }
 
   Widget _buildOverviewTab(
@@ -287,6 +291,476 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       return _buildOverviewEdit(detailState, team);
     }
     return _buildOverviewView(detailState, team);
+  }
+
+  Widget _buildTeamStatusBadge(String status) {
+    final cleanStatus = status.trim().toLowerCase();
+    Color color;
+    IconData icon;
+
+    switch (cleanStatus) {
+      case 'approved':
+      case 'passed':
+        color = const Color(0xFF10B981); // Emerald Green
+        icon = Icons.check_circle_outline_rounded;
+        break;
+      case 'failed':
+        color = const Color(0xFFEF4444); // Red
+        icon = Icons.cancel_outlined;
+        break;
+      case 'delayed/extended':
+      case 'delayed':
+      case 'extended':
+        color = const Color(0xFF8B5CF6); // Purple
+        icon = Icons.update_rounded;
+        break;
+      case 'pending':
+      default:
+        color = const Color(0xFFF59E0B); // Amber
+        icon = Icons.hourglass_empty_rounded;
+        break;
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 1),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: color, size: 14),
+          const SizedBox(width: 4),
+          Text(
+            status.toUpperCase(),
+            style: TextStyle(
+              color: color,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMetaText(String label, String value, {required IconData icon}) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(icon, size: 18, color: _muted),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: _muted,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: _ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInfoRow(IconData icon, String label, String value) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(8),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF3F4F6),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Icon(icon, size: 16, color: _muted),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label.toUpperCase(),
+                style: const TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w800,
+                  color: _muted,
+                  letterSpacing: 0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                value,
+                style: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: _ink,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildLeftOverviewColumn(
+    Map<String, dynamic> team,
+    bool isCapstone,
+    String programLabel,
+    String adviserName,
+  ) {
+    final project = team['project_title']?.toString() ?? '—';
+    final status = team['status']?.toString() ?? 'Pending';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Project Overview Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'PROJECT INFORMATION',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.8,
+                            color: _muted,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          project,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: _ink,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  _buildTeamStatusBadge(status),
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: _line, height: 1),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildMetaText('Program', programLabel, icon: Icons.school_outlined),
+                  ),
+                  if (!isCapstone)
+                    Expanded(
+                      child: _buildMetaText('Section', team['section']?.toString() ?? '—', icon: Icons.class_outlined),
+                    ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 20),
+        // Classroom & Admin details Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.badge_outlined, size: 18, color: _maroon),
+                  SizedBox(width: 8),
+                  Text(
+                    'CLASSROOM DETAILS',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: _ink,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (isCapstone) ...[
+                _buildInfoRow(
+                  Icons.class_outlined,
+                  'Section',
+                  team['section']?.toString() ?? '—',
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  Icons.person_outline,
+                  'Instructor',
+                  team['instructor_name']?.toString() ?? 'No instructor assigned',
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  Icons.computer_outlined,
+                  'System Name',
+                  team['system_name']?.toString() ?? '—',
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  Icons.manage_accounts_outlined,
+                  'Section Project Manager',
+                  team['project_manager_name']?.toString() ?? '—',
+                ),
+              ] else ...[
+                _buildInfoRow(
+                  Icons.computer_outlined,
+                  'System Name',
+                  team['system_name']?.toString() ?? '—',
+                ),
+                const SizedBox(height: 12),
+                _buildInfoRow(
+                  Icons.manage_accounts_outlined,
+                  'Section Project Manager',
+                  team['project_manager_name']?.toString() ?? '—',
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildRightOverviewColumn(
+    TeamDetailState detailState,
+    Map<String, dynamic> team,
+    bool isCapstone,
+    List<Map<String, dynamic>> members,
+    int? leaderId,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Roster Card
+        Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.people_alt_outlined, size: 18, color: _maroon),
+                  const SizedBox(width: 8),
+                  Text(
+                    'TEAM ROSTER (${members.length}/4)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: _ink,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              if (members.isEmpty)
+                const Text(
+                  'No members assigned.',
+                  style: TextStyle(color: _muted, fontSize: 13),
+                )
+              else
+                ...members.map((student) {
+                  final studentId = _asInt(student['id']);
+                  final isLeader = studentId == leaderId;
+                  final isEnrolled = student['is_enrolled'] != false;
+                  final name = student['name']?.toString() ?? 'Unknown Student';
+                  final username = student['username']?.toString() ?? '';
+                  final initials = name.isNotEmpty
+                      ? name.trim().split(' ').map((e) => e[0]).take(2).join().toUpperCase()
+                      : '?';
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF9FAFB),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFF3F4F6)),
+                    ),
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 18,
+                          backgroundColor: isLeader ? _gold.withValues(alpha: 0.2) : _maroon.withValues(alpha: 0.1),
+                          child: Text(
+                            initials,
+                            style: TextStyle(
+                              color: isLeader ? const Color(0xFFB45309) : _maroon,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13.5,
+                                  color: _ink,
+                                ),
+                              ),
+                              if (username.isNotEmpty)
+                                Text(
+                                  username,
+                                  style: const TextStyle(
+                                    color: _muted,
+                                    fontSize: 11.5,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (isLeader)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEF3C7),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFFDE68A)),
+                                ),
+                                child: const Text(
+                                  'Leader',
+                                  style: TextStyle(
+                                    color: Color(0xFFD97706),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            if (!isEnrolled) ...[
+                              if (isLeader) const SizedBox(height: 4),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFFEE2E2),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: const Color(0xFFFCA5A5)),
+                                ),
+                                child: const Text(
+                                  'Not Enrolled',
+                                  style: TextStyle(
+                                    color: Color(0xFFB91C1C),
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+            ],
+          ),
+        ),
+        if (isCapstone && !widget.isPitLead) ...[
+          const SizedBox(height: 20),
+          // Adviser Assignment / History Card
+          Container(
+            padding: const EdgeInsets.all(24),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _line),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Row(
+                  children: [
+                    Icon(Icons.workspace_premium_outlined, size: 18, color: _maroon),
+                    SizedBox(width: 8),
+                    Text(
+                      'PROJECT ADVISER',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.5,
+                        color: _ink,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                _buildInfoRow(
+                  Icons.person_pin_rounded,
+                  'Current Adviser',
+                  team['adviser_name']?.toString() ??
+                      _adviserLabel(_asInt(team['adviser_id']), detailState.advisers),
+                ),
+                const SizedBox(height: 20),
+                _adviserHistorySection(detailState.adviserHistory),
+              ],
+            ),
+          ),
+        ],
+      ],
+    );
   }
 
   Widget _buildOverviewView(
@@ -308,199 +782,43 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         .toList();
     final leaderId = _asInt(team['leader_id']);
 
-    return SingleChildScrollView(
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _readOnlyField('Team Name', team['name']?.toString() ?? '—'),
-            const SizedBox(height: 12),
-            _readOnlyField(
-              'Project Title',
-              team['project_title']?.toString() ?? '—',
-            ),
-            const SizedBox(height: 12),
-            _readOnlyField('Program', programLabel),
-            const SizedBox(height: 12),
-            _readOnlyField('Team Result', team['status']?.toString() ?? '—'),
-            if (!widget.isPitLead && isCapstone) ...[
-              const SizedBox(height: 12),
-              _readOnlyField('Adviser', adviserName),
-              const SizedBox(height: 16),
-              _adviserHistorySection(detailState.adviserHistory),
-              const SizedBox(height: 16),
-              _classroomSectionCard(team),
-            ],
-            if (!isCapstone) ...[
-              const SizedBox(height: 12),
-              _readOnlyField('Section', team['section']?.toString() ?? '—'),
-              const SizedBox(height: 12),
-              _readOnlyField('System Name', team['system_name']?.toString() ?? '—'),
-              const SizedBox(height: 12),
-              _readOnlyField('Project Manager', team['project_manager_name']?.toString() ?? '—'),
-            ],
-            const SizedBox(height: 16),
-            Text(
-              'Members (${members.length}/4)',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            if (members.isEmpty)
-              const Text(
-                'No members assigned.',
-                style: TextStyle(color: _muted, fontSize: 12.5),
-              )
-            else
-              ...members.map((student) {
-                final studentId = _asInt(student['id']);
-                final isLeader = studentId == leaderId;
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: Row(
-                    children: [
-                      Icon(
-                        isLeader
-                            ? Icons.workspace_premium_rounded
-                            : Icons.person_outline,
-                        color: isLeader ? _gold : _muted,
-                        size: 20,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Wrap(
-                              crossAxisAlignment: WrapCrossAlignment.center,
-                              spacing: 8,
-                              children: [
-                                Text(
-                                  '${student['name']} (${student['username']})',
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w600,
-                                    fontSize: 13.5,
-                                  ),
-                                ),
-                                if (student['is_enrolled'] == false)
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(
-                                      horizontal: 6,
-                                      vertical: 2,
-                                    ),
-                                    decoration: BoxDecoration(
-                                      color: const Color(0xFFFEE2E2),
-                                      borderRadius: BorderRadius.circular(4),
-                                      border: Border.all(
-                                        color: const Color(0xFFFCA5A5),
-                                      ),
-                                    ),
-                                    child: const Text(
-                                      'Not Enrolled',
-                                      style: TextStyle(
-                                        color: Color(0xFFB91C1C),
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                  ),
-                              ],
-                            ),
-                            if (isLeader)
-                              const Text(
-                                'Team Leader',
-                                style: TextStyle(
-                                  color: _maroon,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-          ],
-        ),
-      ),
-    );
-  }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 850;
 
-  Widget _classroomSectionCard(Map<String, dynamic> team) {
-    final section = team['section']?.toString() ?? '—';
-    final instructor = team['instructor_name']?.toString() ?? 'No instructor assigned';
-    final systemName = team['system_name']?.toString() ?? '—';
-    final pm = team['project_manager_name']?.toString() ?? '—';
+        final leftColumn = _buildLeftOverviewColumn(team, isCapstone, programLabel, adviserName);
+        final rightColumn = _buildRightOverviewColumn(detailState, team, isCapstone, members, leaderId);
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFF3F4F6)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.class_outlined, size: 16, color: _muted),
-              const SizedBox(width: 8),
-              Text(
-                'Classroom Section Info'.toUpperCase(),
-                style: const TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.5,
-                  color: _muted,
+        if (isWide) {
+          return SingleChildScrollView(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: leftColumn,
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
-          _readOnlyField('Section', section),
-          const SizedBox(height: 12),
-          _readOnlyField('Instructor (Info Only)', instructor),
-          const SizedBox(height: 12),
-          _readOnlyField('System Name', systemName),
-          const SizedBox(height: 12),
-          _readOnlyField('Section Project Manager', pm),
-        ],
-      ),
-    );
-  }
-
-  Widget _readOnlyField(String label, String value) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          label.toUpperCase(),
-          style: const TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.6,
-            color: _muted,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          value,
-          style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w600,
-            color: _ink,
-          ),
-        ),
-      ],
+                const SizedBox(width: 24),
+                Expanded(
+                  flex: 2,
+                  child: rightColumn,
+                ),
+              ],
+            ),
+          );
+        } else {
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                leftColumn,
+                const SizedBox(height: 24),
+                rightColumn,
+              ],
+            ),
+          );
+        }
+      },
     );
   }
 
@@ -515,145 +833,298 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         ? const ['Pending', 'Approved', 'Failed', 'Delayed/Extended']
         : detailState.statuses;
 
-    return SingleChildScrollView(
-      child: Container(
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: _line),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: _nameController,
-              decoration: const InputDecoration(labelText: 'Team Name'),
-            ),
-            const SizedBox(height: 12),
-            TextField(
-              controller: _projectTitleController,
-              decoration: const InputDecoration(labelText: 'Project Title'),
-            ),
-            const SizedBox(height: 12),
-            InputDecorator(
-              decoration: const InputDecoration(labelText: 'Program'),
-              child: Text(
-                isCapstone ? 'Capstone · $yearLevel' : '$yearLevel PIT',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ),
-            const SizedBox(height: 12),
-            DropdownButtonFormField<String>(
-              initialValue: statusOptions.contains(_status)
-                  ? _status
-                  : statusOptions.first,
-              decoration: const InputDecoration(labelText: 'Team Result'),
-              items: statusOptions
-                  .map(
-                    (item) => DropdownMenuItem(value: item, child: Text(item)),
-                  )
-                  .toList(),
-              onChanged: (value) => setState(() => _status = value ?? _status),
-            ),
-            if (!isCapstone) ...[
-              const SizedBox(height: 12),
-              TextField(
-                controller: _sectionController,
-                decoration: const InputDecoration(labelText: 'Section'),
-              ),
-            ],
-            if (!widget.isPitLead && isCapstone) ...[
-              const SizedBox(height: 12),
-              DropdownButtonFormField<int?>(
-                initialValue: _adviserId,
-                decoration: const InputDecoration(labelText: 'Adviser'),
-                items: [
-                  const DropdownMenuItem<int?>(
-                    value: null,
-                    child: Text('Unassigned'),
-                  ),
-                  ...detailState.advisers.map(
-                    (adviser) => DropdownMenuItem<int?>(
-                      value: _asInt(adviser['id']),
-                      child: Text(
-                        '${adviser['name']} (${adviser['username']})',
-                      ),
-                    ),
-                  ),
-                ],
-                onChanged: (value) => setState(() => _adviserId = value),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 850;
+
+        final leftColumn = Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'TEAM METADATA',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.5,
+                  color: _ink,
+                ),
               ),
               const SizedBox(height: 16),
-              _adviserHistorySection(detailState.adviserHistory),
+              TextField(
+                controller: _nameController,
+                decoration: const InputDecoration(
+                  labelText: 'Team Name',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _projectTitleController,
+                decoration: const InputDecoration(
+                  labelText: 'Project Title',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+              ),
+              const SizedBox(height: 16),
+              InputDecorator(
+                decoration: const InputDecoration(
+                  labelText: 'Program',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                child: Text(
+                  isCapstone ? 'Capstone · $yearLevel' : '$yearLevel PIT',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 16),
+              DropdownButtonFormField<String>(
+                value: statusOptions.contains(_status)
+                    ? _status
+                    : statusOptions.first,
+                decoration: const InputDecoration(
+                  labelText: 'Team Result',
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                ),
+                items: statusOptions
+                    .map(
+                      (item) => DropdownMenuItem(value: item, child: Text(item)),
+                    )
+                    .toList(),
+                onChanged: (value) => setState(() => _status = value ?? _status),
+              ),
+              if (!isCapstone) ...[
+                const SizedBox(height: 16),
+                TextField(
+                  controller: _sectionController,
+                  decoration: const InputDecoration(
+                    labelText: 'Section',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  ),
+                ),
+              ],
+              if (!widget.isPitLead && isCapstone) ...[
+                const SizedBox(height: 16),
+                DropdownButtonFormField<int?>(
+                  value: _adviserId,
+                  decoration: const InputDecoration(
+                    labelText: 'Adviser',
+                    border: OutlineInputBorder(),
+                    contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  ),
+                  items: [
+                    const DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text('Unassigned'),
+                    ),
+                    ...detailState.advisers.map(
+                      (adviser) => DropdownMenuItem<int?>(
+                        value: _asInt(adviser['id']),
+                        child: Text(
+                          '${adviser['name']} (${adviser['username']})',
+                        ),
+                      ),
+                    ),
+                  ],
+                  onChanged: (value) => setState(() => _adviserId = value),
+                ),
+              ],
             ],
-            const SizedBox(height: 16),
-            Text(
-              'Members (${_selectedMembers.length}/4)',
-              style: const TextStyle(fontWeight: FontWeight.w800),
-            ),
-            const SizedBox(height: 8),
-            Container(
-              constraints: const BoxConstraints(maxHeight: 320),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF8FAFC),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: _line),
+          ),
+        );
+
+        final rightColumn = Container(
+          padding: const EdgeInsets.all(24),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    'ROSTER SELECTION (${_selectedMembers.length}/4)',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.5,
+                      color: _ink,
+                    ),
+                  ),
+                  const Icon(Icons.person_add_alt_1_outlined, size: 18, color: _maroon),
+                ],
               ),
-              child: ListView(
-                shrinkWrap: true,
-                children: detailState.students.map((student) {
-                  final studentId = _asInt(student['id'])!;
-                  final selected = _selectedMembers.contains(studentId);
-                  return CheckboxListTile(
-                    value: selected,
-                    onChanged: (value) {
-                      setState(() {
-                        if (value == true) {
-                          if (_selectedMembers.length >= 4 && !selected) {
-                            return;
-                          }
-                          _selectedMembers.add(studentId);
-                          _leaderId ??= studentId;
-                        } else {
-                          _selectedMembers.remove(studentId);
-                          if (_leaderId == studentId) {
-                            _leaderId = _selectedMembers.isEmpty
-                                ? null
-                                : _selectedMembers.first;
-                          }
-                        }
-                      });
-                    },
-                    title: Text('${student['name']} (${student['username']})'),
-                    subtitle: _leaderId == studentId
-                        ? const Text('Team Leader')
-                        : null,
-                    secondary: selected
-                        ? IconButton(
-                            tooltip: 'Set as leader',
-                            icon: Icon(
-                              _leaderId == studentId
-                                  ? Icons.workspace_premium_rounded
-                                  : Icons.circle_outlined,
-                              color: _leaderId == studentId ? _gold : _muted,
-                            ),
-                            onPressed: () =>
-                                setState(() => _leaderId = studentId),
-                          )
-                        : null,
-                  );
-                }).toList(),
+              const SizedBox(height: 16),
+              TextField(
+                decoration: const InputDecoration(
+                  labelText: 'Search Students',
+                  hintText: 'Type name or student ID...',
+                  prefixIcon: Icon(Icons.search, size: 20),
+                  border: OutlineInputBorder(),
+                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                ),
+                onChanged: (val) {
+                  setState(() {
+                    _studentFilter = val;
+                  });
+                },
               ),
+              const SizedBox(height: 12),
+              Container(
+                constraints: const BoxConstraints(maxHeight: 320),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: _line),
+                ),
+                child: Builder(
+                  builder: (context) {
+                    final filteredStudents = detailState.students.where((student) {
+                      final studentId = _asInt(student['id']);
+                      if (studentId != null && _selectedMembers.contains(studentId)) {
+                        return true;
+                      }
+                      if (_studentFilter.trim().isEmpty) return true;
+                      final name = student['name']?.toString().toLowerCase() ?? '';
+                      final username = student['username']?.toString().toLowerCase() ?? '';
+                      final query = _studentFilter.toLowerCase();
+                      return name.contains(query) || username.contains(query);
+                    }).toList();
+
+                    if (filteredStudents.isEmpty) {
+                      return const Center(
+                        child: Padding(
+                          padding: EdgeInsets.all(24),
+                          child: Text(
+                            'No matching students found.',
+                            style: TextStyle(color: _muted, fontSize: 13),
+                          ),
+                        ),
+                      );
+                    }
+
+                    return ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: filteredStudents.length,
+                      itemBuilder: (context, index) {
+                        final student = filteredStudents[index];
+                        final studentId = _asInt(student['id'])!;
+                        final selected = _selectedMembers.contains(studentId);
+                        return CheckboxListTile(
+                          value: selected,
+                          activeColor: _maroon,
+                          onChanged: (value) {
+                            setState(() {
+                              if (value == true) {
+                                if (_selectedMembers.length >= 4 && !selected) {
+                                  showValidationToast(context, 'A team can have a maximum of 4 members.');
+                                  return;
+                                }
+                                _selectedMembers.add(studentId);
+                                _leaderId ??= studentId;
+                              } else {
+                                _selectedMembers.remove(studentId);
+                                if (_leaderId == studentId) {
+                                  _leaderId = _selectedMembers.isEmpty
+                                      ? null
+                                      : _selectedMembers.first;
+                                }
+                              }
+                            });
+                          },
+                          title: Text(
+                            '${student['name']} (${student['username']})',
+                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                          ),
+                          subtitle: _leaderId == studentId
+                              ? const Text(
+                                  'Team Leader',
+                                  style: TextStyle(
+                                    color: _maroon,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                )
+                              : null,
+                          secondary: selected
+                              ? IconButton(
+                                  tooltip: 'Set as leader',
+                                  icon: Icon(
+                                    _leaderId == studentId
+                                        ? Icons.workspace_premium_rounded
+                                        : Icons.circle_outlined,
+                                    color: _leaderId == studentId ? _gold : _muted,
+                                  ),
+                                  onPressed: () =>
+                                      setState(() => _leaderId = studentId),
+                                )
+                              : null,
+                        );
+                      },
+                    );
+                  }
+                ),
+              ),
+              const SizedBox(height: 12),
+              const Text(
+                'Select up to 4 members. Use the medal button to designate the team leader.',
+                style: TextStyle(color: _muted, fontSize: 12),
+              ),
+              if (!widget.isPitLead && isCapstone) ...[
+                const SizedBox(height: 24),
+                const Divider(color: _line),
+                const SizedBox(height: 12),
+                _adviserHistorySection(detailState.adviserHistory),
+              ],
+            ],
+          ),
+        );
+
+        if (isWide) {
+          return SingleChildScrollView(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: leftColumn,
+                ),
+                const SizedBox(width: 24),
+                Expanded(
+                  flex: 2,
+                  child: rightColumn,
+                ),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'Select up to 4 members. Use the medal button to choose the leader.',
-              style: TextStyle(color: _muted, fontSize: 12),
+          );
+        } else {
+          return SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                leftColumn,
+                const SizedBox(height: 24),
+                rightColumn,
+              ],
             ),
-          ],
-        ),
-      ),
+          );
+        }
+      },
     );
   }
 
@@ -1162,6 +1633,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       setState(() {
         _originalAdviserId = adviserId;
         _isEditing = false;
+        _studentFilter = '';
       });
       await ref.read(studentTeamsProvider.notifier).fetchTeams();
     }

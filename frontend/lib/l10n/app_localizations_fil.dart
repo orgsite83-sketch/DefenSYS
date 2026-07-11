@@ -107,6 +107,9 @@ class AppLocalizationsFil extends AppLocalizations {
   String get navAcademicPeriods => 'Academic Periods';
 
   @override
+  String get navUsers => 'Users';
+
+  @override
   String get navUserManagement => 'User Management';
 
   @override

@@ -143,7 +143,6 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
 
     is_pit = team.is_pit if team else False
     entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
-    entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
 
     is_restricted_archive = False
     if is_post and team:
@@ -163,42 +162,91 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 is_restricted=True
             ).exists()
 
-    payload = {
-        'id': entry_id,
-        'source_id': submission.id,
-        'type': entry_type,
-        'file_name': submission.file_name,
-        'file_size': submission.file_size,
-        'file_url': resolve_uploaded_file_url(request, submission.file) if submission.file else '',
-        'has_file': bool(submission.file),
-        'deliverable_id': submission.deliverable_id,
-        'deliverable_label': submission.label,
-        'team_id': team.id,
-        'team_name': team.name,
-        'project_title': team.project_title,
-        'year_level': team.year_level,
-        'level': team.level,
-        'academic_year': team.semester.school_year.label,
-        'semester': team.semester.label,
-        'stage': submission.stage_label,
-        'course_code': '',
-        'status': 'Post-Defense' if is_post else 'Pre-Defense',
-        'submission_kind': kind,
-        'deliverable_type': submission.deliverable_type,
-        'is_restricted_archive': is_restricted_archive,
-        'archive_locked': False,
-        'is_missing': False,
-        'uploaded_by': display_name(submission.uploaded_by) or 'System',
-        'uploaded_at': submission.uploaded_at,
-        'can_override': False,
-        'audit_trail': [],
-        'archive_note': '',
-    }
-    payload.update(ml_fields_from(submission) if include_ml else empty_ml_fields())
-    if include_audit_trail:
-        payload['audit_trail'] = audit_trail(
-            entry_type,
-            submission.id,
-            submission.file_name,
-        )
-    return payload
+    files = list(submission.files.all().order_by('uploaded_at'))
+    if not files:
+        entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
+        payload = {
+            'id': entry_id,
+            'source_id': submission.id,
+            'file_id': None,
+            'type': entry_type,
+            'file_name': submission.file_name,
+            'file_size': submission.file_size,
+            'file_url': resolve_uploaded_file_url(request, submission.file) if submission.file else '',
+            'has_file': bool(submission.file),
+            'deliverable_id': submission.deliverable_id,
+            'deliverable_label': submission.label,
+            'team_id': team.id if team else None,
+            'team_name': team.name if team else '',
+            'project_title': team.project_title if team else '',
+            'year_level': team.year_level if team else '',
+            'level': team.level if team else '',
+            'academic_year': team.semester.school_year.label if team and team.semester else '',
+            'semester': team.semester.label if team and team.semester else '',
+            'stage': submission.stage_label,
+            'course_code': '',
+            'status': 'Post-Defense' if is_post else 'Pre-Defense',
+            'submission_kind': kind,
+            'deliverable_type': submission.deliverable_type,
+            'is_restricted_archive': is_restricted_archive,
+            'archive_locked': False,
+            'is_missing': False,
+            'uploaded_by': display_name(submission.uploaded_by) or 'System',
+            'uploaded_at': submission.uploaded_at,
+            'can_override': False,
+            'audit_trail': [],
+            'archive_note': '',
+        }
+        payload.update(ml_fields_from(submission) if include_ml else empty_ml_fields())
+        if include_audit_trail:
+            payload['audit_trail'] = audit_trail(
+                entry_type,
+                submission.id,
+                submission.file_name,
+            )
+        return [payload]
+
+    payloads = []
+    for f in files:
+        entry_id = f'pit-deliverable-{submission.id}-{f.id}' if is_pit else f'capstone-{submission.id}-{f.id}'
+        payload = {
+            'id': entry_id,
+            'source_id': submission.id,
+            'file_id': f.id,
+            'type': entry_type,
+            'file_name': f.file_name,
+            'file_size': f.file_size,
+            'file_url': resolve_uploaded_file_url(request, f.file) if f.file else '',
+            'has_file': bool(f.file),
+            'deliverable_id': submission.deliverable_id,
+            'deliverable_label': submission.label,
+            'team_id': team.id if team else None,
+            'team_name': team.name if team else '',
+            'project_title': team.project_title if team else '',
+            'year_level': team.year_level if team else '',
+            'level': team.level if team else '',
+            'academic_year': team.semester.school_year.label if team and team.semester else '',
+            'semester': team.semester.label if team and team.semester else '',
+            'stage': submission.stage_label,
+            'course_code': '',
+            'status': 'Post-Defense' if is_post else 'Pre-Defense',
+            'submission_kind': kind,
+            'deliverable_type': submission.deliverable_type,
+            'is_restricted_archive': is_restricted_archive,
+            'archive_locked': False,
+            'is_missing': False,
+            'uploaded_by': display_name(submission.uploaded_by) or 'System',
+            'uploaded_at': f.uploaded_at,
+            'can_override': False,
+            'audit_trail': [],
+            'archive_note': '',
+        }
+        payload.update(ml_fields_from(f) if include_ml else empty_ml_fields())
+        if include_audit_trail:
+            payload['audit_trail'] = audit_trail(
+                entry_type,
+                submission.id,
+                f.file_name,
+            )
+        payloads.append(payload)
+    return payloads

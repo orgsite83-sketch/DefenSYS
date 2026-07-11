@@ -208,11 +208,12 @@ def _entries_for_stage_deliverables(
     for definition in deliverable_definitions_for_stage(stage_label):
         submission = submissions.get(definition['id'])
         if submission:
-            payload = capstone_entry_payload(submission, **payload_kwargs)
-            if payload['submission_kind'] == 'pre':
-                pre_defense.append(payload)
-            else:
-                post_defense.append(payload)
+            payloads = capstone_entry_payload(submission, **payload_kwargs)
+            for payload in payloads:
+                if payload['submission_kind'] == 'pre':
+                    pre_defense.append(payload)
+                else:
+                    post_defense.append(payload)
             continue
         if definition['type'] == DeliverableSubmission.TYPE_POST:
             if not archive_unlocked(team, stage_label):
@@ -232,11 +233,12 @@ def _entries_for_stage_deliverables(
             continue
         if submission.id in included_source_ids:
             continue
-        payload = capstone_entry_payload(submission, **payload_kwargs)
-        if payload['submission_kind'] == 'pre':
-            pre_defense.append(payload)
-        elif payload['submission_kind'] == 'post':
-            post_defense.append(payload)
+        payloads = capstone_entry_payload(submission, **payload_kwargs)
+        for payload in payloads:
+            if payload['submission_kind'] == 'pre':
+                pre_defense.append(payload)
+            elif payload['submission_kind'] == 'post':
+                post_defense.append(payload)
         included_source_ids.add(submission.id)
 
     included_ids = {

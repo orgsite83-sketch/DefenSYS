@@ -36,6 +36,7 @@ def pit_visible_deliverables_queryset():
             'team__semester__school_year',
             'uploaded_by',
         )
+        .prefetch_related('files')
         .filter(
             deliverable_type=DeliverableSubmission.TYPE_POST,
             team__level__icontains='PIT',
@@ -58,6 +59,7 @@ def capstone_visible_queryset():
             'team__semester__school_year',
             'uploaded_by',
         )
+        .prefetch_related('files')
         .filter(
             deliverable_type=DeliverableSubmission.TYPE_POST,
             team__level__icontains='Capstone',
@@ -73,7 +75,7 @@ def capstone_visible_queryset():
 def capstone_restricted_queryset():
     from defense.stages.models import StageDeliverable
     restricted_ids = StageDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
-    return DeliverableSubmission.objects.filter(
+    return DeliverableSubmission.objects.prefetch_related('files').filter(
         deliverable_type=DeliverableSubmission.TYPE_POST,
         deliverable_id__in=restricted_ids,
         team__level__icontains='Capstone',
@@ -84,7 +86,7 @@ def capstone_restricted_queryset():
 def pit_restricted_queryset():
     from defense.scheduler.models import PitEventDeliverable
     restricted_ids = PitEventDeliverable.objects.filter(is_restricted=True).values_list('deliverable_id', flat=True)
-    return DeliverableSubmission.objects.filter(
+    return DeliverableSubmission.objects.prefetch_related('files').filter(
         deliverable_type=DeliverableSubmission.TYPE_POST,
         deliverable_id__in=restricted_ids,
         team__level__icontains='PIT',
@@ -118,40 +120,76 @@ def capstone_entry_payload(submission):
     team = submission.team
     is_pit = team.is_pit if team else False
     entry_type = ArchiveEntry.TYPE_PIT if is_pit else ArchiveEntry.TYPE_CAPSTONE
-    entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
     viewer_notice = (
         'Read-only PIT archive preview. Audit actions are handled in the Repository Audit phase.'
         if is_pit
         else 'Read-only archive preview. Source downloads are disabled from this public archive.'
     )
-    return {
-        'id': entry_id,
-        'source_id': submission.id,
-        'type': entry_type,
-        'file_name': submission.file_name,
-        'file_size': submission.file_size,
-        'file_url': submission.file_url,  # Add file URL
-        'deliverable_id': submission.deliverable_id,
-        'deliverable_label': submission.label,
-        'team_id': team.id,
-        'team_name': team.name,
-        'project_title': team.project_title,
-        'year_level': team.year_level,
-        'academic_year': team.semester.school_year.label if team.semester else '',
-        'semester': team.semester.label if team.semester else '',
-        'stage': submission.stage_label,
-        'status': 'Post-Defense' if not is_pit else submission.status,
-        'uploaded_by': display_name(submission.uploaded_by) or 'System',
-        'uploaded_at': submission.uploaded_at,
-        'restricted': False,
-        'viewer_notice': viewer_notice,
-        # ML search fields
-        'extracted_text': submission.extracted_text or '',
-        'topics': submission.topics or [],
-        'summary': submission.summary or '',
-        'category': submission.category or '',
-        'category_confidence': submission.category_confidence,
-    }
+    
+    files = list(submission.files.all().order_by('uploaded_at'))
+    if not files:
+        entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
+        return [{
+            'id': entry_id,
+            'source_id': submission.id,
+            'file_id': None,
+            'type': entry_type,
+            'file_name': submission.file_name,
+            'file_size': submission.file_size,
+            'file_url': submission.file_url,
+            'deliverable_id': submission.deliverable_id,
+            'deliverable_label': submission.label,
+            'team_id': team.id if team else None,
+            'team_name': team.name if team else '',
+            'project_title': team.project_title if team else '',
+            'year_level': team.year_level if team else '',
+            'academic_year': team.semester.school_year.label if team and team.semester else '',
+            'semester': team.semester.label if team and team.semester else '',
+            'stage': submission.stage_label,
+            'status': 'Post-Defense' if not is_pit else submission.status,
+            'uploaded_by': display_name(submission.uploaded_by) or 'System',
+            'uploaded_at': submission.uploaded_at,
+            'restricted': False,
+            'viewer_notice': viewer_notice,
+            'extracted_text': submission.extracted_text or '',
+            'topics': submission.topics or [],
+            'summary': submission.summary or '',
+            'category': submission.category or '',
+            'category_confidence': submission.category_confidence,
+        }]
+
+    payloads = []
+    for f in files:
+        entry_id = f'pit-deliverable-{submission.id}-{f.id}' if is_pit else f'capstone-{submission.id}-{f.id}'
+        payloads.append({
+            'id': entry_id,
+            'source_id': submission.id,
+            'file_id': f.id,
+            'type': entry_type,
+            'file_name': f.file_name,
+            'file_size': f.file_size,
+            'file_url': f.file.url if f.file else None,
+            'deliverable_id': submission.deliverable_id,
+            'deliverable_label': submission.label,
+            'team_id': team.id if team else None,
+            'team_name': team.name if team else '',
+            'project_title': team.project_title if team else '',
+            'year_level': team.year_level if team else '',
+            'academic_year': team.semester.school_year.label if team and team.semester else '',
+            'semester': team.semester.label if team and team.semester else '',
+            'stage': submission.stage_label,
+            'status': 'Post-Defense' if not is_pit else submission.status,
+            'uploaded_by': display_name(submission.uploaded_by) or 'System',
+            'uploaded_at': f.uploaded_at,
+            'restricted': False,
+            'viewer_notice': viewer_notice,
+            'extracted_text': f.extracted_text or '',
+            'topics': f.topics or [],
+            'summary': f.summary or '',
+            'category': f.category or '',
+            'category_confidence': f.category_confidence,
+        })
+    return payloads
 
 
 def pit_entry_payload(entry):
@@ -191,7 +229,8 @@ def all_visible_entries():
         pit_entries.append(entry)
 
     entries = [pit_entry_payload(entry) for entry in pit_entries]
-    entries.extend(capstone_entry_payload(submission) for submission in submissions)
+    for submission in submissions:
+        entries.extend(capstone_entry_payload(submission))
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True)
 
 

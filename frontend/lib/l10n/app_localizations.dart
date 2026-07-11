@@ -284,6 +284,12 @@ abstract class AppLocalizations {
   /// **'Academic Periods'**
   String get navAcademicPeriods;
 
+  /// No description provided for @navUsers.
+  ///
+  /// In en, this message translates to:
+  /// **'Users'**
+  String get navUsers;
+
   /// No description provided for @navUserManagement.
   ///
   /// In en, this message translates to:
