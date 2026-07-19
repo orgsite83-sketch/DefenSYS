@@ -1238,7 +1238,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       );
     }
     if (stageOptions.isEmpty) {
-      return _emptyTab(isCapstone ? 'No defense stages configured yet.' : 'No PIT events configured yet.');
+      return _emptyTab(isCapstone ? 'No defense stages setup yet.' : 'No PIT events setup yet.');
     }
 
     final stages = (deliverableTeam['stages'] as List? ?? const [])

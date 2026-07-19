@@ -217,6 +217,51 @@ class JwtSessionApiTests(APITestCase):
         finally:
             api_settings.DEFAULT_THROTTLE_RATES['logout'] = original_rate
 
+    def test_me_patch_avatar_valid(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        tokens = self._login()
+        small_gif = (
+            b'\x47\x49\x46\x38\x39\x61\x01\x00\x01\x00\x00\x00\x00\x21\xf9\x04'
+            b'\x01\x0a\x00\x01\x00\x2c\x00\x00\x00\x00\x01\x00\x01\x00\x00\x02'
+            b'\x02\x4c\x01\x00\x3b'
+        )
+        avatar_file = SimpleUploadedFile('avatar.png', small_gif, content_type='image/png')
+        response = self.client.patch(
+            '/api/me/',
+            {'avatar': avatar_file},
+            format='multipart',
+            HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.avatar.name.endswith('.png'))
+
+    def test_me_patch_avatar_invalid_extension(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        tokens = self._login()
+        avatar_file = SimpleUploadedFile('avatar.txt', b'dummy_png_data', content_type='image/png')
+        response = self.client.patch(
+            '/api/me/',
+            {'avatar': avatar_file},
+            format='multipart',
+            HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['detail'], 'Unsupported file format. Please upload JPEG, PNG, or WEBP.')
+
+    def test_me_patch_avatar_invalid_content_type(self):
+        from django.core.files.uploadedfile import SimpleUploadedFile
+        tokens = self._login()
+        avatar_file = SimpleUploadedFile('avatar.png', b'dummy_png_data', content_type='text/plain')
+        response = self.client.patch(
+            '/api/me/',
+            {'avatar': avatar_file},
+            format='multipart',
+            HTTP_AUTHORIZATION=f'Bearer {tokens["access"]}',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.data['detail'], 'Unsupported file format. Please upload JPEG, PNG, or WEBP.')
+
 
 class SystemAuditLogApiTests(APITestCase):
     def setUp(self):
@@ -697,5 +742,26 @@ class PasswordManagementTests(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+
+class HealthCheckApiTests(APITestCase):
+    def test_health_check_endpoint_success(self):
+        response = self.client.get('/api/health/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['status'], 'healthy')
+        self.assertEqual(response.data['checks']['database'], 'healthy')
+
+    def test_health_check_endpoint_database_failure(self):
+        from unittest.mock import patch
+        from django.db import OperationalError
+
+        with patch('defensys_backend.views.connection.cursor') as mock_cursor:
+            mock_cursor.side_effect = OperationalError("Database connection failed")
+            response = self.client.get('/api/health/')
+
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertEqual(response.data['status'], 'unhealthy')
+        self.assertIn('unhealthy', response.data['checks']['database'])
+
 
 

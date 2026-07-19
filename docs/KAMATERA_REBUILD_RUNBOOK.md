@@ -16,7 +16,7 @@ Before terminating, save:
 
 1. The production `.env`
 2. A PostgreSQL database dump
-3. Uploaded media files, unless `USE_S3=True`
+3. Uploaded media files
 4. nginx config
 5. systemd service files
 6. domain/DNS notes
@@ -137,8 +137,6 @@ Open it locally and verify it contains the expected production values:
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
-- `USE_S3`
-- `AWS_*` values, if S3 is enabled
 - `REDIS_URL`, if present
 
 Do **not** commit this file.
@@ -175,9 +173,7 @@ scp defensys@YOUR_SERVER_IP:~/defensys-backup/defensys_db.sql.gz .\defensys_db.s
 
 ### 5. Back up uploaded files
 
-If `backend/.env` has `USE_S3=True`, uploaded files should be in S3. Confirm the bucket name and credentials are saved in your env backup.
-
-If `USE_S3=False`, download local media:
+Download local media:
 
 ```powershell
 scp -r defensys@YOUR_SERVER_IP:/opt/defensys/backend/media .\media
@@ -235,7 +231,7 @@ On your PC, your backup folder should contain at least:
 backend.env.production.backup
 defensys_db.dump
 defensys_db.sql.gz
-media/ or media.tar.gz              # only if USE_S3=False
+media/ or media.tar.gz
 nginx-defensys.conf
 defensys.service
 defensys-ws.service
@@ -379,13 +375,19 @@ From your PC backup folder:
 scp .\defensys_db.dump defensys@NEW_SERVER_IP:~/defensys_db.dump
 ```
 
-On the server:
+On the server (recommended interactive helper):
+
+```bash
+python3 /opt/defensys/deployment/backup/restore_db.py ~/defensys_db.dump
+```
+
+Alternatively, manually restore with raw pg_restore:
 
 ```bash
 pg_restore -h localhost -U defensys -d defensys_db --clean --if-exists ~/defensys_db.dump
 ```
 
-If restore complains about ownership, try:
+If the raw restore complains about ownership, append `--no-owner`:
 
 ```bash
 pg_restore -h localhost -U defensys -d defensys_db --no-owner --clean --if-exists ~/defensys_db.dump
@@ -432,8 +434,6 @@ Keep these from the backup unless intentionally rotating secrets:
 ```env
 DJANGO_SECRET_KEY=...
 POSTGRES_PASSWORD=...
-USE_S3=...
-AWS_...
 ```
 
 If restoring an existing database, keeping the same `DJANGO_SECRET_KEY` avoids invalidating some signed Django data. If you are starting fresh, generate a new one.
@@ -461,8 +461,6 @@ python manage.py migrate --noinput
 If you restored a real DB dump, migrations may already be applied. Running `migrate --noinput` is still correct.
 
 ### 11. Restore media files
-
-Skip this if `USE_S3=True` and the S3 bucket is still available.
 
 If you backed up a `media` folder:
 

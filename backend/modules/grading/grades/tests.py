@@ -765,6 +765,38 @@ class GradeCenterApiTests(APITestCase):
         labels = [stage['label'] for stage in response.data['capstone_stages']]
         self.assertIn(self.stage.label, labels)
 
+    def test_list_includes_pit_events(self):
+        pit_panel = Rubric.objects.create(
+            name='PIT Panel Active',
+            scope=Rubric.SCOPE_PIT,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+        pit_peer = Rubric.objects.create(
+            name='PIT Peer Active',
+            scope=Rubric.SCOPE_PIT,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_PEER,
+            status=Rubric.STATUS_PUBLISHED,
+            created_by=self.admin,
+        )
+        config = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year Expo',
+            panel_rubric=pit_panel,
+            peer_rubric=pit_peer,
+            panel_weight=80,
+            peer_weight=20,
+        )
+
+        response = self.client.get('/api/grading/grades/')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('pit_events', response.data)
+        names = [event['event_name'] for event in response.data['pit_events']]
+        self.assertIn('2nd Year Expo', names)
+
     def test_patch_pit_group_settings(self):
         pit_panel = Rubric.objects.create(
             name='PIT Panel Active',

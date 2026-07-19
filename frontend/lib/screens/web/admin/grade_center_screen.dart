@@ -251,7 +251,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         children: [
           DefensysPageHeader(
             icon: Icons.star_rounded,
-            title: 'Evaluation & Grade Center',
+            title: 'Evaluation & Grades',
             subtitle:
                 'Monitor real-time grading from Panelists, Advisors, and Peer-to-Peer rubrics.',
             actions: null,

@@ -368,7 +368,7 @@ class _DefenseStageEditorScreenState
                   color: DefensysUi.primaryMaroon,
                 ),
                 label: const Text(
-                  'Back to Defense Stages',
+                  'Back to Defense Stages Setup',
                   style: TextStyle(
                     fontFamily: DefensysUi.fontFamily,
                     fontWeight: FontWeight.w600,

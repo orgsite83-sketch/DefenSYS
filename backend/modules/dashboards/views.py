@@ -103,15 +103,21 @@ def _user_payload(user, active_semester=None):
 
 
 def _faculty_roles(user):
-    is_pit_instructor = SectionInstructorAssignment.objects.filter(
+    active_sem = active_semester()
+    assignments = SectionInstructorAssignment.objects.filter(
         faculty=user,
         is_active=True,
-    ).exists()
+    )
+    if active_sem:
+        assignments = assignments.filter(semester=active_sem)
+    pit_instructor_years = sorted(list(set(assignments.values_list('year_level', flat=True))))
+    is_pit_instructor = len(pit_instructor_years) > 0
     return {
         'panelist': user.is_panelist,
         'pit_lead': user.is_pit_lead,
         'pit_lead_year': user.pit_lead_year,
         'pit_instructor': is_pit_instructor,
+        'pit_instructor_years': pit_instructor_years,
         'adviser': user.is_adviser,
         'documenter': user.is_documenter,
         'uploader': user.is_uploader,

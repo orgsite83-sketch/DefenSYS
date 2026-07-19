@@ -111,6 +111,7 @@ cd backend
 source venv/bin/activate
 pip install -r requirements.txt
 python manage.py migrate --noinput
+python manage.py collectstatic --noinput
 python manage.py check --deploy
 sudo systemctl restart defensys
 sudo systemctl restart defensys-ws

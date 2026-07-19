@@ -1,0 +1,17 @@
+[Unit]
+Description=DefenSYS WebSocket (Daphne)
+After=network.target redis-server.service
+
+[Service]
+User=defensys
+Group=defensys
+WorkingDirectory=/opt/defensys/backend
+Environment="PATH=/opt/defensys/backend/venv/bin"
+EnvironmentFile=/opt/defensys/backend/.env
+ExecStart=/opt/defensys/backend/venv/bin/daphne \
+    -b 127.0.0.1 -p 8001 defensys_backend.asgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

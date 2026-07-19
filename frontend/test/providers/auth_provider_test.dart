@@ -1,9 +1,10 @@
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:user/services/api_http.dart';
-import 'package:user/services/auth_provider.dart';
-import 'package:user/services/auth_storage_keys.dart';
+import 'package:defensys/services/api_http.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/services/auth_storage_keys.dart';
 
 import '../helpers/mock_http_setup.dart';
 
@@ -13,6 +14,9 @@ void main() {
   setUp(() {
     SharedPreferences.setMockInitialValues({});
     installDefaultMockHttp();
+    const channel = MethodChannel('plugins.it_nomads.com/flutter_secure_storage');
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (methodCall) async => null);
   });
 
   tearDown(() {

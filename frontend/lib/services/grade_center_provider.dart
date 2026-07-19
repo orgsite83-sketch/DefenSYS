@@ -22,6 +22,7 @@ class GradeCenterState {
   final Map<String, dynamic>? activeSemester;
   final Map<String, Map<String, dynamic>> groupSettings;
   final List<Map<String, dynamic>> capstoneStages;
+  final List<Map<String, dynamic>> pitEvents;
   final String search;
   final String yearLevel;
   final String status;
@@ -42,6 +43,7 @@ class GradeCenterState {
     this.activeSemester,
     this.groupSettings = const {},
     this.capstoneStages = const [],
+    this.pitEvents = const [],
     this.search = '',
     this.yearLevel = '',
     this.status = '',
@@ -63,6 +65,7 @@ class GradeCenterState {
     Map<String, dynamic>? activeSemester,
     Map<String, Map<String, dynamic>>? groupSettings,
     List<Map<String, dynamic>>? capstoneStages,
+    List<Map<String, dynamic>>? pitEvents,
     String? search,
     String? yearLevel,
     String? status,
@@ -89,6 +92,7 @@ class GradeCenterState {
           : activeSemester ?? this.activeSemester,
       groupSettings: groupSettings ?? this.groupSettings,
       capstoneStages: capstoneStages ?? this.capstoneStages,
+      pitEvents: pitEvents ?? this.pitEvents,
       search: search ?? this.search,
       yearLevel: yearLevel ?? this.yearLevel,
       status: status ?? this.status,
@@ -479,6 +483,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       clearActiveSemester: payload['active_semester'] == null,
       groupSettings: _readGroupSettings(payload['group_settings']),
       capstoneStages: _readMapList(payload['capstone_stages']),
+      pitEvents: _readMapList(payload['pit_events']),
       message: successMessage,
       clearError: true,
     );

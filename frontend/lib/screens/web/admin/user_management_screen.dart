@@ -715,6 +715,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
             DropdownMenuItem(value: 'panelist', child: Text('Panelist')),
             DropdownMenuItem(value: 'pit_lead', child: Text('PIT Lead')),
             DropdownMenuItem(value: 'adviser', child: Text('Adviser')),
+            DropdownMenuItem(value: 'pit_instructor', child: Text('PIT Instructor')),
             DropdownMenuItem(
               value: 'documenter',
               child: Text('Documenter'),
@@ -853,43 +854,89 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     );
   }
 
-  Widget _roleBadge(Map<String, dynamic> user) {
-    final displayRole = user['displayRole'];
-    final tone = displayRole is Map ? displayRole['tone']?.toString() : null;
+  List<Map<String, String>> _getIndividualRoles(Map<String, dynamic> user) {
     final role = user['role']?.toString() ?? 'student';
-    final label = displayRole is Map && displayRole['label'] != null
-        ? displayRole['label'].toString()
-        : switch (role) {
-            'admin' => 'Administrator',
-            'faculty' => 'Faculty',
-            _ => 'Student',
-          };
-    final effectiveTone = tone ?? role;
-    final background = switch (effectiveTone) {
+    final List<Map<String, String>> individualRoles = [];
+
+    if (role == 'admin') {
+      individualRoles.add({'tone': 'admin', 'label': 'Administrator'});
+    } else if (role == 'student') {
+      final displayRole = user['displayRole'];
+      final label = displayRole is Map && displayRole['label'] != null
+          ? displayRole['label'].toString()
+          : 'Student';
+      individualRoles.add({'tone': 'student', 'label': label});
+    } else {
+      // Faculty/General
+      if (user['is_pit_lead'] == true) {
+        final year = user['pit_lead_year'];
+        final label = year != null && year.toString().isNotEmpty
+            ? 'PIT Lead: $year'
+            : 'PIT Lead';
+        individualRoles.add({'tone': 'pit_lead', 'label': label});
+      }
+      if (user['is_adviser'] == true) {
+        individualRoles.add({'tone': 'adviser', 'label': 'Adviser'});
+      }
+      if (user['is_panelist'] == true) {
+        individualRoles.add({'tone': 'panelist', 'label': 'Panelist'});
+      }
+      if (user['is_documenter'] == true) {
+        individualRoles.add({'tone': 'documenter', 'label': 'Documenter'});
+      }
+
+      final assignments = user['instructor_assignments'] as List?;
+      if (assignments != null && assignments.isNotEmpty) {
+        final years = assignments
+            .map((a) => (a as Map)['year_level']?.toString())
+            .whereType<String>()
+            .toSet()
+            .toList();
+        years.sort();
+        if (years.isNotEmpty) {
+          individualRoles.add({
+            'tone': 'pit_instructor',
+            'label': 'Instructor: ${years.join(', ')}',
+          });
+        }
+      }
+
+      if (individualRoles.isEmpty) {
+        individualRoles.add({'tone': 'faculty', 'label': 'Faculty Member'});
+      }
+    }
+    return individualRoles;
+  }
+
+  Widget _buildSingleBadge(String label, String tone) {
+    final background = switch (tone) {
       'admin' => const Color(0xFFFDE8E8),
       'adviser' => const Color(0xFFECFDF5),
       'panelist' => const Color(0xFFF3E8FF),
       'pit_lead' => const Color(0xFFEFF6FF),
       'documenter' => const Color(0xFFFFEDD5),
       'faculty' => const Color(0xFFFFEDD5),
+      'pit_instructor' => const Color(0xFFF0FDF4),
       _ => const Color(0xFFEFF6FF),
     };
-    final textColor = switch (effectiveTone) {
+    final textColor = switch (tone) {
       'admin' => const Color(0xFF9B1C1C),
       'adviser' => const Color(0xFF047857),
       'panelist' => const Color(0xFF7E22CE),
       'pit_lead' => const Color(0xFF1D4ED8),
       'documenter' => const Color(0xFFEA580C),
       'faculty' => const Color(0xFFEA580C),
+      'pit_instructor' => const Color(0xFF15803D),
       _ => const Color(0xFF1E40AF),
     };
-    final icon = switch (effectiveTone) {
+    final icon = switch (tone) {
       'admin' => Icons.admin_panel_settings_rounded,
       'adviser' => Icons.school_outlined,
       'panelist' => Icons.groups_2_outlined,
       'pit_lead' => Icons.flag_outlined,
       'documenter' => Icons.assignment_outlined,
       'faculty' => Icons.co_present_rounded,
+      'pit_instructor' => Icons.co_present_rounded,
       _ => Icons.school_rounded,
     };
 
@@ -904,16 +951,81 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         children: [
           Icon(icon, color: textColor, size: 13),
           const SizedBox(width: 5),
-          Text(
-            label,
-            style: TextStyle(
-              color: textColor,
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildCountBadge(int count) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Text(
+        '+$count',
+        style: const TextStyle(
+          color: Color(0xFF4B5563),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+
+  Widget _roleBadge(Map<String, dynamic> user) {
+    final individualRoles = _getIndividualRoles(user);
+    if (individualRoles.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final tooltipMessage = individualRoles.map((r) => '• ${r['label']}').join('\n');
+    final primaryRole = individualRoles[0];
+    final hasMore = individualRoles.length > 1;
+
+    Widget badgeContent;
+    if (!hasMore) {
+      badgeContent = _buildSingleBadge(primaryRole['label']!, primaryRole['tone']!);
+    } else {
+      badgeContent = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: _buildSingleBadge(primaryRole['label']!, primaryRole['tone']!),
+          ),
+          const SizedBox(width: 6),
+          _buildCountBadge(individualRoles.length - 1),
+        ],
+      );
+    }
+
+    return Tooltip(
+      message: 'Active Roles:\n$tooltipMessage',
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2937),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: badgeContent,
     );
   }
 
@@ -4799,6 +4911,59 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                             });
                           },
                         ),
+                        if (editing) ...[
+                          Builder(
+                            builder: (context) {
+                              final assignments = user['instructor_assignments'] as List?;
+                              if (assignments != null && assignments.isNotEmpty) {
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Divider(),
+                                    const Padding(
+                                      padding: EdgeInsets.symmetric(vertical: 6),
+                                      child: Text(
+                                        'Active PIT Instructor Workload',
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.bold,
+                                          color: Color(0xFF374151),
+                                        ),
+                                      ),
+                                    ),
+                                    ...assignments.map((a) {
+                                      final map = Map<String, dynamic>.from(a as Map);
+                                      return Padding(
+                                        padding: const EdgeInsets.symmetric(vertical: 4),
+                                        child: Row(
+                                          children: [
+                                            const Icon(
+                                              Icons.co_present_rounded,
+                                              size: 16,
+                                              color: Color(0xFF15803D),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Expanded(
+                                              child: Text(
+                                                '${map['year_level']} — ${map['section']} (${map['semester']})',
+                                                style: const TextStyle(
+                                                  fontSize: 12.5,
+                                                  fontWeight: FontWeight.w500,
+                                                  color: Color(0xFF4B5563),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    }),
+                                  ],
+                                );
+                              }
+                              return const SizedBox.shrink();
+                            },
+                          ),
+                        ],
                       ],
                     ],
                   ),

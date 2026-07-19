@@ -8,6 +8,9 @@ import shutil
 from datetime import datetime
 from typing import Dict
 from pathlib import Path
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentArchiver:
@@ -196,17 +199,17 @@ def archive_with_classification(
     from .naive_bayes_classifier import classify_document
     
     # Step 1: Classify document
-    print(f'Classifying document: {filename}')
+    logger.info(f'Classifying document: {filename}')
     classification = classify_document(extracted_text)
     
     category = classification['predicted_category']
     confidence = classification['confidence_score']
     
-    print(f'Category: {category} ({confidence:.1f}% confidence)')
-    print(f'Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in classification["top_3"]]}')
+    logger.info(f'Category: {category} ({confidence:.1f}% confidence)')
+    logger.info(f'Top 3: {[f"{p["category"]} ({p["confidence"]})" for p in classification["top_3"]]}')
     
     # Step 2: Archive document
-    print(f'Archiving to: {category}/')
+    logger.info(f'Archiving to: {category}/')
     archiver = DocumentArchiver()
     archive_result = archiver.archive_document(
         source_file_path=file_path,
@@ -223,9 +226,9 @@ def archive_with_classification(
     }
     
     if archive_result['status'] == 'success':
-        print(f'{archive_result["message"]}')
+        logger.info(f'{archive_result["message"]}')
     else:
-        print(f'{archive_result["message"]}')
+        logger.warning(f'{archive_result["message"]}')
     
     return result
 

@@ -11,7 +11,12 @@ import '../../../utils/pdf_viewer.dart';
 import '../../../widgets/feedback_toast.dart';
 
 class WeeklyProgressReportsScreen extends ConsumerStatefulWidget {
-  const WeeklyProgressReportsScreen({super.key});
+  final String? embeddedTeamId;
+
+  const WeeklyProgressReportsScreen({
+    super.key,
+    this.embeddedTeamId,
+  });
 
   @override
   ConsumerState<WeeklyProgressReportsScreen> createState() =>
@@ -26,10 +31,24 @@ class _WeeklyProgressReportsScreenState
   @override
   void initState() {
     super.initState();
+    if (widget.embeddedTeamId != null) {
+      selectedTeamId = widget.embeddedTeamId;
+    }
     // Fetch weekly progress reports only (dashboard data is already fetched by parent)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(weeklyProgressProvider.notifier).fetchReports();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant WeeklyProgressReportsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.embeddedTeamId != oldWidget.embeddedTeamId && widget.embeddedTeamId != null) {
+      setState(() {
+        selectedTeamId = widget.embeddedTeamId;
+        selectedReportIndex = null;
+      });
+    }
   }
 
   Future<void> _refreshData() async {
@@ -92,7 +111,7 @@ class _WeeklyProgressReportsScreenState
         : progressState.reports;
 
     return Scaffold(
-      backgroundColor: Colors.grey.shade100,
+      backgroundColor: widget.embeddedTeamId != null ? Colors.white : Colors.grey.shade100,
       appBar: null, // Remove AppBar since it's embedded in faculty dashboard
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -102,17 +121,18 @@ class _WeeklyProgressReportsScreenState
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 // Header with title
-                Container(
-                  padding: const EdgeInsets.all(24),
-                  color: Colors.white,
-                  child: const Text(
-                    'Weekly Progress Reports',
-                    style: TextStyle(
-                      fontSize: 21,
-                      fontWeight: FontWeight.bold,
+                if (widget.embeddedTeamId == null)
+                  Container(
+                    padding: const EdgeInsets.all(24),
+                    color: Colors.white,
+                    child: const Text(
+                      'Weekly Progress Reports',
+                      style: TextStyle(
+                        fontSize: 21,
+                        fontWeight: FontWeight.bold,
+                      ),
                     ),
                   ),
-                ),
                 
                 // Main content with sidebar and document view
                 Expanded(
@@ -120,281 +140,337 @@ class _WeeklyProgressReportsScreenState
                     children: [
                       // Left sidebar - Team and report selection
                       Container(
-                        width: 320,
+                        width: widget.embeddedTeamId != null ? 240 : 320,
                         color: Colors.white,
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                      Container(
-                        padding: const EdgeInsets.all(20),
-                        decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withValues(alpha: 0.05),
-                          border: Border(
-                            bottom: BorderSide(color: Colors.grey.shade200),
-                          ),
-                        ),
-                        child: const Text(
-                          'Select a Team',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      
-                      // Team Selection List
-                      if (advisedTeams.isEmpty)
-                        Expanded(
-                          child: RefreshIndicator(
-                            onRefresh: _refreshData,
-                            color: DefensysTokens.maroon,
-                            child: LayoutBuilder(
-                              builder: (context, constraints) {
-                                return SingleChildScrollView(
-                                  physics: const AlwaysScrollableScrollPhysics(),
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minHeight: constraints.maxHeight,
-                                    ),
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(20),
-                                      child: Container(
-                                        padding: const EdgeInsets.all(16),
-                                        decoration: BoxDecoration(
-                                          color: Colors.orange.shade50,
-                                          borderRadius: BorderRadius.circular(12),
-                                          border: Border.all(
-                                            color: Colors.orange.shade200,
-                                          ),
-                                        ),
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.info_outline,
-                                                color: Colors.orange.shade700),
-                                            const SizedBox(width: 12),
-                                            Expanded(
-                                              child: Text(
-                                                'No teams assigned yet.',
-                                                style: TextStyle(
-                                                    color: Colors.orange.shade700),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              },
-                            ),
-                          ),
-                        )
-                      else
-                        Expanded(
-                          child: RefreshIndicator(
-                            onRefresh: _refreshData,
-                            color: DefensysTokens.maroon,
-                            child: ListView.builder(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.all(12),
-                              itemCount: advisedTeams.length,
-                              itemBuilder: (context, index) {
-                              final team = advisedTeams[index];
-                              final teamId = team['id']?.toString() ?? team['name'];
-                              final isSelected = selectedTeamId == teamId;
-                              
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
+                            if (widget.embeddedTeamId == null) ...[
+                              Container(
+                                padding: const EdgeInsets.all(20),
                                 decoration: BoxDecoration(
-                                  color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.1) : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isSelected ? DefensysTokens.maroon : Colors.grey.shade300,
-                                    width: isSelected ? 2 : 1,
+                                  color: DefensysTokens.maroon.withValues(alpha: 0.05),
+                                  border: Border(
+                                    bottom: BorderSide(color: Colors.grey.shade200),
                                   ),
                                 ),
-                                child: ListTile(
-                                  selected: isSelected,
-                                  title: Text(
-                                    team['name'] ?? 'Unknown Team',
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                      fontSize: 15,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    team['projectTitle'] ?? 'No project title',
-                                    style: const TextStyle(fontSize: 12),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  trailing: filteredReports.where((r) => r['team'].toString() == teamId).isNotEmpty
-                                      ? Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                          decoration: BoxDecoration(
-                                            color: Colors.green.shade100,
-                                            borderRadius: BorderRadius.circular(12),
-                                          ),
-                                          child: Text(
-                                            '${filteredReports.where((r) => r['team'].toString() == teamId).length}',
-                                            style: TextStyle(
-                                              color: Colors.green.shade700,
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 12,
-                                            ),
-                                          ),
-                                        )
-                                      : null,
-                                  onTap: () {
-                                    setState(() {
-                                      selectedTeamId = teamId;
-                                      selectedReportIndex = null;
-                                    });
-                                  },
-                                ),
-                              );
-                            },
-                          ),
-                        ),
-                        ),
-                      
-                      // Reports list for selected team
-                      if (selectedTeamId != null && filteredReports.isNotEmpty) ...[
-                        Container(
-                          padding: const EdgeInsets.all(20),
-                          decoration: BoxDecoration(
-                            color: DefensysTokens.maroon.withValues(alpha: 0.05),
-                            border: Border(
-                              top: BorderSide(color: Colors.grey.shade200),
-                              bottom: BorderSide(color: Colors.grey.shade200),
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Progress Reports (${filteredReports.length})',
-                                  style: const TextStyle(
-                                    fontSize: 16,
+                                child: const Text(
+                                  'Select a Team',
+                                  style: TextStyle(
+                                    fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                               ),
-                              IconButton(
-                                onPressed: progressState.isLoading
-                                    ? null
-                                    : () => _compileAllReports(
-                                          filteredReports,
-                                          advisedTeams.firstWhere(
-                                            (t) => (t['id']?.toString() ?? t['name']) == selectedTeamId,
-                                            orElse: () => {},
+                              if (advisedTeams.isEmpty)
+                                Expanded(
+                                  child: RefreshIndicator(
+                                    onRefresh: _refreshData,
+                                    color: DefensysTokens.maroon,
+                                    child: LayoutBuilder(
+                                      builder: (context, constraints) {
+                                        return SingleChildScrollView(
+                                          physics: const AlwaysScrollableScrollPhysics(),
+                                          child: ConstrainedBox(
+                                            constraints: BoxConstraints(
+                                              minHeight: constraints.maxHeight,
+                                            ),
+                                            child: Padding(
+                                              padding: const EdgeInsets.all(20),
+                                              child: Container(
+                                                padding: const EdgeInsets.all(16),
+                                                decoration: BoxDecoration(
+                                                  color: Colors.orange.shade50,
+                                                  borderRadius: BorderRadius.circular(12),
+                                                  border: Border.all(
+                                                    color: Colors.orange.shade200,
+                                                  ),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    Icon(Icons.info_outline,
+                                                        color: Colors.orange.shade700),
+                                                    const SizedBox(width: 12),
+                                                    Expanded(
+                                                      child: Text(
+                                                        'No teams assigned yet.',
+                                                        style: TextStyle(
+                                                            color: Colors.orange.shade700),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
                                           ),
-                                        ),
-                                icon: const Icon(Icons.folder_zip_outlined, size: 20),
-                                tooltip: 'Compile All',
-                                color: DefensysTokens.maroon,
-                              ),
-                            ],
-                          ),
-                        ),
-                        Expanded(
-                          child: RefreshIndicator(
-                            onRefresh: _refreshData,
-                            color: DefensysTokens.maroon,
-                            child: ListView.builder(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.all(12),
-                              itemCount: filteredReports.length,
-                              itemBuilder: (context, index) {
-                              final report = filteredReports[index];
-                              final isSelected = selectedReportIndex == index;
-                              
-                              return Container(
-                                margin: const EdgeInsets.only(bottom: 8),
-                                decoration: BoxDecoration(
-                                  color: isSelected ? Colors.blue.shade50 : Colors.transparent,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(
-                                    color: isSelected ? Colors.blue : Colors.grey.shade300,
-                                    width: isSelected ? 2 : 1,
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                )
+                              else
+                                Expanded(
+                                  child: RefreshIndicator(
+                                    onRefresh: _refreshData,
+                                    color: DefensysTokens.maroon,
+                                    child: ListView.builder(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      padding: const EdgeInsets.all(12),
+                                      itemCount: advisedTeams.length,
+                                      itemBuilder: (context, index) {
+                                        final team = advisedTeams[index];
+                                        final teamId = team['id']?.toString() ?? team['name'];
+                                        final isSelected = selectedTeamId == teamId;
+                                        
+                                        return Container(
+                                          margin: const EdgeInsets.only(bottom: 8),
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.1) : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: isSelected ? DefensysTokens.maroon : Colors.grey.shade300,
+                                              width: isSelected ? 2 : 1,
+                                            ),
+                                          ),
+                                          child: ListTile(
+                                            selected: isSelected,
+                                            title: Text(
+                                              team['name'] ?? 'Unknown Team',
+                                              style: TextStyle(
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                                fontSize: 15,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              team['projectTitle'] ?? 'No project title',
+                                              style: const TextStyle(fontSize: 12),
+                                              maxLines: 2,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                            trailing: filteredReports.where((r) => r['team'].toString() == teamId).isNotEmpty
+                                                ? Container(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                    decoration: BoxDecoration(
+                                                      color: Colors.green.shade100,
+                                                      borderRadius: BorderRadius.circular(12),
+                                                    ),
+                                                    child: Text(
+                                                      '${filteredReports.where((r) => r['team'].toString() == teamId).length}',
+                                                      style: TextStyle(
+                                                        color: Colors.green.shade700,
+                                                        fontWeight: FontWeight.bold,
+                                                        fontSize: 12,
+                                                      ),
+                                                    ),
+                                                  )
+                                                : null,
+                                            onTap: () {
+                                              setState(() {
+                                                selectedTeamId = teamId;
+                                                selectedReportIndex = null;
+                                              });
+                                            },
+                                          ),
+                                        );
+                                      },
+                                    ),
                                   ),
                                 ),
-                                child: ListTile(
-                                  leading: Container(
-                                    width: 40,
-                                    height: 40,
-                                    decoration: BoxDecoration(
-                                      color: Colors.green.shade100,
-                                      borderRadius: BorderRadius.circular(8),
+                            ],
+                            
+                            // Reports list for selected team
+                            if (selectedTeamId != null) ...[
+                              if (widget.embeddedTeamId != null)
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: DefensysTokens.maroon.withValues(alpha: 0.05),
+                                    border: Border(
+                                      bottom: BorderSide(color: Colors.grey.shade200),
                                     ),
-                                    child: Center(
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Expanded(
+                                        child: Text(
+                                          'Progress Reports',
+                                          style: TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      if (filteredReports.isNotEmpty)
+                                        IconButton(
+                                          onPressed: progressState.isLoading
+                                              ? null
+                                              : () => _compileAllReports(
+                                                    filteredReports,
+                                                    advisedTeams.firstWhere(
+                                                      (t) => (t['id']?.toString() ?? t['name']) == selectedTeamId,
+                                                      orElse: () => {},
+                                                    ),
+                                                  ),
+                                          icon: const Icon(Icons.folder_zip_outlined, size: 20),
+                                          tooltip: 'Compile All',
+                                          color: DefensysTokens.maroon,
+                                        ),
+                                    ],
+                                  ),
+                                )
+                              else if (filteredReports.isNotEmpty)
+                                Container(
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: DefensysTokens.maroon.withValues(alpha: 0.05),
+                                    border: Border(
+                                      top: BorderSide(color: Colors.grey.shade200),
+                                      bottom: BorderSide(color: Colors.grey.shade200),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: Text(
+                                          'Progress Reports (${filteredReports.length})',
+                                          style: const TextStyle(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                      IconButton(
+                                        onPressed: progressState.isLoading
+                                            ? null
+                                            : () => _compileAllReports(
+                                                  filteredReports,
+                                                  advisedTeams.firstWhere(
+                                                    (t) => (t['id']?.toString() ?? t['name']) == selectedTeamId,
+                                                    orElse: () => {},
+                                                  ),
+                                                ),
+                                        icon: const Icon(Icons.folder_zip_outlined, size: 20),
+                                        tooltip: 'Compile All',
+                                        color: DefensysTokens.maroon,
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              
+                              if (filteredReports.isEmpty)
+                                const Expanded(
+                                  child: Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(20),
                                       child: Text(
-                                        '${report['week_number'] ?? 0}',
+                                        'No reports submitted.',
                                         style: TextStyle(
-                                          color: Colors.green.shade700,
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 16,
+                                          color: AppColors.textSecondary,
+                                          fontStyle: FontStyle.italic,
                                         ),
                                       ),
                                     ),
                                   ),
-                                  title: Text(
-                                    'Week ${report['week_number'] ?? 0}',
-                                    style: TextStyle(
-                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                                      fontSize: 14,
+                                )
+                              else
+                                Expanded(
+                                  child: RefreshIndicator(
+                                    onRefresh: _refreshData,
+                                    color: DefensysTokens.maroon,
+                                    child: ListView.builder(
+                                      physics: const AlwaysScrollableScrollPhysics(),
+                                      padding: const EdgeInsets.all(12),
+                                      itemCount: filteredReports.length,
+                                      itemBuilder: (context, index) {
+                                        final report = filteredReports[index];
+                                        final isSelected = selectedReportIndex == index;
+                                        
+                                        return Container(
+                                          margin: const EdgeInsets.only(bottom: 8),
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? Colors.blue.shade50 : Colors.transparent,
+                                            borderRadius: BorderRadius.circular(8),
+                                            border: Border.all(
+                                              color: isSelected ? Colors.blue : Colors.grey.shade300,
+                                              width: isSelected ? 2 : 1,
+                                            ),
+                                          ),
+                                          child: ListTile(
+                                            leading: Container(
+                                              width: 40,
+                                              height: 40,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade100,
+                                                borderRadius: BorderRadius.circular(8),
+                                              ),
+                                              child: Center(
+                                                child: Text(
+                                                  '${report['week_number'] ?? 0}',
+                                                  style: TextStyle(
+                                                    color: Colors.green.shade700,
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                            title: Text(
+                                              'Week ${report['week_number'] ?? 0}',
+                                              style: TextStyle(
+                                                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                                fontSize: 14,
+                                              ),
+                                            ),
+                                            subtitle: Text(
+                                              report['report_date'] ?? '',
+                                              style: const TextStyle(fontSize: 12),
+                                            ),
+                                            onTap: () {
+                                              setState(() {
+                                                selectedReportIndex = index;
+                                              });
+                                            },
+                                          ),
+                                        );
+                                      },
                                     ),
                                   ),
-                                  subtitle: Text(
-                                    report['report_date'] ?? '',
-                                    style: const TextStyle(fontSize: 12),
-                                  ),
-                                  onTap: () {
-                                    setState(() {
-                                      selectedReportIndex = index;
-                                    });
-                                  },
                                 ),
-                              );
-                            },
-                          ),
+                            ],
+                          ],
                         ),
-                        ),
-                      ],
+                      ),
+                      
+                      // Right side - Document view
+                      Expanded(
+                        child: selectedTeamId == null
+                            ? const EmptyState(
+                                icon: Icons.groups_outlined,
+                                message: 'Select a team to view their progress reports',
+                              )
+                            : filteredReports.isEmpty
+                                ? const EmptyState(
+                                    icon: Icons.assignment_outlined,
+                                    message: 'No weekly progress reports submitted yet',
+                                  )
+                                : selectedReportIndex == null
+                                    ? const EmptyState(
+                                        icon: Icons.description_outlined,
+                                        message: 'Select a report to view details',
+                                      )
+                                    : _buildDocumentView(
+                                        filteredReports[selectedReportIndex!],
+                                        advisedTeams.firstWhere(
+                                          (t) => (t['id']?.toString() ?? t['name']) == selectedTeamId,
+                                          orElse: () => {},
+                                        ),
+                                      ),
+                      ),
                     ],
                   ),
                 ),
-                
-                // Right side - Document view
-                Expanded(
-                  child: selectedTeamId == null
-                      ? const EmptyState(
-                          icon: Icons.groups_outlined,
-                          message: 'Select a team to view their progress reports',
-                        )
-                      : filteredReports.isEmpty
-                          ? const EmptyState(
-                              icon: Icons.assignment_outlined,
-                              message: 'No weekly progress reports submitted yet',
-                            )
-                          : selectedReportIndex == null
-                              ? const EmptyState(
-                                  icon: Icons.description_outlined,
-                                  message: 'Select a report to view details',
-                                )
-                              : _buildDocumentView(
-                                  filteredReports[selectedReportIndex!],
-                                  advisedTeams.firstWhere(
-                                    (t) => (t['id']?.toString() ?? t['name']) == selectedTeamId,
-                                    orElse: () => {},
-                                  ),
-                                ),
-                ),
               ],
             ),
-          ),
-        ],
-      ),
     );
   }
 
@@ -417,7 +493,7 @@ class _WeeklyProgressReportsScreenState
     return Container(
       color: Colors.grey.shade200,
       child: SingleChildScrollView(
-        padding: const EdgeInsets.all(40),
+        padding: EdgeInsets.all(widget.embeddedTeamId != null ? 20 : 40),
         child: Center(
           child: Container(
             constraints: const BoxConstraints(maxWidth: 900),

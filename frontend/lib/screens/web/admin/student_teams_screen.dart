@@ -58,6 +58,7 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
     this.mode = TeamListMode.capstoneAdmin,
     this.onOpenStudentRecords,
     this.initialBulkImport = false,
+    this.pitYearLevel,
   });
 
   final TeamListMode mode;
@@ -65,6 +66,7 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
   /// Opens Student Academic Records (rollover) from the admin shell.
   final VoidCallback? onOpenStudentRecords;
   final bool initialBulkImport;
+  final String? pitYearLevel;
 
   @override
   ConsumerState<StudentTeamsScreen> createState() => _StudentTeamsScreenState();
@@ -190,6 +192,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     ref.read(studentTeamsProvider.notifier).fetchTeams(
           level: initialLevel,
           scope: (_isPitLeadManager || _isPitInstructor) ? (scope ?? _teamListScope) : null,
+          yearLevel: widget.pitYearLevel,
         );
   }
 
@@ -222,7 +225,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             title: 'Student Teams',
             subtitle: _isCapstoneAdmin
                 ? 'Manage capstone project teams, assign advisers, and review defense context.'
-                : 'Manage PIT teams and PIT events for your assigned year level.',
+                : 'Manage PIT teams and PIT events setup for your assigned year level.',
             actions: _headerActions(state),
           ),
           const SizedBox(height: 26),

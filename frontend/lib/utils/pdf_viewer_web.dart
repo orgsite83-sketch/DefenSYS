@@ -23,32 +23,104 @@ Future<void> downloadBytesFile({
   html.Url.revokeObjectUrl(url);
 }
 
-Future<void> viewPdfInDialog({
+Future<void> viewFileInDialog({
   required BuildContext context,
-  required List<int> pdfBytes,
+  required List<int> fileBytes,
   required String fileName,
 }) async {
-  // Create a blob URL from the PDF bytes
-  final blob = html.Blob([pdfBytes], 'application/pdf');
+  final lowerName = fileName.toLowerCase();
+  
+  String mimeType = 'application/octet-stream';
+  bool isPdf = false;
+  bool isVideo = false;
+  bool isImage = false;
+  
+  if (lowerName.endsWith('.pdf')) {
+    mimeType = 'application/pdf';
+    isPdf = true;
+  } else if (lowerName.endsWith('.mp4')) {
+    mimeType = 'video/mp4';
+    isVideo = true;
+  } else if (lowerName.endsWith('.mov')) {
+    mimeType = 'video/quicktime';
+    isVideo = true;
+  } else if (lowerName.endsWith('.avi')) {
+    mimeType = 'video/x-msvideo';
+    isVideo = true;
+  } else if (lowerName.endsWith('.mkv')) {
+    mimeType = 'video/x-matroska';
+    isVideo = true;
+  } else if (lowerName.endsWith('.png')) {
+    mimeType = 'image/png';
+    isImage = true;
+  } else if (lowerName.endsWith('.jpg') || lowerName.endsWith('.jpeg')) {
+    mimeType = 'image/jpeg';
+    isImage = true;
+  } else if (lowerName.endsWith('.webp')) {
+    mimeType = 'image/webp';
+    isImage = true;
+  } else if (lowerName.endsWith('.gif')) {
+    mimeType = 'image/gif';
+    isImage = true;
+  }
+  
+  // If it is not a previewable file, download it and return
+  if (!isPdf && !isVideo && !isImage) {
+    await downloadBytesFile(bytes: fileBytes, fileName: fileName, mimeType: mimeType);
+    if (context.mounted) {
+      showSuccessToast(
+        context,
+        'File downloaded',
+        duration: const Duration(seconds: 2),
+      );
+    }
+    return;
+  }
+  
+  // Create a blob URL from the file bytes
+  final blob = html.Blob([fileBytes], mimeType);
   final blobUrl = html.Url.createObjectUrlFromBlob(blob);
   
-  // Create a unique view type for this PDF
-  final viewType = 'pdf-iframe-${DateTime.now().millisecondsSinceEpoch}';
+  // Create a unique view type for this file
+  final viewType = 'file-viewer-${DateTime.now().millisecondsSinceEpoch}-${fileName.hashCode}';
   
-  // Register iframe with the blob URL
+  // Register platform view factory based on file type
   ui_web.platformViewRegistry.registerViewFactory(
     viewType,
     (int viewId) {
-      final iframe = html.IFrameElement()
-        ..src = blobUrl
-        ..style.border = 'none'
-        ..style.width = '100%'
-        ..style.height = '100%';
-      return iframe;
+      if (isPdf) {
+        return html.IFrameElement()
+          ..src = blobUrl
+          ..style.border = 'none'
+          ..style.width = '100%'
+          ..style.height = '100%';
+      } else if (isVideo) {
+        final video = html.VideoElement()
+          ..src = blobUrl
+          ..controls = true
+          ..autoplay = true
+          ..style.border = 'none'
+          ..style.width = '100%'
+          ..style.height = '100%';
+        return video;
+      } else {
+        // Image
+        return html.ImageElement()
+          ..src = blobUrl
+          ..style.border = 'none'
+          ..style.objectFit = 'contain'
+          ..style.width = '100%'
+          ..style.height = '100%';
+      }
     },
   );
   
-  // Show PDF viewer dialog
+  IconData headerIcon = Icons.insert_drive_file;
+  if (isPdf) headerIcon = Icons.picture_as_pdf;
+  if (isVideo) headerIcon = Icons.video_library;
+  if (isImage) headerIcon = Icons.image;
+  
+  // Show file viewer dialog
   await showDialog(
     context: context,
     builder: (dialogContext) => Dialog(
@@ -75,7 +147,7 @@ Future<void> viewPdfInDialog({
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.picture_as_pdf, color: Colors.white),
+                  Icon(headerIcon, color: Colors.white),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
@@ -99,7 +171,7 @@ Future<void> viewPdfInDialog({
                   // Download button
                   IconButton(
                     icon: const Icon(Icons.download, color: Colors.white),
-                    tooltip: 'Download PDF',
+                    tooltip: 'Download File',
                     onPressed: () {
                       html.AnchorElement(href: blobUrl)
                         ..setAttribute('download', fileName)
@@ -107,7 +179,7 @@ Future<void> viewPdfInDialog({
                       
                       showSuccessToast(
                         context,
-                        'PDF downloaded',
+                        'File downloaded',
                         duration: const Duration(seconds: 2),
                       );
                     },
@@ -122,7 +194,7 @@ Future<void> viewPdfInDialog({
                 ],
               ),
             ),
-            // PDF Viewer using iframe
+            // File Viewer
             Expanded(
               child: ClipRRect(
                 borderRadius: const BorderRadius.only(
@@ -141,3 +213,9 @@ Future<void> viewPdfInDialog({
   // Clean up blob URL when dialog closes
   html.Url.revokeObjectUrl(blobUrl);
 }
+
+Future<void> viewPdfInDialog({
+  required BuildContext context,
+  required List<int> pdfBytes,
+  required String fileName,
+}) => viewFileInDialog(context: context, fileBytes: pdfBytes, fileName: fileName);

@@ -134,6 +134,30 @@ def grade_center_payload(request, queryset=None, sync_info=None):
             many=True,
             context={'ordered_stages': active_stages},
         ).data
+        if semester:
+            from defense.scheduler.models import PitEventGradingConfig
+            from defense.scheduler.pit_config import pit_event_config_payload
+            from authentication_access_control.scopes import is_pit_lead_only, _pit_year
+
+            pit_lead = is_pit_lead_only(request.user)
+            pit_year = _pit_year(request.user) if pit_lead else None
+
+            configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
+            if pit_lead:
+                if pit_year:
+                    from repository.audit.services import PIT_YEAR_EVENT_HINTS
+                    exclude_filter = Q()
+                    for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                        if y != pit_year:
+                            for hint in hints:
+                                exclude_filter |= Q(event_name__icontains=hint)
+                    if exclude_filter:
+                        configs = configs.exclude(exclude_filter)
+                else:
+                    configs = configs.none()
+            payload['pit_events'] = [pit_event_config_payload(c) for c in configs]
+        else:
+            payload['pit_events'] = []
     if sync_info is not None:
         payload['sync'] = sync_info
     return payload

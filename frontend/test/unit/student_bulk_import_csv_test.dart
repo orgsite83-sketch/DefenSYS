@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/utils/student_bulk_import_csv.dart';
+import 'package:defensys/utils/student_bulk_import_csv.dart';
 
 void main() {
   test('each year level sample has four students', () {

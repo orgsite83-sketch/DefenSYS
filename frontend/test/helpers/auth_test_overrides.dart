@@ -1,7 +1,7 @@
 import 'dart:convert';
 
 import 'package:riverpod/misc.dart' show Override;
-import 'package:user/services/auth_provider.dart';
+import 'package:defensys/services/auth_provider.dart';
 
 /// Access token with far-future `exp` so proactive refresh does not run in tests.
 String get testAccessToken {

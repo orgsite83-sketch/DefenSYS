@@ -3,9 +3,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:user/services/api_http.dart';
-import 'package:user/services/authenticated_client.dart';
-import 'package:user/services/session_expired.dart';
+import 'package:defensys/services/api_http.dart';
+import 'package:defensys/services/authenticated_client.dart';
+import 'package:defensys/services/session_expired.dart';
 
 import '../helpers/auth_test_overrides.dart';
 

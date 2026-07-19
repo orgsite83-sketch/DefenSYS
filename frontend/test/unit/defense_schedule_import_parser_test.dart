@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/utils/defense_schedule_import_parser.dart';
+import 'package:defensys/utils/defense_schedule_import_parser.dart';
 
 void main() {
   group('parseScheduleImportFile', () {

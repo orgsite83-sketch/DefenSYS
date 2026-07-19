@@ -545,6 +545,29 @@ class _GradeFormState extends State<_GradeForm> {
     final adviserWeight = (grade['weights'] as Map?)?['adviser'];
     final isAlreadyGraded = grade['adviser_score'] != null;
 
+    final scheduleId = grade['schedule_id'];
+    final rawScheduledDate = grade['scheduled_date'];
+    DateTime? scheduledDate;
+    if (rawScheduledDate != null) {
+      scheduledDate = DateTime.tryParse(rawScheduledDate.toString());
+    }
+
+    bool isLockedBySchedule = false;
+    String lockReason = '';
+
+    if (scheduleId == null) {
+      isLockedBySchedule = true;
+      lockReason = "Adviser grading is locked because this team's defense has not been scheduled yet.";
+    } else {
+      final now = DateTime.now();
+      final today = DateTime(now.year, now.month, now.day);
+      if (scheduledDate != null && today.isBefore(scheduledDate)) {
+        final formattedDate = "${scheduledDate.year}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}";
+        isLockedBySchedule = true;
+        lockReason = "Adviser grading is locked until the scheduled defense date: $formattedDate.";
+      }
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
@@ -586,6 +609,7 @@ class _GradeFormState extends State<_GradeForm> {
                       const SizedBox(height: 8),
                       Wrap(
                         spacing: 8,
+                        runSpacing: 8,
                         children: [
                           if (stageLabel.isNotEmpty) _tag(stageLabel, _maroon),
                           if (adviserWeight != null) _tag('Adviser Weight: $adviserWeight%', Colors.blueGrey),
@@ -601,51 +625,88 @@ class _GradeFormState extends State<_GradeForm> {
           ),
           const SizedBox(height: 20),
 
-          _sectionLabel('Assigned adviser rubric'),
-          const SizedBox(height: 8),
-          _selectedRubric == null
-              ? Container(
-                  padding: const EdgeInsets.all(16),
-                  decoration: BoxDecoration(
-                    color: AppColors.warning.withValues(alpha: 0.08),
-                    border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: const Row(
-                    children: [
-                      Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 18),
-                      SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          'No adviser rubric is assigned for this defense stage yet. '
-                          'Ask your administrator to set panel, adviser, and peer rubrics in Defense Stages or the scheduler.',
-                          style: TextStyle(color: AppColors.warning, fontSize: 13),
-                        ),
+          if (isLockedBySchedule) ...[
+            Container(
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _neutralBorder),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded, size: 56, color: _steelGrey),
+                    const SizedBox(height: 16),
+                    const Text(
+                      'Grading Locked',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _textDark,
                       ),
-                    ],
-                  ),
-                )
-              : Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: _maroon.withValues(alpha: 0.06),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: _maroon.withValues(alpha: 0.2)),
-                  ),
-                  child: Text(
-                    '${_selectedRubric!['name']} (${_selectedRubric!['scale'] ?? 'Rubric'})',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: _textDark,
-                      fontSize: 14,
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      lockReason,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: _steelGrey,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ] else if (_selectedRubric == null) ...[
+            _sectionLabel('Assigned adviser rubric'),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.warning.withValues(alpha: 0.08),
+                border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, color: AppColors.warning, size: 18),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'No adviser rubric is assigned for this defense stage yet. '
+                      'Ask your administrator to set panel, adviser, and peer rubrics in Defense Stages Setup or the scheduler.',
+                      style: TextStyle(color: AppColors.warning, fontSize: 13),
                     ),
                   ),
+                ],
+              ),
+            ),
+          ] else ...[
+            _sectionLabel('Assigned adviser rubric'),
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: _maroon.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _maroon.withValues(alpha: 0.2)),
+              ),
+              child: Text(
+                '${_selectedRubric!['name']} (${_selectedRubric!['scale'] ?? 'Rubric'})',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  color: _textDark,
+                  fontSize: 14,
                 ),
-          const SizedBox(height: 22),
+              ),
+            ),
+            const SizedBox(height: 22),
 
-          // ─ Criteria scoring table ────────────────────────────────────────
-          if (_selectedRubric != null) ...[
             Row(
               children: [
                 _sectionLabel('Score Each Criterion'),
@@ -705,88 +766,71 @@ class _GradeFormState extends State<_GradeForm> {
                 );
               },
             ),
-          ] else ...[
-            // Manual score fallback
-            _sectionLabel('Adviser Score (0 – 100)'),
-            const SizedBox(height: 8),
-            SizedBox(
-              width: 220,
-              child: TextFormField(
-                controller: _manualScoreCtrl,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: _inputDec('e.g. 87.50'),
-              ),
-            ),
-          ],
-          const SizedBox(height: 28),
+            const SizedBox(height: 28),
 
-          // ─ Submit button ─────────────────────────────────────────────────
-          Builder(builder: (_) {
-            // When a rubric is selected, require all criteria to be filled.
-            // When no rubric (manual mode), the button is always active.
-            final canSubmit = _selectedRubric != null
-                ? _allCriteriaFilled()
-                : (double.tryParse(_manualScoreCtrl.text.trim()) != null);
+            // ─ Submit button ─────────────────────────────────────────────────
+            Builder(builder: (_) {
+              final canSubmit = _allCriteriaFilled();
+              final notReadyHint = !canSubmit;
 
-            final notReadyHint = _selectedRubric != null && !canSubmit;
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                if (notReadyHint)
-                  Container(
-                    margin: const EdgeInsets.only(bottom: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.08),
-                      border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.info_outline_rounded,
-                            color: AppColors.warning, size: 16),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Score all ${(_selectedRubric!['criteria'] as List? ?? []).length} criteria before submitting.',
-                            style: const TextStyle(
-                                color: AppColors.warning,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w600),
+              return Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (notReadyHint)
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.08),
+                        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.info_outline_rounded,
+                              color: AppColors.warning, size: 16),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Score all ${(_selectedRubric!['criteria'] as List? ?? []).length} criteria before submitting.',
+                              style: const TextStyle(
+                                  color: AppColors.warning,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600),
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
+                    ),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: (widget.isSaving || !canSubmit) ? null : _submit,
+                      icon: widget.isSaving
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: Colors.white))
+                          : const Icon(Icons.save_rounded, size: 18),
+                      label: Text(
+                        isAlreadyGraded ? 'Update Grade' : 'Submit Grade',
+                        style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+                      ),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: canSubmit ? _maroon : Colors.grey.shade300,
+                        foregroundColor: canSubmit ? Colors.white : Colors.grey.shade500,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10)),
+                        elevation: 0,
+                      ),
                     ),
                   ),
-                SizedBox(
-                  width: double.infinity,
-                  child: ElevatedButton.icon(
-                    onPressed: (widget.isSaving || !canSubmit) ? null : _submit,
-                    icon: widget.isSaving
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                                strokeWidth: 2, color: Colors.white))
-                        : const Icon(Icons.save_rounded, size: 18),
-                    label: Text(
-                      isAlreadyGraded ? 'Update Grade' : 'Submit Grade',
-                      style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: canSubmit ? _maroon : Colors.grey.shade300,
-                      foregroundColor: canSubmit ? Colors.white : Colors.grey.shade500,
-                      padding: const EdgeInsets.symmetric(vertical: 16),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10)),
-                      elevation: 0,
-                    ),
-                  ),
-                ),
-              ],
-            );
-          }),
+                ],
+              );
+            }),
+          ],
         ],
       ),
     );

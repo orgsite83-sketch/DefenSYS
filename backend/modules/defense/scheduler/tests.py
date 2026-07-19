@@ -1248,6 +1248,84 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.data['config']['panel_weight'], 80)
         self.assertEqual(response.data['config']['archive_file_template'], 'updated-template-{project}')
 
+    def test_pit_lead_can_only_access_their_own_year_level_event_configs(self):
+        # Create a 1st Year PIT configuration and a 2nd Year PIT configuration
+        config_1st = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='1st Year PIT Expo',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=80,
+            peer_weight=20,
+        )
+        config_2nd = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Expo',
+            panel_rubric=self.panel_rubric,
+            peer_rubric=self.peer_rubric,
+            panel_weight=80,
+            peer_weight=20,
+        )
+
+        # Create a PIT lead for 2nd Year
+        pit_lead_2nd = User.objects.create_user(
+            username='pit-lead-2nd-year-test',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+
+        self.client.force_authenticate(user=pit_lead_2nd)
+
+        # GET configurations list - should only return 2nd Year configs
+        response_list = self.client.get('/api/defense/schedules/pit-event-config/')
+        self.assertEqual(response_list.status_code, 200)
+        configs = response_list.data['configs']
+        self.assertEqual(len(configs), 1)
+        self.assertEqual(configs[0]['event_name'], '2nd Year PIT Expo')
+
+        # GET lookup of 1st Year config - should be forbidden (403)
+        response_lookup_1st = self.client.get(
+            '/api/defense/schedules/pit-event-config/',
+            {'event_name': '1st Year PIT Expo', 'semester_id': self.semester.id},
+        )
+        self.assertEqual(response_lookup_1st.status_code, 403)
+
+        # GET lookup of 2nd Year config - should be allowed (200)
+        response_lookup_2nd = self.client.get(
+            '/api/defense/schedules/pit-event-config/',
+            {'event_name': '2nd Year PIT Expo', 'semester_id': self.semester.id},
+        )
+        self.assertEqual(response_lookup_2nd.status_code, 200)
+
+        # POST (save) 1st Year config - should be forbidden (403)
+        response_post_1st = self.client.post(
+            '/api/defense/schedules/pit-event-config/',
+            {
+                'event_name': '1st Year New Expo',
+                'semester_id': self.semester.id,
+                'panel_rubric_id': self.panel_rubric.id,
+                'peer_rubric_id': self.peer_rubric.id,
+                'panel_weight': 70,
+                'peer_weight': 30,
+            },
+            format='json'
+        )
+        self.assertEqual(response_post_1st.status_code, 403)
+
+        # DELETE 1st Year config - should be forbidden (403)
+        response_delete_1st = self.client.delete(
+            f'/api/defense/schedules/pit-event-config/?config_id={config_1st.id}'
+        )
+        self.assertEqual(response_delete_1st.status_code, 403)
+
+        # DELETE 2nd Year config - should be allowed (200)
+        response_delete_2nd = self.client.delete(
+            f'/api/defense/schedules/pit-event-config/?config_id={config_2nd.id}'
+        )
+        self.assertEqual(response_delete_2nd.status_code, 200)
+
     def test_panelist_assignments_returns_pit_grade_weights_without_adviser(self):
         self.client.post(
             '/api/defense/schedules/confirm-plan/',

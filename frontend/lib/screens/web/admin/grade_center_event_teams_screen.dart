@@ -66,7 +66,7 @@ class GradeCenterEventTeamsScreen extends ConsumerWidget {
                 color: DefensysUi.primaryMaroon,
               ),
               label: Text(
-                'Back to Grade Center',
+                'Back to Evaluation & Grades',
                 style: TextStyle(
                   fontFamily: DefensysUi.fontFamily,
                   fontWeight: FontWeight.w600,

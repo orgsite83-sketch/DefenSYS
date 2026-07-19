@@ -155,7 +155,17 @@ def current_stage_for_team(team):
         # Or, if they have configured events for this semester,
         # find the first event for which they don't have a STATUS_DONE schedule.
         from defense.scheduler.models import PitEventGradingConfig
-        configs = list(PitEventGradingConfig.objects.filter(semester=team.semester).order_by('event_name'))
+        from repository.audit.services import PIT_YEAR_EVENT_HINTS
+        configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+        if team.year_level:
+            exclude_filter = Q()
+            for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                if y != team.year_level:
+                    for hint in hints:
+                        exclude_filter |= Q(event_name__icontains=hint)
+            if exclude_filter:
+                configs_qs = configs_qs.exclude(exclude_filter)
+        configs = list(configs_qs.order_by('event_name'))
         if configs:
             completed_events = set(
                 DefenseSchedule.objects.filter(
@@ -236,6 +246,10 @@ def team_queryset_for_user(user):
 def filter_teams(request, queryset):
     search = request.query_params.get('search', '').strip()
     status_filter = request.query_params.get('status', '').strip()
+    year_level = request.query_params.get('year_level', '').strip()
+
+    if year_level:
+        queryset = queryset.filter(year_level=year_level)
 
     if search:
         queryset = queryset.filter(
@@ -251,12 +265,19 @@ def filter_teams(request, queryset):
     if status_filter == 'ready':
         queryset = queryset.exclude(ready_for_stage__isnull=True).exclude(ready_for_stage='')
     elif status_filter == 'missing':
-        ready_ids = [
+        missing_ids = [
             team.id
             for team in queryset
-            if required_complete(team, current_stage_for_team(team))
+            if team_stage_status(team, current_stage_for_team(team)) in ('missing', 'needs_revision')
         ]
-        queryset = queryset.exclude(pk__in=ready_ids)
+        queryset = queryset.filter(pk__in=missing_ids)
+    elif status_filter == 'pending_review':
+        pending_ids = [
+            team.id
+            for team in queryset
+            if team_stage_status(team, current_stage_for_team(team)) == 'pending_review'
+        ]
+        queryset = queryset.filter(pk__in=pending_ids)
 
     return queryset
 
@@ -288,6 +309,38 @@ def required_complete(team, stage_label):
         for item in get_deliverable_definitions_for_team(team, stage_label)
         if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
     )
+
+
+def team_stage_status(team, stage_label):
+    configured = stage_deliverables_configured(team, stage_label)
+    if not configured:
+        return 'not_configured'
+    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label)
+    if is_endorsed:
+        return 'endorsed'
+    if required_complete(team, stage_label):
+        return 'complete'
+    
+    # Check submissions
+    submitted = submissions_for(team, stage_label)
+    definitions = get_deliverable_definitions_for_team(team, stage_label)
+    required_items = [item for item in definitions if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']]
+    if not required_items:
+        return 'complete'
+        
+    all_uploaded = all(item['id'] in submitted for item in required_items)
+    if not all_uploaded:
+        return 'missing'
+        
+    any_rejected = any(
+        submitted[item['id']].status == DeliverableSubmission.STATUS_REJECTED
+        for item in required_items
+        if item['id'] in submitted
+    )
+    if any_rejected:
+        return 'needs_revision'
+        
+    return 'pending_review'
 
 
 def stage_payload(team, stage_label):
@@ -336,12 +389,16 @@ def stage_payload(team, stage_label):
         not archive_required_items
         or all(item['uploaded'] for item in archive_required_items)
     )
+    
+    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label)
+
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
-        'endorsed': was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label),
+        'endorsed': is_endorsed,
         'archive_unlocked': unlocked,
         'required_complete': configured and required_complete(team, stage_label),
+        'status': team_stage_status(team, stage_label),
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
@@ -390,9 +447,18 @@ def team_payload(team, selected_stage=None):
         configured_stage_labels = list(STAGE_OPTIONS)
     else:
         from defense.scheduler.models import PitEventGradingConfig
+        from repository.audit.services import PIT_YEAR_EVENT_HINTS
+        configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+        if team.year_level:
+            exclude_filter = Q()
+            for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                if y != team.year_level:
+                    for hint in hints:
+                        exclude_filter |= Q(event_name__icontains=hint)
+            if exclude_filter:
+                configs_qs = configs_qs.exclude(exclude_filter)
         configured_stage_labels = list(
-            PitEventGradingConfig.objects.filter(semester=team.semester)
-            .order_by('event_name')
+            configs_qs.order_by('event_name')
             .values_list('event_name', flat=True)
         )
     selected = selected_stage or current_stage_for_team(team)
@@ -466,6 +532,7 @@ def team_payload(team, selected_stage=None):
         'project_title': team.project_title,
         'level': team.level,
         'year_level': team.year_level,
+        'section': team.section,
         'status': team.status,
         'ready_for_stage': team.ready_for_stage,
         'current_defense_stage': team.current_defense_stage,
@@ -485,11 +552,17 @@ def counts_payload(teams):
     team_list = list(teams)
     submitted_total = sum(team.deliverable_submissions.count() for team in team_list)
     ready_count = sum(1 for team in team_list if team.ready_for_stage)
-    missing_count = sum(
-        1
-        for team in team_list
-        if not required_complete(team, current_stage_for_team(team))
-    )
+    
+    missing_count = 0
+    pending_count = 0
+    for team in team_list:
+        stage = current_stage_for_team(team)
+        status = team_stage_status(team, stage)
+        if status in ('missing', 'needs_revision'):
+            missing_count += 1
+        elif status == 'pending_review':
+            pending_count += 1
+
     archive_total = DeliverableSubmission.objects.filter(
         team__in=team_list,
         deliverable_type=DeliverableSubmission.TYPE_POST,
@@ -498,6 +571,7 @@ def counts_payload(teams):
         'teams': len(team_list),
         'ready': ready_count,
         'missing_requirements': missing_count,
+        'pending_review': pending_count,
         'submitted_files': submitted_total,
         'archive_files': archive_total,
     }

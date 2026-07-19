@@ -704,7 +704,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               border: Border.all(color: const Color(0xFFBFDBFE)),
             ),
             child: const Text(
-              'PIT peer grading is configured per event in Grade Center.',
+              'PIT peer grading is configured per event in Evaluation & Grades.',
               style: TextStyle(
                 color: Color(0xFF1E40AF),
                 fontSize: 12,

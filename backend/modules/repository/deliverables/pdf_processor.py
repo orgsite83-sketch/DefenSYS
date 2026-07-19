@@ -6,7 +6,10 @@ Uses pdfplumber for text extraction and scikit-learn for TF-IDF keyword extracti
 import os
 import re
 import tempfile
+import logging
 from typing import Dict, List
+
+logger = logging.getLogger(__name__)
 
 
 def extract_pdf_from_file_object(file_obj, file_name: str = '', classify: bool = False) -> Dict[str, any]:
@@ -57,12 +60,12 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
     
     # Check if file exists
     if not os.path.exists(file_path):
-        print(f'Warning: PDF file not found: {file_path}')
+        logger.warning(f'PDF file not found: {file_path}')
         return result
     
     # Check if file is actually a PDF
     if not file_path.lower().endswith('.pdf'):
-        print(f'Warning: Not a PDF file: {file_path}')
+        logger.warning(f'Not a PDF file: {file_path}')
         return result
     
     try:
@@ -71,16 +74,16 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
         # Extract text from PDF
         full_text = []
         with pdfplumber.open(file_path) as pdf:
-            print(f'Extracting text from {len(pdf.pages)} pages...')
+            logger.info(f'Extracting text from {len(pdf.pages)} pages...')
             
             for page_num, page in enumerate(pdf.pages, 1):
                 try:
                     text = page.extract_text()
                     if text:
                         full_text.append(text)
-                        print(f'Page {page_num}: {len(text)} chars')
+                        logger.info(f'Page {page_num}: {len(text)} chars')
                 except Exception as e:
-                    print(f'Warning: Page {page_num} extraction failed: {e}')
+                    logger.warning(f'Page {page_num} extraction failed: {e}')
                     continue
         
         # Combine all text
@@ -91,13 +94,13 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
         clean_text = re.sub(r'\s+', ' ', combined_text).strip()
         result['summary'] = clean_text[:500] + ('...' if len(clean_text) > 500 else '')
         
-        print(f'Extracted {len(combined_text)} characters')
+        logger.info(f'Extracted {len(combined_text)} characters')
         
         # Extract topics using TF-IDF
         if combined_text:
             topics = extract_topics_tfidf(combined_text)
             result['topics'] = topics
-            print(f'Extracted {len(topics)} topics: {topics[:5]}...')
+            logger.info(f'Extracted {len(topics)} topics: {topics[:5]}...')
         
         # Classify document category using Naive Bayes (optional)
         if classify and combined_text:
@@ -107,14 +110,14 @@ def extract_pdf_content(file_path: str, classify: bool = False) -> Dict[str, any
                 result['category'] = classification['predicted_category']
                 result['confidence'] = classification['confidence']
                 result['classification'] = classification
-                print(f'Classified as: {classification["predicted_category"]} ({classification["confidence"]})')
+                logger.info(f'Classified as: {classification["predicted_category"]} ({classification["confidence"]})')
             except Exception as e:
-                print(f'Warning: Classification failed: {e}')
+                logger.warning(f'Classification failed: {e}')
         
     except ImportError:
-        print('pdfplumber not installed. Run: pip install pdfplumber')
+        logger.error('pdfplumber not installed. Run: pip install pdfplumber')
     except Exception as e:
-        print(f'PDF extraction error: {e}')
+        logger.error(f'PDF extraction error: {e}')
     
     return result
 
@@ -141,7 +144,7 @@ def extract_topics_tfidf(text: str, max_topics: int = 10) -> List[str]:
         
         # Check if text is too short
         if len(text.split()) < 10:
-            print('Warning: Text too short for topic extraction')
+            logger.warning('Text too short for topic extraction')
             return []
         
         # TF-IDF vectorization with adjusted parameters for small corpus
@@ -167,10 +170,10 @@ def extract_topics_tfidf(text: str, max_topics: int = 10) -> List[str]:
         return topics
         
     except ImportError:
-        print('scikit-learn not installed. Run: pip install scikit-learn')
+        logger.error('scikit-learn not installed. Run: pip install scikit-learn')
         return []
     except Exception as e:
-        print(f'Topic extraction error: {e}')
+        logger.error(f'Topic extraction error: {e}')
         return []
 
 

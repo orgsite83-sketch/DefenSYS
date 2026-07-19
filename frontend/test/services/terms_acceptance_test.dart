@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:user/services/auth_storage_keys.dart';
-import 'package:user/services/terms_acceptance.dart';
-import 'package:user/services/terms_constants.dart';
+import 'package:defensys/services/auth_storage_keys.dart';
+import 'package:defensys/services/terms_acceptance.dart';
+import 'package:defensys/services/terms_constants.dart';
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();

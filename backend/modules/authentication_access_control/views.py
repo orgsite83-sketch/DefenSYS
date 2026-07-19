@@ -1,3 +1,4 @@
+import os
 from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.utils.dateparse import parse_date
@@ -84,10 +85,12 @@ class CurrentUserView(APIView):
                             status=status.HTTP_400_BAD_REQUEST
                         )
                     
-                    # Validate extension
-                    import os
+                    # Validate extension and content type
                     ext = os.path.splitext(avatar_file.name)[1].lower().replace('.', '')
-                    if ext not in ['png', 'jpg', 'jpeg', 'webp']:
+                    if (
+                        ext not in ['png', 'jpg', 'jpeg', 'webp'] or
+                        avatar_file.content_type not in ['image/jpeg', 'image/png', 'image/webp']
+                    ):
                         return Response(
                             {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
                             status=status.HTTP_400_BAD_REQUEST

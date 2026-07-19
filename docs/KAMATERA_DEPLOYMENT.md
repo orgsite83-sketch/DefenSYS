@@ -229,8 +229,6 @@ POSTGRES_USER=defensys
 POSTGRES_PASSWORD="REPLACE_WITH_STRONG_DB_PASSWORD"
 POSTGRES_HOST=localhost
 POSTGRES_PORT=5432
-
-USE_S3=False
 ```
 
 Generate a secret key on the server:
@@ -239,13 +237,14 @@ Generate a secret key on the server:
 python3.12 -c "import secrets; print(secrets.token_urlsafe(50))"
 ```
 
-### Migrate and create admin
+### Migrate, collect static files, and create admin
 
 ```bash
 cd /opt/defensys/backend
 source venv/bin/activate
 python manage.py check --deploy
 python manage.py migrate
+python manage.py collectstatic --noinput
 ```
 
 Create the bootstrap admin (from [DEPLOYMENT.md](DEPLOYMENT.md)):
@@ -275,6 +274,11 @@ Create a systemd unit:
 ```bash
 sudo nano /etc/systemd/system/defensys.service
 ```
+
+> **Note:** Alternatively, you can copy the pre-configured file from the repository:
+> ```bash
+> sudo cp /opt/defensys/deployment/systemd/defensys.service /etc/systemd/system/defensys.service
+> ```
 
 Paste (adjust `User` if needed):
 
@@ -342,6 +346,11 @@ Local dev without Redis: `DEFENSYS_USE_INMEMORY_CHANNELS=1` in `.env` (single-pr
 ```bash
 sudo nano /etc/systemd/system/defensys-ws.service
 ```
+
+> **Note:** Alternatively, you can copy the pre-configured file from the repository:
+> ```bash
+> sudo cp /opt/defensys/deployment/systemd/defensys-ws.service /etc/systemd/system/defensys-ws.service
+> ```
 
 ```ini
 [Unit]
@@ -425,6 +434,11 @@ Create the site config:
 sudo nano /etc/nginx/sites-available/defensys
 ```
 
+> **Note:** Alternatively, you can copy the pre-configured template from the repository and edit the domain name as needed:
+> ```bash
+> sudo cp /opt/defensys/deployment/nginx/defensys.conf /etc/nginx/sites-available/defensys
+> ```
+
 Paste (replace `defensys.yourdomain.edu`):
 
 ```nginx
@@ -443,7 +457,7 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 100M;
+        client_max_body_size 500M; # Matches Django's 500MB upload limit
     }
 
     location /admin/ {
@@ -452,6 +466,11 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # Django static files (admin assets, etc.)
+    location /static/ {
+        alias /opt/defensys/backend/staticfiles/;
     }
 
     # WebSocket: live grading flags (Daphne on 8001)
@@ -579,23 +598,37 @@ Use the checklist from [DEPLOYMENT.md](DEPLOYMENT.md):
 
 In the Kamatera console, schedule **periodic snapshots** of the VM for quick full-disk restore.
 
-### PostgreSQL backup (daily cron example)
+### PostgreSQL backup (daily automated script)
+
+We use a Python script (`/opt/defensys/deployment/backup/backup_db.py`) to manage PostgreSQL backups. The script performs a secure `pg_dump` and cleans up old dumps locally based on a configurable retention period (default: 7 days).
+
+Set up directory permissions and schedule the daily script:
 
 ```bash
+# Set up database backup directory
 sudo mkdir -p /var/backups/defensys
-sudo chown defensys:defensys /var/backups/defensys
+sudo chown -R defensys:defensys /var/backups/defensys
+
+# Edit crontab
 crontab -e
 ```
 
-Add:
+Add the following cron task to run the backup script daily at 2:00 AM:
 
 ```cron
-0 2 * * * pg_dump -h localhost -U defensys defensys_db | gzip > /var/backups/defensys/db_$(date +\%F).sql.gz
+0 2 * * * /usr/bin/python3 /opt/defensys/deployment/backup/backup_db.py >> /var/log/defensys_backup.log 2>&1
 ```
+
+For custom backup locations or retention durations, refer to the [backup/README.md](../deployment/backup/README.md).
 
 ### Media files
 
-Back up `/opt/defensys/backend/media/` regularly, or set `USE_S3=true` in `.env` for durable object storage.
+Since media files are stored locally in the server's filesystem, back up the media directory regularly:
+
+```bash
+# Compress the media folder
+tar -czf /var/backups/defensys/media_$(date +\%F).tar.gz /opt/defensys/backend/media/
+```
 
 ### Deploy updates
 

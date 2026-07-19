@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:riverpod/misc.dart' show Override;
-import 'package:user/screens/web/admin/student_teams_screen.dart';
-import 'package:user/services/dashboard_provider.dart';
-import 'package:user/services/student_teams_provider.dart';
+import 'package:defensys/screens/web/admin/student_teams_screen.dart';
+import 'package:defensys/services/dashboard_provider.dart';
+import 'package:defensys/services/student_teams_provider.dart';
 
 import '../helpers/pump_app.dart';
 
@@ -21,6 +21,7 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
     String? level,
     String? status,
     String? scope,
+    String? yearLevel,
     String? successMessage,
   }) async {}
 }
@@ -118,7 +119,9 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('Capstone Teams'), findsOneWidget);
-    expect(find.text('Details'), findsWidgets);
+    await tester.tap(find.text('Unassigned Section'));
+    await tester.pumpAndSettle();
+    expect(find.text('DETAILS'), findsWidgets);
     expect(find.byIcon(Icons.info_outline), findsWidgets);
     expect(find.byIcon(Icons.delete_rounded), findsNothing);
   });
@@ -184,13 +187,15 @@ void main() {
 
     expect(
       find.text(
-        'Manage PIT teams and PIT events for your assigned year level.',
+        'Manage PIT teams and PIT events setup for your assigned year level.',
       ),
       findsOneWidget,
     );
     expect(find.text('Capstone Teams'), findsNothing);
     expect(find.text('Adviser Review'), findsNothing);
-    expect(find.text('PIT Event'), findsOneWidget);
+    await tester.tap(find.text('Unassigned Section'));
+    await tester.pumpAndSettle();
+    expect(find.text('PIT EVENT'), findsOneWidget);
   });
 
   testWidgets(

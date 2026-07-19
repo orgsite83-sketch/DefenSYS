@@ -335,7 +335,7 @@ class PitLeadDashboardContent extends StatelessWidget {
               icon: Icons.grading_outlined,
               iconColor: const Color(0xFF2563EB),
               iconBackground: const Color(0xFFDCEBFF),
-              title: 'Grade Center',
+              title: 'Evaluation & Grades',
               subtitle: 'Review and publish team grades',
               onTap: onOpenGradeCenter,
             ),

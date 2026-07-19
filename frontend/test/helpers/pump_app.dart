@@ -3,8 +3,8 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:riverpod/misc.dart' show Override;
-import 'package:user/l10n/app_localizations.dart';
-import 'package:user/theme/app_theme.dart';
+import 'package:defensys/l10n/app_localizations.dart';
+import 'package:defensys/theme/app_theme.dart';
 
 Future<void> pumpDefensysWidget(
   WidgetTester tester,

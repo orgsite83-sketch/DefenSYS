@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../../services/authenticated_client.dart';
@@ -12,6 +13,8 @@ import '../../../widgets/empty_state.dart';
 import '../../../widgets/error_banner.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../widgets/feedback_toast.dart';
+import '../../../utils/pdf_viewer.dart';
 
 
 // ── Data models ───────────────────────────────────────────────────────────────
@@ -1009,31 +1012,55 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                 ),
 
                 // Action Button footer
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.pop(context); // Close dialog first
-                            _showViewer(e); // Then open viewer
-                          },
-                          icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                          label: const Text('Read Document', style: TextStyle(fontWeight: FontWeight.bold)),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: DefensysTokens.maroon,
-                            foregroundColor: Colors.white,
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
+                Builder(
+                  builder: (context) {
+                    final lowerName = e.fileName.toLowerCase();
+                    final isPdf = lowerName.endsWith('.pdf');
+                    final isPreviewable = isPdf ||
+                        lowerName.endsWith('.png') ||
+                        lowerName.endsWith('.jpg') ||
+                        lowerName.endsWith('.jpeg') ||
+                        lowerName.endsWith('.webp') ||
+                        lowerName.endsWith('.gif') ||
+                        lowerName.endsWith('.mp4') ||
+                        lowerName.endsWith('.mov') ||
+                        lowerName.endsWith('.avi') ||
+                        lowerName.endsWith('.mkv');
+
+                    final buttonIcon = isPreviewable
+                        ? (isPdf ? Icons.picture_as_pdf_rounded : Icons.visibility_rounded)
+                        : Icons.download_rounded;
+                    final buttonLabel = isPreviewable
+                        ? (isPdf ? 'Read Document' : 'View File')
+                        : 'Download File';
+
+                    return Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () {
+                                Navigator.pop(context); // Close dialog first
+                                _showViewer(e); // Then open viewer
+                              },
+                              icon: Icon(buttonIcon, size: 18),
+                              label: Text(buttonLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: DefensysTokens.maroon,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                elevation: 0,
+                              ),
                             ),
-                            elevation: 0,
                           ),
-                        ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  }
                 ),
               ],
             ),
@@ -1080,6 +1107,41 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     }
   }
 
+  Future<void> _viewOrDownloadNonPdf(String fileRef, String fileName) async {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      ),
+    );
+
+    try {
+      final bytes = await ref
+          .read(authenticatedHttpClientProvider)
+          .fetchAuthenticatedFile(fileRef);
+      if (mounted) Navigator.pop(context);
+      if (!mounted) return;
+
+      await viewFileInDialog(
+        context: context,
+        fileBytes: bytes,
+        fileName: fileName,
+      );
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        showErrorToast(context, 'Error opening file: $e. Downloading file instead.');
+        try {
+          final uri = Uri.parse(fileRef);
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (launchErr) {
+          showErrorToast(context, 'Could not download or open file: $launchErr');
+        }
+      }
+    }
+  }
+
   void _showViewer(VaultEntry e) {
     final authState = ref.read(authProvider);
     final user = authState.user;
@@ -1093,18 +1155,23 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
         ? e.fileUrl!
         : e.fileName;
 
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => _PDFViewerScreen(
-          fileName: e.deliverableLabel ?? e.fileName,
-          fileRef: fileRef,
-          teamName: e.teamName,
-          stage: e.stage,
-          studentId: studentId,
-          studentName: displayName,
+    final lowerName = e.fileName.toLowerCase();
+    if (lowerName.endsWith('.pdf')) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _PDFViewerScreen(
+            fileName: e.deliverableLabel ?? e.fileName,
+            fileRef: fileRef,
+            teamName: e.teamName,
+            stage: e.stage,
+            studentId: studentId,
+            studentName: displayName,
+          ),
         ),
-      ),
-    );
+      );
+    } else {
+      _viewOrDownloadNonPdf(fileRef, e.fileName);
+    }
   }
 }
 

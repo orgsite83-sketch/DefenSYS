@@ -26,8 +26,19 @@ class DeliverableUploadSerializer(serializers.Serializer):
             if stage_label not in valid_stages:
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid Capstone stage."})
         elif team.is_pit:
+            from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            valid_events = list(PitEventGradingConfig.objects.filter(semester=team.semester).values_list('event_name', flat=True))
+            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+            if team.year_level:
+                exclude_filter = Q()
+                for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                    if y != team.year_level:
+                        for hint in hints:
+                            exclude_filter |= Q(event_name__icontains=hint)
+                if exclude_filter:
+                    configs_qs = configs_qs.exclude(exclude_filter)
+            valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})
         else:
@@ -60,8 +71,19 @@ class DeliverableActionSerializer(serializers.Serializer):
             if stage_label not in valid_stages:
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid Capstone stage."})
         elif team.is_pit:
+            from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            valid_events = list(PitEventGradingConfig.objects.filter(semester=team.semester).values_list('event_name', flat=True))
+            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+            if team.year_level:
+                exclude_filter = Q()
+                for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                    if y != team.year_level:
+                        for hint in hints:
+                            exclude_filter |= Q(event_name__icontains=hint)
+                if exclude_filter:
+                    configs_qs = configs_qs.exclude(exclude_filter)
+            valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})
         else:
@@ -95,8 +117,19 @@ class DeliverableReviewSerializer(serializers.Serializer):
             if stage_label not in valid_stages:
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid Capstone stage."})
         elif team.is_pit:
+            from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            valid_events = list(PitEventGradingConfig.objects.filter(semester=team.semester).values_list('event_name', flat=True))
+            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+            if team.year_level:
+                exclude_filter = Q()
+                for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                    if y != team.year_level:
+                        for hint in hints:
+                            exclude_filter |= Q(event_name__icontains=hint)
+                if exclude_filter:
+                    configs_qs = configs_qs.exclude(exclude_filter)
+            valid_events = list(configs_qs.values_list('event_name', flat=True))
             if not any(e.lower() == stage_label.lower() for e in valid_events):
                 raise serializers.ValidationError({'stage_label': f"'{stage_label}' is not a valid PIT event for this semester."})
         else:

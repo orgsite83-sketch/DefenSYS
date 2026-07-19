@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/widgets/defensys_skeleton.dart';
+import 'package:defensys/widgets/defensys_skeleton.dart';
 
 void main() {
   testWidgets('DefensysSkeleton.list shows placeholder rows', (tester) async {

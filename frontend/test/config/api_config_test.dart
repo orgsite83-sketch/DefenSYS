@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/config/api_config.dart';
+import 'package:defensys/config/api_config.dart';
 
 void main() {
   test('authenticatedMediaUrl maps /media/ to authenticated proxy', () {

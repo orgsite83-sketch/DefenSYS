@@ -1,0 +1,19 @@
+[Unit]
+Description=DefenSYS Gunicorn
+After=network.target postgresql.service
+
+[Service]
+User=defensys
+Group=defensys
+WorkingDirectory=/opt/defensys/backend
+Environment="PATH=/opt/defensys/backend/venv/bin"
+ExecStart=/opt/defensys/backend/venv/bin/gunicorn \
+    --workers 3 \
+    --bind 127.0.0.1:8000 \
+    --timeout 120 \
+    defensys_backend.wsgi:application
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

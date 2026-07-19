@@ -985,3 +985,43 @@ class UserManagementApiTests(APITestCase):
         
         delete_response = self.client.delete('/api/users/e-signature/')
         self.assertEqual(delete_response.status_code, 403)
+
+    def test_guest_code_validate_endpoint_is_throttled(self):
+        from django.core.cache import cache
+        cache.clear()
+        from rest_framework.settings import api_settings
+        original_rate = api_settings.DEFAULT_THROTTLE_RATES.get('guest_code')
+        api_settings.DEFAULT_THROTTLE_RATES['guest_code'] = '1/min'
+        try:
+            self.client.force_authenticate(user=None)
+            response1 = self.client.get('/api/users/guest-codes/validate/ANY-CODE/')
+            self.assertEqual(response1.status_code, 404)
+
+            response2 = self.client.get('/api/users/guest-codes/validate/ANY-CODE/')
+            self.assertEqual(response2.status_code, 429)
+        finally:
+            api_settings.DEFAULT_THROTTLE_RATES['guest_code'] = original_rate
+
+    def test_guest_code_exchange_endpoint_is_throttled(self):
+        from django.core.cache import cache
+        cache.clear()
+        from rest_framework.settings import api_settings
+        original_rate = api_settings.DEFAULT_THROTTLE_RATES.get('guest_code')
+        api_settings.DEFAULT_THROTTLE_RATES['guest_code'] = '1/min'
+        try:
+            self.client.force_authenticate(user=None)
+            response1 = self.client.post(
+                '/api/users/guest-codes/exchange/',
+                {'code': 'ANY-CODE'},
+                format='json',
+            )
+            self.assertEqual(response1.status_code, 401)
+
+            response2 = self.client.post(
+                '/api/users/guest-codes/exchange/',
+                {'code': 'ANY-CODE'},
+                format='json',
+            )
+            self.assertEqual(response2.status_code, 429)
+        finally:
+            api_settings.DEFAULT_THROTTLE_RATES['guest_code'] = original_rate

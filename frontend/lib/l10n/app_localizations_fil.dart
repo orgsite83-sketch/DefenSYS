@@ -119,7 +119,7 @@ class AppLocalizationsFil extends AppLocalizations {
   String get navStudentRecords => 'Student Records';
 
   @override
-  String get navGradeCenter => 'Grade Center';
+  String get navGradeCenter => 'Evaluation & Grades';
 
   @override
   String get navRubricEngine => 'Rubric Engine';
@@ -137,7 +137,7 @@ class AppLocalizationsFil extends AppLocalizations {
   String get navDefenseBoard => 'Defense Board';
 
   @override
-  String get navDefenseStages => 'Defense Stages';
+  String get navDefenseStages => 'Defense Stages Setup';
 
   @override
   String get navScheduling => 'Scheduling';

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/screens/web/admin/team_detail_page.dart';
-import 'package:user/services/team_detail_provider.dart';
+import 'package:defensys/screens/web/admin/team_detail_page.dart';
+import 'package:defensys/services/team_detail_provider.dart';
 
 import '../helpers/pump_app.dart';
 

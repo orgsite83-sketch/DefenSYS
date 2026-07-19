@@ -1038,6 +1038,20 @@ def schedule_options_payload(user=None):
         if semester
         else PitEventGradingConfig.objects.none()
     )
+    if pit_lead_only and user:
+        from authentication_access_control.scopes import _pit_year
+        pit_year = _pit_year(user)
+        if pit_year:
+            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            exclude_filter = Q()
+            for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                if y != pit_year:
+                    for hint in hints:
+                        exclude_filter |= Q(event_name__icontains=hint)
+            if exclude_filter:
+                pit_events_qs = pit_events_qs.exclude(exclude_filter)
+        else:
+            pit_events_qs = pit_events_qs.none()
     pit_events_data = [pit_event_config_payload(cfg) for cfg in pit_events_qs]
 
     return {

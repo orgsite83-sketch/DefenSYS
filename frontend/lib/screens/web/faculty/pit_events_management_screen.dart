@@ -5,7 +5,8 @@ import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
-import '../../../services/unsaved_changes_provider.dart';
+import '../../../services/dashboard_provider.dart';
+import '../../../utils/unsaved_changes.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
@@ -204,7 +205,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
           children: [
             DefensysPageHeader(
               icon: Icons.event_note_outlined,
-              title: 'PIT Events Configuration',
+              title: 'PIT Events Setup',
               subtitle: activeSemLabel,
               actions: _primaryButton(
                 icon: const Icon(Icons.add, size: 18, color: Colors.white),
@@ -640,10 +641,73 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   final List<TextEditingController> _templateControllers = [];
 
   bool _isDirty = false;
+  bool _allowPop = false;
+
+  bool _checkIfDirty() {
+    final initialEventName = widget.config?['event_name']?.toString() ?? '';
+    final initialTemplate = (widget.config?['archive_file_template'] ?? widget.config?['vault_file_template'])?.toString() ?? '';
+    final initialPanelRubric = int.tryParse(widget.config?['panel_rubric_id']?.toString() ?? '');
+    final initialPeerRubric = int.tryParse(widget.config?['peer_rubric_id']?.toString() ?? '');
+    final initialPanelWeight = int.tryParse(widget.config?['panel_weight']?.toString() ?? '') ?? 80;
+    final initialPeerWeight = int.tryParse(widget.config?['peer_weight']?.toString() ?? '') ?? 20;
+
+    final initialDelList = widget.config?['deliverables'] as List? ?? [];
+
+    if (_eventNameController.text != initialEventName) return true;
+    if (_archiveFileTemplateController.text != initialTemplate) return true;
+    if (_panelRubricId != initialPanelRubric) return true;
+    if (_peerRubricId != initialPeerRubric) return true;
+    if (_panelWeight != initialPanelWeight) return true;
+    if (_peerWeight != initialPeerWeight) return true;
+
+    if (_deliverables.length != initialDelList.length) return true;
+
+    for (int i = 0; i < _deliverables.length; i++) {
+      final current = _deliverables[i];
+      final initial = Map<String, dynamic>.from(initialDelList[i] as Map);
+
+      if (current['label']?.toString() != initial['label']?.toString()) return true;
+
+      final currentType = current['deliverable_type']?.toString();
+      final initialType = initial['deliverable_type']?.toString();
+      final normCurrentType = currentType == 'vault' ? 'post' : currentType;
+      final normInitialType = initialType == 'vault' ? 'post' : initialType;
+      if (normCurrentType != normInitialType) return true;
+
+      if ((current['required'] == true) != (initial['required'] == true)) return true;
+      if ((current['is_restricted'] == true) != (initial['is_restricted'] == true)) return true;
+
+      final currentTpl = current['archive_file_template'] ?? current['vault_file_template'];
+      final initialTpl = initial['archive_file_template'] ?? initial['vault_file_template'];
+      if (currentTpl?.toString() != initialTpl?.toString()) return true;
+    }
+
+    return false;
+  }
+
   void _markDirty() {
-    if (_isDirty) return;
-    _isDirty = true;
-    ref.read(unsavedChangesProvider.notifier).setDirty(true);
+    final isDirty = _checkIfDirty();
+    if (_isDirty == isDirty) return;
+    setState(() {
+      _isDirty = isDirty;
+    });
+  }
+
+  Future<void> _handleClose() async {
+    if (_isDirty) {
+      final discard = await confirmDiscardUnsavedChanges(context);
+      if (discard && mounted) {
+        setState(() {
+          _allowPop = true;
+        });
+        Navigator.of(context).pop();
+      }
+    } else {
+      setState(() {
+        _allowPop = true;
+      });
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -676,6 +740,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
   @override
   void dispose() {
+    _eventNameController.removeListener(_markDirty);
+    _archiveFileTemplateController.removeListener(_markDirty);
+    _panelWeightController.removeListener(_markDirty);
+    _peerWeightController.removeListener(_markDirty);
+
     _eventNameController.dispose();
     _archiveFileTemplateController.dispose();
     _panelWeightController.dispose();
@@ -686,23 +755,58 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     for (final ctrl in _templateControllers) {
       ctrl.dispose();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    });
     super.dispose();
   }
 
   void _onPanelWeightChanged(String value) {
-    setState(() {
-      _panelWeight = int.tryParse(value.trim()) ?? 0;
-    });
+    final clean = value.trim();
+    if (clean.isEmpty) {
+      setState(() {
+        _panelWeight = 0;
+        _peerWeight = 100;
+        _peerWeightController.text = '100';
+      });
+      _markDirty();
+      return;
+    }
+    final parsed = int.tryParse(clean);
+    if (parsed != null) {
+      final clamped = parsed.clamp(0, 100);
+      setState(() {
+        _panelWeight = clamped;
+        _peerWeight = 100 - clamped;
+        _peerWeightController.text = (100 - clamped).toString();
+        if (parsed != clamped) {
+          _panelWeightController.text = clamped.toString();
+        }
+      });
+    }
     _markDirty();
   }
 
   void _onPeerWeightChanged(String value) {
-    setState(() {
-      _peerWeight = int.tryParse(value.trim()) ?? 0;
-    });
+    final clean = value.trim();
+    if (clean.isEmpty) {
+      setState(() {
+        _peerWeight = 0;
+        _panelWeight = 100;
+        _panelWeightController.text = '100';
+      });
+      _markDirty();
+      return;
+    }
+    final parsed = int.tryParse(clean);
+    if (parsed != null) {
+      final clamped = parsed.clamp(0, 100);
+      setState(() {
+        _peerWeight = clamped;
+        _panelWeight = 100 - clamped;
+        _panelWeightController.text = (100 - clamped).toString();
+        if (parsed != clamped) {
+          _peerWeightController.text = clamped.toString();
+        }
+      });
+    }
     _markDirty();
   }
 
@@ -735,15 +839,27 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     _markDirty();
   }
 
-  String _resolveFilenamePreview(String template, String label) {
+  String _resolveFilenamePreview(String template, String label, String pitYear) {
     var result = template.trim();
     if (result.isEmpty) {
       result = '{project}';
     }
-    result = result.replaceAll('{year}', '2ndYear');
-    result = result.replaceAll('{course}', 'PIT201');
+    final cleanedYear = pitYear.replaceAll(' ', '');
+    String courseCode = 'PIT201';
+    if (pitYear == '1st Year') {
+      courseCode = 'PIT101';
+    } else if (pitYear == '2nd Year') {
+      courseCode = 'PIT201';
+    } else if (pitYear == '3rd Year') {
+      courseCode = 'PIT301';
+    } else if (pitYear == '4th Year') {
+      courseCode = 'PIT401';
+    }
+
+    result = result.replaceAll('{year}', cleanedYear);
+    result = result.replaceAll('{course}', courseCode);
     result = result.replaceAll('{project}', 'IoTMonitor');
-    result = result.replaceAll('{event}', '2ndYearPITExpo');
+    result = result.replaceAll('{event}', '${cleanedYear}PITExpo');
     result = result.replaceAll('{semester}', '1stSemester');
 
     // Deliverable slug: title-cased no special characters
@@ -788,7 +904,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
 
     final success = await ref.read(defenseSchedulerProvider.notifier).savePitEventConfig(payload);
     if (success) {
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+      setState(() {
+        _isDirty = false;
+        _allowPop = true;
+      });
       widget.onSaveSuccess();
     }
   }
@@ -972,6 +1091,8 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(defenseSchedulerProvider);
+    final dashboard = ref.watch(dashboardProvider('faculty')).data;
+    final pitYear = dashboard?['pit_lead_year']?.toString() ?? '2nd Year';
 
     // Find rubrics already assigned to other PIT event configs in the active semester
     final otherConfigs = state.pitEvents.where((c) {
@@ -1002,46 +1123,52 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       return scopeMatch && !isAssignedToOther;
     }).toList();
 
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Container(
-        width: MediaQuery.of(context).size.width * 0.75,
-        constraints: BoxConstraints(
-          maxHeight: MediaQuery.of(context).size.height * 0.85,
-        ),
-        padding: const EdgeInsets.all(24),
-        child: Form(
-          key: _formKey,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.settings_suggest_outlined, color: DefensysTokens.maroon, size: 22),
-                      const SizedBox(width: 8),
-                      Text(
-                        widget.config == null ? 'Configure New PIT Event' : 'Edit Event Configuration',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.w800,
-                          color: DefensysTokens.maroon,
-                          fontFamily: DefensysTokens.fontFamily,
+    return PopScope(
+      canPop: !_isDirty || _allowPop,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        _handleClose();
+      },
+      child: Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        child: Container(
+          width: MediaQuery.of(context).size.width * 0.75,
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(context).size.height * 0.85,
+          ),
+          padding: const EdgeInsets.all(24),
+          child: Form(
+            key: _formKey,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.settings_suggest_outlined, color: DefensysTokens.maroon, size: 22),
+                        const SizedBox(width: 8),
+                        Text(
+                          widget.config == null ? 'Configure New PIT Event' : 'Edit Event Configuration',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.maroon,
+                            fontFamily: DefensysTokens.fontFamily,
+                          ),
                         ),
-                      ),
-                    ],
-                  ),
-                  IconButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(Icons.close_rounded),
-                    style: IconButton.styleFrom(
-                      hoverColor: Colors.grey.shade100,
+                      ],
                     ),
-                  ),
-                ],
-              ),
+                    IconButton(
+                      onPressed: _handleClose,
+                      icon: const Icon(Icons.close_rounded),
+                      style: IconButton.styleFrom(
+                        hoverColor: Colors.grey.shade100,
+                      ),
+                    ),
+                  ],
+                ),
               const Divider(height: 24),
               Expanded(
                 child: SingleChildScrollView(
@@ -1058,7 +1185,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                             controller: _eventNameController,
                             decoration: _dialogInputDecoration(
                               labelText: 'Event Name',
-                              hintText: 'e.g. 2nd Year PIT Expo',
+                              hintText: 'e.g. $pitYear PIT Expo',
                             ),
                             validator: (value) {
                               if (value == null || value.trim().isEmpty) {
@@ -1563,7 +1690,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                               ),
                                               const SizedBox(height: 8),
                                               SelectableText(
-                                                _resolveFilenamePreview((d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? '', d['label'] ?? ''),
+                                                _resolveFilenamePreview((d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? '', d['label'] ?? '', pitYear),
                                                 style: const TextStyle(
                                                   fontSize: 12,
                                                   fontFamily: 'monospace',
@@ -1594,7 +1721,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                   _secondaryButton(
                     icon: const Icon(Icons.close, size: 18),
                     label: 'Cancel',
-                    onTap: () => Navigator.of(context).pop(),
+                    onTap: _handleClose,
                   ),
                   const SizedBox(width: 12),
                   SizedBox(
@@ -1629,6 +1756,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           ),
         ),
       ),
+    ),
     );
   }
 }

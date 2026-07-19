@@ -1,6 +1,9 @@
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class DeliverableSubmission(models.Model):
@@ -153,7 +156,7 @@ class DeliverableSubmission(models.Model):
                 classification = result.get('classification') or {}
                 self.category_confidence = classification.get('confidence_score')
             except Exception as e:
-                print(f'Warning: PDF extraction failed for {self.file_name}: {e}')
+                logger.warning(f'PDF extraction failed for {self.file_name}: {e}')
         
         super().save(*args, **kwargs)
 
@@ -252,7 +255,7 @@ class DeliverableSubmissionFile(models.Model):
                 classification = result.get('classification') or {}
                 self.category_confidence = classification.get('confidence_score')
             except Exception as e:
-                print(f'Warning: PDF extraction failed for {self.file_name}: {e}')
+                logger.warning(f'PDF extraction failed for {self.file_name}: {e}')
         
         super().save(*args, **kwargs)
 

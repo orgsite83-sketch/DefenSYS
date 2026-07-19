@@ -100,6 +100,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
     team_id = serializers.SerializerMethodField()
     facultyRoles = serializers.SerializerMethodField()
     displayRole = serializers.SerializerMethodField()
+    instructor_assignments = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False, allow_blank=True)
 
     class Meta:
@@ -123,6 +124,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'e_signature',
             'facultyRoles',
             'displayRole',
+            'instructor_assignments',
             'password',
         ]
         extra_kwargs = {
@@ -142,10 +144,15 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         return full_name or obj.username
 
     def get_facultyRoles(self, obj):
+        from user_management.models import SectionInstructorAssignment
+        is_pit_instructor = SectionInstructorAssignment.objects.filter(
+            faculty=obj, is_active=True
+        ).exists()
         return {
             'panelist': obj.is_panelist,
             'pitLead': obj.is_pit_lead,
             'pitLeadYear': obj.pit_lead_year,
+            'pitInstructor': is_pit_instructor,
             'adviser': obj.is_adviser,
             'documenter': obj.is_documenter,
             'uploader': obj.is_uploader,
@@ -153,6 +160,23 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
     def get_displayRole(self, obj):
         return compute_display_role(obj)
+
+    def get_instructor_assignments(self, obj):
+        from user_management.models import SectionInstructorAssignment
+        from academic_period_management.services import active_semester
+        sem = active_semester()
+        qs = SectionInstructorAssignment.objects.filter(faculty=obj, is_active=True)
+        if sem:
+            qs = qs.filter(semester=sem)
+        return [
+            {
+                'id': a.id,
+                'year_level': a.year_level,
+                'section': a.section,
+                'semester': a.semester.display_name,
+            }
+            for a in qs
+        ]
 
     def validate_username(self, value):
         queryset = User.objects.filter(username=value)

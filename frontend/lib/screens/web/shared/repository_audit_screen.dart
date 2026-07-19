@@ -194,7 +194,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     final year = state.scope['pit_year_level']?.toString() ?? '';
     switch (scope) {
       case 'pit_lead':
-        return 'Archive passed PIT projects for $year after the event is officially complete in Grade Center.';
+        return 'Archive passed PIT projects for $year after the event is officially complete in Evaluation & Grades.';
       default:
         return 'Browse pre-defense uploads and repository items by team or deliverable (e.g. D1 across all teams).';
     }
@@ -225,7 +225,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
     if (diagnostics is! Map) {
       return _notice(
         Icons.info_outline_rounded,
-        'No teams are ready to upload to vault yet. Mark the PIT event officially complete in Grade Center so passed teams become ready to upload to vault.',
+        'No teams are ready to upload to vault yet. Mark the PIT event officially complete in Evaluation & Grades so passed teams become ready to upload to vault.',
         const Color(0xFFD97706),
       );
     }
@@ -273,7 +273,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
       return const SizedBox.shrink();
     }
     final message =
-        'Mark your year\'s PIT event officially complete in Grade Center. Upload PDFs here while teams are ready to upload; Grade Center shows Published after archive_save.';
+        'Mark your year\'s PIT event officially complete in Evaluation & Grades. Upload PDFs here while teams are ready to upload; Evaluation & Grades shows Published after archive_save.';
     return _notice(
       Icons.info_outline_rounded,
       message,
@@ -310,7 +310,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           ),
           const SizedBox(height: 6),
           const Text(
-            'Awaiting PDF means the team passed and still needs a correctly named upload—not that Grade Center is incomplete.',
+            'Awaiting PDF means the team passed and still needs a correctly named upload—not that Evaluation & Grades is incomplete.',
             style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -1715,7 +1715,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Choose PDFs'),
+            child: const Text('Choose Files'),
           ),
         ],
       ),
@@ -1726,7 +1726,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'],
       allowMultiple: true,
       withData: true,
     );
@@ -1738,11 +1738,17 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         ? pendingNames.first
         : null;
 
+    final allowedExts = const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'];
+    bool isAllowedFile(String name) {
+      final ext = name.split('.').last.toLowerCase();
+      return allowedExts.contains(ext);
+    }
+
     final multipartFiles = <http.MultipartFile>[];
     for (final platformFile in picked.files) {
       final bytes = platformFile.bytes;
       final originalName = platformFile.name;
-      if (bytes == null || !originalName.toLowerCase().endsWith('.pdf')) {
+      if (bytes == null || !isAllowedFile(originalName)) {
         continue;
       }
       final uploadName = autoRename ?? originalName;
@@ -1753,7 +1759,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     if (multipartFiles.isEmpty) {
       if (mounted) {
-        showValidationToast(context, 'Select at least one PDF file.');
+        showValidationToast(context, 'Select at least one valid file.');
       }
       return;
     }
@@ -1872,7 +1878,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(dialogContext, true),
-            child: const Text('Choose PDFs'),
+            child: const Text('Choose Files'),
           ),
         ],
       ),
@@ -1883,7 +1889,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     final picked = await FilePicker.platform.pickFiles(
       type: FileType.custom,
-      allowedExtensions: ['pdf'],
+      allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'],
       allowMultiple: true,
       withData: true,
     );
@@ -1895,11 +1901,17 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
         ? pendingNames.first
         : null;
 
+    final allowedExts = const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'];
+    bool isAllowedFile(String name) {
+      final ext = name.split('.').last.toLowerCase();
+      return allowedExts.contains(ext);
+    }
+
     final multipartFiles = <http.MultipartFile>[];
     for (final platformFile in picked.files) {
       final bytes = platformFile.bytes;
       final originalName = platformFile.name;
-      if (bytes == null || !originalName.toLowerCase().endsWith('.pdf')) {
+      if (bytes == null || !isAllowedFile(originalName)) {
         continue;
       }
       final uploadName = autoRename ?? originalName;
@@ -1910,7 +1922,7 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
 
     if (multipartFiles.isEmpty) {
       if (mounted) {
-        showValidationToast(context, 'Select at least one PDF file.');
+        showValidationToast(context, 'Select at least one valid file.');
       }
       return;
     }
@@ -2021,9 +2033,9 @@ class _RepositoryAuditScreenState extends ConsumerState<RepositoryAuditScreen> {
           .fetchAuthenticatedFile(fileUrl);
       if (mounted) Navigator.pop(context);
       if (!mounted) return;
-      await viewPdfInDialog(
+      await viewFileInDialog(
         context: context,
-        pdfBytes: bytes,
+        fileBytes: bytes,
         fileName: fileName,
       );
     } catch (e) {

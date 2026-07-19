@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/utils/team_bulk_import_csv.dart';
+import 'package:defensys/utils/team_bulk_import_csv.dart';
 
 void main() {
   group('parseTeamBulkCsv', () {

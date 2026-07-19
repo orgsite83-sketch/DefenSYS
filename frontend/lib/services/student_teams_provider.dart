@@ -28,6 +28,7 @@ class StudentTeamsState {
   final String search;
   final String level;
   final String status;
+  final String? yearLevel;
   final String? error;
   final String? message;
 
@@ -49,6 +50,7 @@ class StudentTeamsState {
     this.search = '',
     this.level = '',
     this.status = '',
+    this.yearLevel,
     this.error,
     this.message,
   });
@@ -71,6 +73,7 @@ class StudentTeamsState {
     String? search,
     String? level,
     String? status,
+    String? yearLevel,
     String? error,
     String? message,
     bool clearError = false,
@@ -98,6 +101,7 @@ class StudentTeamsState {
       search: search ?? this.search,
       level: level ?? this.level,
       status: status ?? this.status,
+      yearLevel: yearLevel ?? this.yearLevel,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -105,7 +109,7 @@ class StudentTeamsState {
 }
 
 class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
-    static String get baseUrl => ApiConfig.teamsUrl;
+  static String get baseUrl => ApiConfig.teamsUrl;
 
   @override
   StudentTeamsState build() {
@@ -117,11 +121,13 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? level,
     String? status,
     String? scope,
+    String? yearLevel,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextLevel = level ?? state.level;
     final nextStatus = status ?? state.status;
+    final nextYearLevel = yearLevel ?? state.yearLevel;
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -129,6 +135,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       search: nextSearch,
       level: nextLevel,
       status: nextStatus,
+      yearLevel: nextYearLevel,
       clearError: true,
       clearMessage: true,
     );
@@ -140,6 +147,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextLevel.isNotEmpty) 'level': nextLevel,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
+          if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
         },
       );
       final response = await _client.get(uri);

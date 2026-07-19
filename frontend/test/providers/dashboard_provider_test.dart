@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:user/services/api_http.dart';
-import 'package:user/services/dashboard_provider.dart';
+import 'package:defensys/services/api_http.dart';
+import 'package:defensys/services/dashboard_provider.dart';
 
 import '../helpers/auth_test_overrides.dart';
 import '../helpers/mock_http_setup.dart';

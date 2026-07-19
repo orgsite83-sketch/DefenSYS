@@ -119,6 +119,14 @@ class UserListCreateView(APIView):
             users = users.filter(role__in=['faculty', 'admin'], is_adviser=True)
         elif role == 'documenter':
             users = users.filter(role__in=['faculty', 'admin'], is_documenter=True)
+        elif role == 'pit_instructor':
+            from user_management.models import SectionInstructorAssignment
+            active_sem = _active_semester()
+            instructor_qs = SectionInstructorAssignment.objects.filter(is_active=True)
+            if active_sem:
+                instructor_qs = instructor_qs.filter(semester=active_sem)
+            instructor_ids = instructor_qs.values_list('faculty_id', flat=True)
+            users = users.filter(pk__in=instructor_ids)
         elif role in dict(User.ROLE_CHOICES):
             users = users.filter(role=role)
 
@@ -788,10 +796,14 @@ class GuestPanelistCodeDetailView(APIView):
         return Response(payload)
 
 
+class GuestCodeThrottle(AnonRateThrottle):
+    scope = 'guest_code'
+
+
 class GuestCodeValidateView(APIView):
     """Public endpoint to validate guest panelist codes"""
     permission_classes = [AllowAny]
-    throttle_classes = [AnonRateThrottle]
+    throttle_classes = [GuestCodeThrottle]
     
     def get(self, request, code):
         """Validate a guest code and return guest info if valid"""
@@ -820,6 +832,7 @@ class GuestCodeExchangeView(APIView):
     """Exchange a valid guest code for a short-lived guest panelist access JWT."""
 
     permission_classes = [AllowAny]
+    throttle_classes = [GuestCodeThrottle]
 
     def post(self, request):
         code = (request.data.get('code') or '').strip().upper()

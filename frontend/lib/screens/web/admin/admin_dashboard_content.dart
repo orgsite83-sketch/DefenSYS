@@ -205,7 +205,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               icon: Icons.layers_rounded,
               iconColor: const Color(0xFF2563EB),
               iconBackground: const Color(0xFFDCEBFF),
-              title: 'Defense Stages',
+              title: 'Defense Stages Setup',
               subtitle: 'Manage capstone stage pipeline',
               onTap: () =>
                   widget.onNavigate(DefensysAdminSection.defenseStages),

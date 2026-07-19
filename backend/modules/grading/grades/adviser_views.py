@@ -43,13 +43,18 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
                 exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
             ) from exc
 
+        criteria_scores = self.validated_data.get('criteria_scores') or []
+        if not criteria_scores:
+            raise drf_serializers.ValidationError(
+                {'criteria_scores': 'Criteria scores are required for adviser grading.'}
+            )
+
         grade.adviser_score = self.validated_data['adviser_score']
         rubric_id = self.validated_data.get('rubric_id') or assigned.pk
         if rubric_id and assigned and rubric_id != assigned.pk:
             raise drf_serializers.ValidationError(
                 {'rubric_id': 'Use the adviser rubric assigned for this defense stage.'}
             )
-        criteria_scores = self.validated_data.get('criteria_scores') or []
 
         if rubric_id and criteria_scores:
             try:
@@ -144,6 +149,20 @@ class AdviserSubmitGradeView(APIView):
             pk=grade_id,
         )
         grade = GradeContextService.get_for_adviser_context(request.user, grade)
+
+        if not grade.schedule:
+            return Response(
+                {'detail': "Adviser grading is locked because this team's defense has not been scheduled yet."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from django.utils import timezone
+        current_date = timezone.localtime(timezone.now()).date()
+        if grade.schedule.scheduled_date > current_date:
+            return Response(
+                {'detail': f"Adviser grading is locked until the scheduled date: {grade.schedule.scheduled_date.strftime('%B %d, %Y')}."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         if grade.status in TeamGrade.LOCKED_STATUSES:
             return Response(

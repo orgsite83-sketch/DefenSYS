@@ -22,6 +22,7 @@ class CapstoneDeliverablesState {
   final String search;
   final String status;
   final String scope;
+  final String? yearLevel;
   final String? error;
   final String? message;
 
@@ -37,6 +38,7 @@ class CapstoneDeliverablesState {
     this.search = '',
     this.status = '',
     this.scope = 'capstone',
+    this.yearLevel,
     this.error,
     this.message,
   });
@@ -53,6 +55,7 @@ class CapstoneDeliverablesState {
     String? search,
     String? status,
     String? scope,
+    String? yearLevel,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -73,6 +76,7 @@ class CapstoneDeliverablesState {
       search: search ?? this.search,
       status: status ?? this.status,
       scope: scope ?? this.scope,
+      yearLevel: yearLevel ?? this.yearLevel,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -92,12 +96,14 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? selectedStage,
     String? status,
     String? scope,
+    String? yearLevel,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextStage = selectedStage ?? state.selectedStage;
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
+    final nextYearLevel = yearLevel ?? state.yearLevel;
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -106,6 +112,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       selectedStage: nextStage,
       status: nextStatus,
       scope: nextScope,
+      yearLevel: nextYearLevel,
       clearError: true,
       clearMessage: true,
     );
@@ -117,6 +124,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStage.isNotEmpty) 'stage_label': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextScope.isNotEmpty) 'scope': nextScope,
+          if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
         },
       );
       final response = await _client.get(uri);

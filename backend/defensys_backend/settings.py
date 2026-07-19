@@ -57,14 +57,16 @@ DEBUG = _env_bool('DJANGO_DEBUG', default=True)
 
 ALLOWED_HOSTS = _env_list(
     'DJANGO_ALLOWED_HOSTS',
-    'localhost,127.0.0.1,192.168.1.5',
+    'localhost,127.0.0.1,192.168.1.5,192.168.1.20',
 )
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', default=not DEBUG)
 SESSION_COOKIE_SECURE = _env_bool('DJANGO_SESSION_COOKIE_SECURE', default=not DEBUG)
 CSRF_COOKIE_SECURE = _env_bool('DJANGO_CSRF_COOKIE_SECURE', default=not DEBUG)
-SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0' if DEBUG else '3600'))
+SECURE_HSTS_SECONDS = int(os.environ.get('DJANGO_SECURE_HSTS_SECONDS', '0' if DEBUG else '31536000'))
+SECURE_HSTS_INCLUDE_SUBDOMAINS = not DEBUG
+SECURE_HSTS_PRELOAD = not DEBUG
 
 _csrf_trusted = os.environ.get('DJANGO_CSRF_TRUSTED_ORIGINS', '')
 CSRF_TRUSTED_ORIGINS = [
@@ -90,7 +92,6 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'storages',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'authentication_access_control',
@@ -175,8 +176,11 @@ DATABASES = {
         'PASSWORD': os.environ.get('POSTGRES_PASSWORD', ''),
         'HOST': os.environ.get('POSTGRES_HOST', 'localhost'),
         'PORT': os.environ.get('POSTGRES_PORT', '5432'),
+        'CONN_MAX_AGE': int(os.environ.get('DJANGO_DB_CONN_MAX_AGE', '0' if DEBUG else '600')),
+        'CONN_HEALTH_CHECKS': True,
     }
 }
+
 if not DATABASES['default']['PASSWORD'] and not DEBUG:
     raise ImproperlyConfigured(
         'POSTGRES_PASSWORD is required when DJANGO_DEBUG is False.'
@@ -228,43 +232,22 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
-USE_S3 = _env_bool('USE_S3', default=False)
-AWS_ACCESS_KEY_ID = os.environ.get('AWS_ACCESS_KEY_ID', '')
-AWS_SECRET_ACCESS_KEY = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
-AWS_STORAGE_BUCKET_NAME = os.environ.get('AWS_STORAGE_BUCKET_NAME', '')
-AWS_S3_REGION_NAME = os.environ.get('AWS_S3_REGION_NAME', 'ap-southeast-1')
-AWS_S3_ENDPOINT_URL = os.environ.get('AWS_S3_ENDPOINT_URL') or None
-AWS_QUERYSTRING_EXPIRE = int(os.environ.get('AWS_QUERYSTRING_EXPIRE', '3600'))
-AWS_DEFAULT_ACL = None
-AWS_S3_FILE_OVERWRITE = False
-AWS_S3_OBJECT_PARAMETERS = {'CacheControl': 'max-age=86400'}
+# Upload limits (500MB total request size, 50MB maximum kept in memory before streaming to disk)
+DATA_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('DATA_UPLOAD_MAX_MEMORY_SIZE', 500 * 1024 * 1024))
+FILE_UPLOAD_MAX_MEMORY_SIZE = int(os.environ.get('FILE_UPLOAD_MAX_MEMORY_SIZE', 50 * 1024 * 1024))
 
-if USE_S3:
-    if not AWS_STORAGE_BUCKET_NAME:
-        raise ImproperlyConfigured(
-            'USE_S3 is enabled but AWS_STORAGE_BUCKET_NAME is not set in .env'
-        )
-    STORAGES = {
-        'default': {
-            'BACKEND': 'storages.backends.s3.S3Storage',
+STORAGES = {
+    'default': {
+        'BACKEND': 'django.core.files.storage.FileSystemStorage',
+        'OPTIONS': {
+            'location': MEDIA_ROOT,
+            'base_url': MEDIA_URL,
         },
-        'staticfiles': {
-            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
-        },
-    }
-else:
-    STORAGES = {
-        'default': {
-            'BACKEND': 'django.core.files.storage.FileSystemStorage',
-            'OPTIONS': {
-                'location': MEDIA_ROOT,
-                'base_url': MEDIA_URL,
-            },
-        },
-        'staticfiles': {
-            'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
-        },
-    }
+    },
+    'staticfiles': {
+        'BACKEND': 'django.contrib.staticfiles.storage.StaticFilesStorage',
+    },
+}
 
 
 AUTH_USER_MODEL = 'authentication_access_control.User'
@@ -284,6 +267,7 @@ REST_FRAMEWORK = {
         'anon': '10/min',
         'logout': '5/min',
         'password_reset': '3/hour',
+        'guest_code': '5/min',
     },
 }
 

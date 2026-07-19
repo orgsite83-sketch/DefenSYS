@@ -16,6 +16,8 @@ class SessionStorageImpl extends SessionStorageBase {
     );
   }
 
+  static Future<SessionStorageBase?> tryRestoreFromLocalStorage() async => null;
+
   @override
   Future<String?> readRefresh() => _storage.read(key: AuthStorageKeys.refresh);
 
@@ -50,6 +52,7 @@ class SessionStorageImpl extends SessionStorageBase {
   Future<void> clearOtherWebStores(bool rememberMe) async {}
 }
 
+// No-ops on mobile.
 void installWebStorageListener(void Function(Map<String, dynamic> data) onMessage) {}
 
 void broadcastAuthToTabs(Map<String, dynamic> payload) {}

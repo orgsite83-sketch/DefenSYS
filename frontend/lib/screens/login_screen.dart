@@ -243,8 +243,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       if (!mounted) return;
       showErrorToast(
         context,
-        'Faculty tools (advising, PIT lead, Grade Center) are available on the web app. '
-        'Use a browser on desktop.',
+        'Faculty tools (advising, PIT lead, Evaluation & Grades) are available on the web app. Use a browser on desktop.',
       );
       return;
     }

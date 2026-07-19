@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:user/screens/web/admin/grade_center_capstone_table.dart';
-import 'package:user/screens/web/admin/grade_center_shared.dart';
-import 'package:user/services/grade_center_provider.dart';
+import 'package:defensys/screens/web/admin/grade_center_capstone_table.dart';
+import 'package:defensys/screens/web/admin/grade_center_shared.dart';
+import 'package:defensys/services/grade_center_provider.dart';
 
 import '../helpers/pump_app.dart';
 

@@ -122,20 +122,46 @@ def compute_display_role(user):
             label = record.year_level
         return {'key': 'student', 'label': label, 'tone': 'student'}
 
+    # Check active PIT instructor assignments
+    from user_management.models import SectionInstructorAssignment
+    active_sem = _active_semester()
+    assignments_qs = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
+    if active_sem:
+        assignments_qs = assignments_qs.filter(semester=active_sem)
+    assigned_years = sorted(list(set(assignments_qs.values_list('year_level', flat=True))))
+    is_instructor = len(assigned_years) > 0
+
     if user.is_pit_lead:
         label = 'PIT Lead'
         if user.pit_lead_year:
             label = f'{label}: {user.pit_lead_year}'
+        if is_instructor:
+            label = f'{label} & Instructor: {", ".join(assigned_years)}'
         return {'key': 'pit_lead', 'label': label, 'tone': 'pit_lead'}
     if user.is_adviser:
-        return {'key': 'adviser', 'label': 'Adviser', 'tone': 'adviser'}
+        label = 'Adviser'
+        if is_instructor:
+            label = f'{label} & Instructor: {", ".join(assigned_years)}'
+        return {'key': 'adviser', 'label': label, 'tone': 'adviser'}
     if user.is_panelist:
-        return {'key': 'panelist', 'label': 'Panelist', 'tone': 'panelist'}
+        label = 'Panelist'
+        if is_instructor:
+            label = f'{label} & Instructor: {", ".join(assigned_years)}'
+        return {'key': 'panelist', 'label': label, 'tone': 'panelist'}
     if user.is_documenter:
+        label = 'Documenter'
+        if is_instructor:
+            label = f'{label} & Instructor: {", ".join(assigned_years)}'
         return {
             'key': 'documenter',
-            'label': 'Documenter',
+            'label': label,
             'tone': 'documenter',
+        }
+    if is_instructor:
+        return {
+            'key': 'pit_instructor',
+            'label': f'PIT Instructor: {", ".join(assigned_years)}',
+            'tone': 'pit_instructor',
         }
 
     return {'key': 'faculty', 'label': 'Faculty Member', 'tone': 'faculty'}

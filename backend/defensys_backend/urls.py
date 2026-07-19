@@ -20,6 +20,7 @@ from django.conf import settings
 from django.conf.urls.static import static
 
 from defensys_backend.media_views import AuthenticatedMediaFileView
+from defensys_backend.views import HealthCheckView
 from authentication_access_control.password_reset import (
     ConfirmPasswordResetAPIView,
     RequestPasswordResetView,
@@ -27,6 +28,7 @@ from authentication_access_control.password_reset import (
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/health/', HealthCheckView.as_view(), name='health_check'),
     path('api/', include('authentication_access_control.urls')),
     path('api/dashboards/', include('dashboards.urls')),
     path('api/academic-periods/', include('academic_period_management.urls')),
@@ -49,5 +51,5 @@ urlpatterns = [
 ]
 
 # Serve media files in development (local disk only)
-if settings.DEBUG and not getattr(settings, 'USE_S3', False):
+if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

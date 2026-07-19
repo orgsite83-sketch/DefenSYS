@@ -120,7 +120,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   Icon(Icons.layers_rounded, color: AppColors.maroon, size: 24),
                   SizedBox(width: 8),
                   Text(
-                    'Defense Stages',
+                    'Defense Stages Setup',
                     style: TextStyle(
                       color: AppColors.maroon,
                       fontSize: 21,

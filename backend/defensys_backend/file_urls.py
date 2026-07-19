@@ -16,9 +16,6 @@ def resolve_uploaded_file_url(request, file_field):
         return ''
 
     storage = file_field.storage
-    if getattr(settings, 'USE_S3', False):
-        return storage.url(file_field.name)
-
     relative = storage.url(file_field.name)
     if settings.DEBUG:
         if request is not None:

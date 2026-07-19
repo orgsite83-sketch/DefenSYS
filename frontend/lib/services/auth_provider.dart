@@ -72,23 +72,7 @@ class AuthNotifier extends Notifier<AuthState> {
   @override
   AuthState build() {
     Future.microtask(_bootstrap);
-    installAuthTabSync(_onTabAuthSync);
     return const AuthState(isRestoring: true);
-  }
-
-  void _onTabAuthSync(Map<String, dynamic> data) {
-    final access = data['access'] as String?;
-    final refresh = data['refresh'] as String?;
-    final userJson = data['userJson'] as String?;
-    if (access == null || refresh == null || userJson == null) return;
-    try {
-      final user = Map<String, dynamic>.from(jsonDecode(userJson) as Map);
-      state = state.copyWith(token: access, user: user, clearSessionMessage: true);
-      _sessionStorage?.writeRefresh(refresh);
-      _sessionStorage?.writeUserJson(userJson);
-    } catch (_) {
-      // Corrupt persisted session payload — treat as logged out.
-    }
   }
 
   Future<void> _bootstrap() async {
@@ -218,14 +202,6 @@ class AuthNotifier extends Notifier<AuthState> {
       await _sessionStorage!.writeRefresh(refresh);
       await _sessionStorage!.writeUserJson(jsonEncode(user));
 
-      if (kIsWeb && rememberMe) {
-        broadcastAuthToOtherTabs(
-          access: access,
-          refresh: refresh,
-          userJson: jsonEncode(user),
-        );
-      }
-
       state = state.copyWith(
         isLoading: false,
         token: access,
@@ -245,16 +221,6 @@ class AuthNotifier extends Notifier<AuthState> {
 
     if (_sessionStorage != null) {
       _sessionStorage!.writeUserJson(jsonEncode(updatedUser));
-      final rememberMe = _sessionStorage!.rememberMe;
-      _sessionStorage!.readRefresh().then((refreshVal) {
-        if (kIsWeb && rememberMe && refreshVal != null && state.token != null) {
-          broadcastAuthToOtherTabs(
-            access: state.token!,
-            refresh: refreshVal,
-            userJson: jsonEncode(updatedUser),
-          );
-        }
-      });
     }
   }
 
@@ -320,17 +286,6 @@ class AuthNotifier extends Notifier<AuthState> {
           } catch (_) {
             // Stale userJson fallback after failed /me/.
           }
-        }
-      }
-
-      if (kIsWeb && storage.rememberMe) {
-        final userJson = await storage.readUserJson();
-        if (userJson != null) {
-          broadcastAuthToOtherTabs(
-            access: access,
-            refresh: newRefresh,
-            userJson: userJson,
-          );
         }
       }
 

@@ -27,6 +27,17 @@ Map<String, List<Map<String, dynamic>>> groupGradesFromState(
     final key = gradeGroupKey(scope, label);
     groups.putIfAbsent(key, () => []).add(grade);
   }
+
+  // Include configured PIT events so they display in the list even with 0 teams
+  if (state.scope == 'pit' || state.scope == 'all' || state.scope.isEmpty) {
+    for (final event in state.pitEvents) {
+      final eventName = event['event_name']?.toString() ?? '';
+      if (eventName.isNotEmpty) {
+        final key = gradeGroupKey('pit', eventName);
+        groups.putIfAbsent(key, () => []);
+      }
+    }
+  }
   final sortedKeys = groups.keys.toList()
     ..sort((a, b) {
       final aScope = a.split('|').first;

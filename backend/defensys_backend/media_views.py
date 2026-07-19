@@ -14,9 +14,6 @@ class AuthenticatedMediaFileView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, file_path):
-        if getattr(settings, 'USE_S3', False):
-            raise Http404('Media is served from object storage.')
-
         resolved = os.path.normpath(file_path).replace('\\', '/')
         drive, path = os.path.splitdrive(resolved)
         if drive or os.path.isabs(resolved) or '..' in resolved or resolved.startswith('/') or resolved.startswith('\\'):

@@ -9,10 +9,16 @@ Future<void> downloadBytesFile({
   throw UnsupportedError('File download is only supported on web platform');
 }
 
+Future<void> viewFileInDialog({
+  required BuildContext context,
+  required List<int> fileBytes,
+  required String fileName,
+}) async {
+  throw UnsupportedError('File viewing is only supported on web platform');
+}
+
 Future<void> viewPdfInDialog({
   required BuildContext context,
   required List<int> pdfBytes,
   required String fileName,
-}) async {
-  throw UnsupportedError('PDF viewing is only supported on web platform');
-}
+}) => viewFileInDialog(context: context, fileBytes: pdfBytes, fileName: fileName);

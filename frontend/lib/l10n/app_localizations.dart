@@ -311,7 +311,7 @@ abstract class AppLocalizations {
   /// No description provided for @navGradeCenter.
   ///
   /// In en, this message translates to:
-  /// **'Grade Center'**
+  /// **'Evaluation & Grades'**
   String get navGradeCenter;
 
   /// No description provided for @navRubricEngine.
@@ -347,7 +347,7 @@ abstract class AppLocalizations {
   /// No description provided for @navDefenseStages.
   ///
   /// In en, this message translates to:
-  /// **'Defense Stages'**
+  /// **'Defense Stages Setup'**
   String get navDefenseStages;
 
   /// No description provided for @navScheduling.

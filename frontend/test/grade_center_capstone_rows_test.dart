@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:user/screens/web/admin/grade_center_shared.dart';
-import 'package:user/services/grade_center_provider.dart';
+import 'package:defensys/screens/web/admin/grade_center_shared.dart';
+import 'package:defensys/services/grade_center_provider.dart';
 
 void main() {
   test('buildCapstoneStageRows merges defense stages with grade counts', () {

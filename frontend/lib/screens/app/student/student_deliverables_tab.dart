@@ -683,7 +683,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     onPressed: () async {
                       FilePickerResult? result = await FilePicker.platform.pickFiles(
                         type: FileType.custom,
-                        allowedExtensions: ['pdf'],
+                        allowedExtensions: const ['pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'],
                         withData: true,
                       );
                       if (result != null && result.files.single.name.isNotEmpty) {
@@ -697,7 +697,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       }
                     },
                     icon: const Icon(Icons.attach_file),
-                    label: const Text('Choose PDF File'),
+                    label: const Text('Choose File'),
                     style: OutlinedButton.styleFrom(
                       minimumSize: const Size(double.infinity, 48),
                       side: BorderSide(color: DefensysTokens.maroon),

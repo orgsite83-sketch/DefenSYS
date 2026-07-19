@@ -76,7 +76,7 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
     if (routeScope != null && groupScope != null && routeScope != groupScope) {
       return _GradeCenterRouteError(
         message:
-            'This Grade Center event link has conflicting scope values. Open the event again from Grade Center.',
+            'This Evaluation & Grades link has conflicting scope values. Open it again from Evaluation & Grades.',
         onBack: () => context.go(AdminRoutes.gradeCenter),
       );
     }
@@ -85,7 +85,7 @@ class AdminGradeEventTeamsRoute extends StatelessWidget {
     if (scope == null) {
       return _GradeCenterRouteError(
         message:
-            'This Grade Center event link is missing a valid scope. Open the event again from Grade Center.',
+            'This Evaluation & Grades link is missing a valid scope. Open it again from Evaluation & Grades.',
         onBack: () => context.go(AdminRoutes.gradeCenter),
       );
     }
@@ -156,7 +156,7 @@ class _GradeCenterRouteError extends StatelessWidget {
                     SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        'Invalid Grade Center Link',
+                        'Invalid Evaluation & Grades Link',
                         style: TextStyle(
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
@@ -175,7 +175,7 @@ class _GradeCenterRouteError extends StatelessWidget {
                 OutlinedButton.icon(
                   onPressed: onBack,
                   icon: const Icon(Icons.arrow_back_rounded, size: 16),
-                  label: const Text('Back to Grade Center'),
+                  label: const Text('Back to Evaluation & Grades'),
                 ),
               ],
             ),

@@ -3,11 +3,10 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_storage_keys.dart';
 import 'session_storage_stub.dart' show SessionStorageBase;
-import 'session_storage_stub.dart' as store
+import 'session_storage_stub.dart'
     if (dart.library.html) 'session_storage_web.dart'
-    if (dart.library.io) 'session_storage_mobile.dart';
-
-typedef AuthTabMessageHandler = void Function(Map<String, dynamic> data);
+    if (dart.library.io) 'session_storage_mobile.dart'
+    as store;
 
 /// Persists refresh token and user JSON (web: session vs local; mobile: secure).
 class SessionStorage {
@@ -25,18 +24,31 @@ class SessionStorage {
   static Future<SessionStorage?> createForRestore() async {
     final prefs = await SharedPreferences.getInstance();
     final rememberMe = prefs.getBool(AuthStorageKeys.rememberMe) ?? false;
+
     if (kIsWeb) {
-      final session = await store.SessionStorageImpl.create(rememberMe: false);
-      final persistent = await store.SessionStorageImpl.create(rememberMe: true);
-      final refresh = rememberMe
-          ? await persistent.readRefresh()
-          : await session.readRefresh();
-      if (refresh == null || refresh.isEmpty) return null;
-      return SessionStorage._(
-        rememberMe ? persistent : session,
-        rememberMe,
-      );
+      // Try sessionStorage first (survives in-tab refreshes).
+      final session =
+          await store.SessionStorageImpl.create(rememberMe: rememberMe);
+      final sessionRefresh = await session.readRefresh();
+
+      if (sessionRefresh != null && sessionRefresh.isNotEmpty) {
+        return SessionStorage._(session, rememberMe);
+      }
+
+      // sessionStorage was empty — try to restore from tab-scoped
+      // localStorage (covers full browser restart with remember-me).
+      if (rememberMe) {
+        final restored =
+            await store.SessionStorageImpl.tryRestoreFromLocalStorage();
+        if (restored != null) {
+          return SessionStorage._(restored, true);
+        }
+      }
+
+      return null;
     }
+
+    // Mobile: single secure store.
     final impl = await store.SessionStorageImpl.create(rememberMe: false);
     final refresh = await impl.readRefresh();
     if (refresh == null || refresh.isEmpty) return null;
@@ -71,20 +83,4 @@ class SessionStorage {
     await prefs.remove(AuthStorageKeys.legacyJwtToken);
     await prefs.remove(AuthStorageKeys.legacyUserData);
   }
-}
-
-void installAuthTabSync(AuthTabMessageHandler handler) {
-  store.installWebStorageListener(handler);
-}
-
-void broadcastAuthToOtherTabs({
-  required String access,
-  required String refresh,
-  required String userJson,
-}) {
-  store.broadcastAuthToTabs({
-    'access': access,
-    'refresh': refresh,
-    'userJson': userJson,
-  });
 }

@@ -1752,7 +1752,7 @@ class _DefenseSchedulerScreenState
       if (_validCapstoneRubricId(schedulerState, _rubricId, 'panel') == null ||
           _validCapstoneRubricId(schedulerState, _adviserRubricId, 'adviser') == null ||
           _validCapstoneRubricId(schedulerState, _capstonePeerRubricId, 'peer') == null) {
-        _showSnack('Please configure stage rubrics in the Defense Stages tab first.');
+        _showSnack('Please configure stage rubrics in the Defense Stages Setup tab first.');
         return null;
       }
     }
@@ -1765,7 +1765,7 @@ class _DefenseSchedulerScreenState
     if (_scope == 'pit') {
       if (_validRubricId(ref.read(defenseSchedulerProvider)) == null ||
           _validPeerRubricId(ref.read(defenseSchedulerProvider)) == null) {
-        _showSnack('Please configure event rubrics in the PIT Events tab first.');
+        _showSnack('Please configure event rubrics in the PIT Events Setup tab first.');
         return null;
       }
       if (_pitWeightTotal() != 100) {

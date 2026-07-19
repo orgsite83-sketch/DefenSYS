@@ -10,6 +10,8 @@ class SessionStorageImpl implements SessionStorageBase {
     return SessionStorageImpl._();
   }
 
+  static Future<SessionStorageBase?> tryRestoreFromLocalStorage() async => null;
+
   @override
   Future<String?> readRefresh() async => _memory[AuthStorageKeys.refresh];
 
@@ -44,6 +46,7 @@ class SessionStorageImpl implements SessionStorageBase {
   Future<void> clearOtherWebStores(bool rememberMe) async {}
 }
 
+// No-ops on non-web platforms.
 void installWebStorageListener(void Function(Map<String, dynamic> data) onMessage) {}
 
 void broadcastAuthToTabs(Map<String, dynamic> payload) {}

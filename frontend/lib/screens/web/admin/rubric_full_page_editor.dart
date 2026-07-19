@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../services/unsaved_changes_provider.dart';
+import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/feedback_toast.dart';
@@ -971,6 +972,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   Widget build(BuildContext context) {
     final state = ref.watch(rubricEngineProvider);
     final user = ref.watch(authProvider).user;
+    final dashboard = ref.watch(dashboardProvider('faculty')).data;
+    final pitYear = dashboard?['pit_lead_year']?.toString() ?? '2nd Year';
     final isPitLeadOnly = _isPitLeadOnly(user);
     final isCapstoneOnlyManager = _isCapstoneOnlyManager(user);
     final saving = state.isSaving || _checking;
@@ -1113,7 +1116,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                           ),
                           decoration: _outlineInputDec(
                             hint: _scope == 'pit'
-                                ? 'e.g. 2nd Year PIT — Panel'
+                                ? 'e.g. $pitYear PIT — Panel'
                                 : 'e.g. Concept Proposal — Panel',
                           ),
                         ),

@@ -7,9 +7,9 @@ import '../../../theme/defensys_tokens.dart';
 class AdviserDashboardContent extends StatefulWidget {
   final Map<String, dynamic>? data;
   final String facultyName;
-  final VoidCallback onOpenDeliverables;
-  final VoidCallback onOpenWeeklyReports;
-  final VoidCallback onOpenGrading;
+  final void Function(int? teamId) onOpenDeliverables;
+  final void Function(int? teamId) onOpenWeeklyReports;
+  final void Function(int? teamId) onOpenGrading;
 
   const AdviserDashboardContent({
     super.key,
@@ -25,21 +25,13 @@ class AdviserDashboardContent extends StatefulWidget {
 }
 
 class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
-  String _searchQuery = '';
-  String _selectedStatus = 'All';
-  String _selectedLevel = 'All';
-
-  final TextEditingController _searchController = TextEditingController();
+  // Removed search and filter state variables
 
   static const _line = Color(0xFFF3F4F6);
   static const _ink = DefensysUi.textDark;
   static const _maroon = DefensysUi.primaryMaroon;
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
-  }
+  // Removed dispose method as search controller is no longer used
 
   @override
   Widget build(BuildContext context) {
@@ -87,20 +79,10 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
       }
     }
 
-    // Filter teams list
-    final filteredTeams = advisedTeams.where((team) {
-      final name = team['name']?.toString().toLowerCase() ?? '';
-      final projectTitle = team['projectTitle']?.toString().toLowerCase() ?? '';
-      final matchesSearch = name.contains(_searchQuery.toLowerCase()) ||
-          projectTitle.contains(_searchQuery.toLowerCase());
-
+    // Filter teams list to only show active ones requiring action (status is 'Pending')
+    final actionRequiredTeams = advisedTeams.where((team) {
       final status = team['status']?.toString() ?? '';
-      final matchesStatus = _selectedStatus == 'All' || status == _selectedStatus;
-
-      final level = team['level']?.toString() ?? '';
-      final matchesLevel = _selectedLevel == 'All' || level == _selectedLevel;
-
-      return matchesSearch && matchesStatus && matchesLevel;
+      return status == 'Pending';
     }).toList();
 
     final screenWidth = MediaQuery.of(context).size.width;
@@ -163,54 +145,50 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
         const SizedBox(height: 24),
 
         // Desktop vs Mobile Layout Grid
-        isDesktop
-            ? Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Expanded(
-                    flex: 3,
-                    child: _buildTeamsSection(filteredTeams, levels, statuses),
-                  ),
-                  const SizedBox(width: 20),
-                  Expanded(
-                    flex: 2,
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        _quickActionsCard(),
-                        const SizedBox(height: 20),
-                        _teamsOverviewCard(advisedTeams),
-                      ],
-                    ),
-                  ),
-                ],
-              )
-            : Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  _quickActionsCard(),
-                  const SizedBox(height: 20),
-                  _teamsOverviewCard(advisedTeams),
-                  const SizedBox(height: 20),
-                  _buildTeamsSection(filteredTeams, levels, statuses),
-                ],
+       isDesktop
+        ? Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                flex: 3,
+                child: _buildTeamsSection(actionRequiredTeams),
               ),
+              const SizedBox(width: 20),
+              Expanded(
+                flex: 2,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _quickActionsCard(),
+                    const SizedBox(height: 20),
+                    _teamsOverviewCard(advisedTeams),
+                  ],
+                ),
+              ),
+            ],
+          )
+        : Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _quickActionsCard(),
+              const SizedBox(height: 20),
+              _teamsOverviewCard(advisedTeams),
+              const SizedBox(height: 20),
+              _buildTeamsSection(actionRequiredTeams),
+            ],
+          ),     
       ],
     );
   }
 
-  Widget _buildTeamsSection(
-    List<Map<String, dynamic>> filteredTeams,
-    List<String> levels,
-    List<String> statuses,
-  ) {
+  Widget _buildTeamsSection(List<Map<String, dynamic>> actionRequiredTeams) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
             const Text(
-              'My Advised Teams',
+              'Action Required',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -221,142 +199,52 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: const Color(0xFFF3F4F6),
+                color: const Color(0xFFFEE2E2),
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(
-                filteredTeams.length.toString(),
+                actionRequiredTeams.length.toString(),
                 style: const TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.bold,
-                  color: Color(0xFF4B5563),
+                  color: Color(0xFFB91C1C),
                 ),
               ),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-
-        // Search & Filters Row
-        Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _searchController,
-                onChanged: (val) {
-                  setState(() {
-                    _searchQuery = val;
-                  });
-                },
-                decoration: InputDecoration(
-                  hintText: 'Search teams or project titles...',
-                  prefixIcon: const Icon(Icons.search_rounded, size: 20, color: Color(0xFF6B7280)),
-                  contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 16),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-                  ),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(8),
-                    borderSide: const BorderSide(color: _maroon, width: 1.5),
-                  ),
-                  filled: true,
-                  fillColor: Colors.white,
-                ),
-                style: const TextStyle(fontSize: 14),
-              ),
-            ),
-            if (levels.length > 1) ...[
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedLevel,
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedLevel = val;
-                        });
-                      }
-                    },
-                    items: levels.map((lvl) {
-                      return DropdownMenuItem<String>(
-                        value: lvl,
-                        child: Text(
-                          lvl == 'All' ? 'All Levels' : lvl,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ],
-            if (statuses.length > 1) ...[
-              const SizedBox(width: 12),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                decoration: BoxDecoration(
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                  borderRadius: BorderRadius.circular(8),
-                  color: Colors.white,
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _selectedStatus,
-                    onChanged: (val) {
-                      if (val != null) {
-                        setState(() {
-                          _selectedStatus = val;
-                        });
-                      }
-                    },
-                    items: statuses.map((status) {
-                      return DropdownMenuItem<String>(
-                        value: status,
-                        child: Text(
-                          status == 'All' ? 'All Statuses' : status,
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                ),
-              ),
-            ],
           ],
         ),
         const SizedBox(height: 16),
 
-        // Advised Teams List
-        ...filteredTeams.map((team) => _teamCard(team)),
-        if (filteredTeams.isEmpty)
+        if (actionRequiredTeams.isEmpty)
           Container(
-            padding: const EdgeInsets.symmetric(vertical: 48),
+            padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
             decoration: DefensysUi.cardDecoration(),
             child: const Center(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(Icons.folder_off_outlined, size: 48, color: Color(0xFFD1D5DB)),
+                  Icon(Icons.check_circle_outline_rounded, size: 48, color: Color(0xFF10B981)),
                   SizedBox(height: 16),
                   Text(
-                    'No advised teams found matching criteria.',
-                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 14),
+                    'All caught up!',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: DefensysUi.textDark,
+                    ),
+                  ),
+                  SizedBox(height: 6),
+                  Text(
+                    'No active teams require immediate review or evaluation.',
+                    style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
+                    textAlign: TextAlign.center,
                   ),
                 ],
               ),
             ),
-          ),
+          )
+        else
+          ...actionRequiredTeams.map((team) => _teamCard(team)),
       ],
     );
   }
@@ -431,7 +319,7 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
               iconBackground: const Color(0xFFEDE3FF),
               title: 'Capstone Deliverables',
               subtitle: 'View submitted files & requirements',
-              onTap: widget.onOpenDeliverables,
+              onTap: () => widget.onOpenDeliverables(null),
             ),
             _quickAction(
               icon: Icons.assignment_outlined,
@@ -439,7 +327,7 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
               iconBackground: const Color(0xFFCFFAE7),
               title: 'Weekly Progress Reports',
               subtitle: 'Track student journal updates',
-              onTap: widget.onOpenWeeklyReports,
+              onTap: () => widget.onOpenWeeklyReports(null),
             ),
             _quickAction(
               icon: Icons.rate_review_rounded,
@@ -447,7 +335,7 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
               iconBackground: const Color(0xFFDCEBFF),
               title: 'Grade Students',
               subtitle: 'Evaluate defenses using rubrics',
-              onTap: widget.onOpenGrading,
+              onTap: () => widget.onOpenGrading(null),
               isLast: true,
             ),
           ],
@@ -870,42 +758,27 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                InkWell(
-                  onTap: id != null ? () => context.go('/faculty/student-teams/$id') : null,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              name,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.bold,
-                                color: _ink,
-                              ),
-                            ),
-                          ),
-                          if (id != null)
-                            const Icon(
-                              Icons.arrow_outward_rounded,
-                              size: 16,
-                              color: Color(0xFF9CA3AF),
-                            ),
-                        ],
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: _ink,
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        projectTitle,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          color: Color(0xFF4B5563),
-                          height: 1.45,
-                        ),
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      projectTitle,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        color: Color(0xFF4B5563),
+                        height: 1.45,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 16),
 
@@ -1018,48 +891,53 @@ class _AdviserDashboardContentState extends State<AdviserDashboardContent> {
           ),
 
           // Action Buttons Row
-          Container(
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              border: Border(top: BorderSide(color: _line)),
-              borderRadius: BorderRadius.only(
-                bottomLeft: Radius.circular(12),
-                bottomRight: Radius.circular(12),
-              ),
-            ),
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
-              children: [
-                TextButton.icon(
-                  onPressed: widget.onOpenDeliverables,
-                  icon: const Icon(Icons.folder_open_outlined, size: 14),
-                  label: const Text('Deliverables', style: TextStyle(fontSize: 11.5)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF4B5563),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          Builder(
+            builder: (context) {
+              final int? teamId = id is int ? id : (id != null ? int.tryParse(id.toString()) : null);
+              return Container(
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF9FAFB),
+                  border: Border(top: BorderSide(color: _line)),
+                  borderRadius: BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
                   ),
                 ),
-                TextButton.icon(
-                  onPressed: widget.onOpenWeeklyReports,
-                  icon: const Icon(Icons.assignment_outlined, size: 14),
-                  label: const Text('Weekly Reports', style: TextStyle(fontSize: 11.5)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: const Color(0xFF4B5563),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    TextButton.icon(
+                      onPressed: () => widget.onOpenDeliverables(teamId),
+                      icon: const Icon(Icons.folder_open_outlined, size: 14),
+                      label: const Text('Deliverables', style: TextStyle(fontSize: 11.5)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF4B5563),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => widget.onOpenWeeklyReports(teamId),
+                      icon: const Icon(Icons.assignment_outlined, size: 14),
+                      label: const Text('Weekly Reports', style: TextStyle(fontSize: 11.5)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF4B5563),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () => widget.onOpenGrading(teamId),
+                      icon: const Icon(Icons.rate_review_rounded, size: 14),
+                      label: const Text('Grade Team', style: TextStyle(fontSize: 11.5)),
+                      style: TextButton.styleFrom(
+                        foregroundColor: _maroon,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      ),
+                    ),
+                  ],
                 ),
-                TextButton.icon(
-                  onPressed: widget.onOpenGrading,
-                  icon: const Icon(Icons.rate_review_rounded, size: 14),
-                  label: const Text('Grade Team', style: TextStyle(fontSize: 11.5)),
-                  style: TextButton.styleFrom(
-                    foregroundColor: _maroon,
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  ),
-                ),
-              ],
-            ),
+              );
+            }
           ),
         ],
       ),

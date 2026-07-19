@@ -5,10 +5,13 @@ Automatically categorizes documents into technology domains
 
 import os
 import pickle
+import logging
 import numpy as np
 from typing import Dict, List, Tuple
 from sklearn.naive_bayes import MultinomialNB
 from sklearn.feature_extraction.text import TfidfVectorizer
+
+logger = logging.getLogger(__name__)
 
 
 # Technology categories
@@ -109,7 +112,7 @@ class NaiveBayesClassifier:
     
     def train_from_keywords(self):
         """Train classifier using predefined keywords"""
-        print('Training Naive Bayes classifier from keywords...')
+        logger.info('Training Naive Bayes classifier from keywords...')
         
         # Generate training documents from keywords
         training_docs = []
@@ -131,9 +134,9 @@ class NaiveBayesClassifier:
         self.is_trained = True
         self.categories = list(self.classifier.classes_)
         
-        print(f'Classifier trained on {len(training_docs)} documents')
-        print(f'Categories: {len(self.categories)}')
-        print(f'Features: {len(self.vectorizer.get_feature_names_out())}')
+        logger.info(f'Classifier trained on {len(training_docs)} documents')
+        logger.info(f'Categories: {len(self.categories)}')
+        logger.info(f'Features: {len(self.vectorizer.get_feature_names_out())}')
     
     def predict(self, text: str) -> Dict[str, any]:
         """
@@ -195,13 +198,13 @@ class NaiveBayesClassifier:
         with open(filepath, 'wb') as f:
             pickle.dump(model_data, f)
         
-        print(f'Model saved to {filepath}')
+        logger.info(f'Model saved to {filepath}')
     
     def load_model(self, filepath: str):
         """Load trained model from disk"""
         if not os.path.exists(filepath):
-            print(f'Warning: Model file not found: {filepath}')
-            print('Training new model from keywords...')
+            logger.warning(f'Model file not found: {filepath}')
+            logger.info('Training new model from keywords...')
             self.train_from_keywords()
             return
         
@@ -213,7 +216,7 @@ class NaiveBayesClassifier:
         self.categories = model_data['categories']
         self.is_trained = model_data['is_trained']
         
-        print(f'Model loaded from {filepath}')
+        logger.info(f'Model loaded from {filepath}')
 
 
 # Global classifier instance

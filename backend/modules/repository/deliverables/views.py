@@ -1,3 +1,4 @@
+from django.db.models import Q
 from django.core.exceptions import ValidationError
 from django.shortcuts import get_object_or_404
 from rest_framework import status
@@ -101,9 +102,26 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     semester = active_semester()
     if scope == 'pit':
         from defense.scheduler.models import PitEventGradingConfig
+        from authentication_access_control.scopes import is_pit_lead_only, _pit_year
+        pit_lead = is_pit_lead_only(request.user)
+        pit_year = _pit_year(request.user) if pit_lead else None
+
+        configs_qs = PitEventGradingConfig.objects.filter(semester=semester)
+        if pit_lead:
+            if pit_year:
+                from repository.audit.services import PIT_YEAR_EVENT_HINTS
+                exclude_filter = Q()
+                for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                    if y != pit_year:
+                        for hint in hints:
+                            exclude_filter |= Q(event_name__icontains=hint)
+                if exclude_filter:
+                    configs_qs = configs_qs.exclude(exclude_filter)
+            else:
+                configs_qs = configs_qs.none()
+
         stage_options = list(
-            PitEventGradingConfig.objects.filter(semester=semester)
-            .order_by('event_name')
+            configs_qs.order_by('event_name')
             .values_list('event_name', flat=True)
         )
     else:
@@ -124,6 +142,7 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         'statuses': [
             {'value': '', 'label': 'All Teams'},
             {'value': 'ready', 'label': 'Ready / Endorsed'},
+            {'value': 'pending_review', 'label': 'Pending Review'},
             {'value': 'missing', 'label': 'Missing Requirements'},
         ],
         'active_semester': SemesterSerializer(semester).data if semester else None,

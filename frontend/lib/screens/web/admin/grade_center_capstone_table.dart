@@ -278,7 +278,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         padding: EdgeInsets.all(32),
         child: Center(
           child: Text(
-            'No defense stages configured. Add stages under Defense Stages.',
+            'No defense stages setup. Add stages under Defense Stages Setup.',
             style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
             textAlign: TextAlign.center,
           ),
@@ -291,7 +291,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         padding: EdgeInsets.all(32),
         child: Center(
           child: Text(
-            'No active stages to display. Activate stages under Defense Stages.',
+            'No active stages to display. Activate stages under Defense Stages Setup.',
             style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
             textAlign: TextAlign.center,
           ),
