@@ -543,3 +543,56 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['upcoming_defenses'], [])
         self.assertEqual(response.data['assignments'], [])
         self.assertEqual(response.data['results'], [])
+
+    def test_capstone_instructor_restriction_returns_separated_teams(self):
+        from user_management.models import SectionInstructorAssignment
+        instructor = User.objects.create_user(
+            username='instructor-3rd',
+            password='pass12345',
+            role='faculty',
+        )
+        student_pit = User.objects.create_user(username='std-pit', password='pass12345', role='student')
+        student_cap = User.objects.create_user(username='std-cap', password='pass12345', role='student')
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(school_year=school_year, label=Semester.FIRST, is_active=True)
+
+        SectionInstructorAssignment.objects.create(
+            faculty=instructor,
+            semester=semester,
+            section='Section A',
+            year_level='3rd Year',
+            is_active=True,
+        )
+
+        pit_team = StudentTeam.objects.create(
+            name='PIT Team 1',
+            project_title='PIT Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            section='Section A',
+            semester=semester,
+            leader=student_pit,
+        )
+
+        capstone_team = StudentTeam.objects.create(
+            name='Capstone Team 1',
+            project_title='Capstone Project',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            section='Section A',
+            semester=semester,
+            leader=student_cap,
+        )
+
+        self.client.force_authenticate(user=instructor)
+        response = self.client.get('/api/dashboards/faculty/')
+
+        self.assertEqual(response.status_code, 200)
+        pit_ids = [t['id'] for t in response.data['pit_teams']]
+        cap_ids = [t['id'] for t in response.data['capstone_info_teams']]
+        self.assertIn(pit_team.id, pit_ids)
+        self.assertNotIn(capstone_team.id, pit_ids)
+        self.assertIn(capstone_team.id, cap_ids)
+        self.assertNotIn(pit_team.id, cap_ids)
+        self.assertTrue(response.data['roles']['capstone_instructor'])
+        self.assertIn('3rd Year', response.data['roles']['capstone_instructor_years'])

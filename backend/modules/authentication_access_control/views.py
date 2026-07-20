@@ -3,6 +3,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 from rest_framework import status
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
@@ -123,7 +124,9 @@ class ChangePasswordView(APIView):
 
         # Send confirmation email (best-effort).
         from notifications.email_service import send_password_changed_email
-        send_password_changed_email(user)
+        email_sent = send_password_changed_email(user)
+        if not email_sent:
+            logger.warning('change_password: password changed but confirmation email failed for user_id=%s', user.pk)
 
         return Response({'detail': 'Password changed successfully.'})
 
@@ -146,22 +149,62 @@ class UserHistoryView(APIView):
 
 
 
+class SystemAuditLogPagination(PageNumberPagination):
+    page_size = 50
+    page_size_query_param = 'page_size'
+    max_page_size = 200
+
+    def get_page_size(self, request):
+        if 'limit' in request.query_params and 'page_size' not in request.query_params:
+            try:
+                limit_val = int(request.query_params['limit'])
+                if limit_val > 0:
+                    return min(limit_val, self.max_page_size)
+            except (TypeError, ValueError):
+                pass
+        return super().get_page_size(request)
+
+
 class SystemAuditLogListView(APIView):
     permission_classes = [IsAuthenticated]
+    pagination_class = SystemAuditLogPagination
 
     def get(self, request):
         if not can_review_audit_logs(request.user):
             raise PermissionDenied('Audit Trail is available to admins and assigned PIT leaders.')
         base_queryset = audit_logs_for(request.user)
-        queryset = base_queryset
-        queryset = self._filter_queryset(request, queryset)
-        limit = self._limit(request)
-        logs = list(queryset[:limit])
+        queryset = self._filter_queryset(request, base_queryset)
+
+        paginator = self.pagination_class()
+        page = paginator.paginate_queryset(queryset, request, view=self)
+
+        if page is not None:
+            serializer = SystemAuditLogSerializer(page, many=True)
+            return Response({
+                'count': paginator.page.paginator.count,
+                'total_pages': paginator.page.paginator.num_pages,
+                'current_page': paginator.page.number,
+                'next': paginator.get_next_link(),
+                'previous': paginator.get_previous_link(),
+                'page_size': paginator.get_page_size(request),
+                'limit': paginator.get_page_size(request),
+                'audit_logs': serializer.data,
+                'counts': self._counts(queryset),
+                'options': self._options(base_queryset),
+            })
+
+        serializer = SystemAuditLogSerializer(queryset, many=True)
         return Response({
-            'audit_logs': SystemAuditLogSerializer(logs, many=True).data,
+            'count': queryset.count(),
+            'total_pages': 1,
+            'current_page': 1,
+            'next': None,
+            'previous': None,
+            'page_size': len(serializer.data),
+            'limit': len(serializer.data),
+            'audit_logs': serializer.data,
             'counts': self._counts(queryset),
             'options': self._options(base_queryset),
-            'limit': limit,
         })
 
     def _filter_queryset(self, request, queryset):
@@ -223,12 +266,6 @@ class SystemAuditLogListView(APIView):
             )
         return queryset
 
-
-    def _limit(self, request):
-        try:
-            return min(max(int(request.query_params.get('limit', 50)), 1), 200)
-        except (TypeError, ValueError):
-            return 50
 
     def _counts(self, queryset):
         return {

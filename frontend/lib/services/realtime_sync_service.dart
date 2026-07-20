@@ -62,7 +62,6 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
 
     try {
       await _openSocket(token);
-      _reconnectAttempt = 0;
       _disconnectedSince = null;
       _stopFallbackPoll();
       state = RealtimeConnectionState.connected;
@@ -83,6 +82,16 @@ class RealtimeSyncNotifier extends Notifier<RealtimeConnectionState> {
 
     final uri = ApiConfig.webSocketGradingUri(token);
     _channel = WebSocketChannel.connect(uri);
+
+    // Wait for the WebSocket handshake to complete; throws on rejection.
+    try {
+      await _channel!.ready;
+    } catch (e) {
+      _channel = null;
+      rethrow;
+    }
+
+    _reconnectAttempt = 0;
     _subscription = _channel!.stream.listen(
       _onMessage,
       onError: (_) => _handleDisconnect(),

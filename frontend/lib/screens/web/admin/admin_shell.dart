@@ -15,14 +15,14 @@ import 'admin_dashboard_content.dart';
 import 'audit_compliance_screen.dart';
 import 'curriculum_analytics_screen.dart';
 import 'defense_board_screen.dart';
-import 'defense_scheduler_screen.dart';
+import 'defense_scheduler/defense_scheduler_screen.dart';
 import 'defense_stages_screen.dart';
 import 'grade_center_screen.dart';
 import 'rubric_engine_screen.dart';
 import 'student_academic_records_screen.dart';
 import 'student_teams_screen.dart';
 import 'user_management_screen.dart';
-import '../shared/repository_audit_screen.dart';
+import '../shared/repository_audit/repository_audit_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 final activeAdminSectionProvider =

@@ -215,7 +215,8 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+# Institution timezone (Philippines Standard Time / PHT, UTC+8)
+TIME_ZONE = 'Asia/Manila'
 
 USE_I18N = True
 

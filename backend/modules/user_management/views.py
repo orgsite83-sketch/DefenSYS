@@ -958,6 +958,8 @@ class AdminResetPasswordView(APIView):
         if send_email and user.email:
             from notifications.email_service import send_admin_password_reset_email
             email_sent = send_admin_password_reset_email(user)
+            if not email_sent:
+                logger.warning('admin_password_reset: notification email could not be sent to user_id=%s', user.pk)
 
         return Response({
             'detail': f'Password for {user.username} has been reset to their ID.',

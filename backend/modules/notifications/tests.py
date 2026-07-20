@@ -56,6 +56,10 @@ class NotificationAPITests(APITestCase):
         self.notification1.refresh_from_db()
         self.assertTrue(self.notification1.is_read)
 
+        # Marking an already read notification should be idempotent and return 200 OK
+        response_repeat = self.client.post(url)
+        self.assertEqual(response_repeat.status_code, status.HTTP_200_OK)
+
     def test_mark_read_denied_for_other_user(self):
         self.client.force_authenticate(user=self.user2)
         # Try to mark user1's notification as read
@@ -119,4 +123,57 @@ class NotificationAPITests(APITestCase):
         self.assertEqual(len(response.data['notifications']), 1)
         # But total count should still be 2 (from setup)
         self.assertEqual(response.data['count'], 2)
+
+
+from unittest.mock import patch
+from .email_service import (
+    _send,
+    send_password_reset_email,
+    send_password_changed_email,
+    send_admin_password_reset_email,
+)
+
+
+class EmailServiceTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username='emailtestuser',
+            email='testuser@example.com',
+            password='password123',
+        )
+        self.user_no_email = User.objects.create_user(
+            username='noemailuser',
+            email='',
+            password='password123',
+        )
+
+    def test_send_email_success(self):
+        with patch('notifications.email_service.send_mail') as mock_send_mail:
+            result = _send('Test Subject', '<p>Test</p>', 'recipient@example.com')
+            self.assertTrue(result)
+            mock_send_mail.assert_called_once()
+
+    def test_send_email_no_recipient(self):
+        result = _send('Test Subject', '<p>Test</p>', '')
+        self.assertFalse(result)
+
+    def test_send_email_exception_handling(self):
+        with patch('notifications.email_service.send_mail', side_effect=Exception('SMTP connection failed')):
+            result = _send('Test Subject', '<p>Test</p>', 'recipient@example.com')
+            self.assertFalse(result)
+
+    def test_send_password_reset_email_helpers(self):
+        with patch('notifications.email_service.send_mail'):
+            self.assertTrue(send_password_reset_email(self.user, 'http://example.com/reset'))
+            self.assertTrue(send_password_changed_email(self.user))
+            self.assertTrue(send_admin_password_reset_email(self.user))
+
+        with patch('notifications.email_service.send_mail', side_effect=Exception('SMTP error')):
+            self.assertFalse(send_password_reset_email(self.user, 'http://example.com/reset'))
+            self.assertFalse(send_password_changed_email(self.user))
+            self.assertFalse(send_admin_password_reset_email(self.user))
+
+    def test_send_password_reset_email_no_email_user(self):
+        self.assertFalse(send_password_reset_email(self.user_no_email, 'http://example.com/reset'))
+
 

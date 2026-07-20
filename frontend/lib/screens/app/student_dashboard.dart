@@ -283,7 +283,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => Consumer(
-        builder: (context, ref, _) {
+        builder: (sheetCtx, ref, _) {
           final user = ref.watch(authProvider).user;
           final avatarUrl = user?['avatar'] != null
               ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
@@ -345,7 +345,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       ),
                     ),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -358,7 +358,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     leading: const Icon(Icons.info_outline_rounded),
                     title: const Text('About DefenSYS'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AboutScreen()),
@@ -369,7 +369,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     leading: const Icon(Icons.privacy_tip_outlined),
                     title: const Text('Privacy Policy'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PrivacyScreen()),
@@ -380,7 +380,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                     leading: const Icon(Icons.gavel_rounded),
                     title: const Text('Terms & Conditions'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TermsScreen()),
@@ -395,9 +395,10 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
                       style: TextStyle(color: Colors.red),
                     ),
                     onTap: () async {
-                      Navigator.pop(context);
+                      final authNotifier = ref.read(authProvider.notifier);
+                      Navigator.pop(sheetCtx);
                       if (await confirmLogout(context)) {
-                        await ref.read(authProvider.notifier).logout();
+                        await authNotifier.logout();
                       }
                     },
                   ),

@@ -98,8 +98,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
       return matchesSearch && matchesStatus && matchesLevel;
     }).toList();
 
-    final isCapstoneWorkspace = rawTeams.any((t) => t['isCapstone'] == true);
-    final titleLabel = isCapstoneWorkspace ? 'Section Instructor workspace' : 'PIT Instructor workspace';
+    const titleLabel = 'PIT Instructor workspace';
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 1100;
@@ -120,7 +119,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
             Expanded(
               child: _metricCard(
                 value: totalTeams.toString(),
-                label: isCapstoneWorkspace ? 'Assigned Teams' : 'Assigned PIT Teams',
+                label: 'Assigned PIT Teams',
                 icon: Icons.groups_2_rounded,
                 iconColor: const Color(0xFF7C3AED),
                 iconBackground: const Color(0xFFEDE3FF),
@@ -167,7 +166,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
                 children: [
                   Expanded(
                     flex: 3,
-                    child: _buildTeamsSection(filteredTeams, levels, statuses, isCapstoneWorkspace),
+                    child: _buildTeamsSection(filteredTeams, levels, statuses),
                   ),
                   const SizedBox(width: 20),
                   Expanded(
@@ -175,9 +174,9 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        _quickActionsCard(isCapstoneWorkspace),
+                        _quickActionsCard(),
                         const SizedBox(height: 20),
-                        _teamsOverviewCard(pitTeams, isCapstoneWorkspace),
+                        _teamsOverviewCard(pitTeams),
                       ],
                     ),
                   ),
@@ -186,11 +185,11 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _quickActionsCard(isCapstoneWorkspace),
+                  _quickActionsCard(),
                   const SizedBox(height: 20),
-                  _teamsOverviewCard(pitTeams, isCapstoneWorkspace),
+                  _teamsOverviewCard(pitTeams),
                   const SizedBox(height: 20),
-                  _buildTeamsSection(filteredTeams, levels, statuses, isCapstoneWorkspace),
+                  _buildTeamsSection(filteredTeams, levels, statuses),
                 ],
               ),
       ],
@@ -201,16 +200,15 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     List<Map<String, dynamic>> filteredTeams,
     List<String> levels,
     List<String> statuses,
-    bool isCapstoneWorkspace,
   ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Row(
           children: [
-            Text(
-              isCapstoneWorkspace ? 'My Assigned Teams' : 'My Assigned PIT Teams',
-              style: const TextStyle(
+            const Text(
+              'My Assigned PIT Teams',
+              style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
                 color: DefensysUi.textDark,
@@ -338,7 +336,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
         const SizedBox(height: 16),
 
         // Teams List
-        ...filteredTeams.map((team) => _teamCard(team, isCapstoneWorkspace)),
+        ...filteredTeams.map((team) => _teamCard(team)),
         if (filteredTeams.isEmpty)
           Container(
             padding: const EdgeInsets.symmetric(vertical: 48),
@@ -417,7 +415,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     );
   }
 
-  Widget _quickActionsCard(bool isCapstoneWorkspace) {
+  Widget _quickActionsCard() {
     return _dashboardCard(
       title: 'Quick Actions',
       child: Padding(
@@ -428,7 +426,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
               icon: Icons.folder_open_outlined,
               iconColor: const Color(0xFF7C3AED),
               iconBackground: const Color(0xFFEDE3FF),
-              title: isCapstoneWorkspace ? 'Section Deliverables' : 'PIT Deliverables',
+              title: 'PIT Deliverables',
               subtitle: 'Review uploads & progress',
               onTap: widget.onOpenDeliverables,
             ),
@@ -447,7 +445,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     );
   }
 
-  Widget _teamsOverviewCard(List<Map<String, dynamic>> pitTeams, bool isCapstoneWorkspace) {
+  Widget _teamsOverviewCard(List<Map<String, dynamic>> pitTeams) {
     int approvedCount = 0;
     int pendingCount = 0;
     int delayedCount = 0;
@@ -556,13 +554,13 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
             ),
             const SizedBox(height: 12),
             buildStatusRow(
-              label: isCapstoneWorkspace ? 'Approved' : 'Endorsed',
+              label: 'Endorsed',
               count: approvedCount,
               color: const Color(0xFF10B981),
               progressBgColor: const Color(0xFFD1FAE5),
             ),
             buildStatusRow(
-              label: isCapstoneWorkspace ? 'Pending' : 'Awaiting Review',
+              label: 'Awaiting Review',
               count: pendingCount,
               color: const Color(0xFFF59E0B),
               progressBgColor: const Color(0xFFFEF3C7),
@@ -752,7 +750,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     );
   }
 
-  Widget _teamCard(Map<String, dynamic> map, bool isCapstoneWorkspace) {
+  Widget _teamCard(Map<String, dynamic> map) {
     final id = map['id'];
     final name = map['name']?.toString() ?? 'Team';
     final projectTitle = map['projectTitle']?.toString() ?? 'No project title';
@@ -770,9 +768,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
 
     final statusLower = status.toLowerCase();
     final isEndorsed = statusLower == 'approved';
-    final statusLabel = isCapstoneWorkspace
-        ? status
-        : (isEndorsed ? 'Endorsed' : 'Awaiting Review');
+    final statusLabel = isEndorsed ? 'Endorsed' : 'Awaiting Review';
 
     switch (statusLower) {
       case 'approved':

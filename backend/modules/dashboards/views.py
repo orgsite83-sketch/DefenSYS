@@ -110,14 +110,49 @@ def _faculty_roles(user):
     )
     if active_sem:
         assignments = assignments.filter(semester=active_sem)
-    pit_instructor_years = sorted(list(set(assignments.values_list('year_level', flat=True))))
+    
+    from student_teams.team_levels import normalize_year_level
+    pit_instructor_years = []
+    capstone_instructor_years = []
+
+    for assign in assignments:
+        norm_year = normalize_year_level(assign.year_level)
+        has_pit = StudentTeam.objects.filter(
+            Q(semester=assign.semester, section=assign.section) &
+            Q(level__icontains=norm_year) &
+            Q(level__icontains='PIT')
+        ).exists()
+        has_capstone = StudentTeam.objects.filter(
+            Q(semester=assign.semester, section=assign.section) &
+            Q(level__icontains=norm_year) &
+            Q(level__icontains='Capstone')
+        ).exists()
+
+        if not has_pit and not has_capstone:
+            if norm_year in ('1st Year', '2nd Year', '3rd Year'):
+                has_pit = True
+            if norm_year in ('3rd Year', '4th Year'):
+                has_capstone = True
+
+        if has_pit and norm_year not in pit_instructor_years:
+            pit_instructor_years.append(norm_year)
+        if has_capstone and norm_year not in capstone_instructor_years:
+            capstone_instructor_years.append(norm_year)
+
+    pit_instructor_years.sort()
+    capstone_instructor_years.sort()
+
     is_pit_instructor = len(pit_instructor_years) > 0
+    is_capstone_instructor = len(capstone_instructor_years) > 0
+
     return {
         'panelist': user.is_panelist,
         'pit_lead': user.is_pit_lead,
         'pit_lead_year': user.pit_lead_year,
         'pit_instructor': is_pit_instructor,
         'pit_instructor_years': pit_instructor_years,
+        'capstone_instructor': is_capstone_instructor,
+        'capstone_instructor_years': capstone_instructor_years,
         'adviser': user.is_adviser,
         'documenter': user.is_documenter,
         'uploader': user.is_uploader,
@@ -787,23 +822,50 @@ class FacultyDashboardView(APIView):
             'adviser',
         ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
         is_pit_instructor = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True).exists()
+        capstone_info_teams = []
         if is_pit_instructor:
             from student_teams.team_levels import normalize_year_level
             assignments = SectionInstructorAssignment.objects.filter(faculty=user, is_active=True)
-            q = Q()
+            q_pit = Q()
+            q_capstone = Q()
             for assign in assignments:
                 norm_year = normalize_year_level(assign.year_level)
-                q |= Q(
-                    semester=assign.semester,
-                    section=assign.section,
-                    level__icontains=norm_year
+                q_pit |= (
+                    Q(semester=assign.semester, section=assign.section) &
+                    Q(level__icontains=norm_year) &
+                    Q(level__icontains='PIT')
                 )
-            pit_teams = StudentTeam.objects.filter(q).select_related(
-                'semester',
-                'semester__school_year',
-                'leader',
-                'adviser',
-            ).prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
+                q_capstone |= (
+                    Q(semester=assign.semester, section=assign.section) &
+                    Q(level__icontains=norm_year) &
+                    Q(level__icontains='Capstone')
+                )
+            pit_teams = (
+                StudentTeam.objects.filter(q_pit)
+                .distinct()
+                .select_related(
+                    'semester',
+                    'semester__school_year',
+                    'leader',
+                    'adviser',
+                )
+                .prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
+                if q_pit
+                else StudentTeam.objects.none()
+            )
+            capstone_info_teams = (
+                StudentTeam.objects.filter(q_capstone)
+                .distinct()
+                .select_related(
+                    'semester',
+                    'semester__school_year',
+                    'leader',
+                    'adviser',
+                )
+                .prefetch_related('memberships', 'memberships__student', 'deliverable_submissions')
+                if q_capstone
+                else StudentTeam.objects.none()
+            )
         else:
             pit_teams = _pit_teams_queryset(user)
         pit_lead_overview = _pit_lead_overview_payload(user, active_sem=active_sem)
@@ -816,6 +878,7 @@ class FacultyDashboardView(APIView):
             'advised_teams': [_team_payload(team) for team in advised_teams],
             'panelist_assignments': [],
             'pit_teams': [_team_payload(team) for team in pit_teams],
+            'capstone_info_teams': [_team_payload(team) for team in capstone_info_teams],
             'pit_lead_year': user.pit_lead_year if user.is_pit_lead else None,
             'pit_lead_overview': pit_lead_overview,
             'active_semester': _active_semester_label(active_sem),

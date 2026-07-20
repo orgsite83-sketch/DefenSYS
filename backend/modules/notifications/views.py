@@ -52,8 +52,9 @@ class NotificationReadView(APIView):
 
     def post(self, request, pk):
         notification = get_object_or_404(Notification, pk=pk, recipient=request.user)
-        notification.is_read = True
-        notification.save()
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save(update_fields=['is_read'])
         return Response({
             'status': 'success',
             'notification': NotificationSerializer(notification).data

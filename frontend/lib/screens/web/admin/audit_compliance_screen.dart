@@ -1147,14 +1147,14 @@ class _SummaryCard extends StatelessWidget {
   }
 }
 
-class _AuditTrailTable extends StatelessWidget {
+class _AuditTrailTable extends ConsumerWidget {
   final SystemAuditState state;
   final DataRow Function(Map<String, dynamic>) auditRow;
 
   const _AuditTrailTable({required this.state, required this.auditRow});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     return DefensysCard(
       padding: const EdgeInsets.all(18),
       child: Column(
@@ -1190,7 +1190,7 @@ class _AuditTrailTable extends StatelessWidget {
                   ? 'Try clearing a category, status, action, search, or date filter to widen the audit register.'
                   : 'New official academic actions and repository changes will appear here after they are logged.',
             )
-          else
+          else ...[
             SingleChildScrollView(
               scrollDirection: Axis.horizontal,
               child: DataTable(
@@ -1206,6 +1206,50 @@ class _AuditTrailTable extends StatelessWidget {
                 rows: state.logs.map(auditRow).toList(),
               ),
             ),
+            const SizedBox(height: 12),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Showing page ${state.currentPage} of ${state.totalPages} (${state.totalCount} total entries)',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: DefensysUi.steelGrey,
+                  ),
+                ),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left),
+                      tooltip: 'Previous Page',
+                      onPressed: state.currentPage > 1
+                          ? () => ref
+                              .read(systemAuditProvider.notifier)
+                              .previousPage()
+                          : null,
+                    ),
+                    Text(
+                      'Page ${state.currentPage} / ${state.totalPages}',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: DefensysUi.textDark,
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right),
+                      tooltip: 'Next Page',
+                      onPressed: state.currentPage < state.totalPages
+                          ? () => ref
+                              .read(systemAuditProvider.notifier)
+                              .nextPage()
+                          : null,
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ],
         ],
       ),
     );

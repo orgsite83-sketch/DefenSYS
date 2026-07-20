@@ -309,7 +309,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
       builder: (_) => Consumer(
-        builder: (context, ref, _) {
+        builder: (sheetCtx, ref, _) {
           final user = ref.watch(authProvider).user;
           final displayName = user != null && user['name'] != null
               ? user['name'] as String
@@ -369,7 +369,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                       ),
                     ),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const ProfileScreen()),
@@ -380,7 +380,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                     leading: const Icon(Icons.info_outline_rounded),
                     title: const Text('About DefenSYS'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AboutScreen()),
@@ -391,7 +391,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                     leading: const Icon(Icons.privacy_tip_outlined),
                     title: const Text('Privacy Policy'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PrivacyScreen()),
@@ -402,7 +402,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                     leading: const Icon(Icons.gavel_rounded),
                     title: const Text('Terms & Conditions'),
                     onTap: () {
-                      Navigator.pop(context);
+                      Navigator.pop(sheetCtx);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TermsScreen()),
@@ -417,9 +417,10 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                       style: TextStyle(color: Colors.red),
                     ),
                     onTap: () async {
-                      Navigator.pop(context);
+                      final authNotifier = ref.read(authProvider.notifier);
+                      Navigator.pop(sheetCtx);
                       if (await confirmLogout(context)) {
-                        await ref.read(authProvider.notifier).logout();
+                        await authNotifier.logout();
                       }
                     },
                   ),

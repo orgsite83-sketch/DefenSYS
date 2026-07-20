@@ -47,10 +47,12 @@ dependencies:
   connectivity_plus: ^7.1.1
   flutter_localizations:
     sdk: flutter
+  # web package provides modern JS interop (package:web/web.dart & dart:js_interop)
+  # for web browser APIs like navigator.clipboard in lib/utils/clipboard_copy_web.dart
   web: ^1.1.1
   web_socket_channel: ^3.0.2
 
-  meta: any
+  meta: ^1.17.0
   toastification: ^3.2.0
   google_fonts: ^6.2.1
 dev_dependencies:
@@ -65,7 +67,7 @@ dev_dependencies:
   # rules and activating additional ones.
   flutter_lints: ^5.0.0
 
-  riverpod: any
+  riverpod: ^3.2.1
 flutter_launcher_icons:
   android: true
   ios: false

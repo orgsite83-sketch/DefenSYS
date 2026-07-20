@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
 
 import jwt
 from django.conf import settings
@@ -653,6 +654,16 @@ class PasswordManagementTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn('link has been sent', response.data['detail'])
 
+    def test_request_password_reset_email_failure(self):
+        with patch('authentication_access_control.password_reset.send_password_reset_email', return_value=False):
+            response = self.client.post(
+                '/api/password-reset/',
+                {'identifier': 'student-test'},
+                format='json',
+            )
+            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.assertIn('Failed to send password reset email', response.data['detail'])
+
     def test_request_password_reset_nonexistent_user(self):
         # Should still return 200 to prevent user enumeration
         response = self.client.post(
@@ -762,6 +773,63 @@ class HealthCheckApiTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
         self.assertEqual(response.data['status'], 'unhealthy')
         self.assertIn('unhealthy', response.data['checks']['database'])
+
+
+class SystemAuditLogPaginationTests(APITestCase):
+    def setUp(self):
+        self.admin = User.objects.create_superuser(
+            username='audit-admin',
+            email='auditadmin@example.com',
+            password='Password123!',
+            role='admin',
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # Create 15 system audit log entries for testing pagination
+        for i in range(15):
+            SystemAuditLog.objects.create(
+                category=SystemAuditLog.CATEGORY_REPOSITORY,
+                action=f'TEST_ACTION_{i}',
+                target_type='User',
+                target_id=str(i),
+                reason='Pagination test',
+                actor=self.admin,
+                review_status=SystemAuditLog.REVIEW_CAPTURED,
+            )
+
+    def test_audit_log_pagination_default_page_size(self):
+        response = self.client.get('/api/audit-logs/')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('count', response.data)
+        self.assertIn('total_pages', response.data)
+        self.assertIn('current_page', response.data)
+        self.assertIn('audit_logs', response.data)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['current_page'], 1)
+        self.assertEqual(len(response.data['audit_logs']), 15)
+
+    def test_audit_log_pagination_custom_page_size(self):
+        response = self.client.get('/api/audit-logs/?page_size=5')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['total_pages'], 3)
+        self.assertEqual(response.data['current_page'], 1)
+        self.assertEqual(len(response.data['audit_logs']), 5)
+        self.assertIsNotNone(response.data['next'])
+
+        # Fetch page 2
+        response_p2 = self.client.get('/api/audit-logs/?page=2&page_size=5')
+        self.assertEqual(response_p2.status_code, status.HTTP_200_OK)
+        self.assertEqual(response_p2.data['current_page'], 2)
+        self.assertEqual(len(response_p2.data['audit_logs']), 5)
+
+    def test_audit_log_pagination_legacy_limit_param(self):
+        response = self.client.get('/api/audit-logs/?limit=5')
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['count'], 15)
+        self.assertEqual(response.data['total_pages'], 3)
+        self.assertEqual(len(response.data['audit_logs']), 5)
+
 
 
 

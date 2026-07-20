@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/defense_board_provider.dart';
 import '../../../theme/app_theme.dart';
-import 'defense_scheduler_screen.dart';
+import 'defense_scheduler/defense_scheduler_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
 import '../faculty/minutes_form_screen.dart';
 

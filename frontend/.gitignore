@@ -11,6 +11,9 @@
 .svn/
 .swiftpm/
 migrate_working_dir/
+analyze_output.txt
+flutter_01.png
+
 
 # IntelliJ related
 *.iml

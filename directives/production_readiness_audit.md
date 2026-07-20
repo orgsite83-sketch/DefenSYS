@@ -186,125 +186,71 @@ Module-level imports are cleaner and avoid repeated import overhead (though mini
 
 ---
 
-### M5. No Pagination on `SystemAuditLogListView`
+### ~~M5. No Pagination on `SystemAuditLogListView`~~ ✅ RESOLVED
 
-**File:** [views.py#L146-L162](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/authentication_access_control/views.py#L146-L162)
-
-The audit log view uses a `limit` parameter (max 200) but no proper pagination (no `offset`, no `page`). An admin viewing audit logs over a long period has no way to paginate past the first 200 results.
-
-**Fix:** Implement cursor-based or offset pagination using DRF's `PageNumberPagination`.
+> **Status:** Resolved — implemented custom `SystemAuditLogPagination` inheriting from DRF's `PageNumberPagination` in `backend/modules/authentication_access_control/views.py`. It supports `page`, `page_size`, and legacy `limit` parameters with a max page size of 200. Updated frontend `SystemAuditState`, `SystemAuditNotifier`, and `_AuditTrailTable` UI to support page navigation, and added comprehensive automated test cases in `authentication_access_control/tests.py`.
 
 ---
 
-### M6. Email Failures Are Silent
+### ~~M6. Email Failures Are Silent~~ ✅ RESOLVED
 
-**File:** [email_service.py](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/notifications/email_service.py)
-
-Email sending catches all exceptions and only logs them. If SMTP is misconfigured, password resets will silently fail with no user feedback. The `send_password_changed_email` in `ChangePasswordView` is fire-and-forget.
-
-**Fix:** For password reset, consider returning an error if the email fails to send, or at minimum add monitoring/alerting on email failures.
+> **Status:** Resolved — Updated `RequestPasswordResetView` in `backend/modules/authentication_access_control/password_reset.py` to check the return status of `send_password_reset_email` and return an HTTP `500 Internal Server Error` response (`{"detail": "Failed to send password reset email..."}`) if email delivery fails for a valid user (while continuing to return `200 OK` for nonexistent users to prevent enumeration). Enhanced `email_service.py` to log structured error tracebacks on SMTP failure, added warning logs across `ChangePasswordView`, `ConfirmPasswordResetAPIView`, and `UserAdminResetPasswordView` when email dispatch fails, and added comprehensive automated test cases in `notifications/tests.py` and `authentication_access_control/tests.py`.
 
 ---
 
-### M7. `NotificationReadView.post()` Missing `update_fields`
+### ~~M7. `NotificationReadView.post()` Missing `update_fields`~~ ✅ RESOLVED
 
-**File:** [views.py#L53-L60](file:///c:/Users/Admin/Desktop/DefenSYS/backend/modules/notifications/views.py#L53-L60)
-
-```python
-notification.is_read = True
-notification.save()  # Saves ALL fields
-```
-
-**Fix:** Use `notification.save(update_fields=['is_read'])` for efficiency and to avoid race conditions.
+> **Status:** Resolved — Updated `NotificationReadView.post` in `backend/modules/notifications/views.py` to call `notification.save(update_fields=['is_read'])` (wrapped in an `is_read` check) for efficiency and race condition prevention. Enhanced test coverage in `notifications/tests.py` to cover read status updates and idempotency.
 
 ---
 
-### M8. Flutter `web` Package Imported But Scope Unclear
+### ~~M8. Flutter `web` Package Imported But Scope Unclear~~ ✅ RESOLVED
 
-**File:** [pubspec.yaml#L50](file:///c:/Users/Admin/Desktop/DefenSYS/frontend/pubspec.yaml#L50)
-
-```yaml
-web: ^1.1.1
-```
-
-The `web` package is imported but its usage scope is unclear. It may be transitively required, but should be documented. Also `meta: any` has an unconstrained version which could break on future releases.
-
-**Fix:** Pin `meta` to a specific version range and document why `web` is needed.
+> **Status:** Resolved — Documented the `web: ^1.1.1` package usage scope in `frontend/pubspec.yaml` (providing modern `dart:js_interop` & `package:web/web.dart` bindings for browser clipboard APIs in `frontend/lib/utils/clipboard_copy_web.dart`), and replaced unconstrained `any` version selectors with pinned ranges (`meta: ^1.17.0` and `riverpod: ^3.2.1`).
 
 ---
 
-### M9. `analyze_output.txt` and Log Files Committed to Repo
+### ~~M9. `analyze_output.txt` and Log Files Committed to Repo~~ ✅ RESOLVED
 
-**Files in frontend root:** `analyze_output.txt`, `flutter-web-server.err.log`, `flutter-web-server.out.log`, `static-web-server.err.log`, `static-web-server.out.log`, `flutter_01.png`
-
-Development artifacts and log files are in the repo. These should be gitignored.
-
-**Fix:** Add to `frontend/.gitignore`:
-```
-analyze_output.txt
-*.log
-flutter_01.png
-```
-
-And remove them: `git rm --cached analyze_output.txt *.log flutter_01.png`
+> **Status:** Resolved — Updated `frontend/.gitignore` to include `analyze_output.txt` and `flutter_01.png` (alongside existing `*.log` rules), and removed `frontend/analyze_output.txt` and `frontend/flutter_01.png` from the git index via `git rm --cached`.
 
 ---
 
-### M10. `TIME_ZONE = 'UTC'` — Should Match Business Locale
+### ~~M10. `TIME_ZONE = 'UTC'` — Should Match Business Locale~~ ✅ RESOLVED
 
-**File:** [settings.py#L214](file:///c:/Users/Admin/Desktop/DefenSYS/backend/defensys_backend/settings.py#L214)
-
-UTC is correct for internal storage, but the system manages defense schedules with dates/times. Ensure the frontend properly converts to/from the institution's timezone (likely `Asia/Manila` given the `.edu` domain and Filipino localization).
-
-**Fix:** Add timezone handling documentation. Consider:
-```python
-TIME_ZONE = 'Asia/Manila'  # If all users are in PH
-```
-Or keep UTC and ensure all datetime display logic in Flutter handles conversion.
+> **Status:** Resolved — Configured `TIME_ZONE = 'Asia/Manila'` (Philippines Standard Time / PHT, UTC+8) in `backend/defensys_backend/settings.py` (with `USE_TZ = True` for DB storage in UTC while rendering/converting with institutional wall-clock timezone). Updated Flutter frontend screens (`weekly_progress_reports_screen.dart` and `repository_tab.dart`) to ensure all parsed ISO 8601 strings explicitly convert to local client timezone via `.toLocal()` before formatting.
 
 ---
 
 ## 🔵 LOW — Nice-to-Have Improvements
 
-### L1. No CI/CD Pipeline
+### ~~L1. No CI/CD Pipeline~~ ✅ RESOLVED
 
-No `.github/workflows/`, no `Jenkinsfile`, no `gitlab-ci.yml`. All testing and deployment is manual.
+> **Status:** Resolved — Created `.github/workflows/ci.yml` configuring automated GitHub Actions CI jobs: `backend-tests` (running `python manage.py test` on Python 3.12) and `frontend-checks` (running `flutter pub get`, `flutter analyze`, and `flutter test` on stable Flutter SDK).
 
-**Fix:** Add at minimum a GitHub Actions workflow that runs:
-```yaml
-- python manage.py test
-- flutter analyze
-- flutter test
-```
 
 ---
 
-### L2. `pytest.ini` Ignores All Tests
+### ~~L2. `pytest.ini` Ignores All Tests~~ ✅ RESOLVED
 
-**File:** [pytest.ini](file:///c:/Users/Admin/Desktop/DefenSYS/backend/pytest.ini)
-
-```ini
-addopts = --ignore=tests
-```
-
-This prevents pytest from discovering the ad-hoc test scripts in `backend/tests/`, but it also means running `pytest` directly does nothing. All tests must go through `manage.py test`.
-
-**Fix:** This is intentional by design (Django test runner is preferred), but document this choice clearly.
+> **Status:** Resolved — Clarified and documented testing design choices in `backend/pytest.ini` and `backend/tests/README.md`. Configured `DJANGO_SETTINGS_MODULE = defensys_backend.settings` and `python_files = tests.py test_*.py *_tests.py` while keeping `addopts = --ignore=tests` with detailed comments explaining that top-level `backend/tests/` contains ad-hoc maintenance/smoke scripts rather than standard unit test cases, whereas test suites reside in modular app directories (e.g., `backend/modules/*/tests.py`) and are executed via Django's native test runner (`python manage.py test`).
 
 ---
 
-### L3. Large Dart Files Should Be Split
+### ~~L3. Large Dart Files Should Be Split~~ ✅ RESOLVED
 
-Several screens exceed 100KB:
-- `defense_scheduler_screen.dart` — **194KB** (likely 5000+ lines)
-- `user_management_screen.dart` — **191KB**
-- `team_deliverables_screen.dart` — **152KB**
-- `student_teams_screen.dart` — **109KB**
-- `repository_audit_screen.dart` — **102KB**
+> **Status:** Resolved — Fully executed all 5 phases of the phased refactoring plan in [l3_monolithic_screens_refactoring_plan.md](file:///c:/Users/Admin/Desktop/DefenSYS/directives/l3_monolithic_screens_refactoring_plan.md). All 5 monolithic Flutter web screen files (>100KB / 3,000–5,700 lines each) have been decomposed into clean, modular sub-directories containing single-responsibility components, dialogs, and lightweight coordinator shells:
+> - `user_management_screen.dart` (5,707 lines) -> decomposed into `user_management/` (`components/`, `dialogs/`, `access_control/`)
+> - `defense_scheduler_screen.dart` (5,077 lines) -> decomposed into `defense_scheduler/` (`components/`, `dialogs/`, `models/`)
+> - `team_deliverables_screen.dart` (4,469 lines) -> decomposed into `team_deliverables/` (`components/`, `dialogs/`)
+> - `repository_audit_screen.dart` (3,143 lines) -> decomposed into `repository_audit/` (`components/`, `dialogs/`)
+> - `student_teams_screen.dart` (3,072 lines) -> decomposed into `student_teams/` (`components/`, `dialogs/`)
+>
+> Verified with `flutter analyze` (0 errors) and automated widget unit test suites.
 
 These are maintenance nightmares and make code reviews nearly impossible.
 
-**Fix:** Extract sub-widgets, dialogs, and form sections into separate files. Each file should ideally be under 500 lines.
+**Fix:** Extract sub-widgets, dialogs, and form sections into separate files. Each file should ideally be under 500 lines. Refactoring is tracked phase-by-phase in [l3_monolithic_screens_refactoring_plan.md](file:///c:/Users/Admin/Desktop/DefenSYS/directives/l3_monolithic_screens_refactoring_plan.md).
 
 ---
 

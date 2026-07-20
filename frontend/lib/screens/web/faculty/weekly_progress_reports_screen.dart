@@ -1182,7 +1182,7 @@ class _WeeklyProgressReportsScreenState
 
   String _formatDate(String dateStr) {
     try {
-      final date = DateTime.parse(dateStr);
+      final date = DateTime.parse(dateStr).toLocal();
       return DateFormat('MMMM d, yyyy').format(date);
     } catch (e) {
       return dateStr;
@@ -1191,7 +1191,7 @@ class _WeeklyProgressReportsScreenState
 
   String _formatDateTime(String dateTime) {
     try {
-      final dt = DateTime.parse(dateTime);
+      final dt = DateTime.parse(dateTime).toLocal();
       return DateFormat('MMMM d, yyyy h:mm a').format(dt);
     } catch (e) {
       return dateTime;

@@ -12,10 +12,10 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../services/notifications_provider.dart';
 import '../../../widgets/notifications_modal.dart';
-import '../shared/team_deliverables_screen.dart';
-import '../shared/repository_audit_screen.dart';
+import '../shared/team_deliverables/team_deliverables_screen.dart';
+import '../shared/repository_audit/repository_audit_screen.dart';
 import '../admin/audit_compliance_screen.dart';
-import '../admin/defense_scheduler_screen.dart';
+import '../admin/defense_scheduler/defense_scheduler_screen.dart';
 import '../admin/defense_board_screen.dart';
 import '../admin/grade_center_screen.dart';
 import '../admin/rubric_engine_screen.dart';
@@ -32,6 +32,7 @@ import 'pit_instructor_dashboard_content.dart';
 import 'e_signature_upload_dialog.dart';
 import 'documenter_dashboard_content.dart';
 import 'minutes_form_screen.dart';
+import 'capstone_instructor_info_section.dart';
 
 enum FacultyWorkspace { pitLead, adviser, pitInstructor, documenter }
 
@@ -110,7 +111,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         roles['pit_lead'] == true ||
         roles['documenter'] == true ||
         roles['uploader'] == true ||
-        roles['pit_instructor'] == true;
+        roles['pit_instructor'] == true ||
+        roles['capstone_instructor'] == true;
 
     // If user is only uploader, show uploader dashboard directly
     if (isOnlyUploader) {
@@ -1011,13 +1013,25 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'dashboard':
       default:
+        final capstoneTeams = (dashState.data?['capstone_info_teams'] as List?) ?? [];
+        final hasCapstoneInfo = capstoneTeams.isNotEmpty || roles['capstone_instructor'] == true;
         return SingleChildScrollView(
           padding: const EdgeInsets.all(24),
-          child: _buildWorkspaceDashboard(
-            workspace: workspaceOption.type,
-            dashState: dashState,
-            facultyName: facultyName,
-            yearLevel: workspaceOption.yearLevel,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildWorkspaceDashboard(
+                workspace: workspaceOption.type,
+                dashState: dashState,
+                facultyName: facultyName,
+                yearLevel: workspaceOption.yearLevel,
+              ),
+              if (hasCapstoneInfo)
+                CapstoneInstructorInfoSection(
+                  capstoneTeams: capstoneTeams,
+                  capstoneYears: (roles['capstone_instructor_years'] as List?)?.cast<String>(),
+                ),
+            ],
           ),
         );
     }

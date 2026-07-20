@@ -23,6 +23,10 @@ class SystemAuditState {
   final String endDate;
   final String track;
   final String yearLevel;
+  final int currentPage;
+  final int totalPages;
+  final int totalCount;
+  final int pageSize;
   final Map<String, dynamic>? selectedLog;
   final String? error;
 
@@ -39,6 +43,10 @@ class SystemAuditState {
     this.endDate = '',
     this.track = '',
     this.yearLevel = '',
+    this.currentPage = 1,
+    this.totalPages = 1,
+    this.totalCount = 0,
+    this.pageSize = 50,
     this.selectedLog,
     this.error,
   });
@@ -56,6 +64,10 @@ class SystemAuditState {
     String? endDate,
     String? track,
     String? yearLevel,
+    int? currentPage,
+    int? totalPages,
+    int? totalCount,
+    int? pageSize,
     Map<String, dynamic>? selectedLog,
     bool clearSelectedLog = false,
     String? error,
@@ -74,6 +86,10 @@ class SystemAuditState {
       endDate: endDate ?? this.endDate,
       track: track ?? this.track,
       yearLevel: yearLevel ?? this.yearLevel,
+      currentPage: currentPage ?? this.currentPage,
+      totalPages: totalPages ?? this.totalPages,
+      totalCount: totalCount ?? this.totalCount,
+      pageSize: pageSize ?? this.pageSize,
       selectedLog: clearSelectedLog ? null : selectedLog ?? this.selectedLog,
       error: clearError ? null : error ?? this.error,
     );
@@ -84,9 +100,12 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
   @override
   SystemAuditState build() => const SystemAuditState();
 
-  Future<void> fetch() async {
-    state = state.copyWith(isLoading: true, clearError: true);
+  Future<void> fetch({int? page}) async {
+    final targetPage = page ?? state.currentPage;
+    state = state.copyWith(isLoading: true, currentPage: targetPage, clearError: true);
     final params = <String, String>{
+      'page': targetPage.toString(),
+      'page_size': state.pageSize.toString(),
       if (state.category.isNotEmpty) 'category': state.category,
       if (state.reviewStatus.isNotEmpty) 'review_status': state.reviewStatus,
       if (state.action.isNotEmpty) 'action': state.action,
@@ -110,6 +129,10 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
         logs: List<Map<String, dynamic>>.from(body['audit_logs'] ?? const []),
         counts: Map<String, dynamic>.from(body['counts'] ?? const {}),
         options: Map<String, dynamic>.from(body['options'] ?? const {}),
+        currentPage: (body['current_page'] as num?)?.toInt() ?? targetPage,
+        totalPages: (body['total_pages'] as num?)?.toInt() ?? 1,
+        totalCount: (body['count'] as num?)?.toInt() ?? 0,
+        pageSize: (body['page_size'] as num?)?.toInt() ?? state.pageSize,
         clearError: true,
       );
     } catch (e) {
@@ -117,41 +140,58 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
     }
   }
 
+  void setPage(int page) {
+    if (page < 1 || page > state.totalPages) return;
+    fetch(page: page);
+  }
+
+  void nextPage() {
+    if (state.currentPage < state.totalPages) {
+      fetch(page: state.currentPage + 1);
+    }
+  }
+
+  void previousPage() {
+    if (state.currentPage > 1) {
+      fetch(page: state.currentPage - 1);
+    }
+  }
+
   void setCategory(String value) {
-    state = state.copyWith(category: value);
-    fetch();
+    state = state.copyWith(category: value, currentPage: 1);
+    fetch(page: 1);
   }
 
   void setReviewStatus(String value) {
-    state = state.copyWith(reviewStatus: value);
-    fetch();
+    state = state.copyWith(reviewStatus: value, currentPage: 1);
+    fetch(page: 1);
   }
 
   void setAction(String value) {
-    state = state.copyWith(action: value);
-    fetch();
+    state = state.copyWith(action: value, currentPage: 1);
+    fetch(page: 1);
   }
 
   void setTrack(String value) {
-    state = state.copyWith(track: value);
-    fetch();
+    state = state.copyWith(track: value, currentPage: 1);
+    fetch(page: 1);
   }
 
   void setYearLevel(String value) {
-    state = state.copyWith(yearLevel: value);
-    fetch();
+    state = state.copyWith(yearLevel: value, currentPage: 1);
+    fetch(page: 1);
   }
 
   void setSearch(String value) {
-    state = state.copyWith(search: value);
+    state = state.copyWith(search: value, currentPage: 1);
   }
 
   void setStartDate(String value) {
-    state = state.copyWith(startDate: value);
+    state = state.copyWith(startDate: value, currentPage: 1);
   }
 
   void setEndDate(String value) {
-    state = state.copyWith(endDate: value);
+    state = state.copyWith(endDate: value, currentPage: 1);
   }
 
   void selectLog(Map<String, dynamic> log) {

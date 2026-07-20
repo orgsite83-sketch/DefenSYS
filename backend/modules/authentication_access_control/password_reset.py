@@ -66,7 +66,22 @@ class RequestPasswordResetView(APIView):
             reset_url = (
                 f'{settings.FRONTEND_URL}/#/password-reset/confirm/{uid}/{token}/'
             )
-            send_password_reset_email(user, reset_url)
+            email_sent = send_password_reset_email(user, reset_url)
+            if not email_sent:
+                logger.error(
+                    'password_reset: Failed to send reset email to user_id=%s email=%s',
+                    user.pk,
+                    user.email,
+                )
+                return Response(
+                    {
+                        'detail': (
+                            'Failed to send password reset email due to a mail delivery error. '
+                            'Please try again later or contact support.'
+                        )
+                    },
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
             logger.info('password_reset: link sent to user_id=%s', user.pk)
         else:
             # No matching user or user has no email — log but don't reveal.
@@ -143,7 +158,9 @@ class ConfirmPasswordResetAPIView(APIView):
         user.save(update_fields=['password'])
 
         # Send confirmation email (best-effort).
-        send_password_changed_email(user)
+        email_sent = send_password_changed_email(user)
+        if not email_sent:
+            logger.warning('password_reset: password changed but confirmation email failed for user_id=%s', user.pk)
 
         logger.info('password_reset: user_id=%s successfully reset password', user.pk)
         return Response({'detail': 'Your password has been reset successfully.'})

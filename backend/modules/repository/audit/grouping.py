@@ -210,18 +210,11 @@ def _entries_for_stage_deliverables(
         if submission:
             payloads = capstone_entry_payload(submission, **payload_kwargs)
             for payload in payloads:
-                if payload['submission_kind'] == 'pre':
-                    pre_defense.append(payload)
-                else:
-                    post_defense.append(payload)
-            continue
-        if definition['type'] == DeliverableSubmission.TYPE_POST:
-            if not archive_unlocked(team, stage_label):
-                post_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
-            elif definition.get('required'):
-                post_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
-        elif definition.get('required'):
-            pre_defense.append(_missing_capstone_entry(team, stage_label, definition, request=request))
+                if payload.get('has_file') and not payload.get('is_missing'):
+                    if payload['submission_kind'] == 'pre':
+                        pre_defense.append(payload)
+                    else:
+                        post_defense.append(payload)
 
     included_source_ids = {
         entry.get('source_id')
@@ -235,10 +228,11 @@ def _entries_for_stage_deliverables(
             continue
         payloads = capstone_entry_payload(submission, **payload_kwargs)
         for payload in payloads:
-            if payload['submission_kind'] == 'pre':
-                pre_defense.append(payload)
-            elif payload['submission_kind'] == 'post':
-                post_defense.append(payload)
+            if payload.get('has_file') and not payload.get('is_missing'):
+                if payload['submission_kind'] == 'pre':
+                    pre_defense.append(payload)
+                elif payload['submission_kind'] == 'post':
+                    post_defense.append(payload)
         included_source_ids.add(submission.id)
 
     included_ids = {
@@ -252,6 +246,8 @@ def _entries_for_stage_deliverables(
         if entry.get('submission_kind') == 'post'
         and entry.get('stage') == stage_label
         and entry.get('id') not in included_ids
+        and entry.get('has_file')
+        and not entry.get('is_missing')
     ])
     return pre_defense, post_defense
 
@@ -295,39 +291,7 @@ def grouped_by_stage_for_team(
 
 
 def augment_deliverable_missing_rows(entries, deliverable_id, stage_filter=''):
-    deliverable_id = (deliverable_id or '').strip()
-    if not deliverable_id:
-        return entries
-
-    existing_keys = {
-        (entry.get('team_id'), entry.get('stage'), entry.get('deliverable_id'))
-        for entry in entries
-        if entry.get('deliverable_id') == deliverable_id and not entry.get('is_missing')
-    }
-    augmented = list(entries)
-    teams = _capstone_teams_queryset().prefetch_related('deliverable_submissions')
-    stages = [stage_filter] if stage_filter else STAGE_OPTIONS
-
-    for team in teams:
-        for stage_label in stages:
-            definitions = deliverable_definitions_for_stage(stage_label)
-            definition = next((item for item in definitions if item['id'] == deliverable_id), None)
-            if not definition:
-                continue
-            key = (team.id, stage_label, deliverable_id)
-            if key in existing_keys:
-                continue
-            submitted = {
-                submission.deliverable_id
-                for submission in team.deliverable_submissions.all()
-                if submission.stage_label == stage_label
-            }
-            if deliverable_id in submitted:
-                continue
-            if not definition.get('required'):
-                continue
-            augmented.append(_missing_capstone_entry(team, stage_label, definition))
-    return augmented
+    return entries
 
 
 def deliverable_summary_payload(deliverable_id, entries, stage_filter=''):
