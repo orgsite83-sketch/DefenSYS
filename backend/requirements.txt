@@ -9,6 +9,7 @@ djangorestframework>=3.15,<4.0
 djangorestframework-simplejwt>=5.5,<6.0
 psycopg2>=2.9.9,<3.0
 python-dotenv>=1.0.0,<2.0
+sentry-sdk[django]>=2.0,<3.0
 
 # --- PDF & reports (capstone_deliverables) ---
 reportlab>=4.0,<5.0

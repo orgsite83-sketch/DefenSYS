@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/utils/clipboard_copy.dart';
-import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback_toast.dart';
 
 /// Card component displaying guest panelist codes table and status.

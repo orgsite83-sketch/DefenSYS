@@ -45,7 +45,7 @@ class _AccessControlViewState extends State<AccessControlView> {
     _isAdviser = u['is_adviser'] == true;
     _isDocumenter = u['is_documenter'] == true;
 
-    final rawYear = u['pit_lead_year']?.toString()?.trim() ?? '';
+    final rawYear = u['pit_lead_year']?.toString().trim() ?? '';
     if (widget.pitLeadYearOptions.contains(rawYear)) {
       _pitLeadYear = rawYear;
     }

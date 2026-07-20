@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 
 /// Modal dialog for creating a single user or editing an existing user's details.
 /// Returns a [Map<String, dynamic>] payload if saved, or `null` if cancelled.
@@ -73,7 +72,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     _isDocumenter = user?['is_documenter'] == true;
     _isActive = user?['is_active'] != false;
 
-    final rawYear = user?['pit_lead_year']?.toString()?.trim() ?? '';
+    final rawYear = user?['pit_lead_year']?.toString().trim() ?? '';
     if (widget.pitLeadYearOptions.contains(rawYear)) {
       _pitLeadYear = rawYear;
     }

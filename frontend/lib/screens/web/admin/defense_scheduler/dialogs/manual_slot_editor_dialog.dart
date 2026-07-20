@@ -37,8 +37,6 @@ class ManualSlotEditorDialog {
     int? stageId = initialStageId;
     int? teamId;
     int? rubricId = initialRubricId;
-    int? adviserRubricId = initialAdviserRubricId;
-    int? capstonePeerRubricId = initialCapstonePeerRubricId;
     int? peerRubricId = initialPeerRubricId;
     final panelWeight = TextEditingController(text: initialPanelWeight);
     final peerWeight = TextEditingController(text: initialPeerWeight);
@@ -58,44 +56,6 @@ class ManualSlotEditorDialog {
         return StatefulBuilder(
           builder: (context, setDialogState) {
             final teams = teamsForScope(state, scope);
-            final contextRubrics = state.rubrics.where((rubric) {
-              if (rubric['scope'] != scope) return false;
-              if (scope == 'capstone' && stageId != null) {
-                return asInt(rubric['defense_stage_id']) == stageId;
-              }
-              return true;
-            }).toList();
-
-            final panelRubrics = contextRubrics
-                .where((rubric) => rubric['evaluation_type']?.toString() == 'panel')
-                .toList();
-            final adviserRubrics = contextRubrics
-                .where((rubric) => rubric['evaluation_type']?.toString() == 'adviser')
-                .toList();
-            final capstonePeerRubrics = contextRubrics
-                .where((rubric) => rubric['evaluation_type']?.toString() == 'peer')
-                .toList();
-
-            final peerRubrics = state.peerRubrics
-                .where((rubric) => rubric['scope'] == 'pit')
-                .toList();
-
-            final validRubric =
-                panelRubrics.any((item) => asInt(item['id']) == rubricId)
-                ? rubricId
-                : null;
-            final validAdviserRubric =
-                adviserRubrics.any((item) => asInt(item['id']) == adviserRubricId)
-                ? adviserRubricId
-                : null;
-            final validCapstonePeerRubric =
-                capstonePeerRubrics.any((item) => asInt(item['id']) == capstonePeerRubricId)
-                ? capstonePeerRubricId
-                : null;
-            final validPeerRubric =
-                peerRubrics.any((item) => asInt(item['id']) == peerRubricId)
-                ? peerRubricId
-                : null;
 
             final validTeam = teams.any((item) => asInt(item['id']) == teamId)
                 ? teamId
@@ -137,8 +97,6 @@ class ManualSlotEditorDialog {
                                   stageId = null;
                                   teamId = null;
                                   rubricId = null;
-                                  adviserRubricId = null;
-                                  capstonePeerRubricId = null;
                                   peerRubricId = null;
                                   documenterId = null;
                                 });
@@ -184,8 +142,6 @@ class ManualSlotEditorDialog {
                             setDialogState(() {
                               stageId = value;
                               rubricId = null;
-                              adviserRubricId = null;
-                              capstonePeerRubricId = null;
                             });
                           },
                         ),

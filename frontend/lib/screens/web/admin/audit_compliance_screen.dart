@@ -1475,14 +1475,12 @@ class _FilterDropdown extends StatelessWidget {
   final String value;
   final dynamic options;
   final ValueChanged<String> onChanged;
-  final double? width;
 
   const _FilterDropdown({
     required this.label,
     required this.value,
     required this.options,
     required this.onChanged,
-    this.width,
   });
 
   @override
@@ -1491,7 +1489,7 @@ class _FilterDropdown extends StatelessWidget {
       {'value': '', 'label': 'All $label'},
       ...List<Map<String, dynamic>>.from(options ?? const []),
     ];
-    final dropdown = DropdownButtonFormField<String>(
+    return DropdownButtonFormField<String>(
       initialValue: value,
       isExpanded: true,
       decoration: InputDecoration(
@@ -1520,11 +1518,6 @@ class _FilterDropdown extends StatelessWidget {
           .toList(),
       onChanged: (next) => onChanged(next ?? ''),
     );
-
-    if (width != null) {
-      return SizedBox(width: width, child: dropdown);
-    }
-    return dropdown;
   }
 }
 

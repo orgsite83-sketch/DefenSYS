@@ -355,3 +355,27 @@ LOGGING = {
         },
     },
 }
+
+# Error Tracking & APM Integration (Sentry)
+SENTRY_DSN = os.environ.get('SENTRY_DSN', '').strip()
+if SENTRY_DSN:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[DjangoIntegration()],
+            traces_sample_rate=float(
+                os.environ.get(
+                    'SENTRY_TRACES_SAMPLE_RATE', '0.1' if not DEBUG else '1.0'
+                )
+            ),
+            send_default_pii=False,
+            environment=os.environ.get(
+                'ENVIRONMENT', 'development' if DEBUG else 'production'
+            ),
+        )
+    except ImportError:
+        pass
+

@@ -58,13 +58,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('student'));
-    final user = ref.watch(authProvider).user;
-    final avatarUrl = user?['avatar'] != null
-        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
-        : null;
-    final studentName = user != null && user['name'] != null
-        ? user['name'] as String
-        : _profile.name;
 
     final dataToPass = Map<String, dynamic>.from(
       dashState.data ?? <String, dynamic>{},

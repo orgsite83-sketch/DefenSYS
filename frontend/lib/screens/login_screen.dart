@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:ui' show ImageFilter;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1269,48 +1268,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
           color: Color(0xFFCBD5E1),
           fontSize: 12,
         ),
-      ),
-    );
-  }
-
-  InputDecoration _webInputDecoration({
-    String? hintText,
-    Widget? prefixIcon,
-    Widget? suffixIcon,
-  }) {
-    return InputDecoration(
-      filled: true,
-      fillColor: const Color(0xFFF8FAFC).withValues(alpha: 0.8),
-      hintText: hintText,
-      hintStyle: const TextStyle(
-        color: Color(0xFF64748B),
-        fontSize: 14,
-        fontWeight: FontWeight.w500,
-      ),
-      prefixIcon: prefixIcon,
-      suffixIcon: suffixIcon,
-      prefixIconColor: const Color(0xFF475569),
-      suffixIconColor: const Color(0xFF475569),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.8),
-      ),
-      errorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: DefensysTokens.danger),
-      ),
-      focusedErrorBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(12),
-        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.8),
       ),
     );
   }

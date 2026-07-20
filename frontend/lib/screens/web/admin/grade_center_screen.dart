@@ -671,29 +671,6 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     );
   }
 
-  Widget _primaryButton({
-    required IconData icon,
-    required String label,
-    required VoidCallback? onTap,
-  }) {
-    return SizedBox(
-      height: 42,
-      child: ElevatedButton.icon(
-        onPressed: onTap,
-        icon: Icon(icon, size: 16),
-        label: Text(label),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: DefensysUi.primaryMaroon,
-          foregroundColor: DefensysUi.accentGold,
-          elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-          padding: const EdgeInsets.symmetric(horizontal: 22),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
-        ),
-      ),
-    );
-  }
-
   int _percent(GradeCenterState state, String key) {
     final total = _kpiTotal(state);
     if (total == 0) {

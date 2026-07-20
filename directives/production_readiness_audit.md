@@ -254,15 +254,9 @@ These are maintenance nightmares and make code reviews nearly impossible.
 
 ---
 
-### L4. No Error Tracking / APM Integration
+### ~~L4. No Error Tracking / APM Integration~~ ✅ RESOLVED
 
-No Sentry, DataDog, New Relic, or equivalent error tracking. Production errors will go to console logs only, with no alerting or aggregation.
-
-**Fix:** Add `sentry-sdk[django]` to `requirements.txt` and configure:
-```python
-import sentry_sdk
-sentry_sdk.init(dsn=os.environ.get('SENTRY_DSN', ''), environment='production')
-```
+> **Status:** Resolved — Added `sentry-sdk[django]>=2.0,<3.0` dependency to `backend/requirements.txt`, configured optional environment-based Sentry SDK initialization in `backend/defensys_backend/settings.py` (supporting `SENTRY_DSN`, `SENTRY_TRACES_SAMPLE_RATE`, and environment tagging), and documented configuration variables in `backend/.env.example` and `backend/.env.production.example`.
 
 ---
 
@@ -314,18 +308,18 @@ fontFamily: 'Inter',  // Pre-bundled in assets/fonts/
 | ~~18~~ | ~~Add health check endpoint~~ | ~~🟡~~ | ✅ Clear |
 | ~~19~~ | ~~Document backup strategy~~ | ~~🟡~~ | ✅ Clear |
 | 20 | Fix avatar validation (content-type + move import) | 🟡 | ☐ |
-| 21 | Add audit log pagination | 🟡 | ☐ |
-| 22 | Address silent email failures | 🟡 | ☐ |
-| 23 | Add `update_fields` to notification save | 🟡 | ☐ |
-| 24 | Pin `meta` dependency version | 🟡 | ☐ |
-| 25 | Remove committed log/artifact files | 🟡 | ☐ |
-| 26 | Verify timezone handling | 🟡 | ☐ |
-| 27 | Add CI/CD pipeline | 🔵 | ☐ |
-| 28 | Split large Dart files | 🔵 | ☐ |
-| 29 | Add error tracking (Sentry) | 🔵 | ☐ |
+| ~~21~~ | ~~Add audit log pagination~~ | ~~🟡~~ | ✅ Clear |
+| ~~22~~ | ~~Address silent email failures~~ | ~~🟡~~ | ✅ Clear |
+| ~~23~~ | ~~Add `update_fields` to notification save~~ | ~~🟡~~ | ✅ Clear |
+| ~~24~~ | ~~Pin `meta` dependency version~~ | ~~🟡~~ | ✅ Clear |
+| ~~25~~ | ~~Remove committed log/artifact files~~ | ~~🟡~~ | ✅ Clear |
+| ~~26~~ | ~~Verify timezone handling~~ | ~~🟡~~ | ✅ Clear |
+| ~~27~~ | ~~Add CI/CD pipeline~~ | ~~🔵~~ | ✅ Clear |
+| ~~28~~ | ~~Split large Dart files~~ | ~~🔵~~ | ✅ Clear |
+| ~~29~~ | ~~Add error tracking (Sentry)~~ | ~~🔵~~ | ✅ Clear |
 | 30 | Add CSP headers | 🔵 | ☐ |
 | 31 | Bundle Google Fonts locally | 🔵 | ☐ |
-| 32 | Document pytest vs manage.py test choice | 🔵 | ☐ |
+| ~~32~~ | ~~Document pytest vs manage.py test choice~~ | ~~🔵~~ | ✅ Clear |
 
 ---
 
