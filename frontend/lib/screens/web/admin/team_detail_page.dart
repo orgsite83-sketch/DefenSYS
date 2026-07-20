@@ -1025,55 +1025,58 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                         final student = filteredStudents[index];
                         final studentId = _asInt(student['id'])!;
                         final selected = _selectedMembers.contains(studentId);
-                        return CheckboxListTile(
-                          value: selected,
-                          activeColor: _maroon,
-                          onChanged: (value) {
-                            setState(() {
-                              if (value == true) {
-                                if (_selectedMembers.length >= 4 && !selected) {
-                                  showValidationToast(context, 'A team can have a maximum of 4 members.');
-                                  return;
+                        return Material(
+                          color: Colors.transparent,
+                          child: CheckboxListTile(
+                            value: selected,
+                            activeColor: _maroon,
+                            onChanged: (value) {
+                              setState(() {
+                                if (value == true) {
+                                  if (_selectedMembers.length >= 4 && !selected) {
+                                    showValidationToast(context, 'A team can have a maximum of 4 members.');
+                                    return;
+                                  }
+                                  _selectedMembers.add(studentId);
+                                  _leaderId ??= studentId;
+                                } else {
+                                  _selectedMembers.remove(studentId);
+                                  if (_leaderId == studentId) {
+                                    _leaderId = _selectedMembers.isEmpty
+                                        ? null
+                                        : _selectedMembers.first;
+                                  }
                                 }
-                                _selectedMembers.add(studentId);
-                                _leaderId ??= studentId;
-                              } else {
-                                _selectedMembers.remove(studentId);
-                                if (_leaderId == studentId) {
-                                  _leaderId = _selectedMembers.isEmpty
-                                      ? null
-                                      : _selectedMembers.first;
-                                }
-                              }
-                            });
-                          },
-                          title: Text(
-                            '${student['name']} (${student['username']})',
-                            style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                              });
+                            },
+                            title: Text(
+                              '${student['name']} (${student['username']})',
+                              style: const TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+                            ),
+                            subtitle: _leaderId == studentId
+                                ? const Text(
+                                    'Team Leader',
+                                    style: TextStyle(
+                                      color: _maroon,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  )
+                                : null,
+                            secondary: selected
+                                ? IconButton(
+                                    tooltip: 'Set as leader',
+                                    icon: Icon(
+                                      _leaderId == studentId
+                                          ? Icons.workspace_premium_rounded
+                                          : Icons.circle_outlined,
+                                      color: _leaderId == studentId ? _gold : _muted,
+                                    ),
+                                    onPressed: () =>
+                                        setState(() => _leaderId = studentId),
+                                  )
+                                : null,
                           ),
-                          subtitle: _leaderId == studentId
-                              ? const Text(
-                                  'Team Leader',
-                                  style: TextStyle(
-                                    color: _maroon,
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                )
-                              : null,
-                          secondary: selected
-                              ? IconButton(
-                                  tooltip: 'Set as leader',
-                                  icon: Icon(
-                                    _leaderId == studentId
-                                        ? Icons.workspace_premium_rounded
-                                        : Icons.circle_outlined,
-                                    color: _leaderId == studentId ? _gold : _muted,
-                                  ),
-                                  onPressed: () =>
-                                      setState(() => _leaderId = studentId),
-                                )
-                              : null,
                         );
                       },
                     );
