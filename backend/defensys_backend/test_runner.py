@@ -17,15 +17,5 @@ class AppOnlyDiscoverRunner(DiscoverRunner):
 
     def build_suite(self, test_labels=None, **kwargs):
         if not test_labels:
-            test_labels = [
-                app
-                for app in settings.INSTALLED_APPS
-                if not app.startswith('django.')
-                and not app.startswith('rest_framework')
-                and app not in ('daphne', 'channels')
-                and (
-                    (settings.BASE_DIR / app).exists()
-                    or (settings.BASE_DIR / 'modules' / app).exists()
-                )
-            ]
+            test_labels = ['modules']
         return super().build_suite(test_labels, **kwargs)
