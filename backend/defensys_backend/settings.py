@@ -59,6 +59,8 @@ ALLOWED_HOSTS = _env_list(
     'DJANGO_ALLOWED_HOSTS',
     'localhost,127.0.0.1,192.168.1.5,192.168.1.20',
 )
+if DEBUG and '*' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('*')
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 SECURE_SSL_REDIRECT = _env_bool('DJANGO_SECURE_SSL_REDIRECT', default=not DEBUG)

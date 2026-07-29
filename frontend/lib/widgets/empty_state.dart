@@ -16,22 +16,33 @@ class EmptyState extends StatelessWidget {
     required this.message,
     this.actionLabel,
     this.onAction,
-    this.iconSize = 80,
+    this.iconSize = 28,
   });
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: Padding(
-        padding: const EdgeInsets.all(DefensysTokens.spacing2xl),
+        padding: const EdgeInsets.symmetric(
+          horizontal: DefensysTokens.spacing2xl,
+          vertical: DefensysTokens.spacing3xl,
+        ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              size: iconSize,
-              color: DefensysTokens.border,
+            Container(
+              padding: const EdgeInsets.all(DefensysTokens.spacingLg),
+              decoration: BoxDecoration(
+                color: DefensysTokens.neutralBg,
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
+                border: Border.all(color: DefensysTokens.border, width: 1.0),
+              ),
+              child: Icon(
+                icon,
+                size: iconSize,
+                color: DefensysTokens.steelGrey,
+              ),
             ),
             const SizedBox(height: DefensysTokens.spacingLg),
             Text(
@@ -39,7 +50,8 @@ class EmptyState extends StatelessWidget {
               textAlign: TextAlign.center,
               style: DefensysTokens.body.copyWith(
                 color: DefensysTokens.textSecondary,
-                fontSize: 16,
+                fontSize: 14,
+                height: 1.45,
               ),
             ),
             if (actionLabel != null && onAction != null) ...[

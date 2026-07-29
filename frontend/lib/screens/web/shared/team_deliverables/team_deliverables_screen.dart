@@ -36,7 +36,19 @@ Widget _notice(IconData icon, String message, Color color) {
 }
 
 bool _stageNotConfigured(CapstoneDeliverablesState state) {
-  if (state.selectedStage.isEmpty) return false;
+  if (state.stageOptions.isEmpty || state.selectedStage.isEmpty) return true;
+  if (state.teams.isNotEmpty) {
+    for (final team in state.teams) {
+      final stages = team['stages'];
+      if (stages is List) {
+        for (final s in stages) {
+          if (s is Map && s['stage_label']?.toString() == state.selectedStage) {
+            if (s['deliverables_configured'] == true) return false;
+          }
+        }
+      }
+    }
+  }
   final counts = state.counts;
   final configured = counts['deliverables_configured'] == true ||
       (counts['deliverables_configured'] is int &&
@@ -112,8 +124,6 @@ class _TeamDeliverablesScreenState
               icon: const Icon(Icons.refresh),
             ),
           ),
-          const SizedBox(height: 16),
-          buildDeliverablesStats(state),
           if (state.error != null) ...[
             const SizedBox(height: 12),
             _notice(Icons.error_outline, state.error!, AppColors.danger),
@@ -127,8 +137,12 @@ class _TeamDeliverablesScreenState
             _notice(
               Icons.info_outline,
               state.scope == 'pit'
-                  ? 'No deliverables configured for ${state.selectedStage}. Add them in PIT Event Settings.'
-                  : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.',
+                  ? (state.stageOptions.isEmpty
+                      ? 'No PIT events configured for this semester or year level. Add them in PIT Events Setup.'
+                      : 'No deliverables configured for ${state.selectedStage}. Add them in PIT Events Setup.')
+                  : (state.stageOptions.isEmpty
+                      ? 'No defense stages configured. Add them in Defense Stages Setup.'
+                      : 'No deliverables configured for ${state.selectedStage}. Add them in Defense Stages Setup so Required progress can be tracked.'),
               AppColors.gold,
             ),
           ],

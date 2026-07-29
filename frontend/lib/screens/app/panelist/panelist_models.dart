@@ -27,6 +27,7 @@ class TeamData {
   }
   final DateTime? scheduledDate;
   bool isPosted;
+  final List<Map<String, dynamic>> submittedSubmissions;
 
   TeamData({
     required this.name,
@@ -40,6 +41,7 @@ class TeamData {
     required this.memberDetails,
     required this.criteria,
     required this.isPosted,
+    this.submittedSubmissions = const [],
     this.panelWeight = 50,
     this.peerWeight = 20,
     this.adviserWeight = 0,

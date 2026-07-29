@@ -13,6 +13,8 @@ import '../../../services/dashboard_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../widgets/status_badge.dart';
+import '../../../widgets/tactile_button.dart';
 import '../../../utils/progress_upload.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
@@ -60,12 +62,18 @@ class StudentDeliverablesTab extends ConsumerStatefulWidget {
 }
 
 class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab> {
+  String? get _studentYearLevel {
+    final y = widget.studentData?['year_level']?.toString().trim();
+    return (y != null && y.isNotEmpty) ? y : null;
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
+            yearLevel: widget.isCapstone ? null : _studentYearLevel,
           );
     });
   }
@@ -74,6 +82,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     await Future.wait([
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
             scope: widget.isCapstone ? 'capstone' : 'pit',
+            yearLevel: widget.isCapstone ? null : _studentYearLevel,
           ),
       ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
     ]);
@@ -179,21 +188,45 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                             ),
                           ),
                         ),
-                        const SizedBox(width: 12),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: endorsed ? Colors.green.shade600 : Colors.orange.shade600,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: Text(
-                            endorsed ? 'Endorsed' : 'Awaiting Endorsement',
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
+                        Builder(
+                          builder: (context) {
+                            final detail = selectedStage['stage_status_detail']?.toString();
+                            String label = endorsed ? 'Endorsed' : 'Awaiting Endorsement';
+                            Color bg = endorsed ? Colors.green.shade600 : Colors.orange.shade600;
+
+                            if (detail == 'passed') {
+                              label = 'Completed';
+                              bg = Colors.green.shade600;
+                            } else if (detail == 'pending_post_defense') {
+                              label = 'Pending Post-Defense';
+                              bg = Colors.purple.shade600;
+                            } else if (detail == 'defense_ongoing') {
+                              label = 'Defense Ongoing';
+                              bg = Colors.indigo.shade600;
+                            } else if (detail == 'defense_scheduled') {
+                              label = 'Defense Scheduled';
+                              bg = Colors.blue.shade600;
+                            } else if (detail == 'endorsed') {
+                              label = 'Endorsed';
+                              bg = Colors.green.shade600;
+                            }
+
+                            return Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: bg,
+                                borderRadius: BorderRadius.circular(20),
+                              ),
+                              child: Text(
+                                label,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            );
+                          },
                         ),
                       ],
                     ),
@@ -257,14 +290,29 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                 )
               else ...[
+                _buildRequiredProgressBlock(pre),
+                const SizedBox(height: 16),
                 _sectionTitle('Pre-Defense Requirements'),
                 const SizedBox(height: 8),
-                ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
+                if (pre.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 8),
+                    child: Text(
+                      'No pre-defense requirements configured.',
+                      style: TextStyle(
+                        color: Colors.grey,
+                        fontStyle: FontStyle.italic,
+                        fontSize: 12,
+                      ),
+                    ),
+                  )
+                else
+                  ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
                 const SizedBox(height: 20),
                 if (vault.isNotEmpty) ...[
                   _sectionTitle('Post-Defense Submissions'),
                   const SizedBox(height: 8),
-                  if (selectedStage['vault_unlocked'] != true)
+                  if (selectedStage['vault_unlocked'] != true && selectedStage['archive_unlocked'] != true)
                     _lockedVaultNotice(state.selectedStage)
                   else
                     ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
@@ -287,6 +335,59 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           fontWeight: FontWeight.bold,
           color: DefensysTokens.maroon,
         ),
+      ),
+    );
+  }
+
+  Widget _buildRequiredProgressBlock(List<Map<String, dynamic>> pre) {
+    final requiredItems = pre.where((item) => item['required'] == true).toList();
+    final total = requiredItems.length;
+    final done = requiredItems.where((item) => item['uploaded'] == true || item['submission'] != null).length;
+    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : (pre.isEmpty ? 0.0 : 1.0);
+    final color = done == total && total > 0 ? DefensysTokens.success : DefensysTokens.gold;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Required Pre-Defense Check',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimary,
+                ),
+              ),
+              Text(
+                total > 0 ? '$done / $total Complete' : (pre.isEmpty ? 'Not Configured' : 'Complete'),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -344,14 +445,15 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       item['submission'] as Map? ?? const {},
     );
     final status = submission['status']?.toString();
-    final feedback = submission['feedback']?.toString();
+    final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
     final isAccepted = status == 'accepted';
-    final isRejected = status == 'rejected';
+    final isRejected = status == 'rejected' || status == 'Needs Revision';
 
-    // Lock file from edits/removals if endorsed OR backend lock is set OR review status is Accepted
-    final fileLocked = (item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted;
+    final replacementUnlockedByAdmin = rawFeedback.contains('Unlocked for file replacement');
+    final fileLocked = !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
     final isWPR = item['id'] == 'WPR';
     final suggestedFile = item['suggested_file_name']?.toString() ?? '';
+    final feedback = replacementUnlockedByAdmin ? '' : rawFeedback;
 
     return Card(
       margin: const EdgeInsets.only(bottom: 10),
@@ -408,80 +510,17 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   children: [
                     if (uploaded) ...[
                       if (isAccepted)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.green.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.green.shade200),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.check_circle, size: 12, color: Colors.green.shade700),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Accepted',
-                                style: TextStyle(fontSize: 10, color: Colors.green.shade700, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        )
+                        const StatusBadge.success(label: 'Accepted')
                       else if (isRejected)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.red.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.red.shade200),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.cancel, size: 12, color: Colors.red.shade700),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Needs Revision',
-                                style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        )
+                        const StatusBadge.revision(label: 'Needs Revision')
                       else
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: Colors.orange.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.orange.shade200),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.hourglass_empty, size: 12, color: Colors.orange.shade700),
-                              const SizedBox(width: 4),
-                              Text(
-                                'Awaiting Review',
-                                style: TextStyle(fontSize: 10, color: Colors.orange.shade700, fontWeight: FontWeight.bold),
-                              ),
-                            ],
-                          ),
-                        ),
-                      const SizedBox(height: 4),
+                        const StatusBadge.warning(label: 'Awaiting Review'),
+                    ] else ...[
+                      const StatusBadge.warning(label: 'Awaiting Upload'),
                     ],
+                    const SizedBox(height: 4),
                     if (item['required'] == true)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.red.shade50,
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.red.shade200),
-                        ),
-                        child: const Text(
-                          'Required',
-                          style: TextStyle(fontSize: 10, color: Colors.red, fontWeight: FontWeight.bold),
-                        ),
-                      ),
+                      const StatusBadge.danger(label: 'Required', showDot: false),
                   ],
                 ),
               ],
@@ -500,7 +539,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     const Text(
-                      'Adviser/Instructor Remarks:',
+                      'Remarks:',
                       style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
                     ),
                     const SizedBox(height: 4),
@@ -512,7 +551,31 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
               ),
             ],
-            if (uploaded && isAccepted && feedback != null && feedback.isNotEmpty) ...[
+            if (replacementUnlockedByAdmin) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 14, color: Colors.blue.shade700),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Admin enabled file replacement for this deliverable.',
+                        style: TextStyle(fontSize: 11.5, color: Colors.blue.shade900, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            if (uploaded && isAccepted && feedback.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
                 width: double.infinity,

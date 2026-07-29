@@ -62,19 +62,22 @@ def check_deliverable_write_permission(user, team):
             
         # PIT Leads can manage deliverables for PIT teams in their year
         if getattr(user, 'is_pit_lead', False) and team.is_pit:
+            from student_teams.team_levels import normalize_year_level
             pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
-            if not pit_year or team.year_level == pit_year:
+            if not pit_year or normalize_year_level(team.year_level) == normalize_year_level(pit_year):
                 return True
                 
         # Section Instructors can manage deliverables for PIT teams in their section
         if team.is_pit:
             from user_management.models import SectionInstructorAssignment
             from student_teams.team_levels import normalize_year_level
+            team_year = normalize_year_level(team.year_level)
+            sec = (team.section or '').strip()
             if SectionInstructorAssignment.objects.filter(
+                Q(section='') | Q(section__isnull=True) | Q(section__iexact=sec),
                 faculty=user,
                 semester=team.semester,
-                year_level=normalize_year_level(team.year_level),
-                section=team.section,
+                year_level=team_year,
                 is_active=True
             ).exists():
                 return True
@@ -105,20 +108,25 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         from authentication_access_control.scopes import is_pit_lead_only, _pit_year
         pit_lead = is_pit_lead_only(request.user)
         pit_year = _pit_year(request.user) if pit_lead else None
+        requested_year = (request.query_params.get('year_level') or pit_year or '').strip()
+
+        if not requested_year and current.exists():
+            team_years = set(current.values_list('year_level', flat=True))
+            if len(team_years) == 1:
+                requested_year = list(team_years)[0]
+            elif getattr(request.user, 'role', None) == 'student':
+                requested_year = current.first().year_level or ''
 
         configs_qs = PitEventGradingConfig.objects.filter(semester=semester)
-        if pit_lead:
-            if pit_year:
-                from repository.audit.services import PIT_YEAR_EVENT_HINTS
-                exclude_filter = Q()
-                for y, hints in PIT_YEAR_EVENT_HINTS.items():
-                    if y != pit_year:
-                        for hint in hints:
-                            exclude_filter |= Q(event_name__icontains=hint)
-                if exclude_filter:
-                    configs_qs = configs_qs.exclude(exclude_filter)
-            else:
-                configs_qs = configs_qs.none()
+        if requested_year:
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
+            exclude_filter = Q()
+            for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                if y != requested_year:
+                    for hint in hints:
+                        exclude_filter |= Q(event_name__icontains=hint)
+            if exclude_filter:
+                configs_qs = configs_qs.exclude(exclude_filter)
 
         stage_options = list(
             configs_qs.order_by('event_name')
@@ -128,6 +136,12 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         stage_options = list(STAGE_OPTIONS)
 
     requested_stage = selected_stage or request.query_params.get('stage_label') or ''
+    if not requested_stage and current.exists():
+        from .services import current_stage_for_team
+        default_team_stage = current_stage_for_team(current.first())
+        if default_team_stage and default_team_stage in stage_options:
+            requested_stage = default_team_stage
+
     stage = (
         requested_stage
         if requested_stage in stage_options
@@ -135,7 +149,7 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
     )
     return {
         'teams': [team_payload(team, selected_stage=stage) for team in current],
-        'counts': counts_payload(current),
+        'counts': counts_payload(current, selected_stage=stage),
         'stage_options': stage_options,
         'selected_stage': stage,
         'scope': scope,
@@ -350,6 +364,8 @@ class CapstoneDeliverableReviewView(APIView):
                 feedback_val=attrs.get('feedback', ''),
                 reviewer_user=request.user,
             )
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except (ValueError, ValidationError) as exc:
             msg = str(exc)
             if hasattr(exc, 'message_dict'):
@@ -362,3 +378,28 @@ class CapstoneDeliverableReviewView(APIView):
             deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
             status=status.HTTP_200_OK
         )
+
+
+class CapstoneDeliverableUnlockView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        if getattr(request.user, 'role', None) != 'admin' and not getattr(request.user, 'is_superuser', False):
+            return Response({'detail': 'Only Admin or Capstone Coordinator can unlock deliverables for completed defenses.'}, status=status.HTTP_403_FORBIDDEN)
+
+        team_id = request.data.get('team_id')
+        stage_label = request.data.get('stage_label')
+        if not team_id or not stage_label:
+            return Response({'detail': 'team_id and stage_label are required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        team = get_allowed_team(request, team_id)
+        from .services import toggle_stage_deliverables_unlock
+        try:
+            unlocked = toggle_stage_deliverables_unlock(team, stage_label, request.user)
+        except PermissionError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
+
+        return Response({
+            'unlocked': unlocked,
+            **deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
+        }, status=status.HTTP_200_OK)

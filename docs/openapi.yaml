@@ -30,7 +30,7 @@ tags:
   - name: grade-center
   - name: capstone-deliverables
   - name: digital-vault
-  - name: repository-audit
+  - name: project-archive
   - name: curriculum-analytics
   - name: weekly-progress
   - name: documents
@@ -926,49 +926,49 @@ paths:
         '200':
           description: Vault entries
 
-  /repository/audit/:
+  /repository/project-archive/:
     get:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: List repository audit entries
       responses:
         '200':
-          description: Entries and stats
+          description: OK
 
-  /repository/audit/upload-pit/:
+  /repository/project-archive/upload-pit/:
     post:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: Upload PIT document
       responses:
         '200':
-          description: Vault entry created
+          description: OK
 
-  /repository/audit/upload-capstone/:
+  /repository/project-archive/upload-capstone/:
     post:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: Upload capstone document to audit trail
       responses:
         '200':
-          description: Vault entry created
+          description: OK
 
-  /repository/audit/trail/:
+  /repository/project-archive/trail/:
     get:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: Repository audit trail
       responses:
         '200':
-          description: Trail entries
+          description: OK
 
-  /repository/audit/override-status/:
+  /repository/project-archive/override-status/:
     post:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: Override approval status (admin)
       responses:
         '200':
-          description: Overridden
+          description: OK
 
-  /repository/audit/export/:
+  /repository/project-archive/export/:
     get:
-      tags: [repository-audit]
+      tags: [project-archive]
       summary: Export entries CSV
       responses:
         '200':

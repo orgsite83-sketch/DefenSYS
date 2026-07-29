@@ -121,10 +121,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     }
 
     final stageOptions = detailState.stageOptions;
-    if (stageOptions.isNotEmpty &&
-        !stageOptions.contains(_selectedDeliverableStage)) {
-      _selectedDeliverableStage = stageOptions.first;
-    } else if (stageOptions.isEmpty) {
+    final currentStage = detailState.deliverableTeam?['current_stage']?.toString();
+    if (stageOptions.isNotEmpty) {
+      if (_selectedDeliverableStage.isEmpty || !stageOptions.contains(_selectedDeliverableStage)) {
+        if (currentStage != null && currentStage.isNotEmpty && stageOptions.contains(currentStage)) {
+          _selectedDeliverableStage = currentStage;
+        } else {
+          _selectedDeliverableStage = stageOptions.first;
+        }
+      }
+    } else {
       _selectedDeliverableStage = '';
     }
 
@@ -1270,38 +1276,142 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            Row(
+              children: [
+                const Icon(Icons.touch_app_outlined, size: 15, color: _maroon),
+                const SizedBox(width: 6),
+                Text(
+                  isCapstone ? 'Defense Stage Overview' : 'PIT Event Overview',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 12,
+                    color: _muted,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Text(
+                    isCapstone ? 'Click stage to select view' : 'Click event to select view',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      color: _muted,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
             Wrap(
               spacing: 8,
               runSpacing: 8,
               children: stageOptions.map((label) {
                 final active = label == _selectedDeliverableStage;
-                return ChoiceChip(
-                  label: Text(label),
-                  selected: active,
-                  onSelected: (_) =>
-                      setState(() => _selectedDeliverableStage = label),
-                  selectedColor: _maroon.withValues(alpha: 0.12),
-                  labelStyle: TextStyle(
-                    color: active ? _maroon : _ink,
-                    fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+                final isCurrentConfig = label == deliverableTeam['current_stage']?.toString();
+                return Tooltip(
+                  message: active
+                      ? '$label (Currently active ${isCapstone ? 'stage' : 'event'})'
+                      : 'Click to select and view $label deliverables',
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => setState(() => _selectedDeliverableStage = label),
+                      borderRadius: BorderRadius.circular(8),
+                      child: AnimatedContainer(
+                        duration: const Duration(milliseconds: 150),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                        decoration: BoxDecoration(
+                          color: active ? _maroon : const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: active ? _maroon : const Color(0xFFCBD5E1),
+                            width: active ? 1.5 : 1.0,
+                          ),
+                          boxShadow: active
+                              ? [
+                                  BoxShadow(
+                                    color: _maroon.withValues(alpha: 0.25),
+                                    blurRadius: 4,
+                                    offset: const Offset(0, 2),
+                                  )
+                                ]
+                              : [],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (active) ...[
+                              const Icon(Icons.check_circle, size: 14, color: Colors.white),
+                              const SizedBox(width: 6),
+                            ],
+                            Text(
+                              label,
+                              style: TextStyle(
+                                fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                                color: active ? Colors.white : _ink,
+                                fontSize: 12,
+                              ),
+                            ),
+                            if (isCurrentConfig) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: active
+                                      ? Colors.white.withValues(alpha: 0.25)
+                                      : _maroon.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  'Current',
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.bold,
+                                    color: active ? Colors.white : _maroon,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
                   ),
                 );
               }).toList(),
             ),
             const SizedBox(height: 20),
+            _buildRequiredCheckBlock(pre),
+            const SizedBox(height: 16),
             const Text(
               'Pre-Defense Requirements',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
-            ...pre.map((item) => _deliverableRow(item)),
+            if (pre.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No pre-defense requirements configured.',
+                  style: TextStyle(color: _muted, fontStyle: FontStyle.italic, fontSize: 12),
+                ),
+              )
+            else
+              ...pre.map((item) => _deliverableRow(item)),
             const SizedBox(height: 20),
             const Text(
               'Post-Defense Submissions',
               style: TextStyle(fontWeight: FontWeight.w800, fontSize: 14),
             ),
             const SizedBox(height: 8),
-            if (stage['vault_unlocked'] != true)
+            if (stage['vault_unlocked'] != true && stage['archive_unlocked'] != true)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
@@ -1365,6 +1475,32 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
                 style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700),
               ),
             ),
+          if (!uploaded) ...[
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.amber.shade50,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.amber.shade200),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.hourglass_empty, size: 12, color: Colors.amber.shade800),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Awaiting student upload',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: Colors.amber.shade800,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           if (uploaded && fileUrl != null && fileUrl.isNotEmpty) ...[
             const SizedBox(width: 8),
             IconButton(
@@ -1373,6 +1509,59 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               icon: const Icon(Icons.open_in_new, size: 20),
             ),
           ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRequiredCheckBlock(List<Map<String, dynamic>> pre) {
+    final requiredItems = pre.where((item) => item['required'] == true).toList();
+    final total = requiredItems.length;
+    final done = requiredItems.where((item) => item['uploaded'] == true || item['submission'] != null).length;
+    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : (pre.isEmpty ? 0.0 : 1.0);
+    final color = done == total && total > 0 ? const Color(0xFF10B981) : Colors.orange;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Required Pre-Defense Check',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              Text(
+                total > 0 ? '$done / $total Complete' : (pre.isEmpty ? 'Not Configured' : 'Complete'),
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
         ],
       ),
     );

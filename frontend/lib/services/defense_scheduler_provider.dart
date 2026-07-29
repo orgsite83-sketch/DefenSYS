@@ -343,36 +343,6 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     return {'created': created, 'errors': errors};
   }
 
-  Future<bool> updateStatus(int scheduleId, String status) async {
-    state = state.copyWith(
-      isSaving: true,
-      clearError: true,
-      clearMessage: true,
-    );
-
-    try {
-      final response = await _client.patch(
-        Uri.parse('$baseUrl/$scheduleId/'),
-
-        body: jsonEncode({'status': status}),
-      );
-
-      if (response.statusCode == 200) {
-        await fetchSchedules(successMessage: 'Schedule status updated.');
-        return true;
-      }
-
-      state = state.copyWith(
-        isSaving: false,
-        error: _errorFromResponse(response),
-      );
-      return false;
-    } catch (e) {
-      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
-      return false;
-    }
-  }
-
   Future<Map<String, dynamic>?> fetchPitEventConfig({
     required String eventName,
     int? semesterId,

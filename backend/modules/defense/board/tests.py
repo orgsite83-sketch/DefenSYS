@@ -164,3 +164,24 @@ class DefenseBoardApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['counts']['all'], 1)
         self.assertEqual(response.data['schedules'][0]['team_name'], 'Team Circuit')
+
+    def test_stage_options_are_deduplicated(self):
+        # Create another schedule with the exact same stage as capstone_schedule
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.capstone_team,
+            defense_stage=self.stage,
+            scheduled_date='2026-05-18',
+            start_time='10:00',
+            slot_duration=60,
+            room='Room 302',
+            status=DefenseSchedule.STATUS_SCHEDULED,
+            created_by=self.admin,
+        )
+
+        response = self.client.get('/api/defense/board/')
+        self.assertEqual(response.status_code, 200)
+        stage_opts = response.data['stage_options']
+        self.assertEqual(len(stage_opts), len(set(stage_opts)))
+        self.assertEqual(stage_opts.count('Project Proposal'), 1)

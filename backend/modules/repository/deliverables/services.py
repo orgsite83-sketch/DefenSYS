@@ -155,7 +155,7 @@ def current_stage_for_team(team):
         # Or, if they have configured events for this semester,
         # find the first event for which they don't have a STATUS_DONE schedule.
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.audit.services import PIT_YEAR_EVENT_HINTS
+        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
         configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
         if team.year_level:
             exclude_filter = Q()
@@ -262,8 +262,22 @@ def filter_teams(request, queryset):
             | Q(adviser__username__icontains=search)
         ).distinct()
 
-    if status_filter == 'ready':
+    if status_filter in ('ready', 'endorsed'):
         queryset = queryset.exclude(ready_for_stage__isnull=True).exclude(ready_for_stage='')
+    elif status_filter in ('awaiting_endorsement', 'pending_endorsement'):
+        queryset = queryset.filter(Q(ready_for_stage__isnull=True) | Q(ready_for_stage=''))
+    elif status_filter == 'scheduled':
+        from student_teams.models import TeamStageProgress
+        scheduled_ids = TeamStageProgress.objects.filter(status=TeamStageProgress.STATUS_SCHEDULED).values_list('team_id', flat=True)
+        queryset = queryset.filter(pk__in=scheduled_ids)
+    elif status_filter == 'pending_post_defense':
+        from student_teams.models import TeamStageProgress
+        grading_ids = TeamStageProgress.objects.filter(status__in=[TeamStageProgress.STATUS_GRADING, TeamStageProgress.STATUS_PASSED]).values_list('team_id', flat=True)
+        queryset = queryset.filter(pk__in=grading_ids)
+    elif status_filter == 'passed':
+        from student_teams.models import TeamStageProgress
+        passed_ids = TeamStageProgress.objects.filter(status=TeamStageProgress.STATUS_PASSED).values_list('team_id', flat=True)
+        queryset = queryset.filter(pk__in=passed_ids)
     elif status_filter == 'missing':
         missing_ids = [
             team.id
@@ -285,6 +299,10 @@ def filter_teams(request, queryset):
 def archive_unlocked(team, stage_label):
     if team.status == StudentTeam.STATUS_APPROVED:
         return True
+    if is_stage_unlocked_by_admin(team, stage_label):
+        return True
+    if is_stage_defense_done(team, stage_label):
+        return True
     return DefenseSchedule.objects.filter(
         team=team,
         status=DefenseSchedule.STATUS_DONE,
@@ -303,11 +321,25 @@ def stage_deliverables_configured(team, stage_label):
 
 
 def required_complete(team, stage_label):
+    configured = stage_deliverables_configured(team, stage_label)
+    if not configured:
+        return False
     submitted = submissions_for(team, stage_label)
-    return all(
-        item['id'] in submitted and submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
-        for item in get_deliverable_definitions_for_team(team, stage_label)
+    definitions = get_deliverable_definitions_for_team(team, stage_label)
+    required_items = [
+        item for item in definitions
         if item['type'] == DeliverableSubmission.TYPE_PRE and item['required']
+    ]
+    if not required_items:
+        return True
+    return all(
+        item['id'] in submitted
+        and (
+            submitted[item['id']].status != DeliverableSubmission.STATUS_REJECTED
+            if not getattr(team, 'is_capstone', False) else
+            submitted[item['id']].status == DeliverableSubmission.STATUS_ACCEPTED
+        )
+        for item in required_items
     )
 
 
@@ -343,13 +375,122 @@ def team_stage_status(team, stage_label):
     return 'pending_review'
 
 
+def compute_stage_status_detail(team, stage_label, configured, archive_required_complete):
+    if not configured:
+        return 'not_configured'
+
+    from student_teams.models import TeamStageProgress
+    from student_teams.services import get_stage_progress
+    from defense.scheduler.models import DefenseSchedule
+    from django.utils import timezone
+
+    is_capstone = getattr(team, 'is_capstone', False)
+    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    progress = get_stage_progress(team, stage_obj) if stage_obj else None
+    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
+
+    today = timezone.localdate()
+    active_schedules = DefenseSchedule.objects.filter(
+        scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
+        team=team,
+        status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+    )
+    if stage_obj:
+        active_schedules = active_schedules.filter(defense_stage=stage_obj)
+
+    is_defense_today = active_schedules.filter(scheduled_date=today).exists()
+    has_active_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_SCHEDULED).exists()
+    has_done_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_DONE).exists()
+
+    if progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule:
+        if archive_required_complete:
+            return 'passed'
+        else:
+            return 'pending_post_defense'
+    elif progress_status == TeamStageProgress.STATUS_SCHEDULED or has_active_schedule:
+        if is_defense_today:
+            return 'defense_ongoing'
+        else:
+            return 'defense_scheduled'
+    elif progress_status == TeamStageProgress.STATUS_READY or (not is_capstone and team.ready_for_stage == stage_label):
+        return 'endorsed'
+    else:
+        return 'awaiting_endorsement'
+
+
+def is_stage_defense_done(team, stage_label):
+    from student_teams.models import TeamStageProgress
+    from student_teams.services import get_stage_progress
+    from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
+    from defense.stages.models import StageGradingConfig
+
+    is_capstone = getattr(team, 'is_capstone', False)
+    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    progress = get_stage_progress(team, stage_obj) if stage_obj else None
+    progress_status = progress.status if progress else ''
+
+    active_schedules = DefenseSchedule.objects.filter(
+        scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
+        team=team,
+        status=DefenseSchedule.STATUS_DONE,
+    )
+    if stage_obj:
+        active_schedules = active_schedules.filter(defense_stage=stage_obj)
+
+    has_done_schedule = active_schedules.exists()
+
+    is_officially_complete = False
+    if is_capstone and stage_obj:
+        sem = getattr(team, 'semester', None)
+        is_officially_complete = StageGradingConfig.objects.filter(
+            defense_stage=stage_obj,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
+    elif not is_capstone:
+        sem = getattr(team, 'semester', None)
+        is_officially_complete = PitEventGradingConfig.objects.filter(
+            event_name=stage_label,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
+
+    return progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule or is_officially_complete
+
+
+def is_stage_unlocked_by_admin(team, stage_label):
+    unlocked_stages = getattr(team, 'unlocked_stages', []) or []
+    return stage_label in unlocked_stages
+
+
+@transaction.atomic
+def toggle_stage_deliverables_unlock(team, stage_label, user):
+    is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
+    if not is_admin:
+        raise PermissionError('Only Admin or Capstone Coordinator can unlock deliverables for completed defenses.')
+
+    unlocked_stages = list(getattr(team, 'unlocked_stages', []) or [])
+    if stage_label in unlocked_stages:
+        unlocked_stages.remove(stage_label)
+        unlocked = False
+    else:
+        unlocked_stages.append(stage_label)
+        unlocked = True
+
+    team.unlocked_stages = unlocked_stages
+    team.save(update_fields=['unlocked_stages', 'updated_at'])
+    return unlocked
+
+
 def stage_payload(team, stage_label):
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
     unlocked = archive_unlocked(team, stage_label)
     rows = []
 
-    from repository.audit.services import resolve_archive_file_template
+    from repository.project_archive.services import resolve_archive_file_template
     from academic_period_management.models import Semester
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
 
@@ -390,15 +531,31 @@ def stage_payload(team, stage_label):
         or all(item['uploaded'] for item in archive_required_items)
     )
     
+    from student_teams.services import get_stage_progress
     is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label)
+    stage_status_detail = compute_stage_status_detail(team, stage_label, configured, archive_required_complete)
+
+    stage_obj = defense_stage_for_label(stage_label) if team.is_capstone else None
+    progress = get_stage_progress(team, stage_obj) if stage_obj else None
+    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
+
+    is_defense_done = is_stage_defense_done(team, stage_label)
+    admin_unlocked = is_stage_unlocked_by_admin(team, stage_label)
+    can_faculty_review = (not is_defense_done) or admin_unlocked
 
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
         'endorsed': is_endorsed,
         'archive_unlocked': unlocked,
+        'vault_unlocked': unlocked,
         'required_complete': configured and required_complete(team, stage_label),
         'status': team_stage_status(team, stage_label),
+        'stage_progress_status': progress_status,
+        'stage_status_detail': stage_status_detail,
+        'is_defense_done': is_defense_done,
+        'admin_unlocked': admin_unlocked,
+        'can_faculty_review': can_faculty_review,
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
@@ -408,6 +565,8 @@ def stage_payload(team, stage_label):
         'archive_required_uploaded': sum(1 for item in archive_required_items if item['uploaded']),
         'archive_required_total': len(archive_required_items),
         'archive_complete': unlocked and archive_required_complete,
+        'pre': pre_items,
+        'post': archive_items,
         'deliverables': rows,
     }
 
@@ -416,8 +575,20 @@ def submission_payload(submission):
     if submission is None:
         return None
         
+    files_list = list(submission.files.all().order_by('-uploaded_at'))
+    if len(files_list) > 1:
+        latest = files_list[0]
+        for extra in files_list[1:]:
+            try:
+                if extra.file:
+                    extra.file.delete(save=False)
+            except Exception:
+                pass
+            extra.delete()
+        files_list = [latest]
+
     files_data = []
-    for f in submission.files.all().order_by('uploaded_at'):
+    for f in files_list:
         files_data.append({
             'id': f.id,
             'file_name': f.file_name,
@@ -447,7 +618,7 @@ def team_payload(team, selected_stage=None):
         configured_stage_labels = list(STAGE_OPTIONS)
     else:
         from defense.scheduler.models import PitEventGradingConfig
-        from repository.audit.services import PIT_YEAR_EVENT_HINTS
+        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
         configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
         if team.year_level:
             exclude_filter = Q()
@@ -548,25 +719,34 @@ def team_payload(team, selected_stage=None):
     }
 
 
-def counts_payload(teams):
+def counts_payload(teams, selected_stage=None):
     team_list = list(teams)
     submitted_total = sum(team.deliverable_submissions.count() for team in team_list)
-    ready_count = sum(1 for team in team_list if team.ready_for_stage)
     
+    ready_count = 0
     missing_count = 0
     pending_count = 0
+    deliverables_configured = False
+
     for team in team_list:
-        stage = current_stage_for_team(team)
+        stage = selected_stage or current_stage_for_team(team)
+        if stage_deliverables_configured(team, stage):
+            deliverables_configured = True
         status = team_stage_status(team, stage)
-        if status in ('missing', 'needs_revision'):
+        if status in ('endorsed', 'complete'):
+            ready_count += 1
+        elif status in ('missing', 'needs_revision'):
             missing_count += 1
         elif status == 'pending_review':
             pending_count += 1
+        elif team.ready_for_stage:
+            ready_count += 1
 
     archive_total = DeliverableSubmission.objects.filter(
         team__in=team_list,
         deliverable_type=DeliverableSubmission.TYPE_POST,
     ).count() if team_list else 0
+
     return {
         'teams': len(team_list),
         'ready': ready_count,
@@ -574,6 +754,7 @@ def counts_payload(teams):
         'pending_review': pending_count,
         'submitted_files': submitted_total,
         'archive_files': archive_total,
+        'deliverables_configured': deliverables_configured,
     }
 
 
@@ -590,7 +771,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             raise PermissionError('Post-Defense submissions are locked until this defense is done.')
         
         # Check naming convention
-        from repository.audit.services import resolve_archive_file_template
+        from repository.project_archive.services import resolve_archive_file_template
         from academic_period_management.models import Semester
         semester_label = team.semester.label if team.semester_id else Semester.FIRST
         suggested = resolve_archive_file_template(
@@ -622,10 +803,19 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         }
     )
 
-    # Reset status to pending on new uploads
+    # Check if this upload is a simple file replacement (Choice B: Approved status preserved)
+    was_replacement_unlocked = (
+        'Unlocked for file replacement' in (submission.feedback or '')
+        and submission.status == DeliverableSubmission.STATUS_ACCEPTED
+    )
+
     if not created:
-        submission.status = DeliverableSubmission.STATUS_PENDING
-        submission.feedback = ''
+        if was_replacement_unlocked:
+            submission.status = DeliverableSubmission.STATUS_ACCEPTED
+            submission.feedback = ''
+        else:
+            submission.status = DeliverableSubmission.STATUS_PENDING
+            submission.feedback = ''
         submission.uploaded_by = user
         submission.save(update_fields=['status', 'feedback', 'uploaded_by', 'uploaded_at'])
 
@@ -639,6 +829,18 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         
     if not file_obj and file:
         file_obj = submission.files.filter(file_name=file_name.strip()).first()
+
+    if not file_obj and submission.files.exists():
+        # Overwrite existing primary file for single-file deliverables rather than creating duplicate file rows!
+        file_obj = submission.files.order_by('uploaded_at').first()
+        # Clean up any secondary duplicate files if they exist from past uploads
+        for extra in submission.files.exclude(id=file_obj.id):
+            try:
+                if extra.file:
+                    extra.file.delete(save=False)
+            except Exception:
+                pass
+            extra.delete()
 
     target_file_name = file_name.strip()
     if file_obj and file_obj.file and file is not None:
@@ -775,6 +977,14 @@ def endorse_team(team, stage_label):
 @transaction.atomic
 def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user):
     from django.utils import timezone
+
+    is_admin = getattr(reviewer_user, 'role', None) == 'admin' or getattr(reviewer_user, 'is_superuser', False)
+    is_defense_done = is_stage_defense_done(team, stage_label)
+    admin_unlocked = is_stage_unlocked_by_admin(team, stage_label)
+
+    if is_defense_done and not is_admin and not admin_unlocked:
+        raise PermissionError('Deliverables for completed defenses are view-only for faculty. Resubmission requests must be unlocked by an Admin.')
+
     try:
         submission = DeliverableSubmission.objects.get(
             team=team,

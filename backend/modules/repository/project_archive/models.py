@@ -2,7 +2,7 @@ from django.conf import settings
 from django.db import models
 
 
-class RepositoryAuditLog(models.Model):
+class ProjectArchiveLog(models.Model):
     TYPE_PIT = 'pit'
     TYPE_CAPSTONE = 'capstone'
 
@@ -32,7 +32,7 @@ class RepositoryAuditLog(models.Model):
     message = models.CharField(max_length=255, blank=True)
     actor = models.ForeignKey(
         settings.AUTH_USER_MODEL,
-        related_name='repository_audit_logs',
+        related_name='project_archive_logs',
         null=True,
         blank=True,
         on_delete=models.SET_NULL,
@@ -41,7 +41,7 @@ class RepositoryAuditLog(models.Model):
 
     class Meta:
         app_label = 'repository'
-        db_table = 'repository_audit_repositoryauditlog'
+        db_table = 'repository_archive_projectarchivelog'
         ordering = ['-created_at', '-id']
 
     def __str__(self):

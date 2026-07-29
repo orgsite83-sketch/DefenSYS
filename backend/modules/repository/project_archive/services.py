@@ -43,7 +43,9 @@ from .payloads import (
     capstone_archive_entry_payload,
     pit_entry_payload,
 )
-from .models import RepositoryAuditLog
+from .models import ProjectArchiveLog
+
+RepositoryAuditLog = ProjectArchiveLog
 from .trail import audit_trail, log_action
 
 User = get_user_model()
@@ -65,8 +67,23 @@ CAPSTONE_DEFAULT_COURSE = 'CAP301'
 CAPSTONE_YEAR_PREFIX = '3rdYear'
 CAPSTONE_YEAR_LEVEL = '3rd Year'
 
+CAPSTONE_PREFIX_BY_YEAR = {
+    '3rd Year': '3rdYear',
+    '4th Year': '4thYear',
+}
+
+CAPSTONE_COURSE_BY_YEAR = {
+    '3rd Year': 'CAP301',
+    '4th Year': 'CAP401',
+}
+
+
+def _default_capstone_course_for_year(year_level):
+    return CAPSTONE_COURSE_BY_YEAR.get(year_level, 'CAP301')
+
+
 CAPSTONE_FILENAME_RE = re.compile(
-    r'^(?P<prefix>3rdYear)\.(?P<course>[A-Za-z0-9]+)\.'
+    r'^(?P<prefix>3rdYear|4thYear)\.(?P<course>[A-Za-z0-9]+)\.'
     r'(?P<project>[A-Za-z0-9_-]+)\.(?P<semester>1stSemester|2ndSemester|Summer)\.pdf$',
     re.IGNORECASE,
 )
@@ -75,6 +92,7 @@ PIT_YEAR_EVENT_HINTS = {
     '1st Year': ('1st', 'first'),
     '2nd Year': ('2nd', 'second'),
     '3rd Year': ('3rd', 'third'),
+    '4th Year': ('4th', 'fourth'),
 }
 
 def is_admin(user):
@@ -440,11 +458,13 @@ def resolve_archive_file_template(
     semester_key = _semester_key_from_label(semester_label)
 
     if is_pit:
-        prefix = PIT_PREFIX_BY_YEAR.get(team.year_level, '3rdYear')
-        course = _default_course_for_year(team.year_level)
+        prefix = PIT_PREFIX_BY_YEAR.get(team.year_level if team else '', '3rdYear')
+        course = _default_course_for_year(team.year_level if team else '')
     else:
-        prefix = CAPSTONE_YEAR_PREFIX
-        course = CAPSTONE_DEFAULT_COURSE
+        from student_teams.team_levels import level_year
+        year_level = (team.year_level if team else '') or level_year(team.level if team else '') or '3rd Year'
+        prefix = CAPSTONE_PREFIX_BY_YEAR.get(year_level, '3rdYear')
+        course = _default_capstone_course_for_year(year_level)
 
     resolved = template.replace('{year}', prefix)
     resolved = resolved.replace('{course}', course)
@@ -627,7 +647,7 @@ def validate_capstone_file_name(file_name):
             }
             
     raise ValidationError(
-        'Use format: ProjectTitle.pdf or 3rdYear.CAP301.ProjectTitle.1stSemester.pdf'
+        'Use format: ProjectTitle.pdf, 3rdYear.CAP301.ProjectTitle.1stSemester.pdf, or 4thYear.CAP401.ProjectTitle.1stSemester.pdf'
     )
 
 
@@ -1457,48 +1477,203 @@ def upload_capstone_files(user, file_names=None, uploaded_files=None, academic_y
 
 
 @transaction.atomic
-def override_pit_status(user, entry_id, status):
-    entry, scope = resolve_pit_entry(user, entry_id)
+def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEEDS_REVISION, feedback=''):
+    target_type, instance, scope = resolve_archive_target(user, entry_id)
     if not scope['can_override']:
-        raise PermissionDenied('Only admins can override PIT repository status.')
-    valid = {ArchiveEntry.STATUS_PENDING, ArchiveEntry.STATUS_APPROVED, ArchiveEntry.STATUS_NEEDS_REVISION}
-    if status not in valid:
-        raise ValidationError('Invalid PIT repository status.')
-    previous = entry.status
-    entry.status = status
-    entry.save(update_fields=['status', 'updated_at'])
+        raise PermissionDenied('Only admins can request repository resubmissions.')
+    
+    if target_type == 'submission_file' and hasattr(instance, 'submission'):
+        instance = instance.submission
+
+    previous = getattr(instance, 'status', 'Approved')
+
+    # Format feedback with explicit author attribution to avoid misleading students/teams
+    user_role = getattr(user, 'role', '') or 'admin'
+    user_role_label = 'Admin' if user_role == 'admin' else ('Adviser' if user_role == 'faculty' else user_role.title())
+    user_name = user.get_full_name() or user.username
+    author_tag = f"{user_name} ({user_role_label})"
+
+    formatted_feedback = (feedback or '').strip()
+    if formatted_feedback and not (formatted_feedback.startswith("Remarks by ") or formatted_feedback.startswith("[")):
+        formatted_feedback = f"Remarks by {author_tag}: {formatted_feedback}"
+
+    if isinstance(instance, DeliverableSubmission):
+        if status in {'Needs Revision', 'rejected'}:
+            instance.status = DeliverableSubmission.STATUS_REJECTED
+        elif status in {'Approved', 'accepted'}:
+            instance.status = DeliverableSubmission.STATUS_ACCEPTED
+        elif status in {'Pending Review', 'pending'}:
+            instance.status = DeliverableSubmission.STATUS_PENDING
+        else:
+            instance.status = DeliverableSubmission.STATUS_REJECTED
+            
+        if formatted_feedback:
+            instance.feedback = formatted_feedback
+
+        if hasattr(instance, 'reviewed_by'):
+            instance.reviewed_by = user
+            from django.utils import timezone
+            instance.reviewed_at = timezone.now()
+        
+        update_fields = ['status']
+        if hasattr(instance, 'feedback') and formatted_feedback:
+            update_fields.append('feedback')
+        if hasattr(instance, 'reviewed_by') and instance.reviewed_by:
+            update_fields.extend(['reviewed_by', 'reviewed_at'])
+        instance.save(update_fields=update_fields)
+    else:
+        instance.status = status
+        if not instance.metadata:
+            instance.metadata = {}
+        if formatted_feedback:
+            instance.metadata['feedback'] = formatted_feedback
+            instance.metadata['feedback_by'] = user_name
+            instance.metadata['feedback_role'] = user_role_label
+
+        if hasattr(instance, 'updated_at'):
+            instance.save(update_fields=['status', 'metadata', 'updated_at'])
+        else:
+            instance.save(update_fields=['status', 'metadata'])
+
+    file_name_val = getattr(instance, 'file_name', '') or getattr(instance, 'label', '')
+    entry_type_val = getattr(instance, 'entry_type', ArchiveEntry.TYPE_CAPSTONE)
+
     log_action(
-        ArchiveEntry.TYPE_PIT,
-        entry.id,
-        entry.file_name,
+        entry_type_val,
+        instance.id,
+        file_name_val,
         RepositoryAuditLog.ACTION_OVERRIDE,
         user,
         previous_status=previous,
         new_status=status,
-        message='Admin override updated PIT repository status.',
+        message=f'Resubmission requested by {author_tag} (status: {status}). Feedback: {formatted_feedback}' if formatted_feedback else f'Resubmission requested by {author_tag} (status: {status}).',
     )
     log_high_impact_action(
         category=SystemAuditLog.CATEGORY_REPOSITORY,
-        action='repository.status_override',
-        target=entry,
-        target_type='ArchiveEntry',
-        target_id=entry.pk,
+        action='repository.request_resubmission',
+        target=instance,
+        target_type=instance.__class__.__name__,
+        target_id=instance.pk,
         actor=user,
-        old_values={
-            'entry_type': entry.entry_type,
-            'status': previous,
-            'track': entry.entry_type,
-            'year_level': entry.year_level,
-        },
-        new_values={
-            'entry_type': entry.entry_type,
-            'status': status,
-            'track': entry.entry_type,
-            'year_level': entry.year_level,
-        },
-        reason='Admin override updated PIT repository status.',
+        old_values={'status': previous},
+        new_values={'status': status, 'feedback': formatted_feedback},
+        reason=f'File resubmission requested by {author_tag}.',
     )
-    return entry
+    return instance
+
+
+def override_pit_status(user, entry_id, status):
+    return request_archive_resubmission(user, entry_id, status)
+
+
+def resolve_archive_target(user, entry_id):
+    scope = repository_scope(user)
+    if not scope['can_override']:
+        raise PermissionDenied('You do not have permission to replace repository files.')
+
+    raw_id = str(entry_id).strip()
+
+    if raw_id.startswith('pit-deliverable-') or raw_id.startswith('capstone-'):
+        clean = raw_id.replace('pit-deliverable-', '').replace('capstone-', '')
+        parts = clean.split('-')
+        submission_id = parts[0]
+        file_id = parts[1] if len(parts) > 1 else None
+
+        if not submission_id.isdigit():
+            raise ValidationError('Invalid deliverable submission id.')
+
+        submission = DeliverableSubmission.objects.filter(pk=int(submission_id)).first()
+        if not submission:
+            raise ValidationError('Deliverable submission not found.')
+
+        if file_id and file_id.isdigit():
+            from repository.deliverables.models import DeliverableSubmissionFile
+            sub_file = DeliverableSubmissionFile.objects.filter(pk=int(file_id), submission=submission).first()
+            if sub_file:
+                return ('submission_file', sub_file, scope)
+
+        return ('submission', submission, scope)
+
+    clean_id = raw_id.replace('pit-', '').replace('capstone-vault-', '')
+    if not clean_id.isdigit():
+        raise ValidationError('Invalid archive entry id.')
+
+    entry = ArchiveEntry.objects.filter(pk=int(clean_id)).first()
+    if not entry:
+        raise ValidationError('Archive entry not found.')
+    return ('archive_entry', entry, scope)
+
+
+@transaction.atomic
+def replace_archive_file(user, entry_id, file_obj):
+    from django.utils import timezone
+    from repository.archive.models import ArchiveEntry
+
+    if not file_obj:
+        raise ValidationError({'file': 'A replacement PDF file is required.'})
+
+    target_type, instance, scope = resolve_archive_target(user, entry_id)
+    previous_filename = getattr(instance, 'file_name', '') or ''
+
+    file_name = getattr(file_obj, 'name', 'replacement.pdf')
+    file_size_val = getattr(file_obj, 'size', None)
+    file_size_str = f"{file_size_val} bytes" if file_size_val is not None else ''
+
+    if target_type == 'archive_entry':
+        instance.file = file_obj
+        instance.file_name = file_name
+        if file_size_str:
+            instance.file_size = file_size_str
+        instance.uploaded_at = timezone.now()
+        instance.uploaded_by_name = user.get_full_name() or user.username
+        instance.uploaded_by = user
+        instance.extracted_text = ''
+        instance.save()
+
+        log_action(
+            instance.entry_type,
+            instance.id,
+            instance.file_name,
+            RepositoryAuditLog.ACTION_OVERRIDE,
+            user,
+            previous_status=instance.status,
+            new_status=instance.status,
+            message=f'Replaced PDF file attachment (previously: {previous_filename}).',
+        )
+
+    elif target_type in ('submission', 'submission_file'):
+        instance.file = file_obj
+        instance.file_name = file_name
+        if file_size_str:
+            instance.file_size = file_size_str
+        if hasattr(instance, 'uploaded_by'):
+            instance.uploaded_by = user
+        if hasattr(instance, 'uploaded_at'):
+            instance.uploaded_at = timezone.now()
+        if hasattr(instance, 'extracted_text'):
+            instance.extracted_text = ''
+        instance.save()
+
+        log_action(
+            ArchiveEntry.TYPE_CAPSTONE,
+            instance.id,
+            file_name,
+            RepositoryAuditLog.ACTION_OVERRIDE,
+            user,
+            message=f'Replaced deliverable PDF file (previously: {previous_filename}).',
+        )
+
+    log_high_impact_action(
+        category=SystemAuditLog.CATEGORY_REPOSITORY,
+        action='repository.file_replace',
+        target=instance,
+        target_type=instance.__class__.__name__,
+        target_id=instance.pk,
+        actor=user,
+        reason=f'Replaced PDF file attachment: {file_name}',
+    )
+    return instance
+
 
 
 def repository_entries_count():

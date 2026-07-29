@@ -343,7 +343,7 @@ class PitLeadDashboardContent extends StatelessWidget {
               icon: Icons.rule_outlined,
               iconColor: const Color(0xFF92400E),
               iconBackground: const Color(0xFFFFEDB8),
-              title: 'Rubric Engine',
+              title: 'Rubrics',
               subtitle: 'Configure grading rubrics',
               onTap: onOpenRubrics,
               isLast: true,

@@ -139,7 +139,9 @@ class ScheduleImportDialog {
               final file = result.files.first;
               final bytes = file.bytes;
               if (bytes == null) {
-                showErrorToast(context, 'Unable to read the selected file.');
+                if (context.mounted) {
+                  showErrorToast(context, 'Unable to read the selected file.');
+                }
                 return;
               }
 
@@ -149,7 +151,7 @@ class ScheduleImportDialog {
                   parsed = parsedResult;
                   fileName = file.name;
                   if (parsedResult.date != null && parsedResult.date!.isNotEmpty) {
-                    dateController.text = parsedResult.date!;
+                    dateController.text = normalizeImportDate(parsedResult.date!);
                   }
                   if (parsedResult.room != null && parsedResult.room!.isNotEmpty) {
                     roomController.text = parsedResult.room!;
@@ -171,7 +173,9 @@ class ScheduleImportDialog {
                   await loadPitEventConfig(importEventName, setDialogState);
                 }
               } catch (e) {
-                showErrorToast(context, 'Failed to parse schedule file: $e');
+                if (context.mounted) {
+                  showErrorToast(context, 'Failed to parse schedule file: $e');
+                }
               }
             }
 
@@ -234,7 +238,7 @@ class ScheduleImportDialog {
                       const SizedBox(height: 14),
                     ],
                     Expanded(
-                      child: _buildImportPreviewTable(previewRows),
+                      child: _buildImportPreviewTable(previewRows, isPit: isPit),
                     ),
                   ],
                 ),
@@ -357,14 +361,14 @@ class ScheduleImportDialog {
                       if (isPit) {
                         await downloadTextFile(
                           filename: 'defensys-pit-defense-schedule-template.csv',
-                          content: '3rd Year Expo,,,,,,,,,\n'
-                              'May 18, 2026,,,,,,,,,\n'
-                              'SMART ROOM,,,,,,,,,\n'
-                              'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
-                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua\n'
-                              ',,,,"ONG, Patricia",,,,,\n'
-                              ',,,,"SALAZAR, Ethan",,,,,\n'
-                              ',,,,"CASTILLO, Zoe",,,,,\n',
+                          content: '3rd Year Expo,,,,,,,,\n'
+                              'May 18, 2026,,,,,,,,\n'
+                              'SMART ROOM,,,,,,,,\n'
+                              'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3\n'
+                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva\n'
+                              ',,,,"ONG, Patricia",,,,\n'
+                              ',,,,"SALAZAR, Ethan",,,,\n'
+                              ',,,,"CASTILLO, Zoe",,,,\n',
                         );
                       } else {
                         await downloadTextFile(
@@ -651,10 +655,13 @@ class ScheduleImportDialog {
     );
   }
 
-  static Widget _buildImportPreviewTable(List<ScheduleImportPreviewRow> rows) {
+  static Widget _buildImportPreviewTable(
+    List<ScheduleImportPreviewRow> rows, {
+    required bool isPit,
+  }) {
     if (rows.isEmpty) {
       return Container(
-        padding: const EdgeInsets.all(24),
+        width: double.infinity,
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -662,11 +669,8 @@ class ScheduleImportDialog {
         ),
         child: const Center(
           child: Text(
-            'Upload a file to preview schedule rows.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontWeight: FontWeight.w700,
-            ),
+            'Upload a schedule file (.xlsx or .csv) to preview slots.',
+            style: TextStyle(color: AppColors.textSecondary),
           ),
         ),
       );
@@ -682,16 +686,16 @@ class ScheduleImportDialog {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-          columns: const [
-            DataColumn(label: Text('Status')),
-            DataColumn(label: Text('Time')),
-            DataColumn(label: Text('Team')),
-            DataColumn(label: Text('Project')),
-            DataColumn(label: Text('Chair')),
-            DataColumn(label: Text('Panel Members')),
-            DataColumn(label: Text('Documenter')),
-            DataColumn(label: Text('Room')),
-            DataColumn(label: Text('Issues')),
+          columns: [
+            const DataColumn(label: Text('Status')),
+            const DataColumn(label: Text('Time')),
+            const DataColumn(label: Text('Team')),
+            const DataColumn(label: Text('Project')),
+            const DataColumn(label: Text('Chair')),
+            const DataColumn(label: Text('Panel Members')),
+            if (!isPit) const DataColumn(label: Text('Documenter')),
+            const DataColumn(label: Text('Room')),
+            const DataColumn(label: Text('Issues')),
           ],
           rows: rows.map((row) {
             final issueText = row.issues.isNotEmpty
@@ -708,19 +712,21 @@ class ScheduleImportDialog {
                 DataCell(Text(row.projectLabel)),
                 DataCell(Text(row.chairLabel)),
                 DataCell(Text(row.panelLabel)),
-                DataCell(Text(row.documenterLabel)),
+                if (!isPit) DataCell(Text(row.documenterLabel)),
                 DataCell(Text(row.room)),
                 DataCell(
                   SizedBox(
                     width: 320,
                     child: Text(
-                      issueText.isEmpty ? '-' : issueText,
+                      issueText.isEmpty ? 'No issues' : issueText,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
                         color: row.issues.isNotEmpty
                             ? const Color(0xFFB42318)
-                            : AppColors.textSecondary,
+                            : row.warnings.isNotEmpty
+                                ? const Color(0xFFB45309)
+                                : const Color(0xFF027A48),
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
                       ),

@@ -712,10 +712,27 @@ class CapstoneDeliverablesApiTests(APITestCase):
         stage = stage_for_team(response.data, self.team.id)
 
         self.assertTrue(stage['archive_unlocked'])
-
+        self.assertTrue(stage['vault_unlocked'])
         self.assertEqual(stage['archive_required_uploaded'], 1)
-
         self.assertTrue(stage['archive_complete'])
+
+    def test_officially_complete_stage_unlocks_archive_deliverables(self):
+        from defense.stages.models import StageGradingConfig
+        config, _ = StageGradingConfig.objects.get_or_create(
+            defense_stage=self.stage,
+            semester=self.semester,
+        )
+        config.is_officially_complete = True
+        config.save()
+
+        response = self.client.get(
+            '/api/repository/deliverables/',
+            {'stage_label': 'Concept Proposal'},
+        )
+        team_data = next(t for t in response.data['teams'] if t['id'] == self.team.id)
+        stage = team_data['selected_stage']
+        self.assertTrue(stage['archive_unlocked'])
+        self.assertTrue(stage['vault_unlocked'])
 
 
 
@@ -1096,6 +1113,142 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertEqual(file_path_1, file_path_2)
         from django.core.files.storage import default_storage
         self.assertTrue(default_storage.exists(file_path_2))
+
+    def test_deliverables_payload_resolves_pit_events_for_requested_year_level(self):
+        from defense.scheduler.models import PitEventGradingConfig
+        from grading.rubrics.models import Rubric
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric',
+            evaluation_type='panel',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric',
+            evaluation_type='peer',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='1st Year Expo',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year Expo',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        response = self.client.get('/api/repository/deliverables/?scope=pit&year_level=1st+Year')
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('1st Year Expo', response.data['stage_options'])
+        self.assertNotIn('2nd Year Expo', response.data['stage_options'])
+
+    def test_deliverables_payload_auto_infers_student_team_year_level(self):
+        from defense.scheduler.models import PitEventGradingConfig
+        from grading.rubrics.models import Rubric
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric 2',
+            evaluation_type='panel',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric 2',
+            evaluation_type='peer',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='1st year Expo',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year Expo',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        student2 = User.objects.create_user(
+            username='student-2nd-yr',
+            password='pass12345',
+            role='student',
+        )
+        team2 = StudentTeam.objects.create(
+            name='Team ByteForce',
+            semester=self.semester,
+            leader=student2,
+            level='2nd Year PIT',
+            year_level='2nd Year',
+        )
+        TeamMembership.objects.create(team=team2, student=student2)
+
+        self.client.force_authenticate(user=student2)
+        response = self.client.get('/api/repository/deliverables/?scope=pit')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['selected_stage'], '2nd Year Expo')
+        self.assertIn('2nd Year Expo', response.data['stage_options'])
+        self.assertNotIn('1st year Expo', response.data['stage_options'])
+
+    def test_post_defense_review_locked_for_faculty_and_unlocked_by_admin(self):
+        DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date='2026-05-20',
+            start_time='09:00',
+            slot_duration=60,
+            room='Room 301',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        sub = DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='Concept Proposal',
+            deliverable_id='D1',
+            label='Adviser Acceptance Form',
+            deliverable_type='pre',
+            required=True,
+            uploaded_by=self.student,
+            status=DeliverableSubmission.STATUS_PENDING,
+        )
+
+        self.client.force_authenticate(user=self.adviser)
+        res = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D1',
+            'status': 'rejected',
+        })
+        self.assertEqual(res.status_code, 403)
+        self.assertIn('view-only for faculty', res.data['detail'])
+
+        self.client.force_authenticate(user=self.admin)
+        unlock_res = self.client.post('/api/repository/deliverables/unlock/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+        self.assertEqual(unlock_res.status_code, 200)
+        self.assertTrue(unlock_res.data['unlocked'])
+
+        self.client.force_authenticate(user=self.adviser)
+        res2 = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D1',
+            'status': 'accepted',
+        })
+        self.assertEqual(res2.status_code, 200)
+
+
 
 
 

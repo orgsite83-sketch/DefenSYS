@@ -11,7 +11,8 @@ abstract final class AdminRoutes {
   static const studentRecords = '/admin/student-records';
   static const gradeCenter = '/admin/grade-center';
   static const rubrics = '/admin/rubrics';
-  static const repositoryAudit = '/admin/repository-audit';
+  static const projectArchive = '/admin/project-archive';
+  static const repositoryAudit = projectArchive;
   static const curriculumAnalytics = '/admin/curriculum-analytics';
   static const auditCompliance = '/admin/audit-compliance';
   static const defenseScheduler = '/admin/defense-scheduler';
@@ -66,9 +67,10 @@ abstract final class AdminRoutes {
       return DefensysAdminSection.gradeCenter;
     }
     if (location.startsWith('/admin/rubrics')) {
-      return DefensysAdminSection.rubricEngine;
+      return DefensysAdminSection.rubrics;
     }
-    if (location.startsWith('/admin/repository-audit')) {
+    if (location.startsWith('/admin/project-archive') ||
+        location.startsWith('/admin/repository-audit')) {
       return DefensysAdminSection.repositoryAudit;
     }
     if (location.startsWith('/admin/curriculum-analytics')) {
@@ -97,7 +99,7 @@ abstract final class AdminRoutes {
       DefensysAdminSection.studentTeams => studentTeams,
       DefensysAdminSection.studentAcademicRecords => studentRecords,
       DefensysAdminSection.gradeCenter => gradeCenter,
-      DefensysAdminSection.rubricEngine => rubrics,
+      DefensysAdminSection.rubrics => rubrics,
       DefensysAdminSection.repositoryAudit => repositoryAudit,
       DefensysAdminSection.curriculumAnalytics => curriculumAnalytics,
       DefensysAdminSection.auditCompliance => auditCompliance,
@@ -119,7 +121,8 @@ abstract final class FacultyRoutes {
   static const defenseBoard = '/faculty/defense-board';
   static const gradeCenter = '/faculty/grade-center';
   static const rubrics = '/faculty/rubrics';
-  static const repositoryAudit = '/faculty/repository-audit';
+  static const projectArchive = '/faculty/project-archive';
+  static const repositoryAudit = projectArchive;
   static const auditCompliance = '/faculty/audit-compliance';
   static const deliverables = '/faculty/deliverables';
   static const weeklyReports = '/faculty/weekly-reports';
@@ -147,9 +150,10 @@ abstract final class FacultyRoutes {
     }
     if (location.startsWith('/faculty/defense-board')) return 'defense_board';
     if (location.startsWith('/faculty/grade-center')) return 'grade_center';
-    if (location.startsWith('/faculty/rubrics')) return 'rubric_engine';
-    if (location.startsWith('/faculty/repository-audit')) {
-      return 'repository_audit';
+    if (location.startsWith('/faculty/rubrics')) return 'rubrics';
+    if (location.startsWith('/faculty/project-archive') ||
+        location.startsWith('/faculty/repository-audit')) {
+      return 'project_archive';
     }
     if (location.startsWith('/faculty/audit-compliance')) {
       return 'audit_compliance';
@@ -176,8 +180,10 @@ abstract final class FacultyRoutes {
       'defense_scheduler' => defenseScheduler,
       'defense_board' => defenseBoard,
       'grade_center' => gradeCenter,
+      'rubrics' => rubrics,
       'rubric_engine' => rubrics,
-      'repository_audit' => repositoryAudit,
+      'project_archive' => projectArchive,
+      'repository_audit' => projectArchive,
       'audit_compliance' => auditCompliance,
       'deliverables' => deliverables,
       'weekly_reports' => weeklyReports,

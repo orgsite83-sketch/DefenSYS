@@ -10,7 +10,7 @@ from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig, Sch
 from defense.stages.grading_config import get_or_create_stage_grading_config
 from defense.stages.models import DefenseStage
 from grading.rubrics.models import Rubric, RubricCriterion
-from repository.audit.services import repository_scope, pit_upload_window_open
+from repository.project_archive.services import repository_scope, pit_upload_window_open
 from student_teams.models import StudentTeam, TeamMembership, TeamStageProgress
 from .models import GradeBreakdown, PeerEvaluationSubmission, StudentStageGrade, TeamGrade
 from .services import (
@@ -911,6 +911,49 @@ class GradeCenterApiTests(APITestCase):
         self.assertEqual(self.pit_schedule.status, DefenseSchedule.STATUS_DONE)
         self.assertEqual(self.pit_team.status, StudentTeam.STATUS_APPROVED)
 
+    def test_pit_official_complete_blocked_when_peer_eval_incomplete_even_if_peer_grading_not_open_yet(self):
+        self.pit_team.semester = self.semester
+        self.pit_team.save(update_fields=['semester'])
+        self.pit_schedule.semester = self.semester
+        self.pit_schedule.save(update_fields=['semester'])
+        config = self._ensure_pit_event_config(event_name='PIT Expo Blocked', semester=self.semester)
+        config.peer_grading_enabled = False
+        config.save(update_fields=['peer_grading_enabled', 'updated_at'])
+
+        TeamMembership.objects.get_or_create(team=self.pit_team, student=self.second_student, defaults={'order': 1})
+        TeamGrade.objects.filter(team=self.pit_team, scope=TeamGrade.SCOPE_PIT).delete()
+        grade = TeamGrade.objects.create(
+            team=self.pit_team,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='PIT Expo Blocked',
+            pit_event_config=config,
+            panel_score=Decimal('85.00'),
+            panel_weight=80,
+            peer_weight=20,
+            adviser_weight=0,
+        )
+
+        response = self.client.get(
+            f'/api/grading/grades/?scope=pit&stage_label=PIT Expo Blocked',
+        )
+        self.assertEqual(response.status_code, 200)
+        key = 'pit|PIT Expo Blocked'
+        self.assertEqual(response.data['group_settings'][key]['grading_ready_team_count'], 0)
+
+        response_patch = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': 'PIT Expo Blocked',
+                'is_officially_complete': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response_patch.status_code, 400)
+        config.refresh_from_db()
+        self.assertFalse(config.is_officially_complete)
+
     def test_pit_official_complete_skips_failed_grade(self):
         self._ensure_pit_event_config(event_name='PIT Expo Fail', semester=self.semester)
         failed_team = StudentTeam.objects.create(
@@ -1100,7 +1143,7 @@ class GradeCenterApiTests(APITestCase):
             format='json',
         )
 
-        self.assertEqual(response.status_code, 400)
+        self.assertIn(response.status_code, (400, 403))
         config = PitEventGradingConfig.objects.get(
             semester=self.semester,
             event_name='PIT Expo Other Year',
@@ -1388,6 +1431,55 @@ class GradeCenterApiTests(APITestCase):
         )
         self.assertEqual(blocked.status_code, 400)
         self.assertIn('incomplete_teams', blocked.data)
+
+    def test_pit_lead_group_settings_year_level_scope(self):
+        self._ensure_pit_event_config(event_name='1st Year Expo', semester=self.semester)
+        self._ensure_pit_event_config(event_name='2nd Year Expo', semester=self.semester)
+        pit_lead_2nd = User.objects.create_user(
+            username='pit-lead-2nd-year',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+
+        # PIT lead 2nd year can toggle 2nd Year Expo
+        self.client.force_authenticate(user=pit_lead_2nd)
+        ok_res = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': '2nd Year Expo',
+                'peer_grading_enabled': True,
+            },
+            format='json',
+        )
+        self.assertEqual(ok_res.status_code, 200)
+
+        # PIT lead 2nd year is blocked from 1st Year Expo
+        forbidden_res = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': '1st Year Expo',
+                'peer_grading_enabled': True,
+            },
+            format='json',
+        )
+        self.assertEqual(forbidden_res.status_code, 403)
+
+        # System Admin can toggle 1st Year Expo
+        self.client.force_authenticate(user=self.admin)
+        admin_res = self.client.patch(
+            '/api/grading/grades/group-settings/',
+            {
+                'scope': TeamGrade.SCOPE_PIT,
+                'stage_label': '1st Year Expo',
+                'peer_grading_enabled': True,
+            },
+            format='json',
+        )
+        self.assertEqual(admin_res.status_code, 200)
 
     def test_pit_close_blocked_when_panel_missing(self):
         self.pit_team.semester = self.semester

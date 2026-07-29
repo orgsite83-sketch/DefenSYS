@@ -14,7 +14,9 @@ from grading.rubrics.models import Rubric, RubricCriterion
 from repository.deliverables.models import DeliverableSubmission
 from repository.archive.models import ArchiveEntry
 from student_teams.models import StudentTeam, TeamMembership
-from .models import RepositoryAuditLog
+from .models import ProjectArchiveLog
+
+RepositoryAuditLog = ProjectArchiveLog
 from .services import validate_capstone_file_name, validate_pit_file_name
 
 
@@ -781,7 +783,7 @@ class RepositoryAuditApiTests(APITestCase):
             'in Grade Center.'
         )
         with patch(
-            'repository.audit.views.upload_pit_files',
+            'repository.project_archive.views.upload_pit_files',
             side_effect=DjangoValidationError(message),
         ):
             response = self.client.post(
@@ -857,4 +859,103 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         submission = DeliverableSubmission.objects.get(deliverable_id='PIT_D1')
         self.assertEqual(submission.file_name, '3rdYearPIT301CloudFileSyncSystem1stSemester3rdYearExpo.pdf')
+
+    def test_capstone_4th_year_template_and_regex_resolution(self):
+        from .services import resolve_archive_file_template, validate_capstone_file_name
+
+        team_4th = StudentTeam.objects.create(
+            name='Team Titan',
+            project_title='AI Core Platform',
+            level=StudentTeam.LEVEL_4_CAPSTONE,
+            year_level='4th Year',
+            semester=self.semester,
+            leader=self.student,
+        )
+
+        resolved = resolve_archive_file_template(
+            '{year}.{course}.{project}.{semester}.pdf',
+            team_4th,
+            stage_label='Final Defense',
+            semester_label='1st Semester',
+        )
+        self.assertEqual(resolved, '4thYear.CAP401.AICorePlatform.1stSemester.pdf')
+
+        validated = validate_capstone_file_name(resolved)
+        self.assertEqual(validated['prefix'], '4thYear')
+        self.assertEqual(validated['year_level'], '4th Year')
+        self.assertEqual(validated['course_code'], 'CAP401')
+        self.assertEqual(validated['project_slug'], 'AICorePlatform')
+
+    def test_replace_archive_file_endpoint(self):
+        entry = ArchiveEntry.objects.create(
+            file_name='old_file.pdf',
+            entry_type=ArchiveEntry.TYPE_PIT,
+            status='Approved',
+        )
+        self.client.force_authenticate(user=self.admin)
+        new_file = SimpleUploadedFile('new_replacement.pdf', b'PDF content here', content_type='application/pdf')
+        response = self.client.post(
+            '/api/repository/audit/replace-file/',
+            {
+                'entry_id': f'pit-{entry.id}',
+                'file': new_file,
+            },
+            format='multipart',
+        )
+        self.assertEqual(response.status_code, 200)
+        entry.refresh_from_db()
+        self.assertEqual(entry.file_name, 'new_replacement.pdf')
+        self.assertEqual(entry.status, 'Approved')
+
+    def test_request_resubmission_endpoint(self):
+        entry = ArchiveEntry.objects.create(
+            file_name='test_submission.pdf',
+            entry_type=ArchiveEntry.TYPE_PIT,
+            status='Approved',
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            '/api/repository/audit/request-resubmission/',
+            {
+                'entry_id': f'pit-{entry.id}',
+                'status': 'Needs Revision',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        entry.refresh_from_db()
+        self.assertEqual(entry.status, 'Needs Revision')
+
+    def test_request_resubmission_deliverable_submission_file_target(self):
+        from repository.deliverables.models import DeliverableSubmission, DeliverableSubmissionFile
+        submission, _ = DeliverableSubmission.objects.get_or_create(
+            team=self.capstone_team,
+            stage_label='Concept Proposal',
+            deliverable_id='D99',
+            defaults={
+                'label': 'Adviser Acceptance Form',
+                'deliverable_type': 'pre',
+                'status': 'accepted',
+            },
+        )
+        sub_file = DeliverableSubmissionFile.objects.create(
+            submission=submission,
+            file_name='acceptance.pdf',
+        )
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post(
+            '/api/repository/audit/request-resubmission/',
+            {
+                'entry_id': f'capstone-{submission.id}-{sub_file.id}',
+                'status': 'Needs Revision',
+                'feedback': 'Fix Chapter 3',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        submission.refresh_from_db()
+        self.assertEqual(submission.status, DeliverableSubmission.STATUS_REJECTED)
+        self.assertEqual(submission.feedback, 'Fix Chapter 3')
+
+
 

@@ -6,7 +6,7 @@ from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from grading.grades.models import GradeBreakdown, TeamGrade
+from grading.grades.models import GradeBreakdown, TeamGrade, PanelistGradeSubmission
 from grading.rubrics.models import Rubric
 from grading.grades.services import (
     GradeContextService,
@@ -158,7 +158,7 @@ class PitEventConfigLookupView(APIView):
             configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
             if pit_lead:
                 if pit_year:
-                    from repository.audit.services import PIT_YEAR_EVENT_HINTS
+                    from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
                     exclude_filter = Q()
                     for y, hints in PIT_YEAR_EVENT_HINTS.items():
                         if y != pit_year:
@@ -171,7 +171,7 @@ class PitEventConfigLookupView(APIView):
             return Response({'configs': [pit_event_config_payload(c) for c in configs]})
 
         if pit_lead and pit_year:
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             is_forbidden = False
             for y, hints in PIT_YEAR_EVENT_HINTS.items():
                 if y != pit_year:
@@ -219,7 +219,7 @@ class PitEventConfigLookupView(APIView):
                     {'detail': 'Your account is not assigned to a PIT year level.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             is_forbidden = False
             for y, hints in PIT_YEAR_EVENT_HINTS.items():
                 if y != pit_year:
@@ -252,7 +252,7 @@ class PitEventConfigLookupView(APIView):
                     {'detail': 'Your account is not assigned to a PIT year level.'},
                     status=status.HTTP_403_FORBIDDEN,
                 )
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             is_forbidden = False
             for y, hints in PIT_YEAR_EVENT_HINTS.items():
                 if y != pit_year:
@@ -299,6 +299,21 @@ class PitEventConfigLookupView(APIView):
         # Retrieve Rubrics
         panel_rubric = get_object_or_404(Rubric, pk=panel_rubric_id)
         peer_rubric = get_object_or_404(Rubric, pk=peer_rubric_id)
+
+        if pit_lead:
+            rubric_check = Q(created_by=request.user) | Q(created_by__isnull=True)
+            if pit_year:
+                rubric_check |= Q(created_by__pit_lead_year=pit_year)
+            if not Rubric.objects.filter(rubric_check, pk=panel_rubric_id).exists():
+                return Response(
+                    {'detail': 'Selected Panel Rubric is not permitted for your PIT year level.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            if not Rubric.objects.filter(rubric_check, pk=peer_rubric_id).exists():
+                return Response(
+                    {'detail': 'Selected Peer Rubric is not permitted for your PIT year level.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
 
         try:
             config = upsert_pit_event_config(
@@ -410,6 +425,7 @@ def _panel_rubric_payload(rubric, grade_weights):
                 'max_score': criterion.max_score,
                 'scale': criterion.scale,
                 'description': criterion.description,
+                'target_type': criterion.target_type,
             }
             for criterion in rubric.criteria.all()
         ],
@@ -463,42 +479,54 @@ class PanelistAssignmentsView(APIView):
             .order_by('scheduled_date', 'start_time', 'team__name')
         )
 
+        submitted_subs = (
+            PanelistGradeSubmission.objects.filter(panelist_id=panelist_id)
+            .select_related('schedule')
+            .prefetch_related('criterion_scores')
+        )
+        sub_map = {}
+        for sub in submitted_subs:
+            sub_map.setdefault(sub.schedule_id, []).append(sub)
+
+        locked_schedule_ids = set(
+            TeamGrade.objects.filter(
+                schedule_id__in=[s.id for s in schedules],
+                status__in=TeamGrade.LOCKED_STATUSES,
+            ).values_list('schedule_id', flat=True)
+        )
+
         teams_data = []
         rubrics_data = []
         seen_rubric_ids = set()
 
         for schedule in schedules:
-            team = schedule.team
-            raw_weights = weights_for_schedule(schedule)
-            grade_weights = _grade_weights_payload(schedule, raw_weights)
-            panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
+            subs = sub_map.get(schedule.id, [])
+            is_posted = bool(subs) or (schedule.id in locked_schedule_ids)
 
-            teams_data.append({
-                'id': team.id,
-                'schedule_id': schedule.id,
-                'scope': schedule.scope,
-                'is_capstone': schedule.scope == DefenseSchedule.SCOPE_CAPSTONE,
-                'event_name': schedule.event_name or '',
-                'name': team.name,
-                'project_title': team.project_title or '',
-                'defense_stage': schedule.stage_label,
-                'scheduled_date': schedule.scheduled_date.isoformat(),
-                'start_time': schedule.start_time.strftime('%H:%M'),
-                'room': schedule.room,
-                'grade_weights': grade_weights,
-                'panel_rubric': panel_rubric,
-                'members': [
-                    {
-                        'id': m.student_id,
-                        'name': f'{m.student.first_name} {m.student.last_name}'.strip() or m.student.username,
-                        'username': m.student.username,
-                    }
-                    for m in team.memberships.all()
-                ],
-            })
+            submissions_data = []
+            for sub in subs:
+                submissions_data.append({
+                    'student_id': sub.student_id,
+                    'remarks': sub.remarks or '',
+                    'criteria_scores': [
+                        {
+                            'criterion_id': cs.criterion_id,
+                            'score': float(cs.score),
+                            'max_score': float(cs.max_score_snapshot),
+                        }
+                        for cs in sub.criterion_scores.all()
+                    ],
+                })
+
+            team_payload = _team_assignment_payload(
+                schedule,
+                is_posted=is_posted,
+                submissions=submissions_data,
+            )
+            teams_data.append(team_payload)
 
             if schedule.rubric_id and schedule.rubric_id not in seen_rubric_ids:
-                rubrics_data.append(panel_rubric)
+                rubrics_data.append(team_payload.get('panel_rubric'))
                 seen_rubric_ids.add(schedule.rubric_id)
 
         return Response({
@@ -773,7 +801,7 @@ class PanelistGradeSubmissionView(APIView):
             )
 
 
-def _team_assignment_payload(schedule):
+def _team_assignment_payload(schedule, is_posted=False, submissions=None):
     team = schedule.team
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
@@ -792,6 +820,9 @@ def _team_assignment_payload(schedule):
         'room': schedule.room,
         'grade_weights': grade_weights,
         'panel_rubric': panel_rubric,
+        'is_posted': is_posted,
+        'is_submitted': is_posted,
+        'submissions': submissions or [],
         'members': [
             {
                 'id': m.student_id,
@@ -868,7 +899,37 @@ class GuestPanelistAssignmentsView(APIView):
                 status=status.HTTP_404_NOT_FOUND,
             )
 
-        team_payload = _team_assignment_payload(schedule)
+        subs = list(
+            PanelistGradeSubmission.objects.filter(
+                schedule=schedule,
+                guest_code_id=principal.guest_code_id,
+            ).prefetch_related('criterion_scores')
+        )
+        is_posted = bool(subs) or TeamGrade.objects.filter(
+            schedule=schedule,
+            status__in=TeamGrade.LOCKED_STATUSES,
+        ).exists()
+
+        submissions_data = []
+        for sub in subs:
+            submissions_data.append({
+                'student_id': sub.student_id,
+                'remarks': sub.remarks or '',
+                'criteria_scores': [
+                    {
+                        'criterion_id': cs.criterion_id,
+                        'score': float(cs.score),
+                        'max_score': float(cs.max_score_snapshot),
+                    }
+                    for cs in sub.criterion_scores.all()
+                ],
+            })
+
+        team_payload = _team_assignment_payload(
+            schedule,
+            is_posted=is_posted,
+            submissions=submissions_data,
+        )
         rubric = team_payload.get('panel_rubric')
         return Response({
             'teams': [team_payload],

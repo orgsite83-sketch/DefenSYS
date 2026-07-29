@@ -89,6 +89,15 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
   }
 
   void _onSave() {
+    if (_isPitLead && (_pitLeadYear == null || _pitLeadYear!.trim().isEmpty)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('A PIT Lead year level (1st, 2nd, or 3rd Year) is required when assigning a user as PIT Lead.'),
+          backgroundColor: Color(0xFFDC2626),
+        ),
+      );
+      return;
+    }
     final payload = <String, dynamic>{
       'username': _usernameController.text.trim(),
       'first_name': _firstNameController.text.trim(),

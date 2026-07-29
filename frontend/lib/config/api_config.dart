@@ -16,7 +16,7 @@ class ApiConfig {
   static const List<String> serverIps = ['127.0.0.1'];
 
   /// Default when no dart-define on mobile (use DEFENSYS_API_HOST for physical devices).
-  static const String fallbackLanIp = '127.0.0.1';
+  static const String fallbackLanIp = '192.168.1.236';
 
   /// Android emulator loopback to the host machine (where `runserver` usually listens).
   static const String androidEmulatorHost = '10.0.2.2';
@@ -149,7 +149,8 @@ class ApiConfig {
   static String get teamDocumentsUrl => '$baseUrl/teams/documents';
   static String get weeklyProgressUrl => '$baseUrl/teams/weekly-progress';
   static String get rubricsUrl => '$baseUrl/grading/rubrics';
-  static String get repositoryAuditUrl => '$baseUrl/repository/audit';
+  static String get projectArchiveUrl => '$baseUrl/repository/project-archive';
+  static String get repositoryAuditUrl => projectArchiveUrl;
   static String get gradeCenterUrl => '$baseUrl/grading/grades';
   static String get repositoryUrl => '$baseUrl/repository/archive';
   static String get defenseStagesUrl => '$baseUrl/defense/stages';

@@ -13,22 +13,12 @@ from defense.scheduler.serializers import (
     active_semester,
     schedule_queryset,
 )
+from authentication_access_control.scopes import visible_schedules_for
 from user_management.permissions import CanManageModule
 
 
 def board_queryset_for_user(user):
-    queryset = schedule_queryset()
-    if getattr(user, 'is_pit_lead', False) and getattr(user, 'role', None) != 'admin':
-        from student_teams.team_levels import normalize_year_level
-        pit_year = normalize_year_level(getattr(user, 'pit_lead_year', None))
-        if not pit_year:
-            return queryset.none()
-        queryset = queryset.filter(
-            scope=DefenseSchedule.SCOPE_PIT,
-            team__level__icontains='PIT',
-            team__year_level=pit_year,
-        )
-    return queryset
+    return visible_schedules_for(user)
 
 
 def counts_payload(base_queryset, current_queryset=None):
@@ -45,16 +35,19 @@ def counts_payload(base_queryset, current_queryset=None):
 
 def stage_options(queryset):
     return sorted(
-        queryset.annotate(
-            computed_stage_label=Case(
-                When(scope=DefenseSchedule.SCOPE_PIT, then=F('event_name')),
-                default=F('defense_stage__label'),
-                output_field=CharField()
+        set(
+            queryset.order_by()
+            .annotate(
+                computed_stage_label=Case(
+                    When(scope=DefenseSchedule.SCOPE_PIT, then=F('event_name')),
+                    default=F('defense_stage__label'),
+                    output_field=CharField(),
+                )
             )
+            .exclude(computed_stage_label__in=[None, ''])
+            .values_list('computed_stage_label', flat=True)
+            .distinct()
         )
-        .exclude(computed_stage_label__in=[None, ''])
-        .values_list('computed_stage_label', flat=True)
-        .distinct()
     )
 
 

@@ -317,7 +317,7 @@ abstract class AppLocalizations {
   /// No description provided for @navRubricEngine.
   ///
   /// In en, this message translates to:
-  /// **'Rubric Engine'**
+  /// **'Rubrics'**
   String get navRubricEngine;
 
   /// No description provided for @navRepositoryAudit.

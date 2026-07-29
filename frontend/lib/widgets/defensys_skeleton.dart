@@ -109,19 +109,50 @@ class DefensysSkeleton {
       ),
     );
   }
+
+  /// Table placeholder loader with clean column bones matching table layout
+  static Widget tableRows({int rows = 5, double rowHeight = 44}) {
+    return Column(
+      children: List.generate(rows, (index) {
+        return Container(
+          height: rowHeight,
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: DefensysTokens.surface,
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            border: Border.all(color: DefensysTokens.border),
+          ),
+          child: Row(
+            children: [
+              const Expanded(flex: 3, child: _ShimmerBox(height: 14)),
+              const SizedBox(width: 16),
+              const Expanded(flex: 2, child: _ShimmerBox(height: 14)),
+              const SizedBox(width: 16),
+              Expanded(flex: 2, child: _ShimmerBox(width: 80, height: 20, borderRadius: 999)),
+              const SizedBox(width: 16),
+              const Expanded(flex: 1, child: _ShimmerBox(height: 14)),
+            ],
+          ),
+        );
+      }),
+    );
+  }
 }
 
 class _ShimmerBox extends StatelessWidget {
   const _ShimmerBox({
     this.width,
     this.height = 16,
+    this.borderRadius = 8,
   });
 
   final double? width;
   final double height;
+  final double borderRadius;
 
   @override
   Widget build(BuildContext context) {
-    return DefensysSkeleton.box(width: width, height: height);
+    return DefensysSkeleton.box(width: width, height: height, borderRadius: borderRadius);
   }
 }

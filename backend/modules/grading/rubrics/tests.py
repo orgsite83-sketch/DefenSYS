@@ -432,3 +432,23 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response_ind.status_code, 201)
         r_ind = Rubric.objects.get(id=response_ind.data['rubric']['id'])
         self.assertEqual(r_ind.criteria.get().target_type, 'individual')
+
+    def test_both_rubric_without_both_types_is_rejected(self):
+        payload = self.rubric_payload(
+            name='Invalid Both Rubric Test',
+            target_type='both',
+            criteria=[
+                {
+                    'name': 'Team Only Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                }
+            ]
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('criteria', response.data)
+

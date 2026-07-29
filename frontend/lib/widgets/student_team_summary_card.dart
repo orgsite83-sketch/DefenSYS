@@ -40,24 +40,25 @@ class StudentTeamSummaryCard extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
         color: DefensysTokens.surface,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.border, width: 1.0),
+        boxShadow: const [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.04),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
+            color: Color(0x0A000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                width: 6,
-                color: isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue,
+                width: 4,
+                color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
               ),
               Expanded(
                 child: Padding(
@@ -70,13 +71,16 @@ class StudentTeamSummaryCard extends StatelessWidget {
                           Container(
                             padding: const EdgeInsets.all(10),
                             decoration: BoxDecoration(
-                              color: (isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue).withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(12),
+                              color: (isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold).withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                              border: Border.all(
+                                color: (isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold).withValues(alpha: 0.2),
+                              ),
                             ),
                             child: Icon(
                               isCapstone ? Icons.school_outlined : Icons.book_outlined,
-                              color: isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue,
-                              size: 24,
+                              color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
+                              size: 22,
                             ),
                           ),
                           const SizedBox(width: 12),
@@ -86,31 +90,26 @@ class StudentTeamSummaryCard extends StatelessWidget {
                               children: [
                                 Text(
                                   teamName,
-                                  style: const TextStyle(
-                                    color: DefensysTokens.textPrimary,
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
+                                  style: DefensysTokens.sectionTitle.copyWith(
+                                    fontSize: 17,
                                   ),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
                                   level,
-                                  style: const TextStyle(
-                                    color: DefensysTokens.textSecondary,
-                                    fontSize: 12,
-                                  ),
+                                  style: DefensysTokens.caption,
                                 ),
                               ],
                             ),
                           ),
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                             decoration: BoxDecoration(
                               color: badgeBg,
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(color: badgeBorder),
+                              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                              border: Border.all(color: badgeBorder, width: 1.0),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
@@ -123,13 +122,14 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                     shape: BoxShape.circle,
                                   ),
                                 ),
-                                const SizedBox(width: 6),
+                                const SizedBox(width: 5),
                                 Text(
                                   status,
                                   style: TextStyle(
                                     color: badgeText,
                                     fontSize: 11,
                                     fontWeight: FontWeight.w600,
+                                    letterSpacing: 0.3,
                                   ),
                                 ),
                               ],
@@ -141,10 +141,11 @@ class StudentTeamSummaryCard extends StatelessWidget {
                       Container(
                         padding: const EdgeInsets.all(14),
                         decoration: BoxDecoration(
-                          color: DefensysTokens.background.withValues(alpha: 0.35),
-                          borderRadius: BorderRadius.circular(12),
+                          color: DefensysTokens.neutralBg,
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                           border: Border.all(
-                            color: DefensysTokens.border.withValues(alpha: 0.5),
+                            color: DefensysTokens.border,
+                            width: 1.0,
                           ),
                         ),
                         child: Column(
@@ -154,17 +155,16 @@ class StudentTeamSummaryCard extends StatelessWidget {
                               children: [
                                 Icon(
                                   Icons.assignment_outlined,
-                                  color: isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue,
+                                  color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
                                   size: 16,
                                 ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     projectTitle,
-                                    style: const TextStyle(
-                                      color: DefensysTokens.textPrimary,
-                                      fontSize: 13,
+                                    style: DefensysTokens.body.copyWith(
                                       fontWeight: FontWeight.w600,
+                                      fontSize: 13,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -177,15 +177,14 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.layers_outlined,
-                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue,
+                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
                                     size: 16,
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       'System: $systemName',
-                                      style: const TextStyle(
-                                        color: DefensysTokens.textPrimary,
+                                      style: DefensysTokens.body.copyWith(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -201,15 +200,14 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                 children: [
                                   Icon(
                                     Icons.assignment_ind_outlined,
-                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.techBlue,
+                                    color: isCapstone ? DefensysTokens.maroon : DefensysTokens.darkGold,
                                     size: 16,
                                   ),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
                                       'PM: $projectManagerName',
-                                      style: const TextStyle(
-                                        color: DefensysTokens.textPrimary,
+                                      style: DefensysTokens.body.copyWith(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w500,
                                       ),
@@ -219,7 +217,7 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                 ],
                               ),
                             ],
-                            const Divider(height: 20, thickness: 1),
+                            const Divider(height: 20, thickness: 1.0),
                             Row(
                               mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
@@ -227,15 +225,13 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                   children: [
                                     const Icon(
                                       Icons.group_outlined,
-                                      color: DefensysTokens.textSecondary,
+                                      color: DefensysTokens.steelGrey,
                                       size: 16,
                                     ),
                                     const SizedBox(width: 6),
                                     Text(
                                       '$memberCount ${memberCount == 1 ? 'Member' : 'Members'}',
-                                      style: const TextStyle(
-                                        color: DefensysTokens.textSecondary,
-                                        fontSize: 12,
+                                      style: DefensysTokens.caption.copyWith(
                                         fontWeight: FontWeight.w500,
                                       ),
                                     ),
@@ -248,16 +244,14 @@ class StudentTeamSummaryCard extends StatelessWidget {
                                       children: [
                                         const Icon(
                                           Icons.person_outline,
-                                          color: DefensysTokens.textSecondary,
+                                          color: DefensysTokens.steelGrey,
                                           size: 16,
                                         ),
                                         const SizedBox(width: 6),
                                         Flexible(
                                           child: Text(
                                             adviserName,
-                                            style: const TextStyle(
-                                              color: DefensysTokens.textSecondary,
-                                              fontSize: 12,
+                                            style: DefensysTokens.caption.copyWith(
                                               fontWeight: FontWeight.w500,
                                             ),
                                             overflow: TextOverflow.ellipsis,

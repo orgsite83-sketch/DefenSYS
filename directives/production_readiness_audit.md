@@ -260,27 +260,15 @@ These are maintenance nightmares and make code reviews nearly impossible.
 
 ---
 
-### L5. No Content Security Policy Headers
+### ~~L5. No Content Security Policy Headers~~ ✅ RESOLVED
 
-The nginx config (when created) should include CSP headers to prevent XSS attacks, especially since the Flutter web app is a single-page app that handles user-uploaded content (PDFs, avatars).
-
-**Fix:** Add to nginx:
-```nginx
-add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com;";
-```
+> **Status:** Resolved — Added Content Security Policy (`Content-Security-Policy`), `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, and `Referrer-Policy: strict-origin-when-cross-origin` security headers to the Nginx site configuration in `deployment/nginx/defensys.conf` and updated deployment documentation in `docs/KAMATERA_DEPLOYMENT.md`.
 
 ---
 
-### L6. `Google Fonts` Network Dependency
+### ~~L6. `Google Fonts` Network Dependency~~ ✅ RESOLVED
 
-**File:** [app_theme.dart#L2](file:///c:/Users/Admin/Desktop/DefenSYS/frontend/lib/theme/app_theme.dart#L2)
-
-The theme uses `GoogleFonts.inter()` which makes a network request to download fonts on first load. If deployed in an environment with restricted internet (campus lab, behind firewall), fonts may not load.
-
-**Fix:** Bundle the Inter font locally (like Poppins is already bundled) and use `fontFamily: 'Inter'` directly:
-```dart
-fontFamily: 'Inter',  // Pre-bundled in assets/fonts/
-```
+> **Status:** Resolved — Bundled Inter font family TTF files (`Inter-Regular.ttf`, `Inter-Medium.ttf`, `Inter-SemiBold.ttf`, `Inter-Bold.ttf`, `Inter-ExtraBold.ttf`) locally in `frontend/assets/fonts/`, configured `family: Inter` under `flutter: fonts:` in `frontend/pubspec.yaml`, removed `google_fonts` package dependency, and updated `DefensysTokens.fontFamilyInter` and theme configurations across `app_theme.dart`, `defensys_tokens.dart`, `repository_audit_screen.dart`, `audit_summary_cards.dart`, and `audit_log_table.dart` to use pre-bundled local fonts without external network dependencies.
 
 ---
 
@@ -317,8 +305,8 @@ fontFamily: 'Inter',  // Pre-bundled in assets/fonts/
 | ~~27~~ | ~~Add CI/CD pipeline~~ | ~~🔵~~ | ✅ Clear |
 | ~~28~~ | ~~Split large Dart files~~ | ~~🔵~~ | ✅ Clear |
 | ~~29~~ | ~~Add error tracking (Sentry)~~ | ~~🔵~~ | ✅ Clear |
-| 30 | Add CSP headers | 🔵 | ☐ |
-| 31 | Bundle Google Fonts locally | 🔵 | ☐ |
+| ~~30~~ | ~~Add CSP headers~~ | ~~🔵~~ | ✅ Clear |
+| ~~31~~ | ~~Bundle Google Fonts locally~~ | ~~🔵~~ | ✅ Clear |
 | ~~32~~ | ~~Document pytest vs manage.py test choice~~ | ~~🔵~~ | ✅ Clear |
 
 ---

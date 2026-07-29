@@ -194,7 +194,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                     final sectionTeams = sectionsMap[section]!;
                     final selectedAdviser = _selectedSectionAdviserFilter[section];
 
-                    final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all')
+                    final displayedTeams = (selectedAdviser == null || selectedAdviser == 'all' || widget.scope == 'pit')
                         ? sectionTeams
                         : sectionTeams.where((t) {
                             final adviser = t['adviser_name']?.toString().trim() ?? '';
@@ -312,6 +312,42 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             const Divider(height: 1, color: Color(0xFFE5E7EB)),
                             Builder(
                               builder: (context) {
+                                if (widget.scope == 'pit') {
+                                  final instructorName = sectionTeams
+                                      .map((t) => t['instructor_name']?.toString().trim() ?? '')
+                                      .firstWhere((inst) => inst.isNotEmpty, orElse: () => '');
+                                  return Padding(
+                                    padding: const EdgeInsets.only(left: 12, right: 12, top: 12, bottom: 4),
+                                    child: Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.person_outline_rounded,
+                                          size: 16,
+                                          color: AppColors.textSecondary,
+                                        ),
+                                        const SizedBox(width: 6),
+                                        const Text(
+                                          'Section Instructor: ',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.bold,
+                                            color: AppColors.textSecondary,
+                                          ),
+                                        ),
+                                        Text(
+                                          instructorName.isEmpty ? 'Unassigned' : instructorName,
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w600,
+                                            color: instructorName.isEmpty ? AppColors.textSecondary : AppColors.textPrimary,
+                                            fontStyle: instructorName.isEmpty ? FontStyle.italic : FontStyle.normal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }
+
                                 final sectionAdvisers = sectionTeams
                                     .map((t) => t['adviser_name']?.toString().trim() ?? '')
                                     .where((adv) => adv.isNotEmpty)
@@ -528,6 +564,25 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                               const SizedBox(height: 4),
                                               Builder(
                                                 builder: (context) {
+                                                  final isPit = widget.scope == 'pit' || (team['level']?.toString().contains('PIT') ?? false);
+                                                  if (isPit) {
+                                                    final instructorName = team['instructor_name']?.toString().trim() ?? '';
+                                                    return Row(
+                                                      children: [
+                                                        const Icon(Icons.person_outline_rounded, size: 13, color: AppColors.textSecondary),
+                                                        const SizedBox(width: 4),
+                                                        Text(
+                                                          instructorName.isEmpty ? 'Instructor: Unassigned' : 'Instructor: $instructorName',
+                                                          style: TextStyle(
+                                                            fontSize: 12,
+                                                            color: AppColors.textSecondary,
+                                                            fontWeight: FontWeight.w500,
+                                                            fontStyle: instructorName.isEmpty ? FontStyle.italic : FontStyle.normal,
+                                                          ),
+                                                        ),
+                                                      ],
+                                                    );
+                                                  }
                                                   final adviserName = team['adviser_name']?.toString().trim() ?? '';
                                                   if (adviserName.isEmpty) {
                                                     return Row(

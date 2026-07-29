@@ -3,13 +3,15 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/config/api_config.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback_toast.dart';
 
-import 'components/scheduler_calendar_view.dart';
+import 'components/schedule_run_container.dart';
 import 'components/scheduler_toolbar.dart';
 import 'components/team_readiness_tracker.dart';
 import 'dialogs/manual_slot_editor_dialog.dart';
@@ -45,6 +47,7 @@ class _DefenseSchedulerScreenState
   int? _adviserRubricId;
   int? _capstonePeerRubricId;
   int? _peerRubricId;
+  int? _documenterId;
   bool _showFinalPreview = false;
   bool _scopeInitializedFromState = false;
   bool _isSendingReminder = false;
@@ -77,8 +80,16 @@ class _DefenseSchedulerScreenState
   }
 
   bool _canScheduleScope(DefenseSchedulerState state, String scope) {
-    if (scope == 'pit') return state.canSchedulePit;
-    if (scope == 'capstone') return state.canScheduleCapstone;
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+
+    if (scope == 'capstone') {
+      return isAdmin && state.canScheduleCapstone;
+    }
+    if (scope == 'pit') {
+      return (isAdmin || isPitLead) && state.canSchedulePit;
+    }
     return false;
   }
 
@@ -87,6 +98,14 @@ class _DefenseSchedulerScreenState
   }
 
   String _scheduleNoticeMessage(DefenseSchedulerState state) {
+    final user = ref.watch(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+
+    if (!isAdmin && !isPitLead) {
+      return 'Defense scheduling is strictly restricted to Administrators (Capstone & PIT) and PIT Leads (PIT only).';
+    }
+
     final message = state.operatingMessage?.trim() ?? '';
     if (message.isNotEmpty) return message;
     if (!_canScheduleCurrentScope(state) &&
@@ -95,7 +114,7 @@ class _DefenseSchedulerScreenState
     }
     if (!_canScheduleCurrentScope(state) &&
         (state.schedulerMode == 'capstone' || _scope == 'capstone')) {
-      return 'Scheduling is not available for this workspace.';
+      return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
     }
     return '';
   }
@@ -107,6 +126,51 @@ class _DefenseSchedulerScreenState
       }
     }
     return 'Stage';
+  }
+
+  Future<void> _prefillPitEventConfig() async {
+    if (_scope != 'pit') return;
+    final eventName = _eventController.text.trim();
+    if (eventName.length < 3) return;
+
+    final semesterId = asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
+    final config = await ref
+        .read(defenseSchedulerProvider.notifier)
+        .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+    if (!mounted || config == null) return;
+
+    setState(() {
+      _rubricId = asInt(config['panel_rubric_id']) ?? _rubricId;
+      _peerRubricId = asInt(config['peer_rubric_id']) ?? _peerRubricId;
+      _panelWeightController.text = config['panel_weight']?.toString() ?? '80';
+      _peerWeightController.text = config['peer_weight']?.toString() ?? '20';
+      _pitTemplateController.text =
+          (config['archive_file_template'] ?? config['vault_file_template'])?.toString() ?? '';
+    });
+  }
+
+  Future<void> _prefillCapstoneStageRubrics() async {
+    if (_scope != 'capstone' || _stageId == null) return;
+    final semesterId = asInt(
+      ref.read(defenseSchedulerProvider).activeSemester?['id'],
+    );
+    if (semesterId == null) return;
+
+    final detail = await ref
+        .read(defenseStagesProvider.notifier)
+        .fetchStageDetail(_stageId!, semesterId: semesterId);
+    if (!mounted || detail == null) return;
+
+    final grading = detail['grading_config'];
+    if (grading is! Map) return;
+
+    setState(() {
+      _rubricId = asInt(grading['panel_rubric_id']) ?? _rubricId;
+      _adviserRubricId = asInt(grading['adviser_rubric_id']) ?? _adviserRubricId;
+      _capstonePeerRubricId = asInt(grading['peer_rubric_id']) ?? _capstonePeerRubricId;
+    });
   }
 
   Future<void> _sendReminder(dynamic teamId, String stageLabel) async {
@@ -142,12 +206,18 @@ class _DefenseSchedulerScreenState
 
   void _initializeScopeFromState(DefenseSchedulerState state) {
     if (_scopeInitializedFromState) return;
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+
     String targetScope = '';
-    if (state.schedulerMode == 'pit' || state.schedulerMode == 'capstone') {
+    if (isPitLead && !isAdmin) {
+      targetScope = 'pit';
+    } else if (state.schedulerMode == 'pit' || state.schedulerMode == 'capstone') {
       targetScope = state.schedulerMode;
-    } else if (state.canScheduleCapstone) {
+    } else if (isAdmin && state.canScheduleCapstone) {
       targetScope = 'capstone';
-    } else if (state.canSchedulePit) {
+    } else if ((isAdmin || isPitLead) && state.canSchedulePit) {
       targetScope = 'pit';
     }
 
@@ -201,6 +271,21 @@ class _DefenseSchedulerScreenState
             setState(() {
               _stageId = targetStageId;
             });
+            _prefillCapstoneStageRubrics();
+          }
+        });
+      }
+    }
+
+    if (_scope == 'pit' && _eventController.text.isEmpty && state.pitEvents.isNotEmpty) {
+      final firstEvent = state.pitEvents.first['event_name']?.toString() ?? '';
+      if (firstEvent.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _eventController.text.isEmpty) {
+            setState(() {
+              _eventController.text = firstEvent;
+            });
+            _prefillPitEventConfig();
           }
         });
       }
@@ -249,6 +334,7 @@ class _DefenseSchedulerScreenState
                   initialCapstonePeerRubricId: _capstonePeerRubricId,
                   initialPeerRubricId: _peerRubricId,
                   initialSelectedPanelistIds: _selectedPanelistIds,
+                  initialDocumenterId: _documenterId,
                   initialEvent: _eventController.text,
                   initialPitTemplate: _pitTemplateController.text,
                   initialDate: _dateController.text,
@@ -295,23 +381,62 @@ class _DefenseSchedulerScreenState
                   state.teams.isEmpty) ...[
                 DefensysSkeleton.list(count: 4, rowHeight: 64),
               ] else ...[
-                TeamReadinessTracker(
+                ScheduleRunContainer(
                   state: state,
                   scope: _scope,
-                  activeStageOrEventName: activeStageOrEventName,
-                  onReviewTeamDeliverables: (team, stageLabel) =>
-                      TeamDeliverablesReviewDialog.show(
-                    context,
-                    ref,
-                    team: team,
-                    stageLabel: stageLabel,
-                    scope: _scope,
-                  ),
-                  onSendReminder: _sendReminder,
-                  isSendingReminder: _isSendingReminder,
+                  stageId: _stageId,
+                  rubricId: _rubricId,
+                  adviserRubricId: _adviserRubricId,
+                  capstonePeerRubricId: _capstonePeerRubricId,
+                  peerRubricId: _peerRubricId,
+                  documenterId: _documenterId,
+                  selectedPanelistIds: _selectedPanelistIds,
+                  eventController: _eventController,
+                  panelWeightController: _panelWeightController,
+                  peerWeightController: _peerWeightController,
+                  dateController: _dateController,
+                  timeController: _timeController,
+                  durationController: _durationController,
+                  roomController: _roomController,
+                  pitTemplateController: _pitTemplateController,
+                  planSlots: _planSlots,
+                  showFinalPreview: _showFinalPreview,
+                  canScheduleScope: _canScheduleScope,
+                  scheduleNoticeMessage: _scheduleNoticeMessage,
+                  onScopeChanged: (val) => setState(() => _scope = val),
+                  onStageChanged: (val) => setState(() => _stageId = val),
+                  onRubricChanged: (val) => setState(() => _rubricId = val),
+                  onAdviserRubricChanged: (val) => setState(() => _adviserRubricId = val),
+                  onCapstonePeerRubricChanged: (val) => setState(() => _capstonePeerRubricId = val),
+                  onPeerRubricChanged: (val) => setState(() => _peerRubricId = val),
+                  onDocumenterChanged: (val) => setState(() => _documenterId = val),
+                  onPanelistsChanged: (val) => setState(() {
+                    _selectedPanelistIds.clear();
+                    _selectedPanelistIds.addAll(val);
+                  }),
+                  onPlanSlotsChanged: (val) => setState(() => _planSlots = val),
+                  onShowFinalPreviewChanged: (val) => setState(() => _showFinalPreview = val),
+                  onPrefillCapstoneStageRubrics: _prefillCapstoneStageRubrics,
+                  onPrefillPitEventConfig: _prefillPitEventConfig,
                 ),
-                const SizedBox(height: 22),
-                SchedulerCalendarView(state: state),
+                if (currentStep == 1) ...[
+                  const SizedBox(height: 20),
+                  TeamReadinessTracker(
+                    state: state,
+                    scope: _scope,
+                    activeStageOrEventName: activeStageOrEventName,
+                    onReviewTeamDeliverables: (team, stageLabel) =>
+                        TeamDeliverablesReviewDialog.show(
+                      context,
+                      ref,
+                      team: team,
+                      stageLabel: stageLabel,
+                      scope: _scope,
+                    ),
+                    onSendReminder: _sendReminder,
+                    isSendingReminder: _isSendingReminder,
+                  ),
+                ],
               ],
             ],
           ),

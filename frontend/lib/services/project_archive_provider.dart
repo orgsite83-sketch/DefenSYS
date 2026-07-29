@@ -6,12 +6,17 @@ import '../config/api_config.dart';
 import 'authenticated_client.dart';
 import '../utils/progress_upload.dart';
 
-final repositoryAuditProvider =
-    NotifierProvider<RepositoryAuditNotifier, RepositoryAuditState>(
-      RepositoryAuditNotifier.new,
+final projectArchiveProvider =
+    NotifierProvider<ProjectArchiveNotifier, ProjectArchiveState>(
+      ProjectArchiveNotifier.new,
     );
 
-class RepositoryAuditState {
+final repositoryAuditProvider = projectArchiveProvider;
+
+typedef RepositoryAuditState = ProjectArchiveState;
+typedef RepositoryAuditNotifier = ProjectArchiveNotifier;
+
+class ProjectArchiveState {
   final bool isLoading;
   final bool isSaving;
   final List<Map<String, dynamic>> entries;
@@ -38,7 +43,7 @@ class RepositoryAuditState {
   final List<Map<String, dynamic>> lastUploadSkipped;
   final double uploadProgress;
 
-  const RepositoryAuditState({
+  const ProjectArchiveState({
     this.isLoading = false,
     this.isSaving = false,
     this.entries = const [],
@@ -66,7 +71,7 @@ class RepositoryAuditState {
     this.uploadProgress = 0.0,
   });
 
-  RepositoryAuditState copyWith({
+  ProjectArchiveState copyWith({
     bool? isLoading,
     bool? isSaving,
     List<Map<String, dynamic>>? entries,
@@ -96,7 +101,7 @@ class RepositoryAuditState {
     bool clearMessage = false,
     bool clearLastUploadSkipped = false,
   }) {
-    return RepositoryAuditState(
+    return ProjectArchiveState(
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
       entries: entries ?? this.entries,
@@ -140,12 +145,12 @@ class UploadPitResult {
   });
 }
 
-class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
-    static String get baseUrl => ApiConfig.repositoryAuditUrl;
+class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
+  static String get baseUrl => ApiConfig.projectArchiveUrl;
 
   @override
-  RepositoryAuditState build() {
-    return const RepositoryAuditState();
+  ProjectArchiveState build() {
+    return const ProjectArchiveState();
   }
 
   Future<void> fetchEntries({
@@ -358,11 +363,53 @@ class RepositoryAuditNotifier extends Notifier<RepositoryAuditState> {
     }
   }
 
-  Future<bool> overrideStatus(String entryId, String status) {
-    return _postAction('override-status', {
+  Future<bool> requestResubmission(String entryId, {String status = 'Needs Revision', String feedback = ''}) {
+    return _postAction('request-resubmission', {
       'entry_id': entryId,
       'status': status,
-    }, successMessage: 'PIT status overridden.');
+      'feedback': feedback,
+    }, successMessage: 'Requested file resubmission from team.');
+  }
+
+  Future<bool> overrideStatus(String entryId, String status) {
+    return requestResubmission(entryId, status: status);
+  }
+
+  Future<bool> replaceFile(String entryId, List<int> bytes, String fileName) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final request = http.MultipartRequest(
+        'POST',
+        Uri.parse('$baseUrl/replace-file/'),
+      );
+      request.fields['entry_id'] = entryId;
+      request.files.add(
+        http.MultipartFile.fromBytes('file', bytes, filename: fileName),
+      );
+      final streamed = await _client.sendAuthenticated(request);
+      final response = await http.Response.fromStream(streamed);
+
+      if (response.statusCode == 200) {
+        _applyPayload(
+          Map<String, dynamic>.from(jsonDecode(response.body)),
+          successMessage: 'Replaced PDF file $fileName successfully.',
+        );
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
   }
 
   Future<String?> exportCsv() async {

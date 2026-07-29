@@ -137,6 +137,7 @@ def visible_schedules_for(user):
         return base.filter(
             Q(team__adviser=user)
             | Q(panel_assignments__panelist=user)
+            | Q(documenter=user)
             | Q(team__in=visible_teams_for(user))
         ).distinct()
     if getattr(user, 'role', None) == 'student':

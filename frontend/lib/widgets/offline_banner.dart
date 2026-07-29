@@ -20,11 +20,15 @@ class OfflineBanner extends ConsumerWidget {
           MaterialBanner(
             content: Text(
               context.l10n.offlineBannerMessage,
-              style: const TextStyle(fontSize: 13),
+              style: DefensysTokens.body.copyWith(
+                color: DefensysTokens.warningText,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-            leading: Icon(Icons.wifi_off, color: DefensysTokens.warning),
+            leading: const Icon(Icons.wifi_off_rounded, color: DefensysTokens.warningText, size: 20),
             backgroundColor: DefensysTokens.warningBg,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             actions: const [SizedBox.shrink()],
           ),
         Expanded(child: child),

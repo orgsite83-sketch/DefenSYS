@@ -7,6 +7,7 @@ from .views import (
     CapstoneDeliverablesListView,
     CompileWeeklyReportsView,
     CapstoneDeliverableReviewView,
+    CapstoneDeliverableUnlockView,
 )
 
 
@@ -16,5 +17,6 @@ urlpatterns = [
     path('remove/', CapstoneDeliverableRemoveView.as_view(), name='capstone_deliverable_remove'),
     path('endorse/', CapstoneDeliverableEndorseView.as_view(), name='capstone_deliverable_endorse'),
     path('review/', CapstoneDeliverableReviewView.as_view(), name='capstone_deliverable_review'),
+    path('unlock/', CapstoneDeliverableUnlockView.as_view(), name='capstone_deliverable_unlock'),
     path('compile-weekly-reports/', CompileWeeklyReportsView.as_view(), name='compile_weekly_reports'),
 ]

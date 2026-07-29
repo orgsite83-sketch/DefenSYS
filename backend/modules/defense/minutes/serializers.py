@@ -78,10 +78,20 @@ class DefenseMinutesSerializer(serializers.ModelSerializer):
 
     def get_schedule(self, obj):
         schedule = obj.schedule
+        panelists = []
+        for pa in schedule.panel_assignments.all():
+            panelists.append({
+                'id': pa.panelist_id,
+                'name': display_name(pa.panelist),
+                'is_chair': pa.is_chair,
+                'order': pa.order,
+            })
+        panelists.sort(key=lambda p: (not p['is_chair'], p.get('order') or 0))
         return {
             'id': schedule.id,
             'documenter': schedule.documenter_id,
             'team_adviser_id': schedule.team.adviser_id if (schedule.team and schedule.team.adviser) else None,
             'status': schedule.status,
+            'panelists': panelists,
         }
 

@@ -24,6 +24,51 @@ User = get_user_model()
 ACTIVE_STATUSES = [DefenseSchedule.STATUS_SCHEDULED]
 
 
+class FlexibleDateField(serializers.DateField):
+    """DateField serializer that accepts ISO YYYY-MM-DD, M/D/YYYY, YYYY/MM/DD, and other common date string formats."""
+
+    def to_internal_value(self, value):
+        from datetime import date as datetime_date
+        import re
+
+        if isinstance(value, (datetime, datetime_date)):
+            return value.date() if isinstance(value, datetime) else value
+
+        if isinstance(value, str):
+            text = value.strip()
+            try:
+                return super().to_internal_value(text)
+            except Exception:
+                pass
+
+            m_year_first = re.match(r'^(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})$', text)
+            if m_year_first:
+                y, m, d = int(m_year_first.group(1)), int(m_year_first.group(2)), int(m_year_first.group(3))
+                try:
+                    return datetime(y, m, d).date()
+                except ValueError:
+                    pass
+
+            m_year_last = re.match(r'^(\d{1,2})[-/\.](\d{1,2})[-/\.](\d{2,4})$', text)
+            if m_year_last:
+                p1, p2, y = int(m_year_last.group(1)), int(m_year_last.group(2)), int(m_year_last.group(3))
+                if y < 100:
+                    y += 2000
+                if p1 > 12 and p2 <= 12:
+                    d, m = p1, p2
+                elif p2 > 12 and p1 <= 12:
+                    m, d = p1, p2
+                else:
+                    m, d = p1, p2
+                try:
+                    return datetime(y, m, d).date()
+                except ValueError:
+                    pass
+
+        return super().to_internal_value(value)
+
+
+
 def time_to_minutes(value):
     return value.hour * 60 + value.minute
 
@@ -77,6 +122,7 @@ class PanelistOptionSerializer(serializers.ModelSerializer):
 class ScheduleTeamSerializer(serializers.ModelSerializer):
     leader_name = serializers.SerializerMethodField()
     adviser_name = serializers.SerializerMethodField()
+    instructor_name = serializers.SerializerMethodField()
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
 
     class Meta:
@@ -94,6 +140,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'display_semester',
             'leader_name',
             'adviser_name',
+            'instructor_name',
         ]
 
     def get_leader_name(self, obj):
@@ -101,6 +148,21 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
 
     def get_adviser_name(self, obj):
         return display_name(obj.adviser)
+
+    def get_instructor_name(self, obj):
+        if not obj.section:
+            return None
+        from user_management.models import SectionInstructorAssignment
+        from student_teams.team_levels import normalize_year_level
+        assignment = SectionInstructorAssignment.objects.filter(
+            semester=obj.semester,
+            year_level=normalize_year_level(obj.year_level),
+            section=obj.section,
+            is_active=True
+        ).first()
+        if assignment and assignment.faculty:
+            return display_name(assignment.faculty)
+        return None
 
 
 class SchedulePanelistSerializer(serializers.ModelSerializer):
@@ -216,7 +278,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     peer_rubric_id = serializers.IntegerField(required=False, allow_null=True)
     panel_weight = serializers.IntegerField(required=False, min_value=0, max_value=100)
     peer_weight = serializers.IntegerField(required=False, min_value=0, max_value=100)
-    scheduled_date = serializers.DateField()
+    scheduled_date = FlexibleDateField()
     start_time = serializers.TimeField()
     slot_duration = serializers.IntegerField(min_value=15, max_value=240, default=60)
     room = serializers.CharField(max_length=120)
@@ -1021,6 +1083,14 @@ def schedule_options_payload(user=None):
         stages = stages.none()
         rubrics = rubrics.filter(scope=Rubric.SCOPE_PIT)
         peer_rubrics = peer_rubrics.filter(scope=Rubric.SCOPE_PIT)
+        if user:
+            from authentication_access_control.scopes import _pit_year
+            pit_year = _pit_year(user)
+            rubric_filter = Q(created_by=user) | Q(created_by__isnull=True)
+            if pit_year:
+                rubric_filter |= Q(created_by__pit_lead_year=pit_year)
+            rubrics = rubrics.filter(rubric_filter)
+            peer_rubrics = peer_rubrics.filter(rubric_filter)
     panelists = User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True, is_active=True).order_by('last_name', 'first_name', 'username')
     documenters = User.objects.filter(role__in=['faculty', 'admin'], is_documenter=True, is_active=True).order_by('last_name', 'first_name', 'username')
     teams = visible_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
@@ -1042,7 +1112,7 @@ def schedule_options_payload(user=None):
         from authentication_access_control.scopes import _pit_year
         pit_year = _pit_year(user)
         if pit_year:
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             exclude_filter = Q()
             for y, hints in PIT_YEAR_EVENT_HINTS.items():
                 if y != pit_year:

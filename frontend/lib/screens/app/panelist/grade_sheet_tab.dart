@@ -11,6 +11,7 @@ import '../../../services/session_expired.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/feedback_toast.dart';
+import '../../../widgets/tactile_button.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {
   final List<TeamData> teams;
@@ -117,6 +118,47 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         }
       } else {
         _criteria = [];
+      }
+
+      if (team.submittedSubmissions.isNotEmpty) {
+        _hydrateSubmittedScores(team);
+      }
+    }
+  }
+
+  void _hydrateSubmittedScores(TeamData team) {
+    for (final sub in team.submittedSubmissions) {
+      final rawStudentId = sub['student_id']?.toString();
+      final remarks = (sub['remarks'] ?? '').toString();
+      final scoresList = sub['criteria_scores'] as List? ?? [];
+      final scoreMap = <int, double>{};
+      for (final s in scoresList) {
+        if (s is Map) {
+          final cId = int.tryParse(s['criterion_id']?.toString() ?? '');
+          final scoreVal = (s['score'] as num?)?.toDouble();
+          if (cId != null && scoreVal != null) {
+            scoreMap[cId] = scoreVal;
+          }
+        }
+      }
+
+      if (rawStudentId == null || rawStudentId == 'null' || rawStudentId.isEmpty) {
+        _teamRemarksController.text = remarks;
+        for (var c in _criteria) {
+          if (c.id != null && scoreMap.containsKey(c.id)) {
+            c.score = scoreMap[c.id]!;
+          }
+        }
+      } else {
+        if (_studentRemarksControllers.containsKey(rawStudentId)) {
+          _studentRemarksControllers[rawStudentId]!.text = remarks;
+        }
+        final memberCriteria = _studentCriteria[rawStudentId] ?? [];
+        for (var c in memberCriteria) {
+          if (c.id != null && scoreMap.containsKey(c.id)) {
+            c.score = scoreMap[c.id]!;
+          }
+        }
       }
     }
   }
@@ -266,7 +308,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ],
             ),
           ],
-          if (isIndividual || isBoth) ...[
+          if (isIndividual) ...[
             const SizedBox(height: 12),
             const Text(
               'Grade by Individual Student',
@@ -439,29 +481,79 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     )
                   else if (isBoth) ...[
                     if (currentTeamCriteria.isNotEmpty) ...[
-                      const Text(
-                        'Team Criteria',
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: DefensysTokens.maroon,
-                        ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.groups,
+                            size: 18,
+                            color: DefensysTokens.maroon,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Team Criteria (Graded once for the team)',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: DefensysTokens.maroon,
+                            ),
+                          ),
+                        ],
                       ),
                       const SizedBox(height: 8),
                       ...currentTeamCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
-                      const SizedBox(height: 16),
                     ],
-                    if (currentStudentCriteria.isNotEmpty) ...[
-                      Text(
-                        'Individual Criteria for ${team.memberDetails[_selectedStudentIndex].name}',
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 13,
-                          color: DefensysTokens.maroon,
-                        ),
+                    if (_studentCriteria.values.any((list) => list.isNotEmpty)) ...[
+                      if (currentTeamCriteria.isNotEmpty) const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.person,
+                            size: 18,
+                            color: DefensysTokens.maroon,
+                          ),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Individual Student Criteria',
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                              color: DefensysTokens.maroon,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Select a team member to evaluate individually:',
+                        style: TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                       const SizedBox(height: 8),
-                      ...currentStudentCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                      _buildStudentSelector(team),
+                      const SizedBox(height: 12),
+                      if (currentStudentCriteria.isNotEmpty)
+                        ...currentStudentCriteria.map((c) => _criterionRow(c, isLocked || team.isLockedByDate)),
+                    ] else if (currentTeamCriteria.isNotEmpty) ...[
+                      const SizedBox(height: 12),
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: Colors.blue),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Rubric target is set to "Both", but all current criteria are set to Team.',
+                                style: TextStyle(fontSize: 12, color: Colors.blue),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                     if (currentTeamCriteria.isEmpty && currentStudentCriteria.isEmpty)
                       Container(
@@ -637,38 +729,20 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     Row(
                       children: [
                         Expanded(
-                          child: OutlinedButton.icon(
-                            icon: const Icon(Icons.save, size: 16),
-                            label: const Text('Save Draft'),
-                            style: OutlinedButton.styleFrom(
-                              side: const BorderSide(
-                                color: DefensysTokens.maroon,
-                              ),
-                              foregroundColor: DefensysTokens.maroon,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
+                          child: TactileButton.secondary(
+                            label: 'Save Draft',
                             onPressed: () {
                               showSuccessToast(context, 'Draft saved.');
                             },
+                            icon: const Icon(Icons.save, size: 16, color: DefensysTokens.textDark),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: ElevatedButton.icon(
-                            icon: const Icon(Icons.lock, size: 16),
-                            label: const Text('Post Grades'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red.shade700,
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                            ),
-                            onPressed: canPost
-                                ? () => _confirmPost(team)
-                                : null,
+                          child: TactileButton.primary(
+                            label: 'Post Grades',
+                            onPressed: canPost ? () => _confirmPost(team) : null,
+                            icon: const Icon(Icons.lock, size: 16, color: Colors.white),
                           ),
                         ),
                       ],

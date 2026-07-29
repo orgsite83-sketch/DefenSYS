@@ -149,12 +149,12 @@ class ArchiveEntry(models.Model):
             full_name = f'{self.uploaded_by.first_name} {self.uploaded_by.last_name}'.strip()
             self.uploaded_by_name = full_name or self.uploaded_by.username
         
-        if self.file:
-            from .ml_indexing import apply_ml_from_pdf
-
-            apply_ml_from_pdf(self)
-
         super().save(*args, **kwargs)
+
+        if self.file and not self.extracted_text:
+            from .ml_indexing import apply_ml_from_pdf
+            if apply_ml_from_pdf(self):
+                super().save(update_fields=['extracted_text', 'topics', 'summary', 'category', 'category_confidence'])
 
     def _hydrate_pit_metadata(self):
         # 1. Try to hydrate from database relations first if available
@@ -162,7 +162,7 @@ class ArchiveEntry(models.Model):
             self.year_level = self.year_level or self.team.year_level
             if self.team.semester:
                 self.semester_label = self.semester_label or self.team.semester.label
-            from repository.audit.services import _default_course_for_year
+            from repository.project_archive.services import _default_course_for_year
             self.course_code = self.course_code or _default_course_for_year(self.team.year_level)
 
         if self.pit_event_config:

@@ -13,7 +13,7 @@ import '../../../utils/unsaved_changes.dart';
 import '../../../services/notifications_provider.dart';
 import '../../../widgets/notifications_modal.dart';
 import '../shared/team_deliverables/team_deliverables_screen.dart';
-import '../shared/repository_audit/repository_audit_screen.dart';
+import '../shared/project_archive/project_archive_screen.dart';
 import '../admin/audit_compliance_screen.dart';
 import '../admin/defense_scheduler/defense_scheduler_screen.dart';
 import '../admin/defense_board_screen.dart';
@@ -205,14 +205,73 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     return workspaces;
   }
 
+  bool _isSectionSupportedByWorkspace(String section, FacultyWorkspace workspace) {
+    switch (workspace) {
+      case FacultyWorkspace.pitLead:
+        return const {
+          'dashboard',
+          'pit_events',
+          'rubric_engine',
+          'cohort',
+          'pit_student_import',
+          'pit_instructors',
+          'student_teams',
+          'defense_scheduler',
+          'defense_board',
+          'grade_center',
+          'repository_audit',
+          'audit_compliance',
+          'uploader',
+        }.contains(section);
+      case FacultyWorkspace.adviser:
+        return const {
+          'dashboard',
+          'deliverables',
+          'weekly_reports',
+          'adviser_grading',
+          'defense_board',
+          'audit_compliance',
+          'uploader',
+        }.contains(section);
+      case FacultyWorkspace.pitInstructor:
+        return const {
+          'dashboard',
+          'deliverables',
+          'student_teams',
+          'audit_compliance',
+          'uploader',
+        }.contains(section);
+      case FacultyWorkspace.documenter:
+        return const {
+          'dashboard',
+          'defense_board',
+          'uploader',
+        }.contains(section);
+    }
+  }
+
   WorkspaceOption _resolvedWorkspace(Map<String, dynamic> roles) {
     final available = _availableWorkspaces(roles);
     if (available.isEmpty) {
       return const WorkspaceOption(type: FacultyWorkspace.adviser);
     }
-    if (_activeWorkspaceOption != null && available.contains(_activeWorkspaceOption)) {
+
+    final routerState = GoRouterState.of(context);
+    final sectionFromRoute = FacultyRoutes.sectionForLocation(routerState.uri.path);
+    final currentSection = sectionFromRoute ?? _activeSection;
+
+    if (_activeWorkspaceOption != null &&
+        available.contains(_activeWorkspaceOption) &&
+        _isSectionSupportedByWorkspace(currentSection, _activeWorkspaceOption!.type)) {
       return _activeWorkspaceOption!;
     }
+
+    for (final option in available) {
+      if (_isSectionSupportedByWorkspace(currentSection, option.type)) {
+        return option;
+      }
+    }
+
     return available.first;
   }
 
@@ -650,12 +709,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
           _buildSidebarItem(
             icon: Icons.rule_outlined,
-            label: 'Rubric Engine',
+            label: 'Rubrics',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => _goToSection('rubric_engine'),
+              () => _goToSection('rubrics'),
             ),
-            isActive: _activeSection == 'rubric_engine',
+            isActive: _activeSection == 'rubrics',
           ),
           _buildSectionHeader('People & Teams'),
           _buildSidebarItem(
@@ -744,6 +803,15 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             isActive: _activeSection == 'deliverables',
           ),
           _buildSidebarItem(
+            icon: Icons.view_list_outlined,
+            label: 'Defense Board',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('defense_board'),
+            ),
+            isActive: _activeSection == 'defense_board',
+          ),
+          _buildSidebarItem(
             icon: Icons.summarize_rounded,
             label: 'Reports',
             onTap: () => _afterSidebarAction(
@@ -776,13 +844,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             isActive: _activeSection == 'deliverables',
           ),
           _buildSidebarItem(
-            icon: Icons.groups_outlined,
-            label: 'PIT Teams',
+            icon: Icons.summarize_rounded,
+            label: 'Reports',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => _goToSection('student_teams'),
+              () => _goToSection('audit_compliance'),
             ),
-            isActive: _activeSection == 'student_teams',
+            isActive: _activeSection == 'audit_compliance',
           ),
         ];
       case FacultyWorkspace.documenter:
@@ -971,13 +1039,24 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             initialSection: routerState.uri.queryParameters['section'],
           ),
         );
+      case 'project_archive':
       case 'repository_audit':
         return Container(
           color: Colors.white,
-          child: const RepositoryAuditScreen(),
+          child: const ProjectArchiveScreen(),
         );
       case 'audit_compliance':
-        if (roles['pit_lead'] != true && roles['adviser'] != true) {
+        return Container(
+          color: Colors.white,
+          child: const AuditComplianceScreen(),
+        );
+      case 'uploader':
+        return Container(color: Colors.white, child: const UploaderDashboard());
+      case 'defense_scheduler':
+        final user = ref.watch(authProvider).user;
+        final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+        final isPitLead = roles['pit_lead'] == true || user?['is_pit_lead'] == true;
+        if (!isAdmin && !isPitLead) {
           return SingleChildScrollView(
             padding: const EdgeInsets.all(24),
             child: _buildWorkspaceDashboard(
@@ -990,13 +1069,6 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         }
         return Container(
           color: Colors.white,
-          child: const AuditComplianceScreen(),
-        );
-      case 'uploader':
-        return Container(color: Colors.white, child: const UploaderDashboard());
-      case 'defense_scheduler':
-        return Container(
-          color: Colors.white,
           child: const DefenseSchedulerScreen(),
         );
       case 'defense_board':
@@ -1006,6 +1078,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         );
       case 'grade_center':
         return Container(color: Colors.white, child: const GradeCenterScreen());
+      case 'rubrics':
       case 'rubric_engine':
         return Container(
           color: Colors.white,
@@ -1052,7 +1125,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           onOpenCohort: () => _goToSection('cohort'),
           onOpenScheduler: () => _goToSection('defense_scheduler'),
           onOpenGradeCenter: () => _goToSection('grade_center'),
-          onOpenRubrics: () => _goToSection('rubric_engine'),
+          onOpenRubrics: () => _goToSection('rubrics'),
         );
       case FacultyWorkspace.adviser:
         return AdviserDashboardContent(

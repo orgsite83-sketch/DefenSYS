@@ -148,6 +148,49 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(faculty.pit_lead_year, '3rd Year')
         self.assertTrue(response.data['user']['facultyRoles']['documenter'])
 
+    def test_update_documenter_role_flag_without_pit_lead(self):
+        faculty = User.objects.create_user(
+            username='doc-faculty-1',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=False,
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {
+                'is_panelist': False,
+                'is_pit_lead': False,
+                'is_documenter': True,
+            },
+            format='json',
+        )
+
+        faculty.refresh_from_db()
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(faculty.is_pit_lead)
+        self.assertTrue(faculty.is_documenter)
+        self.assertTrue(response.data['user']['facultyRoles']['documenter'])
+
+    def test_pit_lead_requires_pit_lead_year(self):
+        faculty = User.objects.create_user(
+            username='pit-no-year-1',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=False,
+        )
+
+        response = self.client.patch(
+            f'/api/users/{faculty.id}/',
+            {
+                'is_pit_lead': True,
+                'pit_lead_year': '',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('pit_lead_year', response.data)
+
     def test_save_backfills_role_history_when_flag_already_on(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
         Semester.objects.create(

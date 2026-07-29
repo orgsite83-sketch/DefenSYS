@@ -1,12 +1,16 @@
-import 'package:defensys/services/repository_audit_provider.dart';
+import 'package:defensys/services/capstone_deliverables_provider.dart';
+import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
+import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/widgets/status_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-class AuditLogTable extends ConsumerStatefulWidget {
-  final RepositoryAuditState state;
+typedef AuditLogTable = ProjectArchiveTable;
+
+class ProjectArchiveTable extends ConsumerStatefulWidget {
+  final ProjectArchiveState state;
   final TextEditingController searchController;
   final ScrollController tableHScrollController;
   final bool showTableScrollHint;
@@ -16,7 +20,7 @@ class AuditLogTable extends ConsumerStatefulWidget {
   final Function(String fileUrl, String fileName) onDownloadFile;
   final Function(Map<String, dynamic> entry) onOverrideStatus;
 
-  const AuditLogTable({
+  const ProjectArchiveTable({
     super.key,
     required this.state,
     required this.searchController,
@@ -30,10 +34,10 @@ class AuditLogTable extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<AuditLogTable> createState() => _AuditLogTableState();
+  ConsumerState<ProjectArchiveTable> createState() => _ProjectArchiveTableState();
 }
 
-class _AuditLogTableState extends ConsumerState<AuditLogTable> {
+class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   static const _kRepoMinTableWidth = 1515.0;
   static const _kRepoActionColumnWidth = 140.0;
   static const _kRepoDataTableWidth =
@@ -104,18 +108,6 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
     }).toList();
   }
 
-  Color _statusColor(String status) {
-    if (status == 'Approved' || status == 'Post-Defense') {
-      return AppColors.success;
-    }
-    if (status == 'Needs Revision') {
-      return const Color(0xFFD97706);
-    }
-    if (status == 'Pre-Defense') {
-      return const Color(0xFF2563EB);
-    }
-    return AppColors.textSecondary;
-  }
 
   String _prettyDate(dynamic value) {
     final text = value?.toString() ?? '';
@@ -169,7 +161,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
             alignment: Alignment.centerLeft,
             child: Text(
               'Project Archive Records',
-              style: GoogleFonts.plusJakartaSans(
+              style: const TextStyle(
                 color: AppColors.maroon,
                 fontSize: 16,
                 fontWeight: FontWeight.w800,
@@ -325,8 +317,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
               state.deliverableId.isNotEmpty
                   ? 'Showing ${state.entries.length} teams for ${state.deliverableSummary['label'] ?? state.deliverableId}'
                   : 'Showing ${state.entries.length} records',
-              style: GoogleFonts.plusJakartaSans(
-                color: const Color(0xFF5D6678),
+              style: const TextStyle(
+                color: Color(0xFF5D6678),
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
@@ -364,8 +356,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          textStyle: GoogleFonts.plusJakartaSans(
-              fontSize: 13, fontWeight: FontWeight.w800),
+          textStyle:
+              const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
         ),
       ),
     );
@@ -377,7 +369,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
       child: TextField(
         controller: widget.searchController,
         enabled: !state.isSaving,
-        style: GoogleFonts.plusJakartaSans(fontSize: 13),
+        style: const TextStyle(fontSize: 13),
         decoration: InputDecoration(
           prefixIcon: const Icon(
             Icons.search_rounded,
@@ -385,7 +377,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
             size: 19,
           ),
           hintText: 'Search by file name, course, or semester...',
-          hintStyle: GoogleFonts.plusJakartaSans(
+          hintStyle: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 13,
           ),
@@ -447,8 +439,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
           shape:
               RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
           padding: const EdgeInsets.symmetric(horizontal: 18),
-          textStyle: GoogleFonts.plusJakartaSans(
-              fontSize: 13, fontWeight: FontWeight.w800),
+          textStyle:
+              const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
         ),
       ),
     );
@@ -481,7 +473,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
           value: selected,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: GoogleFonts.plusJakartaSans(
+          style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -493,7 +485,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
                   child: Text(
                     item['label']?.toString() ?? label,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
+                    style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                     ),
@@ -525,7 +517,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
           value: selected,
           isExpanded: true,
           icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
-          style: GoogleFonts.plusJakartaSans(
+          style: const TextStyle(
             color: AppColors.textPrimary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -537,7 +529,7 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
                   child: Text(
                     item,
                     overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.plusJakartaSans(
+                    style: const TextStyle(
                       fontSize: 12.5,
                       fontWeight: FontWeight.w500,
                     ),
@@ -764,8 +756,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
                 const SizedBox(height: 12),
                 Text(
                   'No archive records found',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: const Color(0xFF1E293B),
+                  style: const TextStyle(
+                    color: Color(0xFF1E293B),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
@@ -773,8 +765,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
                 const SizedBox(height: 4),
                 Text(
                   'Try searching or adjusting your filter settings',
-                  style: GoogleFonts.plusJakartaSans(
-                    color: const Color(0xFF64748B),
+                  style: const TextStyle(
+                    color: Color(0xFF64748B),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
                   ),
@@ -979,40 +971,23 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
   }
 
   Widget _statusBadge(String status) {
-    final color = _statusColor(status);
-    final icon = switch (status) {
-      'Approved' || 'Post-Defense' => Icons.check_circle_rounded,
-      'Needs Revision' => Icons.warning_rounded,
-      'Pre-Defense' => Icons.school_rounded,
-      _ => Icons.hourglass_empty_rounded,
-    };
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.14),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(icon, color: color, size: 13),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(
-              status.isEmpty ? 'Approved' : status,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: color,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
+    final s = status.trim();
+    if (s == 'Approved' || s == 'Post-Defense' || s == 'Accepted') {
+      return StatusBadge.success(label: s.isEmpty ? 'Approved' : s);
+    }
+    if (s == 'Needs Revision' || s == 'Needs Re-upload') {
+      return StatusBadge.revision(label: s);
+    }
+    if (s == 'Rejected' || s == 'Failed') {
+      return StatusBadge.danger(label: s);
+    }
+    if (s.toLowerCase().contains('overridden')) {
+      return StatusBadge.overridden(label: s);
+    }
+    if (s == 'Pending Review' || s == 'Pending') {
+      return StatusBadge.warning(label: s);
+    }
+    return StatusBadge.inactive(label: s.isEmpty ? 'Approved' : s);
   }
 
   Widget _kindBadge(String? kind) {
@@ -1048,6 +1023,30 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
   Widget _rowActions(Map<String, dynamic> entry) {
     final fileUrl = entry['file_url']?.toString() ?? '';
     final fileName = entry['file_name']?.toString() ?? '';
+    final status = entry['status']?.toString() ?? '';
+    final feedback = (entry['feedback']?.toString() ?? entry['remarks']?.toString() ?? '').toLowerCase();
+
+    final isPendingResubmission =
+        status == 'Needs Revision' || status == 'Rejected' || status == 'Needs Re-upload';
+    final isReplacementUnlocked = !isPendingResubmission &&
+        ((entry['archive_unlocked'] == true) ||
+            (entry['unlocked'] == true) ||
+            feedback.contains('unlocked for file replacement') ||
+            (status == 'Approved' && feedback.contains('unlocked')));
+
+    final actionIconData = isPendingResubmission
+        ? Icons.hourglass_top_rounded
+        : (isReplacementUnlocked ? Icons.lock_open_rounded : Icons.published_with_changes_rounded);
+
+    final actionIconColor = isPendingResubmission
+        ? const Color(0xFFD97706)
+        : (isReplacementUnlocked ? const Color(0xFF0D9488) : const Color(0xFF2563EB));
+
+    final actionTooltip = isPendingResubmission
+        ? 'Student Re-upload Pending (Needs Revision)'
+        : (isReplacementUnlocked
+            ? 'File Replacement Unlocked for Team (Click to manage)'
+            : 'Request team resubmission / replace file');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1068,9 +1067,9 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
         if (entry['can_override'] == true) ...[
           const SizedBox(width: 3),
           _actionIcon(
-            tooltip: 'Override status',
-            icon: Icons.lock_rounded,
-            color: AppColors.textSecondary,
+            tooltip: actionTooltip,
+            icon: actionIconData,
+            color: actionIconColor,
             onTap: () => widget.onOverrideStatus(entry),
           ),
         ],
@@ -1348,6 +1347,8 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
     final level = team['level']?.toString() ?? '';
     final track = _teamTrack(team);
     final project = _teamProjectFromEntries(state, state.teamId) ?? '';
+    final teamId = int.tryParse(state.teamId.toString()) ?? 0;
+
     return Container(
       width: double.infinity,
       margin: const EdgeInsets.only(bottom: 12),
@@ -1357,43 +1358,84 @@ class _AuditLogTableState extends ConsumerState<AuditLogTable> {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              Text(
-                name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w800,
-                  fontSize: 15,
-                  color: AppColors.maroon,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w800,
+                        fontSize: 15,
+                        color: AppColors.maroon,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _trackBadge(track),
+                  ],
                 ),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    if (level.isNotEmpty) level,
+                    if (project.isNotEmpty) 'Project: $project',
+                  ].join(' · '),
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                const Text(
+                  'Showing files for this team only.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_scopeKey(state) == 'admin' && teamId > 0) ...[
+            OutlinedButton.icon(
+              onPressed: state.isSaving
+                  ? null
+                  : () async {
+                      final stage = state.stage.isNotEmpty
+                          ? state.stage
+                          : (state.groupedByStage.isNotEmpty
+                              ? state.groupedByStage.first['stage']?.toString() ?? 'Concept Proposal'
+                              : 'Concept Proposal');
+                      final success = await ref
+                          .read(capstoneDeliverablesProvider.notifier)
+                          .unlockDeliverables(
+                            teamId: teamId,
+                            stageLabel: stage,
+                          );
+                      if (success && mounted) {
+                        showInfoToast(
+                          context,
+                          'Deliverable unlock status updated for $name ($stage).',
+                        );
+                        ref.read(repositoryAuditProvider.notifier).fetchEntries();
+                      }
+                    },
+              icon: const Icon(Icons.lock_open_outlined, size: 15),
+              label: const Text('Unlock Deliverables'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: AppColors.maroon,
+                side: const BorderSide(color: AppColors.maroon),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                visualDensity: VisualDensity.compact,
               ),
-              const SizedBox(width: 8),
-              _trackBadge(track),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            [
-              if (level.isNotEmpty) level,
-              if (project.isNotEmpty) 'Project: $project',
-            ].join(' · '),
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
             ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            'Showing files for this team only.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w500,
-            ),
-          ),
+          ],
         ],
       ),
     );

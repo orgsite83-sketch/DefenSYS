@@ -109,6 +109,22 @@ class RubricSerializer(serializers.ModelSerializer):
             data['panel_weight'] = 0
             data['adviser_weight'] = 0
             data['peer_weight'] = 0
+            try:
+                from django.db import models
+                from defense.scheduler.models import PitEventGradingConfig
+                config = PitEventGradingConfig.objects.filter(
+                    semester=instance.semester
+                ).filter(
+                    models.Q(panel_rubric=instance) | models.Q(peer_rubric=instance)
+                ).first()
+                if not config:
+                    config = PitEventGradingConfig.objects.filter(
+                        models.Q(panel_rubric=instance) | models.Q(peer_rubric=instance)
+                    ).first()
+                if config:
+                    data['event_name'] = config.event_name
+            except Exception:
+                pass
         return data
 
 
@@ -203,6 +219,7 @@ class RubricWriteSerializer(serializers.Serializer):
             created_by=getattr(self.context.get('request'), 'user', None),
         )
         self._sync_criteria(rubric, criteria)
+        self._sync_stage_grading_config(rubric)
         return rubric
 
     @transaction.atomic
@@ -223,7 +240,28 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.is_locked = instance.status == Rubric.STATUS_PUBLISHED
         instance.save()
         self._sync_criteria(instance, criteria)
+        self._sync_stage_grading_config(instance)
         return instance
+
+    def _sync_stage_grading_config(self, rubric):
+        if rubric.scope == Rubric.SCOPE_CAPSTONE and rubric.defense_stage:
+            from defense.stages.models import StageGradingConfig
+            config, _ = StageGradingConfig.objects.get_or_create(
+                defense_stage=rubric.defense_stage,
+                semester=rubric.semester,
+            )
+            update_fields = []
+            if rubric.evaluation_type == Rubric.EVAL_PANEL and config.panel_rubric_id != rubric.id:
+                config.panel_rubric = rubric
+                update_fields.append('panel_rubric')
+            elif rubric.evaluation_type == Rubric.EVAL_ADVISER and config.adviser_rubric_id != rubric.id:
+                config.adviser_rubric = rubric
+                update_fields.append('adviser_rubric')
+            elif rubric.evaluation_type == Rubric.EVAL_PEER and config.peer_rubric_id != rubric.id:
+                config.peer_rubric = rubric
+                update_fields.append('peer_rubric')
+            if update_fields:
+                config.save(update_fields=update_fields + ['updated_at'])
 
     @staticmethod
     def _is_capstone_only_manager(user):
@@ -313,6 +351,14 @@ class RubricWriteSerializer(serializers.Serializer):
 
         if not normalized:
             raise serializers.ValidationError({'criteria': 'At least one criterion is required.'})
+
+        if rubric_target_type == Rubric.TARGET_BOTH:
+            has_team = any(c['target_type'] == Rubric.TARGET_TEAM for c in normalized)
+            has_indiv = any(c['target_type'] == Rubric.TARGET_INDIVIDUAL for c in normalized)
+            if not (has_team and has_indiv):
+                raise serializers.ValidationError({
+                    'criteria': "Rubrics set to 'Both (Team & Individual)' must contain at least one Team criterion and at least one Individual criterion. If all criteria are Team-based, please set the Scoring Target to 'Team'."
+                })
         return normalized
 
     def _sync_criteria(self, rubric, criteria):

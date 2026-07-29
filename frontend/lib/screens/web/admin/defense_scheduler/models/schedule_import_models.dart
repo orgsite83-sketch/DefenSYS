@@ -70,17 +70,49 @@ String normalizeImportDate(String? value) {
   if (humanParsed != null) {
     return formatScheduleDate(humanParsed);
   }
-  final match = RegExp(r'^(\d{1,2})/(\d{1,2})/(\d{2,4})$').firstMatch(text);
-  if (match == null) {
-    return text;
+
+  // 1. Check YYYY first: YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+  final yearFirstMatch =
+      RegExp(r'^(\d{4})[-/\.](\d{1,2})[-/\.](\d{1,2})$').firstMatch(text);
+  if (yearFirstMatch != null) {
+    final year =
+        int.tryParse(yearFirstMatch.group(1) ?? '') ?? DateTime.now().year;
+    final month = int.tryParse(yearFirstMatch.group(2) ?? '') ?? 1;
+    final day = int.tryParse(yearFirstMatch.group(3) ?? '') ?? 1;
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return formatScheduleDate(DateTime(year, month, day));
+    }
   }
-  final month = int.tryParse(match.group(1) ?? '') ?? 1;
-  final day = int.tryParse(match.group(2) ?? '') ?? 1;
-  var year = int.tryParse(match.group(3) ?? '') ?? DateTime.now().year;
-  if (year < 100) {
-    year += 2000;
+
+  // 2. Check YYYY last: M/D/YYYY, MM/DD/YYYY, D/M/YYYY, DD/MM/YYYY
+  final yearLastMatch =
+      RegExp(r'^(\d{1,2})[-/\.](\d{1,2})[-/\.](\d{2,4})$').firstMatch(text);
+  if (yearLastMatch != null) {
+    final part1 = int.tryParse(yearLastMatch.group(1) ?? '') ?? 1;
+    final part2 = int.tryParse(yearLastMatch.group(2) ?? '') ?? 1;
+    var year =
+        int.tryParse(yearLastMatch.group(3) ?? '') ?? DateTime.now().year;
+    if (year < 100) {
+      year += 2000;
+    }
+    int month;
+    int day;
+    if (part1 > 12 && part2 <= 12) {
+      day = part1;
+      month = part2;
+    } else if (part2 > 12 && part1 <= 12) {
+      month = part1;
+      day = part2;
+    } else {
+      month = part1;
+      day = part2;
+    }
+    if (month >= 1 && month <= 12 && day >= 1 && day <= 31) {
+      return formatScheduleDate(DateTime(year, month, day));
+    }
   }
-  return formatScheduleDate(DateTime(year, month, day));
+
+  return text;
 }
 
 List<Map<String, dynamic>> teamsForScope(
@@ -108,6 +140,7 @@ class ScheduleImportPreviewRow {
     required this.scope,
     required this.teamId,
     required this.panelistIds,
+    this.documenterId,
     required this.stageId,
     required this.eventName,
     required this.panelRubricId,
@@ -125,6 +158,7 @@ class ScheduleImportPreviewRow {
   final String scope;
   final int? teamId;
   final List<int> panelistIds;
+  final int? documenterId;
   final int? stageId;
   final String eventName;
   final int? panelRubricId;
@@ -138,6 +172,7 @@ class ScheduleImportPreviewRow {
   final List<String> warnings;
 
   bool get ready => issues.isEmpty;
+  bool get isPit => scope == 'pit';
 
   String get timeLabel {
     if (source.startTime.isEmpty) {
@@ -156,7 +191,7 @@ class ScheduleImportPreviewRow {
   String get panelLabel =>
       source.panelMembers.isEmpty ? '-' : source.panelMembers.join(', ');
   String get documenterLabel =>
-      source.documenter.isEmpty ? '-' : source.documenter;
+      (!isPit && source.documenter.isNotEmpty) ? source.documenter : '-';
 
   Map<String, dynamic> toPayload() {
     if (scope == 'pit') {
@@ -186,6 +221,7 @@ class ScheduleImportPreviewRow {
       'slot_duration': duration,
       'room': room,
       'panelist_ids': panelistIds,
+      if (documenterId != null) 'documenter_id': documenterId,
     };
   }
 }
@@ -262,6 +298,39 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
   return ImportNameMatch(message: 'Panelist "$rawName" was not found.');
 }
 
+ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
+  final name = normalizeName(rawName);
+  if (name.isEmpty) {
+    return const ImportNameMatch();
+  }
+  final exact = state.documenters.where((doc) {
+    return normalizeName(doc['name']?.toString() ?? '') == name ||
+        normalizeName(doc['username']?.toString() ?? '') == name;
+  }).toList();
+  if (exact.length == 1) {
+    return ImportNameMatch(id: asInt(exact.first['id']));
+  }
+  if (exact.length > 1) {
+    return ImportNameMatch(message: 'Documenter "$rawName" is ambiguous.');
+  }
+
+  final lastNameMatches = state.documenters.where((doc) {
+    final display = doc['name']?.toString() ?? '';
+    final parts = display.trim().split(RegExp(r'\s+'));
+    final last = parts.isEmpty ? '' : parts.last;
+    return normalizeName(last) == name;
+  }).toList();
+  if (lastNameMatches.length == 1) {
+    return ImportNameMatch(id: asInt(lastNameMatches.first['id']));
+  }
+  if (lastNameMatches.length > 1) {
+    return ImportNameMatch(
+      message: 'Documenter "$rawName" matches multiple documenters.',
+    );
+  }
+  return ImportNameMatch(message: 'Documenter "$rawName" was not found.');
+}
+
 List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   ParsedScheduleImport parsed,
   DefenseSchedulerState state, {
@@ -283,7 +352,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final warnings = <String>[];
     final rowDate = normalizeImportDate(source.date).isNotEmpty
         ? normalizeImportDate(source.date)
-        : date.trim();
+        : normalizeImportDate(date);
     final rowRoom = source.room.trim().isNotEmpty
         ? source.room.trim()
         : room.trim();
@@ -297,6 +366,16 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     }
     for (final name in source.panelMembers) {
       panelistMatches.add(matchPanelist(name, state));
+    }
+
+    int? documenterId;
+    if (!isPit && source.documenter.trim().isNotEmpty) {
+      final docMatch = matchDocumenter(source.documenter, state);
+      if (docMatch.id == null) {
+        issues.add(docMatch.message);
+      } else {
+        documenterId = docMatch.id;
+      }
     }
 
     if (isPit) {
@@ -347,17 +426,13 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (panelistIds.isEmpty) {
       issues.add('At least one chair or panel member is required.');
     }
-    if (source.documenter.trim().isNotEmpty) {
-      warnings.add(
-        'Documenter is shown for review but is not assigned as a grading panelist yet.',
-      );
-    }
 
     return ScheduleImportPreviewRow(
       source: source,
       scope: scope,
       teamId: teamMatch.id,
       panelistIds: panelistIds,
+      documenterId: documenterId,
       stageId: stageId,
       eventName: eventName,
       panelRubricId: panelRubricId,

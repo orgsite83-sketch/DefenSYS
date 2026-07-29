@@ -72,6 +72,7 @@ class StudentTeam(models.Model):
     capstone_phase = models.CharField(max_length=20, choices=PHASE_CHOICES, null=True, blank=True)
     ready_for_stage = models.CharField(max_length=80, null=True, blank=True)
     current_defense_stage = models.CharField(max_length=80, null=True, blank=True)
+    unlocked_stages = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

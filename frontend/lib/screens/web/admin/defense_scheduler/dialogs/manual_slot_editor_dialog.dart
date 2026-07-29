@@ -17,6 +17,7 @@ class ManualSlotEditorDialog {
     required int? initialCapstonePeerRubricId,
     required int? initialPeerRubricId,
     required Set<int> initialSelectedPanelistIds,
+    int? initialDocumenterId,
     required String initialEvent,
     required String initialPitTemplate,
     required String initialDate,
@@ -48,7 +49,7 @@ class ManualSlotEditorDialog {
     final duration = TextEditingController(text: initialDuration);
     final room = TextEditingController(text: initialRoom);
     final panelIds = <int>{...initialSelectedPanelistIds};
-    int? documenterId;
+    int? documenterId = initialDocumenterId;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -59,6 +60,10 @@ class ManualSlotEditorDialog {
 
             final validTeam = teams.any((item) => asInt(item['id']) == teamId)
                 ? teamId
+                : null;
+
+            final validDocumenter = state.documenters.any((item) => asInt(item['id']) == documenterId && !panelIds.contains(asInt(item['id'])))
+                ? documenterId
                 : null;
 
             final scopes = <String>[
@@ -147,7 +152,7 @@ class ManualSlotEditorDialog {
                         ),
                         const SizedBox(height: 12),
                         DropdownButtonFormField<int?>(
-                          initialValue: documenterId,
+                          initialValue: validDocumenter,
                           decoration: const InputDecoration(
                             labelText: 'Documenter',
                             hintText: 'Select Documenter (Optional)',

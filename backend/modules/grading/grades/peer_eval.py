@@ -57,6 +57,8 @@ def peer_submission_count(grade):
 
 
 def is_team_peer_eval_complete(grade):
+    if grade.peer_score is not None:
+        return True
     required = required_peer_submission_count(grade.team)
     if required == 0:
         return True

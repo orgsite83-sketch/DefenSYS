@@ -9,6 +9,8 @@ from rest_framework.views import APIView
 from .services import (
     filter_entries,
     override_pit_status,
+    replace_archive_file,
+    request_archive_resubmission,
     repository_audit_payload,
     repository_csv,
     scoped_entries,
@@ -26,14 +28,14 @@ def _raise_drf_validation_error(exc: DjangoValidationError) -> None:
     raise ValidationError(detail=str(exc)) from exc
 
 
-class RepositoryAuditListView(APIView):
+class ProjectArchiveListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         return Response(repository_audit_payload(request))
 
 
-class RepositoryAuditUploadPitView(APIView):
+class ProjectArchiveUploadPitView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
@@ -70,7 +72,7 @@ class RepositoryAuditUploadPitView(APIView):
         return Response(payload)
 
 
-class RepositoryAuditUploadCapstoneView(APIView):
+class ProjectArchiveUploadCapstoneView(APIView):
     permission_classes = [IsAuthenticated]
     parser_classes = (MultiPartParser, FormParser, JSONParser)
 
@@ -105,28 +107,51 @@ class RepositoryAuditUploadCapstoneView(APIView):
         return Response(payload)
 
 
-class RepositoryAuditOverrideStatusView(APIView):
+class ProjectArchiveRequestResubmissionView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
         entry_id = request.data.get('entry_id')
-        status = request.data.get('status')
+        status = request.data.get('status') or 'Needs Revision'
+        feedback = request.data.get('feedback', '')
         if not entry_id:
-            raise ValidationError({'entry_id': 'PIT entry id is required.'})
-        if not status:
-            raise ValidationError({'status': 'Status is required.'})
-        override_pit_status(request.user, entry_id, status)
+            raise ValidationError({'entry_id': 'Archive entry id is required.'})
+        request_archive_resubmission(request.user, entry_id, status, feedback=feedback)
         return Response(repository_audit_payload(request))
 
 
-class RepositoryAuditTrailView(APIView):
+class ProjectArchiveOverrideStatusView(ProjectArchiveRequestResubmissionView):
+    pass
+
+
+class ProjectArchiveReplaceFileView(APIView):
+    permission_classes = [IsAuthenticated]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
+
+    def post(self, request):
+        entry_id = request.data.get('entry_id')
+        uploaded_file = request.FILES.get('file')
+        if not entry_id:
+            raise ValidationError({'entry_id': 'Archive entry id is required.'})
+        if not uploaded_file:
+            raise ValidationError({'file': 'Replacement PDF file is required.'})
+
+        try:
+            replace_archive_file(request.user, entry_id, uploaded_file)
+        except DjangoValidationError as exc:
+            _raise_drf_validation_error(exc)
+
+        return Response(repository_audit_payload(request))
+
+
+class ProjectArchiveTrailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         return Response({'audit_trail': audit_trail_for_request(request)})
 
 
-class RepositoryAuditExportView(APIView):
+class ProjectArchiveExportView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

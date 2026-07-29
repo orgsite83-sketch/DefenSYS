@@ -28,7 +28,7 @@ from repository.archive.services import restricted_archive_entries_count, visibl
 from grading.grades.models import TeamGrade
 from grading.grades.services import default_weights, weights_for_schedule
 from grading.grades.peer_eval import peer_criteria_payload, peer_submissions_for_evaluator
-from repository.audit.services import (
+from repository.project_archive.services import (
     repository_approved_count,
     repository_entries_count,
     repository_pending_count,

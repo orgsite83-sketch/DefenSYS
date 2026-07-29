@@ -34,99 +34,94 @@ BoxDecoration _cardDecoration() {
   );
 }
 
-Widget _iconBox(IconData icon, Color color) {
-  return Container(
-    width: 42,
-    height: 42,
-    decoration: BoxDecoration(
-      color: color.withValues(alpha: 0.10),
-      borderRadius: BorderRadius.circular(12),
-    ),
-    child: Icon(icon, color: color),
-  );
-}
-
-Widget _stat(String label, int count, IconData icon, Color color) {
-  return Container(
-    padding: const EdgeInsets.all(16),
-    decoration: _cardDecoration(),
-    child: Row(
-      children: [
-        _iconBox(icon, color),
-        const SizedBox(width: 14),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                count.toString(),
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              Text(
-                label,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
+Widget _compactStatItem(String label, int count, IconData icon, Color color) {
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    children: [
+      Container(
+        padding: const EdgeInsets.all(7),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(8),
         ),
-      ],
-    ),
+        child: Icon(icon, color: color, size: 18),
+      ),
+      const SizedBox(width: 10),
+      Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            count.toString(),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: AppColors.textPrimary,
+              height: 1.1,
+            ),
+          ),
+          Text(
+            label,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.textSecondary,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    ],
   );
 }
 
 Widget buildDeliverablesStats(CapstoneDeliverablesState state) {
   final teamLabel = state.scope == 'pit' ? 'PIT Teams' : 'Capstone Teams';
   final items = [
-    _stat(teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, AppColors.maroon),
-    _stat('Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
-    _stat('Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, Colors.orange),
-    _stat('Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
-    _stat('Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
-    _stat('Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
+    _compactStatItem(teamLabel, _count(state, 'teams'), Icons.groups_2_outlined, AppColors.maroon),
+    _compactStatItem('Ready', _count(state, 'ready'), Icons.verified_outlined, AppColors.success),
+    _compactStatItem('Pending', _count(state, 'pending_review'), Icons.rate_review_outlined, Colors.orange),
+    _compactStatItem('Missing', _count(state, 'missing_requirements'), Icons.warning_amber_outlined, AppColors.warning),
+    _compactStatItem('Files', _count(state, 'submitted_files'), Icons.folder_copy_outlined, Colors.blue),
+    _compactStatItem('Archive Files', _count(state, 'archive_files'), Icons.inventory_2_outlined, AppColors.gold),
   ];
 
-  return LayoutBuilder(
-    builder: (context, constraints) {
-      if (constraints.maxWidth < 900) {
-        return Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: items.map((widget) {
-            final calculatedWidth = (constraints.maxWidth - 12) / 2;
-            final itemWidth = calculatedWidth.clamp(0.0, double.infinity);
-            return SizedBox(
-              width: itemWidth > 180 ? itemWidth : double.infinity,
-              child: widget,
-            );
-          }).toList(),
-        );
-      }
-      return Row(
-        children: List.generate(items.length, (index) {
-          final isFirst = index == 0;
-          final isLast = index == items.length - 1;
-          return Expanded(
-            child: Padding(
-              padding: EdgeInsets.only(
-                left: isFirst ? 0 : 8,
-                right: isLast ? 0 : 8,
-              ),
-              child: items[index],
-            ),
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+    decoration: _cardDecoration(),
+    child: LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 900) {
+          return Wrap(
+            spacing: 16,
+            runSpacing: 12,
+            alignment: WrapAlignment.spaceBetween,
+            children: items,
           );
-        }),
-      );
-    },
+        }
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceAround,
+          children: List.generate(items.length, (index) {
+            final isLast = index == items.length - 1;
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                items[index],
+                if (!isLast) ...[
+                  const SizedBox(width: 12),
+                  Container(
+                    height: 24,
+                    width: 1,
+                    color: const Color(0xFFE2E8F0),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+              ],
+            );
+          }),
+        );
+      },
+    ),
   );
 }
 
@@ -202,7 +197,11 @@ class _DeliverablesFilterBarState extends ConsumerState<DeliverablesFilterBar> {
     final List<Map<String, dynamic>> statuses = widget.state.statuses.isEmpty
         ? const <Map<String, dynamic>>[
             {'value': '', 'label': 'All Teams'},
-            {'value': 'ready', 'label': 'Ready / Endorsed'},
+            {'value': 'awaiting_endorsement', 'label': 'Awaiting Endorsement'},
+            {'value': 'ready', 'label': 'Endorsed'},
+            {'value': 'scheduled', 'label': 'Defense Scheduled'},
+            {'value': 'pending_post_defense', 'label': 'Pending Post-Defense'},
+            {'value': 'passed', 'label': 'Completed / Passed'},
             {'value': 'missing', 'label': 'Missing Requirements'},
           ]
         : widget.state.statuses;

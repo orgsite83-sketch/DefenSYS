@@ -15,7 +15,7 @@ from authentication_access_control.scopes import grade_records_for
 from user_management.permissions import IsSystemAdmin, CanManageModule
 from .models import TeamGrade
 from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
-from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 
 from .services import (
     active_semester,
@@ -145,7 +145,7 @@ def grade_center_payload(request, queryset=None, sync_info=None):
             configs = PitEventGradingConfig.objects.filter(semester=semester).prefetch_related('deliverables').order_by('event_name')
             if pit_lead:
                 if pit_year:
-                    from repository.audit.services import PIT_YEAR_EVENT_HINTS
+                    from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
                     exclude_filter = Q()
                     for y, hints in PIT_YEAR_EVENT_HINTS.items():
                         if y != pit_year:
@@ -368,6 +368,8 @@ class GradeCenterGroupSettingsView(APIView):
                 },
                 status=status.HTTP_400_BAD_REQUEST,
             )
+        except PermissionDenied as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
         except DjangoValidationError as exc:
             payload = exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
             return Response(payload, status=status.HTTP_400_BAD_REQUEST)

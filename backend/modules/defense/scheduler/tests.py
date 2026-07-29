@@ -704,6 +704,31 @@ class DefenseSchedulerApiTests(APITestCase):
         criteria = response.data['teams'][0]['panel_rubric']['criteria']
         self.assertEqual(criteria[0]['id'], self.criterion.id)
 
+    def test_panelist_assignments_reflects_posted_status_after_grading(self):
+        self.create_scheduled_defense()
+        self.client.force_authenticate(user=self.panelist)
+
+        res_before = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(res_before.status_code, 200)
+        self.assertFalse(res_before.data['teams'][0]['is_posted'])
+
+        schedule = DefenseSchedule.objects.get()
+        submit = self.client.post(
+            '/api/defense/schedules/submit-grades/',
+            {
+                'team_id': self.team.id,
+                'schedule_id': schedule.id,
+                'criteria_scores': self.criteria_scores(8),
+            },
+            format='json',
+        )
+        self.assertEqual(submit.status_code, 201)
+
+        res_after = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(res_after.status_code, 200)
+        self.assertTrue(res_after.data['teams'][0]['is_posted'])
+        self.assertEqual(len(res_after.data['teams'][0]['submissions']), 1)
+
     def test_panelist_results_lists_submitted_teams(self):
         self.client.post(
             '/api/defense/schedules/confirm-plan/',
@@ -1686,7 +1711,7 @@ class PitEventGradingConfigTests(APITestCase):
             archive_file_template='{year}-{course}-{project}-{event}-{semester}'
         )
 
-        from repository.audit.services import suggested_pit_file_name
+        from repository.project_archive.services import suggested_pit_file_name
         filename = suggested_pit_file_name(
             team=self.team,
             year_level='2nd Year',
@@ -1844,5 +1869,122 @@ class PitEventGradingConfigTests(APITestCase):
         pending_grade.refresh_from_db()
         self.assertEqual(pending_grade.panel_weight, 60)
         self.assertEqual(pending_grade.peer_weight, 40)
+
+    def test_schedule_team_serializer_includes_instructor_name(self):
+        from .serializers import ScheduleTeamSerializer
+        from user_management.models import SectionInstructorAssignment
+        
+        instructor = User.objects.create_user(
+            username='pit_inst_1',
+            first_name='Maria',
+            last_name='Santos',
+            role='faculty'
+        )
+        SectionInstructorAssignment.objects.create(
+            faculty=instructor,
+            semester=self.semester,
+            year_level='1st Year',
+            section='BSIT-1A',
+            is_active=True
+        )
+        team = StudentTeam.objects.create(
+            name='Team Test PIT',
+            level=StudentTeam.LEVEL_1_PIT,
+            year_level='1st Year',
+            section='BSIT-1A',
+            semester=self.semester,
+            leader=self.student,
+            status=StudentTeam.STATUS_APPROVED
+        )
+        data = ScheduleTeamSerializer(team).data
+        self.assertIn('instructor_name', data)
+        self.assertEqual(data['instructor_name'], 'Maria Santos')
+
+    def test_pit_rubrics_scoped_by_year_level(self):
+        from grading.rubrics.models import Rubric
+        from defense.scheduler.serializers import defense_scheduler_options_payload
+        
+        lead_1st = User.objects.create_user(
+            username='lead_1st_year',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        lead_2nd = User.objects.create_user(
+            username='lead_2nd_year',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+
+        rubric_1st = Rubric.objects.create(
+            name='1st Year Panel Rubric',
+            scope=Rubric.SCOPE_PIT,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+            created_by=lead_1st,
+        )
+        rubric_2nd = Rubric.objects.create(
+            name='2nd Year Panel Rubric',
+            scope=Rubric.SCOPE_PIT,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+            created_by=lead_2nd,
+        )
+
+        payload_2nd = defense_scheduler_options_payload(lead_2nd, semester=self.semester, pit_lead_only=True)
+        rubric_ids = [r['id'] for r in payload_2nd['rubrics']]
+        self.assertIn(rubric_2nd.id, rubric_ids)
+        self.assertNotIn(rubric_1st.id, rubric_ids)
+
+    def test_pit_event_config_rejects_cross_year_rubric(self):
+        from grading.rubrics.models import Rubric
+
+        lead_1st = User.objects.create_user(
+            username='lead_1st_year_b',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        lead_2nd = User.objects.create_user(
+            username='lead_2nd_year_b',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='2nd Year',
+        )
+
+        rubric_1st_panel = Rubric.objects.create(
+            name='1st Year Panel Rubric B',
+            scope=Rubric.SCOPE_PIT,
+            evaluation_type=Rubric.EVAL_PANEL,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+            created_by=lead_1st,
+        )
+        rubric_2nd_peer = Rubric.objects.create(
+            name='2nd Year Peer Rubric B',
+            scope=Rubric.SCOPE_PIT,
+            evaluation_type=Rubric.EVAL_PEER,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+            created_by=lead_2nd,
+        )
+
+        self.client.force_authenticate(user=lead_2nd)
+        response = self.client.post('/api/defense/pit-event-config/', {
+            'event_name': '2nd Year Expo',
+            'panel_rubric_id': rubric_1st_panel.id,
+            'peer_rubric_id': rubric_2nd_peer.id,
+            'panel_weight': 80,
+            'peer_weight': 20,
+            'semester_id': self.semester.id,
+        }, format='json')
+
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('not permitted for your PIT year level', response.data.get('detail', ''))
+
+
 
 

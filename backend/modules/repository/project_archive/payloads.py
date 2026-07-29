@@ -85,7 +85,8 @@ def capstone_archive_entry_payload(entry, request=None, *, include_ml=False, inc
         'is_restricted_archive': False,
         'archive_locked': False,
         'is_missing': False,
-        'can_override': False,
+        'can_override': True,
+        'feedback': entry.metadata.get('feedback', '') if isinstance(entry.metadata, dict) else '',
         'audit_trail': [],
     }
     payload.update(ml_fields_from(entry) if include_ml else empty_ml_fields())
@@ -126,6 +127,7 @@ def pit_entry_payload(entry, request=None, *, include_ml=False, include_audit_tr
         'archive_locked': False,
         'is_missing': False,
         'can_override': True,
+        'feedback': entry.metadata.get('feedback', '') if isinstance(entry.metadata, dict) else '',
         'audit_trail': [],
     }
     payload.update(ml_fields_from(entry) if include_ml else empty_ml_fields())
@@ -162,9 +164,27 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
                 is_restricted=True
             ).exists()
 
-    files = list(submission.files.all().order_by('uploaded_at'))
+    files = list(submission.files.all().order_by('-uploaded_at'))
+    if len(files) > 1:
+        latest = files[0]
+        for extra in files[1:]:
+            try:
+                if extra.file:
+                    extra.file.delete(save=False)
+            except Exception:
+                pass
+            extra.delete()
+        files = [latest]
+
     if not files:
         entry_id = f'pit-deliverable-{submission.id}' if is_pit else f'capstone-{submission.id}'
+        status_display = {
+            DeliverableSubmission.STATUS_ACCEPTED: 'Approved',
+            DeliverableSubmission.STATUS_REJECTED: 'Needs Revision',
+            DeliverableSubmission.STATUS_PENDING: 'Pending Review',
+        }.get(submission.status, (submission.status or 'Approved').title())
+        deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
+
         payload = {
             'id': entry_id,
             'source_id': submission.id,
@@ -185,15 +205,17 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'semester': team.semester.label if team and team.semester else '',
             'stage': submission.stage_label,
             'course_code': '',
-            'status': 'Post-Defense' if is_post else 'Pre-Defense',
+            'status': status_display,
             'submission_kind': kind,
             'deliverable_type': submission.deliverable_type,
+            'deliverable_type_label': deliverable_type_label,
             'is_restricted_archive': is_restricted_archive,
             'archive_locked': False,
             'is_missing': False,
             'uploaded_by': display_name(submission.uploaded_by) or 'System',
             'uploaded_at': submission.uploaded_at,
-            'can_override': False,
+            'can_override': True,
+            'feedback': submission.feedback or '',
             'audit_trail': [],
             'archive_note': '',
         }
@@ -209,6 +231,13 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
     payloads = []
     for f in files:
         entry_id = f'pit-deliverable-{submission.id}-{f.id}' if is_pit else f'capstone-{submission.id}-{f.id}'
+        status_display = {
+            DeliverableSubmission.STATUS_ACCEPTED: 'Approved',
+            DeliverableSubmission.STATUS_REJECTED: 'Needs Revision',
+            DeliverableSubmission.STATUS_PENDING: 'Pending Review',
+        }.get(submission.status, (submission.status or 'Approved').title())
+        deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
+
         payload = {
             'id': entry_id,
             'source_id': submission.id,
@@ -229,15 +258,17 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
             'semester': team.semester.label if team and team.semester else '',
             'stage': submission.stage_label,
             'course_code': '',
-            'status': 'Post-Defense' if is_post else 'Pre-Defense',
+            'status': status_display,
             'submission_kind': kind,
             'deliverable_type': submission.deliverable_type,
+            'deliverable_type_label': deliverable_type_label,
             'is_restricted_archive': is_restricted_archive,
             'archive_locked': False,
             'is_missing': False,
             'uploaded_by': display_name(submission.uploaded_by) or 'System',
             'uploaded_at': f.uploaded_at,
-            'can_override': False,
+            'can_override': True,
+            'feedback': submission.feedback or '',
             'audit_trail': [],
             'archive_note': '',
         }

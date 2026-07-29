@@ -1,16 +1,17 @@
-import 'package:defensys/services/repository_audit_provider.dart';
+import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-class AuditSummaryCards extends StatelessWidget {
-  final RepositoryAuditState state;
+typedef AuditSummaryCards = ProjectArchiveSummaryCards;
+
+class ProjectArchiveSummaryCards extends StatelessWidget {
+  final ProjectArchiveState state;
   final VoidCallback? onExportCsv;
   final ValueChanged<String?> onCopySuggestedFileName;
   final Widget? typeTabs;
   final Widget? deliverableFilterChip;
 
-  const AuditSummaryCards({
+  const ProjectArchiveSummaryCards({
     super.key,
     required this.state,
     required this.onExportCsv,
@@ -88,7 +89,7 @@ class AuditSummaryCards extends StatelessWidget {
       children: [
         Text(
           title,
-          style: GoogleFonts.plusJakartaSans(
+          style: const TextStyle(
             color: AppColors.maroon,
             fontSize: 16,
             fontWeight: FontWeight.w800,
@@ -97,7 +98,7 @@ class AuditSummaryCards extends StatelessWidget {
         const SizedBox(height: 4),
         Text(
           subtitle,
-          style: GoogleFonts.plusJakartaSans(
+          style: const TextStyle(
             color: AppColors.textSecondary,
             fontSize: 12.5,
             fontWeight: FontWeight.w500,
@@ -142,7 +143,7 @@ class AuditSummaryCards extends StatelessWidget {
                   value.toString(),
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.plusJakartaSans(
+                  style: TextStyle(
                     color: valueColor,
                     fontSize: 24,
                     fontWeight: FontWeight.w800,
@@ -154,8 +155,8 @@ class AuditSummaryCards extends StatelessWidget {
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.plusJakartaSans(
-                    color: const Color(0xFF5D6678),
+                  style: const TextStyle(
+                    color: Color(0xFF5D6678),
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                   ),
@@ -190,7 +191,7 @@ class AuditSummaryCards extends StatelessWidget {
             children: [
               Text(
                 'Project Archive',
-                style: GoogleFonts.plusJakartaSans(
+                style: const TextStyle(
                   color: AppColors.maroon,
                   fontSize: 21,
                   fontWeight: FontWeight.w800,
@@ -200,7 +201,7 @@ class AuditSummaryCards extends StatelessWidget {
               const SizedBox(height: 8),
               Text(
                 _headerSubtitle(state),
-                style: GoogleFonts.plusJakartaSans(
+                style: const TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,
                   fontWeight: FontWeight.w500,

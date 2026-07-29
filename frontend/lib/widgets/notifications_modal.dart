@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/notifications_provider.dart';
-import '../theme/app_theme.dart';
+import '../theme/defensys_tokens.dart';
 
 class NotificationsModal extends ConsumerStatefulWidget {
   const NotificationsModal({super.key});
@@ -47,9 +47,10 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 450),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      decoration: BoxDecoration(
+        color: DefensysTokens.surface,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(DefensysTokens.radiusXl)),
+        border: Border.all(color: DefensysTokens.border, width: 1.0),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -60,34 +61,38 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
             child: Row(
               children: [
-                const Icon(
-                  Icons.notifications_rounded,
-                  color: AppColors.maroon,
-                  size: 24,
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  'Notifications',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w900,
-                    color: AppColors.textPrimary,
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  ),
+                  child: const Icon(
+                    Icons.notifications_rounded,
+                    color: DefensysTokens.maroon,
+                    size: 20,
                   ),
                 ),
+                const SizedBox(width: 12),
+                Text(
+                  'Notifications',
+                  style: DefensysTokens.dialogTitle,
+                ),
                 if (state.unreadCount > 0) ...[
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: AppColors.maroon,
-                      borderRadius: BorderRadius.circular(10),
+                      color: DefensysTokens.maroon,
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                     ),
                     child: Text(
                       '${state.unreadCount} new',
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 11,
-                        fontWeight: FontWeight.bold,
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: 0.2,
                       ),
                     ),
                   ),
@@ -101,22 +106,22 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
                     icon: const Icon(Icons.done_all_rounded, size: 16),
                     label: const Text('Mark all read'),
                     style: TextButton.styleFrom(
-                      foregroundColor: AppColors.maroon,
+                      foregroundColor: DefensysTokens.maroon,
                       textStyle: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
                 IconButton(
-                  icon: const Icon(Icons.close_rounded),
+                  icon: const Icon(Icons.close_rounded, size: 20),
                   onPressed: () => Navigator.pop(context),
                   splashRadius: 20,
                 ),
               ],
             ),
           ),
-          const Divider(height: 1),
+          const Divider(height: 1.0),
 
           // Notification List
           Flexible(
@@ -124,18 +129,18 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
               constraints: const BoxConstraints(maxHeight: 500),
               child: state.isLoading
                   ? const Padding(
-                      padding: EdgeInsets.all(24),
+                      padding: EdgeInsets.all(32),
                       child: Center(
-                        child: CircularProgressIndicator(color: AppColors.maroon),
+                        child: CircularProgressIndicator(color: DefensysTokens.maroon),
                       ),
                     )
                   : state.notifications.isEmpty
                       ? _buildEmptyState()
                       : ListView.separated(
                           shrinkWrap: true,
-                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          padding: const EdgeInsets.symmetric(vertical: 4),
                           itemCount: state.notifications.length,
-                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          separatorBuilder: (_, __) => const Divider(height: 1.0),
                           itemBuilder: (context, index) {
                             final notification = state.notifications[index];
                             final id = notification['id'] as int;
@@ -156,19 +161,19 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
                                 }
                               },
                               child: Container(
-                                color: isRead ? Colors.transparent : const Color(0xFFFDF2F2),
+                                color: isRead ? Colors.transparent : DefensysTokens.dangerBg.withValues(alpha: 0.5),
                                 padding: const EdgeInsets.all(16),
                                 child: Row(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     // Status marker
                                     Padding(
-                                      padding: const EdgeInsets.only(top: 4),
+                                      padding: const EdgeInsets.only(top: 5),
                                       child: Container(
-                                        width: 8,
-                                        height: 8,
+                                        width: 7,
+                                        height: 7,
                                         decoration: BoxDecoration(
-                                          color: isRead ? Colors.transparent : AppColors.maroon,
+                                          color: isRead ? Colors.transparent : DefensysTokens.maroon,
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -184,22 +189,19 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
                                               Expanded(
                                                 child: Text(
                                                   notification['title']?.toString() ?? '',
-                                                  style: TextStyle(
+                                                  style: DefensysTokens.body.copyWith(
                                                     fontWeight: isRead
-                                                        ? FontWeight.w600
-                                                        : FontWeight.w800,
-                                                    fontSize: 14.5,
-                                                    color: AppColors.textPrimary,
+                                                        ? FontWeight.w500
+                                                        : FontWeight.w700,
+                                                    fontSize: 14,
                                                   ),
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
                                               Text(
                                                 _formatTime(notification['created_at']?.toString()),
-                                                style: const TextStyle(
-                                                  fontSize: 12,
-                                                  color: AppColors.textSecondary,
-                                                  fontWeight: FontWeight.w500,
+                                                style: DefensysTokens.caption.copyWith(
+                                                  fontSize: 11.5,
                                                 ),
                                               ),
                                             ],
@@ -211,10 +213,9 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
                                             overflow: isExpanded
                                                 ? TextOverflow.visible
                                                 : TextOverflow.ellipsis,
-                                            style: const TextStyle(
+                                            style: DefensysTokens.subtitle.copyWith(
                                               fontSize: 13,
                                               height: 1.45,
-                                              color: AppColors.textSecondary,
                                             ),
                                           ),
                                           if (isExpanded) ...[
@@ -224,10 +225,9 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
                                               children: [
                                                 Text(
                                                   'From: ${notification['sender_name'] ?? 'System'}',
-                                                  style: const TextStyle(
+                                                  style: DefensysTokens.caption.copyWith(
                                                     fontSize: 11.5,
                                                     fontStyle: FontStyle.italic,
-                                                    color: AppColors.textSecondary,
                                                   ),
                                                 ),
                                               ],
@@ -258,33 +258,29 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
         children: [
           Container(
             padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF9FAFB),
-              shape: BoxShape.circle,
+            decoration: BoxDecoration(
+              color: DefensysTokens.neutralBg,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
+              border: Border.all(color: DefensysTokens.border, width: 1.0),
             ),
-            child: Icon(
+            child: const Icon(
               Icons.notifications_none_rounded,
-              color: Colors.grey.shade400,
-              size: 40,
+              color: DefensysTokens.steelGrey,
+              size: 28,
             ),
           ),
           const SizedBox(height: 16),
-          const Text(
+          Text(
             "All caught up!",
-            style: TextStyle(
-              fontWeight: FontWeight.bold,
-              fontSize: 16,
-              color: AppColors.textPrimary,
+            style: DefensysTokens.sectionTitle.copyWith(
+              fontSize: 15,
             ),
           ),
           const SizedBox(height: 6),
           Text(
             "You don't have any notifications at the moment.",
             textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 13.5,
-              color: Colors.grey.shade500,
-            ),
+            style: DefensysTokens.subtitle,
           ),
         ],
       ),

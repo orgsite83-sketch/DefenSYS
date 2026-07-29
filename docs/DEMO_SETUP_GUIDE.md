@@ -1,7 +1,8 @@
 # DefenSYS Demo Guide
 
 > **Local demo only** — not a production install guide. See [DEPLOYMENT.md](DEPLOYMENT.md) for go-live.  
-> **After you change code:** [UPDATE_GUIDE.md](UPDATE_GUIDE.md) (commands for backend, web, and mobile).
+> **After you change code:** [UPDATE_GUIDE.md](UPDATE_GUIDE.md) (commands for backend, web, and mobile).  
+> **Wi-Fi / IP Address Change Guide:** [WIFI_IP_CONFIG_GUIDE.md](WIFI_IP_CONFIG_GUIDE.md) (configuring IP hosts for backend, mobile, and web).
 
 ---
 

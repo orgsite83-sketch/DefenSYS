@@ -49,77 +49,118 @@ class MinutesDetailView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request, schedule_id):
-        schedule = get_object_or_404(DefenseSchedule, pk=schedule_id)
-        
+        # Fast path: Try fetching existing DefenseMinutes in a single query with all pre-loaded relations
+        minutes = (
+            DefenseMinutes.objects
+            .select_related(
+                'schedule', 'schedule__team', 'schedule__team__adviser',
+                'schedule__defense_stage', 'schedule__documenter',
+                'documenter_signed_by', 'adviser_signed_by', 'chairman_signed_by'
+            )
+            .prefetch_related(
+                'panelist_comments', 'schedule__panel_assignments',
+                'schedule__panel_assignments__panelist'
+            )
+            .filter(schedule_id=schedule_id)
+            .first()
+        )
+
+        if minutes:
+            schedule = minutes.schedule
+            if schedule.scope != DefenseSchedule.SCOPE_CAPSTONE:
+                return Response(
+                    {"detail": "Minutes are only available for Capstone defense schedules."},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+            if not has_minutes_view_permission(request.user, schedule):
+                return Response(
+                    {"detail": "You do not have permission to view the minutes for this defense schedule."},
+                    status=status.HTTP_403_FORBIDDEN
+                )
+            serializer = DefenseMinutesSerializer(minutes)
+            return Response(serializer.data)
+
+        # Fallback path: Minutes do not exist yet for this schedule
+        schedule = get_object_or_404(
+            DefenseSchedule.objects.select_related('team', 'team__adviser', 'defense_stage', 'documenter'),
+            pk=schedule_id,
+        )
+
         if schedule.scope != DefenseSchedule.SCOPE_CAPSTONE:
             return Response(
                 {"detail": "Minutes are only available for Capstone defense schedules."},
                 status=status.HTTP_400_BAD_REQUEST
             )
-            
+
         if not has_minutes_view_permission(request.user, schedule):
             return Response(
                 {"detail": "You do not have permission to view the minutes for this defense schedule."},
                 status=status.HTTP_403_FORBIDDEN
             )
-            
-        # Get or create the defense minutes
-        minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
-        if not minutes:
-            if schedule.status == DefenseSchedule.STATUS_CANCELLED:
-                return Response(
-                    {"detail": "No minutes exist for this cancelled defense schedule."},
-                    status=status.HTTP_404_NOT_FOUND
+
+        if schedule.status == DefenseSchedule.STATUS_CANCELLED:
+            return Response(
+                {"detail": "No minutes exist for this cancelled defense schedule."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+
+        with transaction.atomic():
+            # Re-check inside transaction to avoid race condition
+            minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
+            if not minutes:
+                team_name = schedule.team.name if schedule.team else ''
+                project_title = schedule.team.project_title if schedule.team else ''
+                adviser_name = schedule.team.adviser.get_full_name() if (schedule.team and schedule.team.adviser) else ''
+                defense_stage_label = schedule.defense_stage.label if schedule.defense_stage else ''
+                documenter_name = schedule.documenter.get_full_name() if schedule.documenter else ''
+
+                minutes = DefenseMinutes.objects.create(
+                    schedule=schedule,
+                    team_name=team_name,
+                    project_title=project_title,
+                    adviser_name=adviser_name,
+                    defense_stage_label=defense_stage_label,
+                    defense_date=schedule.scheduled_date,
+                    defense_time=schedule.start_time,
+                    room=schedule.room,
+                    documenter_name=documenter_name,
+                    status=DefenseMinutes.STATUS_DRAFT,
                 )
-            with transaction.atomic():
-                # Re-check inside transaction to avoid race condition
-                minutes = DefenseMinutes.objects.filter(schedule=schedule).first()
-                if not minutes:
-                    team_name = schedule.team.name if schedule.team else ''
-                    project_title = schedule.team.project_title if schedule.team else ''
-                    adviser_name = schedule.team.adviser.get_full_name() if (schedule.team and schedule.team.adviser) else ''
-                    defense_stage_label = schedule.defense_stage.label if schedule.defense_stage else ''
-                    documenter_name = schedule.documenter.get_full_name() if schedule.documenter else ''
-                    
-                    minutes = DefenseMinutes.objects.create(
-                        schedule=schedule,
-                        team_name=team_name,
-                        project_title=project_title,
-                        adviser_name=adviser_name,
-                        defense_stage_label=defense_stage_label,
-                        defense_date=schedule.scheduled_date,
-                        defense_time=schedule.start_time,
-                        room=schedule.room,
-                        documenter_name=documenter_name,
-                        status=DefenseMinutes.STATUS_DRAFT,
-                    )
-                    
-                    # Create comments for panelists
-                    panelists = list(schedule.panel_assignments.select_related('panelist').all())
-                    panelists.sort(key=lambda p: (not p.is_chair, p.order, p.panelist.username))
-                    
-                    comments_to_create = []
-                    member_count = 1
-                    for idx, sp in enumerate(panelists):
-                        if sp.is_chair:
-                            role_label = 'Chair'
-                        else:
-                            role_label = f'Panel Member {member_count}'
-                            member_count += 1
-                            
-                        comments_to_create.append(MinutesPanelistComment(
-                            minutes=minutes,
-                            panelist=sp.panelist,
-                            panelist_name_snapshot=sp.panelist.get_full_name(),
-                            panelist_role_snapshot=role_label,
-                            comments='',
-                            display_order=idx
-                        ))
-                    
-                    MinutesPanelistComment.objects.bulk_create(comments_to_create)
-                    
-        # Refresh and serialize
-        minutes = DefenseMinutes.objects.prefetch_related('panelist_comments').get(pk=minutes.pk)
+
+                # Create comments for panelists
+                panelists = list(schedule.panel_assignments.select_related('panelist').all())
+                panelists.sort(key=lambda p: (not p.is_chair, p.order if p.order is not None else 0, p.panelist.username if p.panelist else ''))
+
+                comments_to_create = []
+                member_count = 1
+                for idx, sp in enumerate(panelists):
+                    if sp.is_chair:
+                        role_label = 'Chair'
+                    else:
+                        role_label = f'Panel Member {member_count}'
+                        member_count += 1
+
+                    comments_to_create.append(MinutesPanelistComment(
+                        minutes=minutes,
+                        panelist=sp.panelist,
+                        panelist_name_snapshot=sp.panelist.get_full_name(),
+                        panelist_role_snapshot=role_label,
+                        comments='',
+                        display_order=idx
+                    ))
+
+                MinutesPanelistComment.objects.bulk_create(comments_to_create)
+
+        # Refresh and serialize newly created minutes
+        minutes = (
+            DefenseMinutes.objects
+            .select_related('schedule', 'schedule__team', 'schedule__team__adviser',
+                            'schedule__defense_stage', 'schedule__documenter',
+                            'documenter_signed_by', 'adviser_signed_by', 'chairman_signed_by')
+            .prefetch_related('panelist_comments', 'schedule__panel_assignments',
+                              'schedule__panel_assignments__panelist')
+            .get(pk=minutes.pk)
+        )
         serializer = DefenseMinutesSerializer(minutes)
         return Response(serializer.data)
 

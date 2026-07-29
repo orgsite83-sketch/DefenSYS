@@ -676,6 +676,21 @@ def _is_pit_lead_only(user):
     return is_pit_lead_only(user)
 
 
+def _is_pit_event_in_user_scope(config, label, user):
+    if not _is_pit_lead_only(user):
+        return True
+    pit_lead_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+    if not pit_lead_year:
+        return False
+    from repository.project_archive.services import pit_event_matches_year_level
+    if pit_event_matches_year_level(label, pit_lead_year):
+        return True
+    semester = getattr(config, 'semester', None)
+    if config and semester:
+        return _grades_for_group(semester, TeamGrade.SCOPE_PIT, label, config=config, year_level=pit_lead_year).exists()
+    return False
+
+
 def grade_queryset_for_user(user):
     from authentication_access_control.scopes import grade_records_for
 
@@ -1581,9 +1596,14 @@ def build_group_settings_map(grades_queryset, semester):
         if key in result:
             return
         if scope == TeamGrade.SCOPE_PIT:
-            result[key] = _pit_group_settings(semester, label, pit_event_config=pit_event_config)
+            item = _pit_group_settings(semester, label, pit_event_config=pit_event_config)
+            cfg = pit_event_config
         else:
-            result[key] = _capstone_group_settings(semester, label, defense_stage=defense_stage)
+            item = _capstone_group_settings(semester, label, defense_stage=defense_stage)
+            cfg = defense_stage
+        counts = grading_readiness_counts_for_group(semester, scope, label, config=cfg)
+        item.update(counts)
+        result[key] = item
 
     for scope, stage_label, defense_stage_id, pit_event_config_id in grades_queryset.values_list(
         'scope',
@@ -1658,12 +1678,19 @@ def _empty_auto_finalize_result():
 def peer_required_for_grade(grade, semester, scope, config):
     from .peer_eval import peer_submission_count
 
+    peer_w = getattr(config, 'peer_weight', None)
+    if peer_w is None:
+        peer_w = getattr(grade, 'peer_weight', 20)
+
+    if peer_w <= 0:
+        return False
+
     if scope == TeamGrade.SCOPE_PIT:
-        if getattr(config, 'peer_grading_enabled', False):
-            return True
-        return peer_submission_count(grade) > 0
+        return True
+
     if getattr(semester, 'capstone_peer_evaluation_enabled', True):
         return True
+
     return peer_submission_count(grade) > 0
 
 
@@ -1946,12 +1973,14 @@ class StageCompletionService:
 
     @classmethod
     def complete_group(cls, *, semester, scope, stage_label, config, user=None, peer_grading_enabled=None):
-        if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
-            raise PermissionDenied('PIT leads can only complete PIT events.')
+        label = (stage_label or '').strip()
+        if _is_pit_lead_only(user):
+            if scope != TeamGrade.SCOPE_PIT:
+                raise PermissionDenied('PIT leads can only complete PIT events.')
+            if not _is_pit_event_in_user_scope(config, label, user):
+                raise PermissionDenied('PIT leads can only complete PIT events for their assigned year level.')
         if peer_grading_enabled is True:
             raise ValidationError({'peer_grading_enabled': 'Peer grading cannot be enabled while the event is officially complete.'})
-
-        label = (stage_label or '').strip()
         year_level = cls._pit_year_scope(user) if scope == TeamGrade.SCOPE_PIT else None
 
         with transaction.atomic():
@@ -2050,11 +2079,11 @@ def update_group_settings(
     label = (stage_label or '').strip()
     if not label:
         raise ValidationError({'stage_label': 'Stage or event label is required.'})
-    if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
-        raise PermissionDenied('PIT leads can only manage PIT event settings.')
-
     update_fields = []
     if scope == TeamGrade.SCOPE_PIT:
+        if _is_pit_lead_only(user) and scope != TeamGrade.SCOPE_PIT:
+            raise PermissionDenied('PIT leads can only manage PIT event settings.')
+
         from defense.scheduler.models import PitEventGradingConfig
 
         config = PitEventGradingConfig.objects.filter(
@@ -2063,6 +2092,8 @@ def update_group_settings(
         ).first()
         if config is None:
             raise ValidationError({'stage_label': f'No PIT event configuration found for "{label}".'})
+        if _is_pit_lead_only(user) and not _is_pit_event_in_user_scope(config, label, user):
+            raise PermissionDenied('PIT leads can only manage PIT event settings for their assigned year level.')
     else:
         from defense.stages.models import DefenseStage, StageGradingConfig
 

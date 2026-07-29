@@ -1,0 +1,501 @@
+  Widget _buildStepOne(DefenseSchedulerState state) {
+    final stages = state.defenseStages;
+    final stageId = stages.any((stage) => _asInt(stage['id']) == _stageId)
+        ? _stageId
+        : null;
+
+    final rubricItems = _rubricsForContext(state);
+    final rubricId =
+        rubricItems.any((rubric) => _asInt(rubric['id']) == _rubricId)
+        ? _rubricId
+        : null;
+
+    final selectedPanelists = state.panelists.where((panelist) {
+      final id = _asInt(panelist['id']);
+      return id != null && _selectedPanelistIds.contains(id);
+    }).toList();
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final narrow = constraints.maxWidth < 1120;
+
+        final left = _schedulerCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Expanded(
+                    child: Row(
+                      children: [
+                        CircleAvatar(
+                          radius: 12,
+                          backgroundColor: AppColors.maroon,
+                          child: Text(
+                            '1',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        SizedBox(width: 10),
+                        Text(
+                          'Step 1: Set Up Scheduling Run',
+                          style: TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w900,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEECEC),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: const Text(
+                      'Required First',
+                      style: TextStyle(
+                        color: Color(0xFFEF4444),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              const Divider(height: 1),
+              const SizedBox(height: 20),
+              Text(
+                _scope == 'pit'
+                    ? 'Choose the PIT event, rubrics, date, room, start time, and slot duration for this run. Then generate the plan to prepare consecutive slots.'
+                    : 'Choose the shared stage, rubric, date, room, start time, and slot duration for this run. Then generate the plan to prepare consecutive slots.',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              const SizedBox(height: 20),
+              if (_scope == 'capstone') ...[
+                _labeledField(
+                  'Stage *',
+                  DropdownButtonFormField<int?>(
+                    initialValue: stageId,
+                    decoration: _schedulerInputDecoration(),
+                    items: stages
+                        .map(
+                          (stage) => DropdownMenuItem<int?>(
+                            value: _asInt(stage['id']),
+                            child: Text(stage['label']?.toString() ?? ''),
+                          ),
+                        )
+                        .toList(),
+                    onChanged: (value) async {
+                      setState(() {
+                        _scope = 'capstone';
+                        _stageId = value;
+                        _rubricId = null;
+                        _adviserRubricId = null;
+                        _capstonePeerRubricId = null;
+                        _planSlots = [];
+                        _showFinalPreview = false;
+                      });
+                      await _prefillCapstoneStageRubrics();
+                    },
+                  ),
+                ),
+                _buildStageWarnings(state),
+              ] else if (_scope == 'pit') ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFE4E7EC)),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'PIT event setup (this run)',
+                        style: TextStyle(
+                          color: Color(0xFF344054),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      _labeledField(
+                        'Event name *',
+                        DropdownButtonFormField<String>(
+                          value: state.pitEvents.any((e) => e['event_name'] == _eventController.text)
+                              ? _eventController.text
+                              : null,
+                          decoration: _schedulerInputDecoration(
+                            hintText: 'Select PIT event',
+                          ),
+                          items: state.pitEvents.map((e) {
+                            final name = e['event_name']?.toString() ?? '';
+                            return DropdownMenuItem<String>(
+                              value: name,
+                              child: Text(name),
+                            );
+                          }).toList(),
+                          onChanged: (val) {
+                            if (val != null) {
+                              _eventController.text = val;
+                              _prefillPitEventConfig();
+                              setState(() {});
+                            }
+                          },
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              const SizedBox(height: 18),
+              Row(
+                children: [
+                  Expanded(
+                    child: _labeledField(
+                      'Date *',
+                      _scheduleDateField(controller: _dateController),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _labeledField(
+                      'Starting Time *',
+                      _scheduleTimeField(controller: _timeController),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: _labeledField(
+                      'Slot Duration (mins) *',
+                      TextField(
+                        controller: _durationController,
+                        keyboardType: TextInputType.number,
+                        decoration: _schedulerInputDecoration(),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              _labeledField(
+                'Room / Venue *',
+                TextField(
+                  controller: _roomController,
+                  decoration: _schedulerInputDecoration(
+                    hintText: 'Enter room or venue',
+                  ),
+                ),
+              ),
+              if (_scope == 'capstone' || _scope == 'pit') ...[
+                const SizedBox(height: 20),
+                Container(
+                  key: ValueKey('stage-info-$_scope-${_scope == 'capstone' ? _stageId : _eventController.text.trim()}'),
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 22,
+                    vertical: 14,
+                  ),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF9FAFB),
+                    border: Border(
+                      top: BorderSide(color: Color(0xFFE5E7EB)),
+                      bottom: BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                  ),
+                  child: Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      _softBadge(
+                        _scope == 'capstone'
+                            ? 'Stage: ${_stageLabel(state)}'
+                            : 'Event: ${_eventController.text.trim().isEmpty ? "None" : _eventController.text.trim()}',
+                        const Color(0xFFDCFCE7),
+                        const Color(0xFF166534),
+                      ),
+                      _softBadge(
+                        'Ready Teams: ${_readyTeamsCount(state)}',
+                        _readyTeamsCount(state) > 0
+                            ? const Color(0xFFDCFCE7)
+                            : const Color(0xFFFEF3C7),
+                        _readyTeamsCount(state) > 0
+                            ? const Color(0xFF166534)
+                            : const Color(0xFFB45309),
+                      ),
+                      _softBadge(
+                        'Blocked: 0',
+                        const Color(0xFFFEF3C7),
+                        const Color(0xFFB45309),
+                      ),
+                      _softBadge(
+                        'Already Scheduled: ${_count(state, 'scheduled')}',
+                        const Color(0xFFDBEAFE),
+                        const Color(0xFF1D4ED8),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 18),
+              ] else
+                const SizedBox(height: 20),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Step 1 Action',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 6),
+                        Text(
+                          'Generate the schedule plan after completing the run setup and panel selection.\nThis unlocks the team review workspace.',
+                          style: TextStyle(
+                            color: AppColors.textSecondary,
+                            fontSize: 13,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  ElevatedButton.icon(
+                    onPressed:
+                        state.isSaving || !_canScheduleCurrentScope(state)
+                        ? null
+                        : _generatePlan,
+                    icon: const Icon(Icons.bolt_rounded, size: 18),
+                    label: const Text('Generate Schedule Plan'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.maroon,
+                      foregroundColor: AppColors.gold,
+                      elevation: 0,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 18,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      textStyle: const TextStyle(
+                        fontWeight: FontWeight.w900,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+
+        final right = _schedulerCard(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Row(
+                children: [
+                  Icon(
+                    Icons.groups_2_rounded,
+                    color: AppColors.maroon,
+                    size: 20,
+                  ),
+                  SizedBox(width: 10),
+                  Text(
+                    'Panel Set',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              const Text(
+                'Included in this scheduling run and applied to every generated row.',
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Container(
+                height: 44,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFD0D5DD)),
+                ),
+                alignment: Alignment.centerLeft,
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: const Row(
+                  children: [
+                    Icon(
+                      Icons.search_rounded,
+                      size: 18,
+                      color: AppColors.textSecondary,
+                    ),
+                    SizedBox(width: 10),
+                    Text(
+                      'Search panelists...',
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+              if (state.panelists.isEmpty)
+                const Text(
+                  'No faculty panelists found. Assign panelist roles in User Management first.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 13,
+                  ),
+                )
+              else
+                ...state.panelists.map((panelist) {
+                  final id = _asInt(panelist['id']);
+                  final selected =
+                      id != null && _selectedPanelistIds.contains(id);
+
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 10),
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(10),
+                      onTap: id == null
+                          ? null
+                          : () {
+                              setState(() {
+                                if (selected) {
+                                  _selectedPanelistIds.remove(id);
+                                } else {
+                                  _selectedPanelistIds.add(id);
+                                }
+                                _planSlots = [];
+                                _showFinalPreview = false;
+                              });
+                            },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: selected
+                              ? const Color(0xFFFEF2F2)
+                              : Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: selected
+                                ? AppColors.maroon
+                                : const Color(0xFFD0D5DD),
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Checkbox(
+                              value: selected,
+                              activeColor: AppColors.maroon,
+                              onChanged: id == null
+                                  ? null
+                                  : (value) {
+                                      setState(() {
+                                        if (value == true) {
+                                          _selectedPanelistIds.add(id);
+                                        } else {
+                                          _selectedPanelistIds.remove(id);
+                                        }
+                                        _planSlots = [];
+                                        _showFinalPreview = false;
+                                      });
+                                    },
+                            ),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    panelist['name']?.toString() ?? '',
+                                    style: const TextStyle(
+                                      color: AppColors.textPrimary,
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.w900,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    '${panelist['username'] ?? ''} · Panelist',
+                                    style: const TextStyle(
+                                      color: AppColors.maroon,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              if (selectedPanelists.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                const Text(
+                  'The selected panel is applied to every generated row in this batch. Row-level validation will still catch adviser or overlap conflicts for specific teams.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 12.5,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        );
+
+        if (narrow) {
+          return Column(children: [left, const SizedBox(height: 18), right]);
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(flex: 5, child: left),
+            const SizedBox(width: 18),
+            Expanded(flex: 1, child: right),
+          ],
+        );
+      },
+    );
+  }

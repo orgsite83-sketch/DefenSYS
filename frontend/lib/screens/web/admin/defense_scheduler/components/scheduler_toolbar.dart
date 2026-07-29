@@ -150,7 +150,7 @@ class SchedulerStepProgress extends StatelessWidget {
           Expanded(
             child: _stepProgressTile(
               number: 1,
-              title: 'Set Up Scheduling Run',
+              title: 'Set Up Defense Schedule',
               subtitle: 'Choose the shared inputs for this batch.',
               isActive: currentStep == 1,
               isDone: currentStep > 1,

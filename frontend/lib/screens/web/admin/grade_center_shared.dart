@@ -453,7 +453,7 @@ Color gradeScopeAccentColor(String scope) {
   return scope == 'pit' ? const Color(0xFF2563EB) : DefensysUi.primaryMaroon;
 }
 
-/// KPI stat card aligned with Rubric Engine evaluation cards.
+/// KPI stat card aligned with Rubrics evaluation cards.
 Widget gradeCenterKpiStatCard({
   required String title,
   required String value,

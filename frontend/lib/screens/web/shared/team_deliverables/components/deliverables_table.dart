@@ -140,6 +140,41 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  String _effectiveSelectedStage(Map<String, dynamic> team) {
+    final teamId = parseAsInt(team['id']);
+    if (_cardSelectedStages.containsKey(teamId)) {
+      return _cardSelectedStages[teamId]!;
+    }
+
+    final stages = _stageList(team);
+    final currentStage = team['current_stage']?.toString();
+    if (currentStage != null &&
+        currentStage.isNotEmpty &&
+        stages.any((s) => s['stage_label']?.toString() == currentStage)) {
+      return currentStage;
+    }
+
+    final backendSelected = team['selected_stage'] is Map
+        ? team['selected_stage']['stage_label']?.toString()
+        : null;
+    if (backendSelected != null &&
+        backendSelected.isNotEmpty &&
+        stages.any((s) => s['stage_label']?.toString() == backendSelected)) {
+      return backendSelected;
+    }
+
+    if (widget.state.selectedStage.isNotEmpty &&
+        stages.any((s) => s['stage_label']?.toString() == widget.state.selectedStage)) {
+      return widget.state.selectedStage;
+    }
+
+    if (stages.isNotEmpty) {
+      return stages.first['stage_label']?.toString() ?? '';
+    }
+
+    return widget.state.selectedStage;
+  }
+
   List<Map<String, dynamic>> _deliverables(
     Map<String, dynamic> stage,
     String key,
@@ -329,6 +364,63 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     });
   }
 
+  Future<void> _promptRejectDialog(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item,
+  ) async {
+    final feedbackCtrl = TextEditingController();
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('Reject Deliverable: ${item['label'] ?? item['id']}'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Please provide feedback explaining why this submission is being rejected so students can revise it:',
+              style: TextStyle(fontSize: 13),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: feedbackCtrl,
+              maxLines: 3,
+              decoration: const InputDecoration(
+                hintText: 'Enter rejection remarks...',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.danger,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Confirm Rejection'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await ref.read(capstoneDeliverablesProvider.notifier).reviewDeliverable(
+            teamId: parseAsInt(team['id']),
+            stageLabel: stageLabel,
+            deliverableId: item['id'].toString(),
+            status: 'rejected',
+            feedback: feedbackCtrl.text.trim(),
+          );
+    }
+  }
+
   Widget _buildFileRow(
     Map<String, dynamic> team,
     String stageLabel,
@@ -466,33 +558,45 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final submission = item['submission'] as Map?;
     final uploaded = item['uploaded'] == true || submission != null;
     final requiredItem = item['required'] == true;
-    final isFaculty = widget.isAdviser;
+    final isFaculty = widget.isAdviser || widget.state.scope == 'pit' || widget.state.scope == 'capstone';
     final isAdmin = widget.state.scope == 'admin';
 
     final stages = _stageList(team);
     final currentStageObj = _stagePayload(stages, stageLabel);
     final endorsed = currentStageObj['endorsed'] == true;
     final locked = item['locked'] == true;
+    final canFacultyReview = currentStageObj['can_faculty_review'] != false;
 
     final isWPR = item['id']?.toString() == 'WPR' ||
         item['label']?.toString().contains('Weekly Progress Report') == true;
+
+    final subStatus = submission?['status']?.toString();
+    final feedback = submission?['feedback']?.toString();
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: uploaded
-            ? Colors.green.withValues(alpha: 0.05)
-            : (requiredItem
-                ? Colors.red.withValues(alpha: 0.03)
-                : const Color(0xFFF8FAFC)),
+        color: subStatus == 'rejected'
+            ? Colors.red.withValues(alpha: 0.04)
+            : (subStatus == 'accepted'
+                ? Colors.green.withValues(alpha: 0.05)
+                : (uploaded
+                    ? Colors.orange.withValues(alpha: 0.04)
+                    : (requiredItem
+                        ? Colors.red.withValues(alpha: 0.03)
+                        : const Color(0xFFF8FAFC)))),
         borderRadius: BorderRadius.circular(10),
         border: Border.all(
-          color: uploaded
-              ? Colors.green.withValues(alpha: 0.2)
-              : (requiredItem
-                  ? Colors.red.withValues(alpha: 0.2)
-                  : const Color(0xFFE2E8F0)),
+          color: subStatus == 'rejected'
+              ? Colors.red.withValues(alpha: 0.3)
+              : (subStatus == 'accepted'
+                  ? Colors.green.withValues(alpha: 0.2)
+                  : (uploaded
+                      ? Colors.orange.withValues(alpha: 0.3)
+                      : (requiredItem
+                          ? Colors.red.withValues(alpha: 0.2)
+                          : const Color(0xFFE2E8F0)))),
         ),
       ),
       child: Column(
@@ -501,8 +605,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           Row(
             children: [
               Icon(
-                uploaded ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
-                color: uploaded ? AppColors.success : (requiredItem ? AppColors.danger : AppColors.textSecondary),
+                subStatus == 'accepted'
+                    ? Icons.check_circle_rounded
+                    : (subStatus == 'rejected'
+                        ? Icons.cancel_rounded
+                        : (uploaded ? Icons.hourglass_empty_rounded : Icons.radio_button_unchecked)),
+                color: subStatus == 'accepted'
+                    ? AppColors.success
+                    : (subStatus == 'rejected'
+                        ? AppColors.danger
+                        : (uploaded
+                            ? AppColors.warning
+                            : (requiredItem ? AppColors.danger : AppColors.textSecondary))),
                 size: 20,
               ),
               const SizedBox(width: 10),
@@ -576,20 +690,203 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     visualDensity: VisualDensity.compact,
                   ),
                 ),
-              ] else if (!uploaded && (!isFaculty || isAdmin)) ...[
-                if (!locked)
-                  ElevatedButton.icon(
-                    onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
-                    icon: const Icon(Icons.upload_file, size: 14),
-                    label: const Text('Upload'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                      visualDensity: VisualDensity.compact,
-                      elevation: 0,
+              ] else if (!uploaded) ...[
+                if (!isFaculty || isAdmin)
+                  if (!locked)
+                    ElevatedButton.icon(
+                      onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
+                      icon: const Icon(Icons.upload_file, size: 14),
+                      label: const Text('Upload'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.maroon,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        visualDensity: VisualDensity.compact,
+                        elevation: 0,
+                      ),
+                    ),
+                if (isFaculty && !isAdmin)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: AppColors.warning.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.hourglass_empty_rounded, size: 12, color: AppColors.warning),
+                        SizedBox(width: 4),
+                        Text(
+                          'Awaiting student upload',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.warning,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
+              ] else if (uploaded && !isWPR) ...[
+                if (isFaculty && !isAdmin) ...[
+                  if (subStatus == 'accepted') ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.success.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.check_circle_rounded, size: 12, color: AppColors.success),
+                          SizedBox(width: 4),
+                          Text(
+                            'Accepted',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.success,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (canFacultyReview) ...[
+                      const SizedBox(width: 6),
+                      OutlinedButton.icon(
+                        onPressed: widget.state.isSaving
+                            ? null
+                            : () => _promptRejectDialog(team, stageLabel, item),
+                        icon: const Icon(Icons.cancel_outlined, size: 14),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
+                  ] else if (subStatus == 'rejected') ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: AppColors.danger.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: AppColors.danger.withValues(alpha: 0.3)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.cancel_rounded, size: 12, color: AppColors.danger),
+                          SizedBox(width: 4),
+                          Text(
+                            'Rejected',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.danger,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    if (canFacultyReview) ...[
+                      const SizedBox(width: 6),
+                      ElevatedButton.icon(
+                        onPressed: widget.state.isSaving
+                            ? null
+                            : () async {
+                                await ref
+                                    .read(capstoneDeliverablesProvider.notifier)
+                                    .reviewDeliverable(
+                                      teamId: parseAsInt(team['id']),
+                                      stageLabel: stageLabel,
+                                      deliverableId: item['id'].toString(),
+                                      status: 'accepted',
+                                    );
+                              },
+                        icon: const Icon(Icons.check_circle_outline, size: 14),
+                        label: const Text('Accept'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ] else ...[
+                    if (canFacultyReview) ...[
+                      ElevatedButton.icon(
+                        onPressed: widget.state.isSaving
+                            ? null
+                            : () async {
+                                await ref
+                                    .read(capstoneDeliverablesProvider.notifier)
+                                    .reviewDeliverable(
+                                      teamId: parseAsInt(team['id']),
+                                      stageLabel: stageLabel,
+                                      deliverableId: item['id'].toString(),
+                                      status: 'accepted',
+                                    );
+                              },
+                        icon: const Icon(Icons.check_circle_outline, size: 14),
+                        label: const Text('Accept'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.success,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                          elevation: 0,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      OutlinedButton.icon(
+                        onPressed: widget.state.isSaving
+                            ? null
+                            : () => _promptRejectDialog(team, stageLabel, item),
+                        icon: const Icon(Icons.cancel_outlined, size: 14),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ] else ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: AppColors.textSecondary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: AppColors.textSecondary.withValues(alpha: 0.3)),
+                        ),
+                        child: const Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.lock_outline, size: 12, color: AppColors.textSecondary),
+                            SizedBox(width: 4),
+                            Text(
+                              'Locked (Defense Done)',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ],
               ],
             ],
           ),
@@ -605,6 +902,35 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               isAdmin,
               endorsed,
               setDialogState,
+            ),
+          ],
+          if (uploaded && subStatus == 'rejected' && feedback != null && feedback.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.danger.withValues(alpha: 0.05),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.danger.withValues(alpha: 0.2)),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.info_outline, size: 14, color: AppColors.danger),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Rejection Remarks: $feedback',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: AppColors.danger,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ],
@@ -702,91 +1028,114 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Widget _buildStageStatusBadge(Map<String, dynamic> stage) {
+  Map<String, dynamic> _resolveStageStatusBadge(Map<String, dynamic> stage) {
+    final statusDetail = stage['stage_status_detail']?.toString();
     final endorsed = stage['endorsed'] == true;
     final complete = stage['required_complete'] == true;
     final configured = stage['deliverables_configured'] == true;
 
-    if (endorsed) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.success.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: AppColors.success.withValues(alpha: 0.3)),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.verified, size: 12, color: AppColors.success),
-            SizedBox(width: 4),
-            Text(
-              'Endorsed',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: AppColors.success,
-              ),
-            ),
-          ],
-        ),
-      );
+    if (!configured) {
+      return {
+        'label': 'Not Configured',
+        'color': Colors.grey.shade600,
+        'bg': Colors.grey.shade100,
+        'border': Colors.grey.shade300,
+        'icon': Icons.settings_outlined,
+      };
+    }
+
+    if (statusDetail == 'passed') {
+      return {
+        'label': 'Passed',
+        'color': AppColors.success,
+        'bg': AppColors.success.withValues(alpha: 0.1),
+        'border': AppColors.success.withValues(alpha: 0.3),
+        'icon': Icons.check_circle_rounded,
+      };
+    }
+
+    if (statusDetail == 'pending_post_defense') {
+      return {
+        'label': 'Pending Post-Defense',
+        'color': const Color(0xFF7C3AED),
+        'bg': const Color(0xFF7C3AED).withValues(alpha: 0.1),
+        'border': const Color(0xFF7C3AED).withValues(alpha: 0.3),
+        'icon': Icons.assignment_late_rounded,
+      };
+    }
+
+    if (statusDetail == 'defense_ongoing') {
+      return {
+        'label': 'Defense Ongoing',
+        'color': const Color(0xFF2563EB),
+        'bg': const Color(0xFF2563EB).withValues(alpha: 0.1),
+        'border': const Color(0xFF2563EB).withValues(alpha: 0.3),
+        'icon': Icons.campaign_rounded,
+      };
+    }
+
+    if (statusDetail == 'defense_scheduled') {
+      return {
+        'label': 'Defense Scheduled',
+        'color': Colors.blue.shade700,
+        'bg': Colors.blue.withValues(alpha: 0.1),
+        'border': Colors.blue.withValues(alpha: 0.3),
+        'icon': Icons.event_rounded,
+      };
+    }
+
+    if (statusDetail == 'endorsed' || (endorsed && statusDetail == null)) {
+      return {
+        'label': 'Endorsed',
+        'color': AppColors.success,
+        'bg': AppColors.success.withValues(alpha: 0.1),
+        'border': AppColors.success.withValues(alpha: 0.3),
+        'icon': Icons.verified_rounded,
+      };
     }
 
     if (complete) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.blue.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(color: Colors.blue.withValues(alpha: 0.3)),
-        ),
-        child: const Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.check_circle_outline, size: 12, color: Colors.blue),
-            SizedBox(width: 4),
-            Text(
-              'Ready for Endorsement',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
-                color: Colors.blue,
-              ),
-            ),
-          ],
-        ),
-      );
+      return {
+        'label': 'Ready for Endorsement',
+        'color': Colors.blue,
+        'bg': Colors.blue.withValues(alpha: 0.1),
+        'border': Colors.blue.withValues(alpha: 0.3),
+        'icon': Icons.check_circle_outline,
+      };
     }
 
-    if (!configured) {
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: Colors.grey.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(20),
-        ),
-        child: const Text(
-          'Not Configured',
-          style: TextStyle(fontSize: 11, color: Colors.grey),
-        ),
-      );
-    }
+    return {
+      'label': 'Awaiting Endorsement',
+      'color': AppColors.warning,
+      'bg': AppColors.warning.withValues(alpha: 0.1),
+      'border': AppColors.warning.withValues(alpha: 0.3),
+      'icon': Icons.hourglass_top_rounded,
+    };
+  }
 
+  Widget _buildStageStatusBadge(Map<String, dynamic> stage) {
+    final badge = _resolveStageStatusBadge(stage);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
-        color: AppColors.warning.withValues(alpha: 0.1),
+        color: badge['bg'] as Color,
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.warning.withValues(alpha: 0.3)),
+        border: Border.all(color: badge['border'] as Color),
       ),
-      child: const Text(
-        'In Progress',
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.bold,
-          color: AppColors.warning,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(badge['icon'] as IconData, size: 12, color: badge['color'] as Color),
+          const SizedBox(width: 4),
+          Text(
+            badge['label'] as String,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.bold,
+              color: badge['color'] as Color,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -828,11 +1177,19 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Widget _buildExpandedSection(Map<String, dynamic> team) {
     final teamId = parseAsInt(team['id']);
     final stages = _stageList(team);
-    final selectedStage = _cardSelectedStages[teamId] ?? widget.state.selectedStage;
+    final selectedStage = _effectiveSelectedStage(team);
 
     final stage = _stagePayload(stages, selectedStage);
-    final pre = _deliverables(stage, 'pre');
-    final vault = _deliverables(stage, 'post');
+    var pre = _deliverables(stage, 'pre');
+    var vault = _deliverables(stage, 'post');
+    if (pre.isEmpty) {
+      final allDeliverables = _deliverables(stage, 'deliverables');
+      pre = allDeliverables.where((d) => d['type'] == 'pre').toList();
+    }
+    if (vault.isEmpty) {
+      final allDeliverables = _deliverables(stage, 'deliverables');
+      vault = allDeliverables.where((d) => d['type'] == 'post').toList();
+    }
 
     final configured = stage['deliverables_configured'] == true;
     final complete = stage['required_complete'] == true;
@@ -840,12 +1197,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final canEndorse = configured && complete && !endorsed;
 
     final activeTab = _cardActiveTabs[teamId] ?? 0;
-
-    final gradingState = ref.watch(adviserGradingProvider);
-    final gradeRecord = gradingState.grades.firstWhere(
-      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == selectedStage,
-      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
-    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -861,11 +1212,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
               _expandedTabButton(teamId, 0, '📁 Deliverables'),
               const SizedBox(width: 20),
               _expandedTabButton(teamId, 1, '📊 Grades & Rubric'),
-              const SizedBox(width: 20),
-              _expandedTabButton(teamId, 2, '👥 Team Roster'),
               if (widget.state.scope == 'capstone') ...[
                 const SizedBox(width: 20),
-                _expandedTabButton(teamId, 3, '📅 Weekly Reports'),
+                _expandedTabButton(teamId, 2, '📅 Weekly Reports'),
               ],
             ],
           ),
@@ -873,7 +1222,47 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         const SizedBox(height: 16),
 
         if (activeTab == 0) ...[
-          if (stages.isNotEmpty)
+          if (stages.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(32),
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: cardDecoration(),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.event_busy_outlined,
+                    size: 48,
+                    color: AppColors.textSecondary.withValues(alpha: 0.4),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    widget.state.scope == 'pit'
+                        ? 'No PIT events configured for ${team['year_level'] ?? 'this team'}.'
+                        : 'No defense stages configured.',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
+                      color: AppColors.textPrimary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    widget.state.scope == 'pit'
+                        ? 'Configure PIT events and deliverables in PIT Events Setup.'
+                        : 'Configure stages and deliverables in Defense Stages Setup.',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: AppColors.textSecondary,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          else
             Container(
               width: double.infinity,
               padding: const EdgeInsets.all(18),
@@ -896,16 +1285,96 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        'Defense Stage Overview',
-                        style: TextStyle(
-                          fontWeight: FontWeight.w900,
-                          fontSize: 12,
-                          color: AppColors.textSecondary,
-                          letterSpacing: 0.5,
-                        ),
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.touch_app_outlined,
+                            size: 15,
+                            color: AppColors.maroon,
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            widget.state.scope == 'pit' ? 'PIT Event Overview' : 'Defense Stage Overview',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                              color: AppColors.textSecondary,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(
+                              widget.state.scope == 'pit'
+                                  ? 'Click event to select view'
+                                  : 'Click stage to select view',
+                              style: const TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.textSecondary,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
-                      _buildStageStatusBadge(stage),
+                      Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (widget.state.scope == 'admin' && stage['is_defense_done'] == true) ...[
+                            OutlinedButton.icon(
+                              onPressed: widget.state.isSaving
+                                  ? null
+                                  : () async {
+                                      final success = await ref
+                                          .read(capstoneDeliverablesProvider.notifier)
+                                          .unlockDeliverables(
+                                            teamId: teamId,
+                                            stageLabel: selectedStage,
+                                          );
+                                      if (success && mounted) {
+                                        showInfoToast(
+                                          context,
+                                          stage['admin_unlocked'] == true
+                                              ? 'Deliverables relocked.'
+                                              : 'Deliverables unlocked for resubmission.',
+                                        );
+                                      }
+                                    },
+                              icon: Icon(
+                                stage['admin_unlocked'] == true
+                                    ? Icons.lock_outline
+                                    : Icons.lock_open_outlined,
+                                size: 14,
+                              ),
+                              label: Text(
+                                stage['admin_unlocked'] == true
+                                    ? 'Relock Deliverables'
+                                    : 'Unlock for Resubmission',
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: stage['admin_unlocked'] == true
+                                    ? AppColors.danger
+                                    : AppColors.maroon,
+                                side: BorderSide(
+                                  color: stage['admin_unlocked'] == true
+                                      ? AppColors.danger
+                                      : AppColors.maroon,
+                                ),
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                visualDensity: VisualDensity.compact,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                          ],
+                          _buildStageStatusBadge(stage),
+                        ],
+                      ),
                     ],
                   ),
                   const SizedBox(height: 12),
@@ -915,52 +1384,107 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     children: stages.map((item) {
                       final label = item['stage_label']?.toString() ?? '';
                       final active = label == selectedStage;
+                      final isCurrentConfig = label == team['current_stage']?.toString();
 
                       final isStageComplete = item['required_complete'] == true;
                       final isStageEndorsed = item['endorsed'] == true;
+                      final isPit = widget.state.scope == 'pit';
 
-                      Widget labelWidget = Text(label);
-                      if (isStageEndorsed) {
-                        labelWidget = Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.verified, size: 14, color: AppColors.success),
-                            const SizedBox(width: 4),
-                            Text(label),
-                          ],
-                        );
-                      } else if (isStageComplete) {
-                        labelWidget = Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle_outline, size: 14, color: Colors.blue),
-                            const SizedBox(width: 4),
-                            Text(label),
-                          ],
-                        );
-                      }
-
-                      return ChoiceChip(
-                        label: labelWidget,
-                        selected: active,
-                        selectedColor: AppColors.maroon.withValues(alpha: 0.15),
-                        backgroundColor: const Color(0xFFF1F5F9),
-                        labelStyle: TextStyle(
-                          fontWeight: active ? FontWeight.bold : FontWeight.normal,
-                          color: active ? AppColors.maroon : AppColors.textPrimary,
-                          fontSize: 12,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
-                          side: BorderSide(
-                            color: active ? AppColors.maroon : const Color(0xFFCBD5E1),
+                      return Tooltip(
+                        message: active
+                            ? '$label (Currently active ${isPit ? 'event' : 'stage'})'
+                            : 'Click to select and view $label deliverables',
+                        child: Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () {
+                              setState(() {
+                                _cardSelectedStages[teamId] = label;
+                              });
+                            },
+                            borderRadius: BorderRadius.circular(8),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 150),
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                              decoration: BoxDecoration(
+                                color: active
+                                    ? AppColors.maroon
+                                    : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: active
+                                      ? AppColors.maroon
+                                      : const Color(0xFFCBD5E1),
+                                  width: active ? 1.5 : 1.0,
+                                ),
+                                boxShadow: active
+                                    ? [
+                                        BoxShadow(
+                                          color: AppColors.maroon.withValues(alpha: 0.25),
+                                          blurRadius: 4,
+                                          offset: const Offset(0, 2),
+                                        )
+                                      ]
+                                    : [],
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (active) ...[
+                                    const Icon(
+                                      Icons.check_circle,
+                                      size: 14,
+                                      color: Colors.white,
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ] else if (isStageEndorsed) ...[
+                                    const Icon(
+                                      Icons.verified,
+                                      size: 14,
+                                      color: AppColors.success,
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ] else if (isStageComplete) ...[
+                                    const Icon(
+                                      Icons.check_circle_outline,
+                                      size: 14,
+                                      color: Colors.blue,
+                                    ),
+                                    const SizedBox(width: 6),
+                                  ],
+                                  Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
+                                      color: active ? Colors.white : AppColors.textPrimary,
+                                      fontSize: 12,
+                                    ),
+                                  ),
+                                  if (isCurrentConfig) ...[
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                      decoration: BoxDecoration(
+                                        color: active
+                                            ? Colors.white.withValues(alpha: 0.25)
+                                            : AppColors.maroon.withValues(alpha: 0.1),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        'Current',
+                                        style: TextStyle(
+                                          fontSize: 9,
+                                          fontWeight: FontWeight.bold,
+                                          color: active ? Colors.white : AppColors.maroon,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        onSelected: (_) {
-                          setState(() {
-                            _cardSelectedStages[teamId] = label;
-                          });
-                        },
                       );
                     }).toList(),
                   ),
@@ -1164,8 +1688,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             teamManualScoreCtrls: _teamManualScoreCtrls,
             teamSelectedRubrics: _teamSelectedRubrics,
           ),
-        ] else if (activeTab == 2) ...[
-          buildRosterAndIndividualGrades(team, gradeRecord),
         ] else ...[
           SizedBox(
             height: 650,
@@ -1193,25 +1715,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   ) {
     final teamId = parseAsInt(team['id']);
     final stages = _stageList(team);
-    final cardSelectedStageLabel = _cardSelectedStages[teamId] ?? widget.state.selectedStage;
+    final cardSelectedStageLabel = _effectiveSelectedStage(team);
     final selectedStage = _stagePayload(stages, cardSelectedStageLabel);
 
-    final isStageComplete = selectedStage['required_complete'] == true;
-    final isStageEndorsed = selectedStage['endorsed'] == true;
-
-    Color badgeColor = AppColors.warning;
-    String badgeText = 'In Progress';
-    IconData badgeIcon = Icons.hourglass_top_rounded;
-
-    if (isStageEndorsed) {
-      badgeColor = AppColors.success;
-      badgeText = 'Endorsed';
-      badgeIcon = Icons.verified_rounded;
-    } else if (isStageComplete) {
-      badgeColor = Colors.blue;
-      badgeText = 'Ready';
-      badgeIcon = Icons.check_circle_rounded;
-    }
+    final badge = _resolveStageStatusBadge(selectedStage);
+    final badgeColor = badge['color'] as Color;
+    final badgeText = badge['label'] as String;
+    final badgeIcon = badge['icon'] as IconData;
 
     final gradingState = ref.watch(adviserGradingProvider);
     final gradeRecord = gradingState.grades.firstWhere(
@@ -1344,6 +1854,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Widget _buildTeamListCompact() {
     return ListView.builder(
       shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
       itemCount: widget.state.teams.length,
       itemBuilder: (context, index) {
         final team = widget.state.teams[index];
@@ -1383,7 +1894,207 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
+  void _showRosterDetailsModal(BuildContext context, Map<String, dynamic> team, Map<String, dynamic>? gradeRecord) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.groups_outlined, color: AppColors.maroon),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                '${team['name']} - Team Roster & Peer Evaluation',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: SizedBox(
+          width: 550,
+          child: SingleChildScrollView(
+            child: buildRosterAndIndividualGrades(team, gradeRecord),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactRosterBanner(BuildContext context, Map<String, dynamic> team, Map<String, dynamic>? gradeRecord) {
+    final List<dynamic> members = team['members'] as List? ?? [];
+    final List<dynamic> peerGrades = gradeRecord?['peer_per_student'] as List? ?? [];
+
+    if (members.isEmpty) return const SizedBox.shrink();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.groups_outlined, size: 16, color: AppColors.maroon),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Team Roster (${members.length})',
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () => _showRosterDetailsModal(context, team, gradeRecord),
+                borderRadius: BorderRadius.circular(4),
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'View Details & Peer Scores',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.maroon,
+                        ),
+                      ),
+                      SizedBox(width: 2),
+                      Icon(Icons.chevron_right, size: 14, color: AppColors.maroon),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: members.map((rawMember) {
+              if (rawMember is! Map) return const SizedBox.shrink();
+              final member = Map<String, dynamic>.from(rawMember);
+              final studentId = member['id'];
+              final name = member['name']?.toString() ?? member['username']?.toString() ?? 'Student';
+              final role = member['role']?.toString() ?? 'member';
+              final isLeader = role == 'leader';
+
+              final peerDetails = peerGrades.firstWhere(
+                (g) => g is Map && g['student_id'] == studentId,
+                orElse: () => null,
+              );
+              final double? avgScore = parseAsDouble(peerDetails?['average_score']);
+
+              final sanitizedName = name.trim().replaceAll(RegExp(r'\s+'), ' ');
+              final parts = sanitizedName.split(' ');
+              final initials = parts.isNotEmpty
+                  ? (parts.first.isNotEmpty ? parts.first[0] : '') +
+                      (parts.length > 1 && parts.last.isNotEmpty ? parts.last[0] : '')
+                  : '';
+
+              return Tooltip(
+                message: avgScore != null
+                    ? '$name • Peer Score: ${avgScore.toStringAsFixed(1)} / 5.0'
+                    : '$name (Click to view details)',
+                child: InkWell(
+                  onTap: () => _showRosterDetailsModal(context, team, gradeRecord),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: isLeader ? AppColors.maroon.withValues(alpha: 0.4) : const Color(0xFFCBD5E1),
+                        width: isLeader ? 1.5 : 1.0,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.02),
+                          blurRadius: 4,
+                          offset: const Offset(0, 1),
+                        ),
+                      ],
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        CircleAvatar(
+                          radius: 10,
+                          backgroundColor: isLeader ? AppColors.maroon : const Color(0xFF64748B),
+                          child: Text(
+                            initials.toUpperCase(),
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 9,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          name,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: isLeader ? FontWeight.bold : FontWeight.w500,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        if (isLeader) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: AppColors.maroon.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: const Text(
+                              'Leader',
+                              style: TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.maroon,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildTeamDetailPane(Map<String, dynamic> team) {
+    final teamId = parseAsInt(team['id']);
+    final gradingState = ref.watch(adviserGradingProvider);
+    final cardSelectedStageLabel = _effectiveSelectedStage(team);
+    final gradeRecord = gradingState.grades.firstWhere(
+      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
+      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
+    );
+
     return Container(
       decoration: cardDecoration(),
       padding: const EdgeInsets.all(20),
@@ -1422,6 +2133,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Row(
                     children: [
@@ -1440,6 +2152,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ),
             ],
           ),
+          const SizedBox(height: 12),
+          _buildCompactRosterBanner(context, team, gradeRecord),
           const SizedBox(height: 16),
           const Divider(color: Color(0xFFE2E8F0), height: 1),
           const SizedBox(height: 16),
@@ -1484,7 +2198,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                   ),
                 ),
-                Expanded(child: _buildTeamListCompact()),
+                _buildTeamListCompact(),
               ],
             ),
           ),

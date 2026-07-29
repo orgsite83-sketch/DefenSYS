@@ -190,6 +190,13 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         role = attrs.get('role', getattr(self.instance, 'role', 'student'))
         if role not in dict(User.ROLE_CHOICES):
             raise serializers.ValidationError({'role': 'Invalid user role.'})
+        is_pit_lead = attrs.get('is_pit_lead', getattr(self.instance, 'is_pit_lead', False))
+        if role in ['admin', 'faculty'] and is_pit_lead:
+            pit_year = (attrs.get('pit_lead_year', getattr(self.instance, 'pit_lead_year', None)) or '').strip()
+            if not pit_year:
+                raise serializers.ValidationError(
+                    {'pit_lead_year': 'A PIT Lead year level (1st, 2nd, or 3rd Year) is required when assigning a user as PIT Lead.'}
+                )
         return attrs
 
     def create(self, validated_data):
@@ -229,7 +236,6 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
         if not attrs.get('is_pit_lead', getattr(instance, 'is_pit_lead', False)):
             attrs['pit_lead_year'] = None
-            attrs['is_documenter'] = False
 
 
 class BulkUserRowSerializer(serializers.Serializer):

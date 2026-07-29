@@ -1,25 +1,26 @@
-import 'package:defensys/services/repository_audit_provider.dart';
+import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/clipboard_copy.dart';
 import 'package:defensys/widgets/feedback_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:google_fonts/google_fonts.dart';
 
-import 'components/audit_log_table.dart';
-import 'components/audit_summary_cards.dart';
-import 'dialogs/status_override_dialog.dart';
+import 'components/project_archive_table.dart';
+import 'components/project_archive_summary_cards.dart';
+import 'dialogs/archive_resubmission_dialog.dart';
 
-class RepositoryAuditScreen extends ConsumerStatefulWidget {
-  const RepositoryAuditScreen({super.key});
+typedef RepositoryAuditScreen = ProjectArchiveScreen;
+
+class ProjectArchiveScreen extends ConsumerStatefulWidget {
+  const ProjectArchiveScreen({super.key});
 
   @override
-  ConsumerState<RepositoryAuditScreen> createState() =>
-      _RepositoryAuditScreenState();
+  ConsumerState<ProjectArchiveScreen> createState() =>
+      _ProjectArchiveScreenState();
 }
 
-class _RepositoryAuditScreenState
-    extends ConsumerState<RepositoryAuditScreen> {
+class _ProjectArchiveScreenState
+    extends ConsumerState<ProjectArchiveScreen> {
   final _searchController = TextEditingController();
   final _tableHScrollController = ScrollController();
   bool _showTableScrollHint = false;
@@ -117,7 +118,7 @@ class _RepositoryAuditScreenState
           ),
           child: Text(
             label,
-            style: GoogleFonts.plusJakartaSans(
+            style: TextStyle(
               color: selected ? AppColors.maroon : const Color(0xFF6B7280),
               fontWeight: FontWeight.w700,
               fontSize: 14.5,
@@ -223,7 +224,7 @@ class _RepositoryAuditScreenState
             const SizedBox(height: 14),
           ],
           const SizedBox(height: 22),
-          AuditLogTable(
+          ProjectArchiveTable(
             state: state,
             searchController: _searchController,
             tableHScrollController: _tableHScrollController,

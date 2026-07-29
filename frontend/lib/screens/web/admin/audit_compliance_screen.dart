@@ -45,12 +45,22 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       final user = ref.read(authProvider).user;
       final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
       final isPitLead = user?['is_pit_lead'] == true;
+      final isPitInstructor = user?['is_pit_instructor'] == true;
       final canViewAudit = isAdmin || isPitLead;
 
       if (canViewAudit) {
         ref.read(systemAuditProvider.notifier).fetch();
       }
       
+      if (isPitLead || isPitInstructor) {
+        if (mounted && _selectedScope.isEmpty) {
+          setState(() {
+            _selectedScope = 'pit';
+            _selectedLevel = 'pit';
+          });
+        }
+      }
+
       // Load periods and teams silently for Report dropdowns
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
       ref.read(studentTeamsProvider.notifier).fetchTeams();

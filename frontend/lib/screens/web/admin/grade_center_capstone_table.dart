@@ -22,6 +22,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required this.onSearchChanged,
     required this.onSearchSubmitted,
     required this.onSearchFocusChanged,
+    this.showScopeFilter = false,
   });
 
   final GradeCenterState state;
@@ -38,6 +39,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<bool> onSearchFocusChanged;
+  final bool showScopeFilter;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -169,7 +171,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
-        if (isAdmin) ...[
+        if (showScopeFilter && isAdmin) ...[
           Expanded(
             flex: 2,
             child: gradeCenterFilterField(
@@ -451,6 +453,8 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
     required this.onSearchChanged,
     required this.onSearchSubmitted,
     required this.onSearchFocusChanged,
+    this.icon,
+    this.showScopeFilter = false,
   });
 
   final String title;
@@ -465,6 +469,8 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<bool> onSearchFocusChanged;
+  final IconData? icon;
+  final bool showScopeFilter;
 
   @override
   Widget build(BuildContext context) {
@@ -475,24 +481,39 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
         children: [
           Padding(
             padding: const EdgeInsets.fromLTRB(24, 20, 24, 16),
-            child: Column(
+            child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    fontSize: 17,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysUi.textDark,
+                if (icon != null) ...[
+                  Icon(
+                    icon,
+                    color: DefensysUi.primaryMaroon,
+                    size: 22,
                   ),
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    color: DefensysUi.steelGrey,
-                    height: 1.35,
+                  const SizedBox(width: 10),
+                ],
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        title,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysUi.textDark,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          color: DefensysUi.steelGrey,
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
@@ -504,7 +525,7 @@ class GradeCenterGroupedUnifiedCard extends StatelessWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                if (isAdmin) ...[
+                if (showScopeFilter && isAdmin) ...[
                   Expanded(
                     flex: 2,
                     child: gradeCenterFilterField(

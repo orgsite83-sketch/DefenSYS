@@ -199,7 +199,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               iconBackground: const Color(0xFFFFEDB8),
               title: 'Configure Rubrics',
               subtitle: 'Build or publish rubrics criteria',
-              onTap: () => widget.onNavigate(DefensysAdminSection.rubricEngine),
+              onTap: () => widget.onNavigate(DefensysAdminSection.rubrics),
             ),
             _quickAction(
               icon: Icons.layers_rounded,

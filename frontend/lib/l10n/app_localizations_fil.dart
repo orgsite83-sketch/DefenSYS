@@ -122,7 +122,7 @@ class AppLocalizationsFil extends AppLocalizations {
   String get navGradeCenter => 'Evaluation & Grades';
 
   @override
-  String get navRubricEngine => 'Rubric Engine';
+  String get navRubricEngine => 'Rubrics';
 
   @override
   String get navRepositoryAudit => 'Project Archive';

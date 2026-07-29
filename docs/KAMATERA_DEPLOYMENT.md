@@ -450,6 +450,15 @@ server {
     root /var/www/defensys;
     index index.html;
 
+    # Global client body size limit (matches Django's 500MB upload limit)
+    client_max_body_size 500M;
+
+    # Security Headers
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline' fonts.googleapis.com; font-src 'self' fonts.gstatic.com data:; img-src 'self' data: blob:; connect-src 'self' ws: wss:;" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+
     # Django API + admin
     location /api/ {
         proxy_pass http://127.0.0.1:8000;
@@ -457,7 +466,6 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
-        client_max_body_size 500M; # Matches Django's 500MB upload limit
     }
 
     location /admin/ {

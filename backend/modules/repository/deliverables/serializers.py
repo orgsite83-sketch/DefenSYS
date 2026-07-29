@@ -28,7 +28,7 @@ class DeliverableUploadSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
             if team.year_level:
                 exclude_filter = Q()
@@ -73,7 +73,7 @@ class DeliverableActionSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
             if team.year_level:
                 exclude_filter = Q()
@@ -119,7 +119,7 @@ class DeliverableReviewSerializer(serializers.Serializer):
         elif team.is_pit:
             from django.db.models import Q
             from defense.scheduler.models import PitEventGradingConfig
-            from repository.audit.services import PIT_YEAR_EVENT_HINTS
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
             configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
             if team.year_level:
                 exclude_filter = Q()

@@ -244,6 +244,8 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   Widget _buildListView(GradeCenterState state) {
+    final isAdmin = _isGradeCenterAdmin(ref.watch(authProvider).user);
+
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
       child: Column(
@@ -259,9 +261,79 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
           const SizedBox(height: 26),
           _buildStats(state),
 
-          const SizedBox(height: 22),
+          if (isAdmin) ...[
+            const SizedBox(height: 22),
+            _buildScopeTabs(state),
+            const SizedBox(height: 16),
+          ] else ...[
+            const SizedBox(height: 22),
+          ],
+
           _buildMainCard(state),
         ],
+      ),
+    );
+  }
+
+  Widget _buildScopeTabs(GradeCenterState state) {
+    final currentScope = _effectiveScope(state);
+
+    final tabs = [
+      {'key': 'capstone', 'label': '🚀 Capstone Stages'},
+      {'key': 'pit', 'label': '💡 PIT Expos & Events'},
+      {'key': 'all', 'label': '📊 All Scopes'},
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: tabs.map((tab) {
+          final isSelected = currentScope == tab['key'] ||
+              (currentScope.isEmpty && tab['key'] == 'capstone');
+          return InkWell(
+            onTap: state.isSaving
+                ? null
+                : () {
+                    if (currentScope != tab['key']) {
+                      ref
+                          .read(gradeCenterProvider.notifier)
+                          .fetchGrades(scope: tab['key']!);
+                    }
+                  },
+            borderRadius: BorderRadius.circular(7),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: isSelected ? DefensysUi.primaryMaroon : Colors.transparent,
+                borderRadius: BorderRadius.circular(7),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: DefensysUi.primaryMaroon.withValues(alpha: 0.2),
+                          blurRadius: 4,
+                          offset: const Offset(0, 2),
+                        )
+                      ]
+                    : null,
+              ),
+              child: Text(
+                tab['label']!,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? Colors.white : DefensysUi.steelGrey,
+                ),
+              ),
+            ),
+          );
+        }).toList(),
       ),
     );
   }
@@ -384,14 +456,18 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
       );
     }
 
-    final title = scope == 'pit' ? 'PIT events' : 'Grade groups';
+    final title =
+        scope == 'pit' ? 'PIT Expos & Event Stages' : 'All Grade Groups';
     final subtitle = scope == 'pit'
-        ? 'Manage panel and peer grading by PIT event.'
-        : 'Capstone and PIT grade groups for the active term.';
+        ? 'Manage panel and peer grading across PIT year-level expos and event tracks.'
+        : 'Overview of all Capstone and PIT grade groups for the active term.';
+    final icon =
+        scope == 'pit' ? Icons.lightbulb_rounded : Icons.auto_graph_rounded;
 
     return GradeCenterGroupedUnifiedCard(
       title: title,
       subtitle: subtitle,
+      icon: icon,
       state: state,
       isAdmin: isAdmin,
       searchController: _searchController,

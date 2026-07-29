@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
@@ -27,24 +28,70 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
   final Map<int, TextEditingController> _controllers = {};
   bool _isSavingDraft = false;
   bool _isSubmitting = false;
+  Timer? _autoSaveTimer;
+  Timer? _loadingTimeoutTimer;
+  bool _showLoadingTimeout = false;
 
   @override
   void initState() {
     super.initState();
-    _fetchDetail();
+    Future.microtask(() {
+      if (mounted) {
+        _fetchDetail();
+      }
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant MinutesFormScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.scheduleId != widget.scheduleId) {
+      _cancelTimers();
+      Future.microtask(() {
+        if (mounted) {
+          _fetchDetail();
+        }
+      });
+    }
   }
 
   @override
   void dispose() {
+    _cancelTimers();
     for (final controller in _controllers.values) {
       controller.dispose();
     }
     super.dispose();
   }
 
+  void _cancelTimers() {
+    _autoSaveTimer?.cancel();
+    _autoSaveTimer = null;
+    _loadingTimeoutTimer?.cancel();
+    _loadingTimeoutTimer = null;
+  }
+
   Future<void> _fetchDetail() async {
-    await ref.read(documenterProvider.notifier).fetchMinutesDetail(widget.scheduleId);
-    _initializeControllers();
+    _loadingTimeoutTimer?.cancel();
+    _loadingTimeoutTimer = Timer(const Duration(seconds: 10), () {
+      if (mounted) {
+        setState(() => _showLoadingTimeout = true);
+      }
+    });
+
+    try {
+      await ref.read(documenterProvider.notifier).fetchMinutesDetail(widget.scheduleId);
+    } catch (_) {
+      // Error is caught and stored in provider state
+    } finally {
+      _loadingTimeoutTimer?.cancel();
+      if (mounted) {
+        setState(() {
+          _showLoadingTimeout = false;
+        });
+        _initializeControllers();
+      }
+    }
   }
 
   void _initializeControllers() {
@@ -208,6 +255,126 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     }
   }
 
+  Widget _buildSkeletonBody() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _buildSigningFlowStepper(null),
+        const SizedBox(height: 24),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Metadata Left Skeleton
+            Expanded(
+              flex: 4,
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE6E8EF)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Container(
+                          width: 140,
+                          height: 18,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    for (int i = 0; i < 5; i++) ...[
+                      Container(
+                        width: double.infinity,
+                        height: 14,
+                        margin: const EdgeInsets.only(bottom: 12),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(width: 24),
+
+            // Comments Right Skeleton
+            Expanded(
+              flex: 6,
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: const Color(0xFFE6E8EF)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Container(
+                          width: 200,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                        ),
+                        if (_showLoadingTimeout)
+                          OutlinedButton.icon(
+                            icon: const Icon(Icons.refresh, size: 16),
+                            label: const Text('Retry'),
+                            onPressed: _fetchDetail,
+                            style: OutlinedButton.styleFrom(
+                              foregroundColor: DefensysTokens.maroon,
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 20),
+                    for (int i = 0; i < 3; i++) ...[
+                      Container(
+                        width: double.infinity,
+                        height: 80,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE6E8EF)),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(documenterProvider);
@@ -219,7 +386,7 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
     Widget body;
 
     if (state.isLoading && minutes == null) {
-      body = const Center(child: CircularProgressIndicator());
+      body = _buildSkeletonBody();
     } else if (state.error != null && minutes == null) {
       body = Center(
         child: Column(

@@ -17,6 +17,7 @@ class DefenseBoardState {
   final List<String> stageOptions;
   final List<String> statuses;
   final List<Map<String, dynamic>> scopes;
+  final List<Map<String, dynamic>> documenters;
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
   final String search;
@@ -33,6 +34,7 @@ class DefenseBoardState {
     this.stageOptions = const [],
     this.statuses = const [],
     this.scopes = const [],
+    this.documenters = const [],
     this.counts = const {},
     this.activeSemester,
     this.search = '',
@@ -50,6 +52,7 @@ class DefenseBoardState {
     List<String>? stageOptions,
     List<String>? statuses,
     List<Map<String, dynamic>>? scopes,
+    List<Map<String, dynamic>>? documenters,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
     String? search,
@@ -69,6 +72,7 @@ class DefenseBoardState {
       stageOptions: stageOptions ?? this.stageOptions,
       statuses: statuses ?? this.statuses,
       scopes: scopes ?? this.scopes,
+      documenters: documenters ?? this.documenters,
       counts: counts ?? this.counts,
       activeSemester: clearActiveSemester
           ? null
@@ -175,6 +179,36 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     }
   }
 
+  Future<bool> updateDocumenter(int scheduleId, int? documenterId) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$scheduleId/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'documenter_id': documenterId}),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchBoard(successMessage: 'Documenter assignment updated.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<bool> deleteSchedule(int scheduleId) async {
     state = state.copyWith(
       isSaving: true,
@@ -226,6 +260,7 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
       stageOptions: _readStringList(payload['stage_options']),
       statuses: _readStringList(payload['statuses']),
       scopes: _readMapList(payload['scopes']),
+      documenters: _readMapList(payload['documenters']),
       counts: payload['counts'] is Map
           ? Map<String, dynamic>.from(payload['counts'])
           : state.counts,

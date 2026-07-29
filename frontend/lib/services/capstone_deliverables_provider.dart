@@ -190,6 +190,16 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     }, successMessage: 'Deliverable review status updated.');
   }
 
+  Future<bool> unlockDeliverables({
+    required int teamId,
+    required String stageLabel,
+  }) async {
+    return _postAction('unlock', {
+      'team_id': teamId,
+      'stage_label': stageLabel,
+    }, successMessage: 'Deliverable submission unlock status toggled.');
+  }
+
   Future<bool> _postAction(
     String action,
     Map<String, dynamic> payload, {

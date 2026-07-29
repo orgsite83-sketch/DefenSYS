@@ -291,6 +291,10 @@ List<RouteBase> _adminRoutes() {
           ],
         ),
         GoRoute(
+          path: 'project-archive',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
+        GoRoute(
           path: 'repository-audit',
           builder: (_, __) => const SizedBox.shrink(),
         ),
@@ -382,6 +386,10 @@ List<RouteBase> _facultyRoutes() {
           builder: (_, __) => const SizedBox.shrink(),
         ),
         GoRoute(path: 'rubrics', builder: (_, __) => const SizedBox.shrink()),
+        GoRoute(
+          path: 'project-archive',
+          builder: (_, __) => const SizedBox.shrink(),
+        ),
         GoRoute(
           path: 'repository-audit',
           builder: (_, __) => const SizedBox.shrink(),

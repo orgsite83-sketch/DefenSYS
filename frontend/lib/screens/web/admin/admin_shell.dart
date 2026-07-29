@@ -22,7 +22,7 @@ import 'rubric_engine_screen.dart';
 import 'student_academic_records_screen.dart';
 import 'student_teams_screen.dart';
 import 'user_management_screen.dart';
-import '../shared/repository_audit/repository_audit_screen.dart';
+import '../shared/project_archive/project_archive_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 final activeAdminSectionProvider =
@@ -134,10 +134,10 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         return const StudentAcademicRecordsScreen();
       case DefensysAdminSection.gradeCenter:
         return const GradeCenterScreen();
-      case DefensysAdminSection.rubricEngine:
+      case DefensysAdminSection.rubrics:
         return const RubricEngineScreen();
       case DefensysAdminSection.repositoryAudit:
-        return const RepositoryAuditScreen();
+        return const ProjectArchiveScreen();
       case DefensysAdminSection.curriculumAnalytics:
         return const CurriculumAnalyticsScreen();
       case DefensysAdminSection.auditCompliance:

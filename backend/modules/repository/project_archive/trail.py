@@ -1,10 +1,10 @@
 from repository.deliverables.services import display_name
 
-from .models import RepositoryAuditLog
+from .models import ProjectArchiveLog
 
 
 def audit_trail(entry_type, source_id, file_name):
-    logs = RepositoryAuditLog.objects.filter(entry_type=entry_type)
+    logs = ProjectArchiveLog.objects.filter(entry_type=entry_type)
     if source_id:
         logs = logs.filter(source_id=source_id)
     else:
@@ -37,7 +37,7 @@ def audit_trail_for_request(request):
 
 
 def log_action(entry_type, source_id, file_name, action, actor, previous_status='', new_status='', message=''):
-    return RepositoryAuditLog.objects.create(
+    return ProjectArchiveLog.objects.create(
         entry_type=entry_type,
         source_id=source_id,
         file_name=file_name,

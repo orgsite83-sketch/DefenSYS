@@ -125,6 +125,13 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
           final isCapstone = scope == 'capstone';
           final rawDate = team['scheduled_date']?.toString() ?? '';
           final scheduledDate = DateTime.tryParse(rawDate);
+          final isPosted = team['is_posted'] == true || team['is_submitted'] == true;
+          final rawSubmissions = team['submissions'] as List? ?? team['submitted_scores'] as List? ?? [];
+          final submissions = rawSubmissions
+              .whereType<Map>()
+              .map((s) => Map<String, dynamic>.from(s))
+              .toList();
+
           return TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
@@ -144,7 +151,8 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                     ))
                 .toList(),
             criteria: [],
-            isPosted: false,
+            isPosted: isPosted,
+            submittedSubmissions: submissions,
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
             peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,

@@ -26,29 +26,41 @@ class ErrorBanner extends StatelessWidget {
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: DefensysTokens.dangerBg,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        border: Border.all(color: DefensysTokens.dangerBorder),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.dangerBorder, width: 1.0),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.error_outline_rounded, color: DefensysTokens.danger),
-          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: DefensysTokens.danger.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+            ),
+            child: const Icon(
+              Icons.error_outline_rounded,
+              color: DefensysTokens.danger,
+              size: 18,
+            ),
+          ),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   title,
-                  style: const TextStyle(
-                    color: DefensysTokens.danger,
-                    fontWeight: FontWeight.w700,
+                  style: DefensysTokens.body.copyWith(
+                    color: DefensysTokens.dangerText,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 2),
                 Text(
                   message,
-                  style: const TextStyle(
+                  style: DefensysTokens.caption.copyWith(
                     color: DefensysTokens.dangerText,
                     fontSize: 13,
                   ),
@@ -57,7 +69,14 @@ class ErrorBanner extends StatelessWidget {
             ),
           ),
           if (onRetry != null)
-            TextButton(onPressed: onRetry, child: Text(retry)),
+            TextButton(
+              style: TextButton.styleFrom(
+                foregroundColor: DefensysTokens.dangerText,
+                textStyle: const TextStyle(fontWeight: FontWeight.w600),
+              ),
+              onPressed: onRetry,
+              child: Text(retry),
+            ),
         ],
       ),
     );

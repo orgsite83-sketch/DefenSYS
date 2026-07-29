@@ -20,7 +20,7 @@ enum DefensysAdminSection {
   studentTeams,
   studentAcademicRecords,
   gradeCenter,
-  rubricEngine,
+  rubrics,
   repositoryAudit,
   curriculumAnalytics,
   auditCompliance,
@@ -509,7 +509,7 @@ class _SidebarState extends State<_Sidebar> {
                   onTap: widget.onNavigate,
                 ),
                 _NavItem(
-                  section: DefensysAdminSection.rubricEngine,
+                  section: DefensysAdminSection.rubrics,
                   activeSection: widget.activeSection,
                   icon: Icons.checklist_rounded,
                   label: l10n.navRubricEngine,
@@ -802,11 +802,7 @@ class _NavItem extends StatelessWidget {
         (section == DefensysAdminSection.userManagement &&
             (activeSection == DefensysAdminSection.studentTeams ||
                 activeSection ==
-                    DefensysAdminSection.studentAcademicRecords)) ||
-        (section == DefensysAdminSection.scheduling &&
-            (activeSection == DefensysAdminSection.scheduling ||
-                activeSection == DefensysAdminSection.defenseBoard ||
-                activeSection == DefensysAdminSection.defenseStages));
+                    DefensysAdminSection.studentAcademicRecords));
     final color = selected ? DefensysUi.accentGold : const Color(0xFFD1D5DB);
     final containerColor = selected
         ? Colors.white.withValues(alpha: 0.08)
