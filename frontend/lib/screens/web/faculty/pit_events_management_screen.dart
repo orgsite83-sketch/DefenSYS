@@ -367,16 +367,40 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(
-                              config['event_name']?.toString() ?? '',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.textPrimary,
-                                fontFamily: DefensysTokens.fontFamily,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
+                            Row(
+                              children: [
+                                Text(
+                                  config['event_name']?.toString() ?? '',
+                                  style: const TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: DefensysTokens.textPrimary,
+                                    fontFamily: DefensysTokens.fontFamily,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (config['event_code']?.toString().isNotEmpty == true) ...[
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(6),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Text(
+                                      config['event_code']?.toString() ?? '',
+                                      style: const TextStyle(
+                                        color: AppColors.textSecondary,
+                                        fontSize: 11,
+                                        fontFamily: DefensysTokens.fontFamily,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                             const SizedBox(height: 6),
                             Container(
@@ -627,6 +651,7 @@ class _EventConfigEditDialog extends ConsumerStatefulWidget {
 class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> {
   final _formKey = GlobalKey<FormState>();
   final _eventNameController = TextEditingController();
+  final _eventCodeController = TextEditingController();
   final _archiveFileTemplateController = TextEditingController();
   late final TextEditingController _panelWeightController;
   late final TextEditingController _peerWeightController;
@@ -654,6 +679,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final initialDelList = widget.config?['deliverables'] as List? ?? [];
 
     if (_eventNameController.text != initialEventName) return true;
+    if (_eventCodeController.text != (widget.config?['event_code']?.toString() ?? '')) return true;
     if (_archiveFileTemplateController.text != initialTemplate) return true;
     if (_panelRubricId != initialPanelRubric) return true;
     if (_peerRubricId != initialPeerRubric) return true;
@@ -715,6 +741,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     super.initState();
     if (widget.config != null) {
       _eventNameController.text = widget.config!['event_name']?.toString() ?? '';
+      _eventCodeController.text = widget.config!['event_code']?.toString() ?? '';
       _archiveFileTemplateController.text = (widget.config!['archive_file_template'] ?? widget.config!['vault_file_template'])?.toString() ?? '';
       _panelRubricId = int.tryParse(widget.config!['panel_rubric_id']?.toString() ?? '');
       _peerRubricId = int.tryParse(widget.config!['peer_rubric_id']?.toString() ?? '');
@@ -733,6 +760,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
           text: (d['archive_file_template'] ?? d['vault_file_template'])?.toString() ?? ''));
     }
     _eventNameController.addListener(_markDirty);
+    _eventCodeController.addListener(_markDirty);
     _archiveFileTemplateController.addListener(_markDirty);
     _panelWeightController.addListener(_markDirty);
     _peerWeightController.addListener(_markDirty);
@@ -741,11 +769,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   @override
   void dispose() {
     _eventNameController.removeListener(_markDirty);
+    _eventCodeController.removeListener(_markDirty);
     _archiveFileTemplateController.removeListener(_markDirty);
     _panelWeightController.removeListener(_markDirty);
     _peerWeightController.removeListener(_markDirty);
 
     _eventNameController.dispose();
+    _eventCodeController.dispose();
     _archiveFileTemplateController.dispose();
     _panelWeightController.dispose();
     _peerWeightController.dispose();
@@ -894,6 +924,7 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final payload = {
       'semester_id': semesterId,
       'event_name': _eventNameController.text.trim(),
+      'event_code': _eventCodeController.text.trim(),
       'panel_rubric_id': _panelRubricId,
       'peer_rubric_id': _peerRubricId,
       'panel_weight': _panelWeight,
@@ -1094,33 +1125,28 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     final dashboard = ref.watch(dashboardProvider('faculty')).data;
     final pitYear = dashboard?['pit_lead_year']?.toString() ?? '2nd Year';
 
-    // Find rubrics already assigned to other PIT event configs in the active semester
     final otherConfigs = state.pitEvents.where((c) {
       if (widget.config == null) return true;
       return c['id']?.toString() != widget.config!['id']?.toString();
     });
 
-    final assignedPanelIds = otherConfigs
-        .map((c) => int.tryParse(c['panel_rubric_id']?.toString() ?? ''))
-        .whereType<int>()
-        .toSet();
-    final assignedPeerIds = otherConfigs
-        .map((c) => int.tryParse(c['peer_rubric_id']?.toString() ?? ''))
-        .whereType<int>()
-        .toSet();
+    final Map<int, String> assignedPanelEventMap = {};
+    final Map<int, String> assignedPeerEventMap = {};
+
+    for (final c in otherConfigs) {
+      final pId = int.tryParse(c['panel_rubric_id']?.toString() ?? '');
+      final prId = int.tryParse(c['peer_rubric_id']?.toString() ?? '');
+      final eventName = c['event_name']?.toString() ?? 'Another Event';
+      if (pId != null) assignedPanelEventMap[pId] = eventName;
+      if (prId != null) assignedPeerEventMap[prId] = eventName;
+    }
 
     final panelRubrics = state.rubrics.where((r) {
-      final scopeMatch = r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
-      final rubricId = int.tryParse(r['id']?.toString() ?? '');
-      final isAssignedToOther = rubricId != null && assignedPanelIds.contains(rubricId);
-      return scopeMatch && !isAssignedToOther;
+      return r['scope'] == 'pit' && r['evaluation_type'] == 'panel';
     }).toList();
 
     final peerRubrics = state.peerRubrics.where((r) {
-      final scopeMatch = r['scope'] == 'pit' && r['evaluation_type'] == 'peer';
-      final rubricId = int.tryParse(r['id']?.toString() ?? '');
-      final isAssignedToOther = rubricId != null && assignedPeerIds.contains(rubricId);
-      return scopeMatch && !isAssignedToOther;
+      return r['scope'] == 'pit' && r['evaluation_type'] == 'peer';
     }).toList();
 
     return PopScope(
@@ -1150,12 +1176,12 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                         const Icon(Icons.settings_suggest_outlined, color: DefensysTokens.maroon, size: 22),
                         const SizedBox(width: 8),
                         Text(
-                          widget.config == null ? 'Configure New PIT Event' : 'Edit Event Configuration',
+                          widget.config != null ? 'Edit PIT Event' : 'Add PIT Event',
                           style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w800,
-                            color: DefensysTokens.maroon,
                             fontFamily: DefensysTokens.fontFamily,
+                            fontSize: 18,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.textPrimary,
                           ),
                         ),
                       ],
@@ -1193,6 +1219,14 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                               }
                               return null;
                             },
+                            style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
+                          ),
+                          const SizedBox(height: 16),
+                          TextFormField(
+                            controller: _eventCodeController,
+                            decoration: _dialogInputDecoration(
+                              labelText: 'Stage code',
+                            ),
                             style: const TextStyle(fontFamily: DefensysTokens.fontFamily, fontSize: 14),
                           ),
                           const SizedBox(height: 16),

@@ -289,6 +289,7 @@ class PitEventConfigLookupView(APIView):
             )
 
         archive_file_template = request.data.get('archive_file_template')
+        event_code = request.data.get('event_code')
         deliverables = request.data.get('deliverables')
         if deliverables is not None and not isinstance(deliverables, list):
             return Response(
@@ -319,6 +320,7 @@ class PitEventConfigLookupView(APIView):
             config = upsert_pit_event_config(
                 semester=semester,
                 event_name=event_name,
+                event_code=event_code,
                 panel_rubric=panel_rubric,
                 peer_rubric=peer_rubric,
                 panel_weight=panel_weight,

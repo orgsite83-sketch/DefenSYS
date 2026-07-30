@@ -127,8 +127,17 @@ class DefenseStageDetailView(APIView):
 
     def delete(self, request, stage_id):
         from django.db.models import ProtectedError
+        from .serializers import check_stage_locked
 
         stage = self.get_object(stage_id)
+        locked, reason = check_stage_locked(stage)
+        if locked:
+            return Response(
+                {
+                    'warning': reason or 'This stage is locked and cannot be deleted.',
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
         try:
             stage.delete()
         except ProtectedError:
@@ -144,13 +153,19 @@ class DefenseStageDetailView(APIView):
         return Response(stage_list_payload(), status=status.HTTP_200_OK)
 
 
-
-
 class StageDeliverableListCreateView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def post(self, request, stage_id):
+        from .serializers import check_stage_locked
+
         stage = get_object_or_404(DefenseStage, pk=stage_id)
+        locked, reason = check_stage_locked(stage)
+        if locked:
+            return Response(
+                {'detail': reason or 'Deliverables cannot be added because this stage is locked.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = StageDeliverableSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         deliverable = serializer.save(defense_stage=stage)
@@ -164,11 +179,19 @@ class StageDeliverableDetailView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def patch(self, request, stage_id, deliverable_id):
+        from .serializers import check_stage_locked
+
         deliverable = get_object_or_404(
             StageDeliverable,
             defense_stage_id=stage_id,
             id=deliverable_id,
         )
+        locked, reason = check_stage_locked(deliverable.defense_stage)
+        if locked:
+            return Response(
+                {'detail': reason or 'Deliverables cannot be updated because this stage is locked.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         serializer = StageDeliverableSerializer(
             deliverable,
             data=request.data,
@@ -179,11 +202,19 @@ class StageDeliverableDetailView(APIView):
         return Response(StageDeliverableSerializer(deliverable).data)
 
     def delete(self, request, stage_id, deliverable_id):
+        from .serializers import check_stage_locked
+
         deliverable = get_object_or_404(
             StageDeliverable,
             defense_stage_id=stage_id,
             id=deliverable_id,
         )
+        locked, reason = check_stage_locked(deliverable.defense_stage)
+        if locked:
+            return Response(
+                {'detail': reason or 'Deliverables cannot be deleted because this stage is locked.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         deliverable.delete()
         return Response(status=status.HTTP_204_NO_CONTENT)
 

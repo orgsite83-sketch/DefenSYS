@@ -1902,7 +1902,7 @@ class PitEventGradingConfigTests(APITestCase):
 
     def test_pit_rubrics_scoped_by_year_level(self):
         from grading.rubrics.models import Rubric
-        from defense.scheduler.serializers import defense_scheduler_options_payload
+        from defense.scheduler.serializers import schedule_options_payload as defense_scheduler_options_payload
         
         lead_1st = User.objects.create_user(
             username='lead_1st_year',
@@ -1973,7 +1973,7 @@ class PitEventGradingConfigTests(APITestCase):
         )
 
         self.client.force_authenticate(user=lead_2nd)
-        response = self.client.post('/api/defense/pit-event-config/', {
+        response = self.client.post('/api/defense/schedules/pit-event-config/', {
             'event_name': '2nd Year Expo',
             'panel_rubric_id': rubric_1st_panel.id,
             'peer_rubric_id': rubric_2nd_peer.id,

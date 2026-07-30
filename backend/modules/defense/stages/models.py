@@ -8,6 +8,15 @@ DEFAULT_ADVISER_WEIGHT = 30
 DEFAULT_PEER_WEIGHT = 20
 
 
+import re
+
+
+def clean_custom_code(raw_value):
+    s = re.sub(r'[\s/]+', '-', raw_value.strip())
+    s = re.sub(r'[^a-zA-Z0-9_-]', '', s)
+    return s
+
+
 class StageDeliverable(models.Model):
     TYPE_PRE = 'pre'
     TYPE_POST = 'post'
@@ -75,7 +84,20 @@ class DefenseStage(models.Model):
         ordering = ['display_order', 'label']
 
     def save(self, *args, **kwargs):
-        self.code = unique_stage_code(self.label, self.pk)
+        if self.pk:
+            old = DefenseStage.objects.filter(pk=self.pk).values('label', 'code').first()
+            if old:
+                old_label_slug = slugify(old['label'])
+                old_code = old.get('code') or ''
+                if not self.code or self.code.lower() == old_label_slug:
+                    self.code = unique_stage_code(self.label, instance_id=self.pk, is_custom=False)
+                else:
+                    is_custom = self.code.lower() != old_code.lower() or self.code.lower() != old_label_slug
+                    self.code = unique_stage_code(self.code, instance_id=self.pk, is_custom=is_custom)
+            else:
+                self.code = unique_stage_code(self.code or self.label, instance_id=self.pk, is_custom=bool(self.code))
+        else:
+            self.code = unique_stage_code(self.code or self.label, instance_id=self.pk, is_custom=bool(self.code))
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -172,17 +194,21 @@ class StageGradingConfig(models.Model):
         return f'{self.defense_stage.label} ({self.semester})'
 
 
-def unique_stage_code(label, instance_id=None):
-    base_code = slugify(label) or 'stage'
+def unique_stage_code(raw_value_or_label, instance_id=None, is_custom=False):
+    if is_custom and raw_value_or_label and raw_value_or_label.strip():
+        base_code = clean_custom_code(raw_value_or_label) or 'stage'
+    else:
+        base_code = slugify(raw_value_or_label) or 'stage'
+
     code = base_code
     index = 2
-    queryset = DefenseStage.objects.filter(code=code)
+    queryset = DefenseStage.objects.filter(code__iexact=code)
     if instance_id is not None:
         queryset = queryset.exclude(pk=instance_id)
 
     while queryset.exists():
         code = f'{base_code}-{index}'
-        queryset = DefenseStage.objects.filter(code=code)
+        queryset = DefenseStage.objects.filter(code__iexact=code)
         if instance_id is not None:
             queryset = queryset.exclude(pk=instance_id)
         index += 1

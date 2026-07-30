@@ -274,6 +274,7 @@ class PitEventGradingConfig(models.Model):
         on_delete=models.CASCADE,
     )
     event_name = models.CharField(max_length=120)
+    event_code = models.SlugField(max_length=140, blank=True, default='')
     panel_rubric = models.ForeignKey(
         'grading.Rubric',
         related_name='pit_event_configs_as_panel',
@@ -327,23 +328,55 @@ class PitEventGradingConfig(models.Model):
 
     def save(self, *args, **kwargs):
         self.event_name = (self.event_name or '').strip()
+        if self.pk:
+            old = PitEventGradingConfig.objects.filter(pk=self.pk).values('event_name', 'event_code').first()
+            if old:
+                from django.utils.text import slugify
+                old_name_slug = slugify(old['event_name'])
+                old_code = old.get('event_code') or ''
+                if not self.event_code or self.event_code.lower() == old_name_slug:
+                    self.event_code = unique_pit_event_code(self.event_name, semester=self.semester, instance_id=self.pk, is_custom=False)
+                else:
+                    is_custom = self.event_code.lower() != old_code.lower() or self.event_code.lower() != old_name_slug
+                    self.event_code = unique_pit_event_code(self.event_code, semester=self.semester, instance_id=self.pk, is_custom=is_custom)
+            else:
+                self.event_code = unique_pit_event_code(self.event_code or self.event_name, semester=self.semester, instance_id=self.pk, is_custom=bool(self.event_code))
+        else:
+            self.event_code = unique_pit_event_code(self.event_code or self.event_name, semester=self.semester, instance_id=self.pk, is_custom=bool(self.event_code))
         self.full_clean()
         super().save(*args, **kwargs)
-        from grading.grades.models import TeamGrade
-        from django.db.models import Q
-
-        TeamGrade.objects.filter(
-            Q(pit_event_config=self) | Q(semester=self.semester, scope=TeamGrade.SCOPE_PIT, stage_label__iexact=self.event_name),
-            status=TeamGrade.STATUS_PENDING,
-        ).update(
-            pit_event_config=self,
-            panel_weight=self.panel_weight,
-            peer_weight=self.peer_weight,
-            adviser_weight=0,
-        )
 
     def __str__(self):
         return f'{self.event_name} ({self.semester})'
+
+
+def unique_pit_event_code(raw_value_or_name, semester=None, instance_id=None, is_custom=False):
+    from defense.stages.models import clean_custom_code
+    from django.utils.text import slugify
+
+    if is_custom and raw_value_or_name and raw_value_or_name.strip():
+        base_code = clean_custom_code(raw_value_or_name) or 'event'
+    else:
+        base_code = slugify(raw_value_or_name) or 'event'
+
+    code = base_code
+    index = 2
+    queryset = PitEventGradingConfig.objects.filter(event_code__iexact=code)
+    if semester:
+        queryset = queryset.filter(semester=semester)
+    if instance_id is not None:
+        queryset = queryset.exclude(pk=instance_id)
+
+    while queryset.exists():
+        code = f'{base_code}-{index}'
+        queryset = PitEventGradingConfig.objects.filter(event_code__iexact=code)
+        if semester:
+            queryset = queryset.filter(semester=semester)
+        if instance_id is not None:
+            queryset = queryset.exclude(pk=instance_id)
+        index += 1
+
+    return code
 
 
 class PitEventDeliverable(models.Model):

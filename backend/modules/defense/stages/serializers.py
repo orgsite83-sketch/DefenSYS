@@ -19,6 +19,29 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
         ]
 
 
+def check_stage_locked(stage, semester=None):
+    if not semester:
+        from academic_period_management.models import Semester
+        semester = Semester.objects.filter(is_active=True).first()
+    if not semester:
+        return False, None
+
+    config = stage.grading_configs.filter(semester=semester).first()
+    if config and config.is_officially_complete:
+        return True, 'This stage is officially complete for the active semester.'
+
+    from defense.scheduler.models import DefenseSchedule
+    from grading.grades.models import TeamGrade
+
+    if DefenseSchedule.objects.filter(defense_stage=stage, semester=semester).exists():
+        return True, 'This stage has scheduled defenses for the active semester.'
+
+    if TeamGrade.objects.filter(defense_stage=stage, semester=semester).exclude(status=TeamGrade.STATUS_PENDING).exists():
+        return True, 'This stage has recorded evaluation grades.'
+
+    return False, None
+
+
 class DefenseStageSerializer(serializers.ModelSerializer):
     previous_stage_id = serializers.SerializerMethodField()
     previous_stage_label = serializers.SerializerMethodField()
@@ -26,6 +49,8 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     deliverables = StageDeliverableSerializer(many=True, read_only=True)
     deliverables_count = serializers.SerializerMethodField()
     is_officially_complete = serializers.SerializerMethodField()
+    is_locked = serializers.SerializerMethodField()
+    lock_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseStage
@@ -42,6 +67,8 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'deliverables',
             'deliverables_count',
             'is_officially_complete',
+            'is_locked',
+            'lock_reason',
             'created_at',
             'updated_at',
         ]
@@ -53,6 +80,8 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'deliverables',
             'deliverables_count',
             'is_officially_complete',
+            'is_locked',
+            'lock_reason',
         ]
 
     def get_deliverables_count(self, obj):
@@ -67,6 +96,14 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             return False
         config = obj.grading_configs.filter(semester=semester).first()
         return config.is_officially_complete if config else False
+
+    def get_is_locked(self, obj):
+        locked, _ = check_stage_locked(obj, self.context.get('semester'))
+        return locked
+
+    def get_lock_reason(self, obj):
+        _, reason = check_stage_locked(obj, self.context.get('semester'))
+        return reason
 
     def get_previous_stage_id(self, obj):
         previous = self._previous_stage(obj)
@@ -100,8 +137,9 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'display_order', 'description', 'is_active', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'deliverables']
         extra_kwargs = {
+            'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
             'description': {'required': False, 'allow_blank': True},
             'is_active': {'required': False},
@@ -115,6 +153,18 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError('A defense stage with this label already exists.')
         return value.strip()
 
+    def validate_code(self, value):
+        if value and value.strip():
+            from .models import clean_custom_code
+            code = clean_custom_code(value.strip())
+            queryset = DefenseStage.objects.filter(code__iexact=code)
+            if self.instance is not None:
+                queryset = queryset.exclude(pk=self.instance.pk)
+            if queryset.exists():
+                raise serializers.ValidationError('A defense stage with this code already exists.')
+            return code
+        return ''
+
     def validate_deliverables(self, value):
         if value is not None:
             for item in value:
@@ -124,7 +174,6 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 if not label:
                     raise serializers.ValidationError('Deliverable label cannot be blank.')
         return value
-
 
     def create(self, validated_data):
         deliverables_data = validated_data.pop('deliverables', [])
@@ -138,6 +187,13 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
         return stage
 
     def update(self, instance, validated_data):
+        semester = self.context.get('semester')
+        locked, reason = check_stage_locked(instance, semester)
+        if locked:
+            raise serializers.ValidationError(
+                {'non_field_errors': [reason or 'This defense stage is locked and cannot be edited.']}
+            )
+
         deliverables_data = validated_data.pop('deliverables', None)
         stage = super().update(instance, validated_data)
         
@@ -177,6 +233,8 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
     adviser_rubric_name = serializers.CharField(source='adviser_rubric.name', read_only=True, allow_null=True)
     peer_rubric_id = serializers.IntegerField(source='peer_rubric.id', read_only=True, allow_null=True)
     peer_rubric_name = serializers.CharField(source='peer_rubric.name', read_only=True, allow_null=True)
+    is_locked = serializers.SerializerMethodField()
+    lock_reason = serializers.SerializerMethodField()
 
     class Meta:
         model = StageGradingConfig
@@ -193,9 +251,11 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
             'peer_rubric_id',
             'peer_rubric_name',
             'weights',
+            'is_locked',
+            'lock_reason',
             'updated_at',
         ]
-        read_only_fields = ['id', 'semester_id', 'updated_at']
+        read_only_fields = ['id', 'semester_id', 'is_locked', 'lock_reason', 'updated_at']
 
     def get_weights(self, obj):
         return {
@@ -203,6 +263,14 @@ class StageGradingConfigSerializer(serializers.ModelSerializer):
             'adviser': obj.adviser_weight,
             'peer': obj.peer_weight,
         }
+
+    def get_is_locked(self, obj):
+        locked, _ = check_stage_locked(obj.defense_stage, obj.semester)
+        return locked
+
+    def get_lock_reason(self, obj):
+        _, reason = check_stage_locked(obj.defense_stage, obj.semester)
+        return reason
 
 
 class StageGradingConfigWriteSerializer(serializers.Serializer):
@@ -217,6 +285,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
         if rubric_id is None:
             return None
         from grading.rubrics.models import Rubric
+        from django.db.models import Q
 
         eval_map = {
             'panel': Rubric.EVAL_PANEL,
@@ -238,6 +307,21 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {field_key: f'Rubric must use {evaluation_type} evaluation type.'}
             )
+
+        # Check if rubric is already assigned to a different stage in the same semester
+        other_config = StageGradingConfig.objects.filter(
+            semester=config.semester
+        ).exclude(
+            defense_stage=config.defense_stage
+        ).filter(
+            Q(panel_rubric=rubric) | Q(adviser_rubric=rubric) | Q(peer_rubric=rubric)
+        ).select_related('defense_stage').first()
+
+        if other_config:
+            raise serializers.ValidationError(
+                {field_key: f"This rubric is already assigned to stage '{other_config.defense_stage.label}'."}
+            )
+
         if rubric.defense_stage_id != config.defense_stage_id:
             rubric.defense_stage = config.defense_stage
             rubric.save(update_fields=['defense_stage'])
@@ -253,6 +337,22 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {'weights': 'Panel, adviser, and peer weights must total 100%.'},
             )
+
+        # Check lock status if weights or rubrics are being changed
+        changing_panel_w = 'panel_weight' in attrs and attrs['panel_weight'] != config.panel_weight
+        changing_adviser_w = 'adviser_weight' in attrs and attrs['adviser_weight'] != config.adviser_weight
+        changing_peer_w = 'peer_weight' in attrs and attrs['peer_weight'] != config.peer_weight
+        changing_panel_r = 'panel_rubric_id' in attrs and attrs['panel_rubric_id'] != (config.panel_rubric_id)
+        changing_adviser_r = 'adviser_rubric_id' in attrs and attrs['adviser_rubric_id'] != (config.adviser_rubric_id)
+        changing_peer_r = 'peer_rubric_id' in attrs and attrs['peer_rubric_id'] != (config.peer_rubric_id)
+
+        if changing_panel_w or changing_adviser_w or changing_peer_w or changing_panel_r or changing_adviser_r or changing_peer_r:
+            locked, reason = check_stage_locked(config.defense_stage, config.semester)
+            if locked:
+                raise serializers.ValidationError(
+                    {'rubric': reason or 'Stage configuration cannot be changed because defenses are already scheduled or officially completed.'}
+                )
+
         attrs['panel_weight'] = panel_weight
         attrs['adviser_weight'] = adviser_weight
         attrs['peer_weight'] = peer_weight
@@ -266,6 +366,7 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
 
     def save(self):
         config = self.context['config']
+        old_rubrics = [config.panel_rubric, config.adviser_rubric, config.peer_rubric]
         update_fields = []
         for field in ['panel_weight', 'adviser_weight', 'peer_weight']:
             if field in self.validated_data:
@@ -277,6 +378,20 @@ class StageGradingConfigWriteSerializer(serializers.Serializer):
                 update_fields.append(field)
         if update_fields:
             config.save(update_fields=update_fields + ['updated_at'])
+
+        # Clear defense_stage linkage for old rubrics that were unassigned
+        for old_r in old_rubrics:
+            if old_r and old_r not in [config.panel_rubric, config.adviser_rubric, config.peer_rubric]:
+                # Check if unassigned from all fields
+                still_used = StageGradingConfig.objects.filter(
+                    semester=config.semester
+                ).filter(
+                    Q(panel_rubric=old_r) | Q(adviser_rubric=old_r) | Q(peer_rubric=old_r)
+                ).exists()
+                if not still_used:
+                    old_r.defense_stage = None
+                    old_r.save(update_fields=['defense_stage'])
+
         self._sync_rubrics(config)
         return config
 

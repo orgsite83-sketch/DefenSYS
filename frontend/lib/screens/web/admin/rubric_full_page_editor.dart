@@ -82,6 +82,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late String _evaluationType;
   late String _targetType;
   late int? _semesterId;
+  int? _defenseStageId;
+  String? _eventName;
   late List<RubricCriterionDraft> _criteria;
   late List<String> _scales;
   bool _isDirty = false;
@@ -213,6 +215,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       _targetType = 'individual';
     }
     _semesterId = _asInt(r?['semester_id']) ?? _asInt(state.activeSemester?['id']);
+    _defenseStageId = _asInt(r?['defense_stage_id']);
+    _eventName = r?['event_name']?.toString();
     _criteria = _buildCriterionDrafts(r, _scales);
     if (_scope == 'pit' && _evaluationType == 'adviser') {
       _evaluationType = 'panel';
@@ -727,53 +731,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       return false;
     }
 
-    setState(() {
-      _checking = true;
-    });
-
-    final state = ref.read(rubricEngineProvider);
-    final notifier = ref.read(rubricEngineProvider.notifier);
-
-    List<Map<String, dynamic>> existing = [];
-    try {
-      existing = await notifier.checkExistingRubrics();
-    } catch (_) {}
-
-    if (mounted) {
-      setState(() {
-        _checking = false;
-      });
-    }
-
-    Map<String, dynamic>? duplicate;
-    for (final item in existing) {
-      final itemId = _asInt(item['id']);
-      final itemSemId = _asInt(item['semester_id']);
-      final itemScope = item['scope']?.toString();
-      final itemEvalType = item['evaluation_type']?.toString();
-
-      if (itemSemId == _semesterId &&
-          itemScope == _scope &&
-          itemEvalType == _evaluationType) {
-        if (!_editing || itemId != _asInt(widget.rubric!['id'])) {
-          duplicate = item;
-          break;
-        }
-      }
-    }
-
     String title = '';
     String confirmLabel = '';
-
-    final evalLabel = _evaluationLabel(_evaluationType);
-    String semesterLabel = 'the selected semester';
-    for (final semester in state.semesters) {
-      if (_asInt(semester['id']) == _semesterId) {
-        semesterLabel = semester['display_name']?.toString() ?? 'the selected semester';
-        break;
-      }
-    }
-    final scopeLabel = _scope == 'pit' ? 'PIT' : 'Capstone';
 
     if (status == 'published') {
       title = 'Publish Rubric?';
@@ -808,42 +767,6 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  if (duplicate != null) ...[
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF7ED),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFFFED7AA)),
-                      ),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Icon(
-                            Icons.warning_amber_rounded,
-                            color: Color(0xFFEA580C),
-                            size: 19,
-                          ),
-                          const SizedBox(width: 10),
-                          Expanded(
-                            child: Text(
-                              duplicate['status']?.toString() == 'published'
-                                  ? 'Warning: A published rubric for $evalLabel under $semesterLabel ($scopeLabel) is already configured (named \'${duplicate['name']}\'). Published rubrics are locked and cannot be edited (deletion is blocked if tied to any schedules or events). Saving this may result in duplicate rubrics.'
-                                  : 'Warning: A draft rubric for $evalLabel under $semesterLabel ($scopeLabel) already exists (named \'${duplicate['name']}\').',
-                              style: const TextStyle(
-                                fontFamily: DefensysUi.fontFamily,
-                                fontSize: 12.5,
-                                color: Color(0xFF9A3412),
-                                height: 1.4,
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                  ],
                   Text(
                     status == 'published'
                         ? 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited (deletion is only allowed if not tied to any Capstone schedules or PIT events).'
@@ -910,6 +833,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       'criteria': _criteria.map((d) => d.toPayload()).toList(),
     };
 
+    final notifier = ref.read(rubricEngineProvider.notifier);
     final ok = _editing
         ? await notifier.updateRubric(_asInt(widget.rubric!['id'])!, payload)
         : await notifier.addRubric(payload);
@@ -936,6 +860,34 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   }
 
   Widget _lockedBanner() {
+    final lockReason = widget.rubric?['lock_reason']?.toString();
+    final canDelete = widget.rubric?['can_delete'] != false;
+    final isAssigned = widget.rubric?['is_assigned'] == true;
+    final assignedContext = widget.rubric?['assigned_context_name']?.toString();
+    final isStageCompleted = widget.rubric?['is_stage_completed'] == true;
+    final scope = widget.rubric?['scope']?.toString() ?? _scope;
+
+    String bannerText =
+        'This rubric is published and locked. Criteria and settings cannot be changed.';
+    if (!canDelete && lockReason != null && lockReason.isNotEmpty) {
+      bannerText = lockReason;
+    } else if (isStageCompleted &&
+        assignedContext != null &&
+        assignedContext.isNotEmpty) {
+      bannerText =
+          'This rubric is assigned to Defense Stage "$assignedContext" (Completed). Criteria and deletion are locked.';
+    } else if (isAssigned &&
+        assignedContext != null &&
+        assignedContext.isNotEmpty) {
+      if (scope == 'pit') {
+        bannerText =
+            'This rubric is currently assigned to PIT Event "$assignedContext". Criteria and settings are locked.';
+      } else {
+        bannerText =
+            'This rubric is currently assigned to Defense Stage "$assignedContext". Criteria and settings are locked.';
+      }
+    }
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
@@ -954,7 +906,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
           const SizedBox(width: 10),
           Expanded(
             child: Text(
-              'This rubric is published and locked.',
+              bannerText,
               style: TextStyle(
                 fontFamily: DefensysUi.fontFamily,
                 color: DefensysUi.warningText,
@@ -1091,7 +1043,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 ),
               ),
             ),
-            if (widget.readOnly) ...[
+            if (widget.readOnly ||
+                widget.rubric?['is_assigned'] == true ||
+                widget.rubric?['can_delete'] == false) ...[
               const SizedBox(height: 18),
               _lockedBanner(),
             ],
@@ -1421,17 +1375,47 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                     ),
                     if (widget.onDelete != null) ...[
                       const SizedBox(width: 8),
-                      TextButton(
-                        onPressed: saving ? null : widget.onDelete,
-                        style: TextButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          textStyle: TextStyle(
-                            fontFamily: DefensysUi.fontFamily,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 12,
-                          ),
-                        ),
-                        child: const Text('Delete rubric'),
+                      Builder(
+                        builder: (context) {
+                          final canDelete = widget.rubric?['can_delete'] != false;
+                          final lockReason = widget.rubric?['lock_reason']?.toString();
+                          final isAssigned = widget.rubric?['is_assigned'] == true;
+                          final assignedContext = widget.rubric?['assigned_context_name']?.toString();
+                          final isDisabled = saving || !canDelete;
+
+                          final buttonWidget = TextButton(
+                            onPressed: isDisabled ? null : widget.onDelete,
+                            style: TextButton.styleFrom(
+                              foregroundColor: isDisabled
+                                  ? const Color(0xFF9CA3AF)
+                                  : AppColors.danger,
+                              textStyle: TextStyle(
+                                fontFamily: DefensysUi.fontFamily,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 12,
+                              ),
+                            ),
+                            child: Text(
+                              !canDelete ? 'Delete rubric (Locked)' : 'Delete rubric',
+                            ),
+                          );
+
+                          final scope = widget.rubric?['scope']?.toString() ?? _scope;
+                          if (!canDelete && lockReason != null && lockReason.isNotEmpty) {
+                            return Tooltip(
+                              message: lockReason,
+                              child: buttonWidget,
+                            );
+                          } else if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
+                            return Tooltip(
+                              message: scope == 'pit'
+                                  ? 'Rubric is assigned to PIT Event "$assignedContext" and cannot be deleted.'
+                                  : 'Rubric is assigned to Defense Stage "$assignedContext". Deleting will remove assignment.',
+                              child: buttonWidget,
+                            );
+                          }
+                          return buttonWidget;
+                        },
                       ),
                     ],
                     const Spacer(),

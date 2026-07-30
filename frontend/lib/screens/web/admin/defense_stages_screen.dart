@@ -23,6 +23,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   bool _stageEditorOpen = false;
   int? _editingStageId;
   Map<String, dynamic>? _editingStage;
+  bool _isPipelineView = true;
 
   @override
   void initState() {
@@ -93,10 +94,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(state),
-            const SizedBox(height: 26),
-            _buildLifecycleInfo(state),
+            const SizedBox(height: 24),
+            _buildExecutiveStatCards(state),
+            const SizedBox(height: 20),
+            _buildLifecycleLegend(state),
 
-            const SizedBox(height: 22),
+            const SizedBox(height: 24),
             if (state.isLoading)
               _buildLoadingState()
             else
@@ -111,31 +114,39 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Expanded(
+        Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.layers_rounded, color: AppColors.maroon, size: 24),
-                  SizedBox(width: 8),
-                  Text(
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFEE2E2),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.layers_rounded, color: AppColors.maroon, size: 22),
+                  ),
+                  const SizedBox(width: 12),
+                  const Text(
                     'Defense Stages Setup',
                     style: TextStyle(
                       color: AppColors.maroon,
-                      fontSize: 21,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
                       height: 1.1,
+                      letterSpacing: -0.3,
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: 8),
-              Text(
-                'Manage the master list of academic defense stages for future scheduler configuration.',
+              const SizedBox(height: 8),
+              const Text(
+                'Configure sequential academic defense milestones, deliverables, and lifecycle locking rules.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 15,
+                  fontSize: 14,
                   height: 1.35,
                 ),
               ),
@@ -155,16 +166,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     : () => ref
                           .read(defenseStagesProvider.notifier)
                           .fetchStages(),
-                icon: const Icon(Icons.auto_awesome, size: 17),
-                label: const Text('Defense Scheduler'),
+                icon: const Icon(Icons.sync_rounded, size: 17),
+                label: const Text('Refresh Stages'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: AppColors.textPrimary,
-                  side: const BorderSide(color: Color(0xFFD7DDE8)),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
                   padding: const EdgeInsets.symmetric(horizontal: 18),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -172,17 +183,20 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               height: 42,
               child: ElevatedButton.icon(
                 onPressed: state.isSaving ? null : () => _showStageDialog(),
-                icon: const Icon(Icons.add, size: 18),
+                icon: const Icon(Icons.add_rounded, size: 19),
                 label: const Text('Add Stage'),
                 style: ElevatedButton.styleFrom(
                   elevation: 0,
                   backgroundColor: AppColors.maroon,
-                  foregroundColor: AppColors.gold,
-                  padding: const EdgeInsets.symmetric(horizontal: 18),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(10),
                   ),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w900),
+                  textStyle: const TextStyle(
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.1,
+                  ),
                 ),
               ),
             ),
@@ -192,60 +206,316 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
-  Widget _buildLifecycleInfo(DefenseStagesState state) {
+  Widget _buildExecutiveStatCards(DefenseStagesState state) {
     final total = _count(state, 'total');
     final published = _count(state, 'active');
+    final locked = state.stages.where((s) => _stageStatus(s) == 'locked').length;
 
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isCompact = constraints.maxWidth < 800;
+
+        final cards = [
+          _statTile(
+            title: 'Total Academic Stages',
+            value: '$total',
+            subtitle: 'Configured in master pipeline',
+            icon: Icons.layers_outlined,
+            accentColor: AppColors.maroon,
+          ),
+          _statTile(
+            title: 'Published & Active',
+            value: '$published / $total',
+            subtitle: 'Available for scheduler configuration',
+            icon: Icons.check_circle_outline_rounded,
+            accentColor: const Color(0xFF10B981),
+            badgeText: published > 0 ? 'Scheduler Active' : 'Draft Phase',
+            badgeColor: const Color(0xFFECFDF5),
+            badgeTextColor: const Color(0xFF047857),
+          ),
+          _statTile(
+            title: 'Locked Defenses',
+            value: '$locked',
+            subtitle: 'Read-only stages with active defenses',
+            icon: Icons.lock_clock_outlined,
+            accentColor: const Color(0xFF64748B),
+            badgeText: locked > 0 ? 'Protected' : 'Unlocked',
+            badgeColor: const Color(0xFFF1F5F9),
+            badgeTextColor: const Color(0xFF475569),
+          ),
+        ];
+
+        if (isCompact) {
+          return Column(
+            children: cards
+                .map((c) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: c,
+                    ))
+                .toList(),
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: cards[0]),
+            const SizedBox(width: 16),
+            Expanded(child: cards[1]),
+            const SizedBox(width: 16),
+            Expanded(child: cards[2]),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _statTile({
+    required String title,
+    required String value,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    String? badgeText,
+    Color? badgeColor,
+    Color? badgeTextColor,
+  }) {
     return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            color: Color(0x06000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              _softChip(
-                'Total Stages: $total',
-                const Color(0xFFF8FAFC),
-                AppColors.textPrimary,
-                const Color(0xFFD7DDE8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: accentColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: accentColor, size: 20),
               ),
-              _softChip(
-                'Published: $published',
-                const Color(0xFFDDF5E8),
-                const Color(0xFF047857),
-                const Color(0xFFA7F3D0),
-              ),
-              _softChip(
-                'Scheduler uses published stages',
-                const Color(0xFFDCEAFE),
-                const Color(0xFF1D4ED8),
-                const Color(0xFFBFDBFE),
-                chipMaxWidth: null,
-              ),
+              if (badgeText != null)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: badgeColor ?? const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: accentColor.withValues(alpha: 0.2)),
+                  ),
+                  child: Text(
+                    badgeText,
+                    style: TextStyle(
+                      color: badgeTextColor ?? AppColors.textSecondary,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
             ],
           ),
           const SizedBox(height: 14),
-          const Text(
-            'Stages follow a Draft → Published → Locked lifecycle. Configure deliverables in Draft, then Publish to make a stage available in the scheduler. Once a defense is scheduled against a stage, it becomes Locked and read-only.',
-            style: TextStyle(
-              color: AppColors.textSecondary,
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            title,
+            style: const TextStyle(
+              color: AppColors.textPrimary,
               fontSize: 13,
-              height: 1.45,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 12,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLifecycleLegend(DefenseStagesState state) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: const [
+              Icon(Icons.alt_route_rounded, size: 18, color: AppColors.maroon),
+              SizedBox(width: 8),
+              Text(
+                'Stage Lifecycle & Governance Rules',
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isMobile = constraints.maxWidth < 650;
+
+              final steps = [
+                _lifecycleStepPill(
+                  step: '1',
+                  label: 'Draft Stage',
+                  description: 'Configure deliverables & rubrics',
+                  color: const Color(0xFFF59E0B),
+                  bgColor: const Color(0xFFFFFBEB),
+                  borderColor: const Color(0xFFFDE68A),
+                ),
+                _lifecycleStepPill(
+                  step: '2',
+                  label: 'Published Stage',
+                  description: 'Active for defense scheduler',
+                  color: const Color(0xFF10B981),
+                  bgColor: const Color(0xFFECFDF5),
+                  borderColor: const Color(0xFFA7F3D0),
+                ),
+                _lifecycleStepPill(
+                  step: '3',
+                  label: 'Locked Stage',
+                  description: 'Read-only once defenses scheduled',
+                  color: const Color(0xFF64748B),
+                  bgColor: const Color(0xFFF1F5F9),
+                  borderColor: const Color(0xFFCBD5E1),
+                ),
+              ];
+
+              if (isMobile) {
+                return Column(
+                  children: steps
+                      .map((s) => Padding(
+                            padding: const EdgeInsets.only(bottom: 8),
+                            child: s,
+                          ))
+                      .toList(),
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: steps[0]),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.arrow_forward_rounded,
+                        size: 16, color: Color(0xFF94A3B8)),
+                  ),
+                  Expanded(child: steps[1]),
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    child: Icon(Icons.arrow_forward_rounded,
+                        size: 16, color: Color(0xFF94A3B8)),
+                  ),
+                  Expanded(child: steps[2]),
+                ],
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _lifecycleStepPill({
+    required String step,
+    required String label,
+    required String description,
+    required Color color,
+    required Color bgColor,
+    required Color borderColor,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              step,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: color == const Color(0xFF64748B)
+                        ? AppColors.textPrimary
+                        : color,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                Text(
+                  description,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    height: 1.2,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -263,10 +533,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x08000000),
+            color: Color(0x06000000),
             blurRadius: 10,
             offset: Offset(0, 4),
           ),
@@ -277,41 +547,364 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           Padding(
             padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
             child: Row(
-              children: const [
-                Expanded(
-                  child: Text(
-                    'Stage Directory',
-                    style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 17,
-                      fontWeight: FontWeight.w900,
-                    ),
+              children: [
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Academic Stage Chain',
+                        style: TextStyle(
+                          color: AppColors.textPrimary,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      SizedBox(height: 2),
+                      Text(
+                        'Sequential progression of defense milestones',
+                        style: TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 13,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-                Text(
-                  'Order by stage order',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 13,
+                Container(
+                  padding: const EdgeInsets.all(3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      _viewSwitchBtn(
+                        label: 'Pipeline Flow',
+                        icon: Icons.account_tree_outlined,
+                        selected: _isPipelineView,
+                        onTap: () => setState(() => _isPipelineView = true),
+                      ),
+                      _viewSwitchBtn(
+                        label: 'Table View',
+                        icon: Icons.table_rows_outlined,
+                        selected: !_isPipelineView,
+                        onTap: () => setState(() => _isPipelineView = false),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          Container(height: 1, color: const Color(0xFFE6E8EF)),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 980) {
-                return _buildStageCards(state);
-              }
+          Container(height: 1, color: const Color(0xFFE2E8F0)),
+          if (_isPipelineView)
+            _buildStagePipelineView(state)
+          else
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 980) {
+                  return _buildStageCards(state);
+                }
 
-              return SizedBox(
-                width: constraints.maxWidth,
-                child: _buildStageTable(state),
-              );
-            },
+                return SizedBox(
+                  width: constraints.maxWidth,
+                  child: _buildStageTable(state),
+                );
+              },
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewSwitchBtn({
+    required String label,
+    required IconData icon,
+    required bool selected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(7),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: selected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          boxShadow: selected
+              ? const [
+                  BoxShadow(
+                    color: Color(0x10000000),
+                    blurRadius: 4,
+                    offset: Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: selected ? AppColors.maroon : AppColors.textSecondary,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: TextStyle(
+                color: selected ? AppColors.maroon : AppColors.textSecondary,
+                fontSize: 12.5,
+                fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStagePipelineView(DefenseStagesState state) {
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        children: [
+          for (var i = 0; i < state.stages.length; i++) ...[
+            _stagePipelineNodeCard(state, state.stages[i], i, state.stages.length),
+            if (i < state.stages.length - 1)
+              _pipelineConnectorLine(),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _pipelineConnectorLine() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      height: 28,
+      child: Row(
+        children: [
+          const SizedBox(width: 44),
+          Container(
+            width: 2,
+            color: const Color(0xFFCBD5E1),
+          ),
+          const SizedBox(width: 12),
+          const Icon(Icons.arrow_downward_rounded, size: 14, color: Color(0xFF94A3B8)),
+          const SizedBox(width: 6),
+          const Text(
+            'Unlocks Next Academic Milestone',
+            style: TextStyle(
+              color: Color(0xFF94A3B8),
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              letterSpacing: 0.2,
+            ),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _stagePipelineNodeCard(
+    DefenseStagesState state,
+    Map<String, dynamic> stage,
+    int index,
+    int totalStages,
+  ) {
+    final status = _stageStatus(stage);
+    final isPublished = status == 'published';
+    final isLocked = status == 'locked';
+    final order = stage['display_order']?.toString() ?? '${index + 1}';
+
+    Color sideAccentColor;
+    if (isLocked) {
+      sideAccentColor = const Color(0xFF64748B);
+    } else if (isPublished) {
+      sideAccentColor = const Color(0xFF10B981);
+    } else {
+      sideAccentColor = const Color(0xFFF59E0B);
+    }
+
+    final delivCount = _deliverablesCount(stage);
+    final previousLabel = stage['previous_stage_label']?.toString();
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 10,
+            offset: Offset(0, 3),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Container(
+                width: 6,
+                color: sideAccentColor,
+              ),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(18),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF1F5F9),
+                              borderRadius: BorderRadius.circular(10),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(
+                              order.padLeft(2, '0'),
+                              style: const TextStyle(
+                                color: AppColors.textPrimary,
+                                fontSize: 13,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Text(
+                                      stage['label']?.toString() ?? 'Stage',
+                                      style: const TextStyle(
+                                        color: AppColors.textPrimary,
+                                        fontSize: 16,
+                                        fontWeight: FontWeight.w900,
+                                        letterSpacing: -0.2,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 10),
+                                    _codeTag(stage['code']?.toString() ?? ''),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  stage['description']?.toString() ??
+                                      'Academic defense milestone configuration.',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 13,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 14),
+                          _statusChip(stage),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFE2E8F0)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.turn_right_rounded,
+                                    size: 14, color: AppColors.textSecondary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  previousLabel == null || previousLabel.isEmpty
+                                      ? 'Sequence Start'
+                                      : 'Prerequisite: $previousLabel',
+                                  style: const TextStyle(
+                                    color: AppColors.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: delivCount > 0
+                                  ? const Color(0xFFEFF6FF)
+                                  : const Color(0xFFF8FAFC),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: delivCount > 0
+                                    ? const Color(0xFFBFDBFE)
+                                    : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.assignment_outlined,
+                                  size: 14,
+                                  color: delivCount > 0
+                                      ? const Color(0xFF1D4ED8)
+                                      : AppColors.textSecondary,
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '$delivCount Deliverables Configured',
+                                  style: TextStyle(
+                                    color: delivCount > 0
+                                        ? const Color(0xFF1D4ED8)
+                                        : AppColors.textSecondary,
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const Spacer(),
+                          _buildStageActions(state, stage),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -649,7 +1242,27 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       runSpacing: 8,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
-        if (!locked)
+        if (locked)
+          OutlinedButton.icon(
+            onPressed: stageId == null ? null : () => _openStageEditor(stage),
+            icon: const Icon(Icons.visibility_outlined, size: 15),
+            label: const Text('View Details'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.textPrimary,
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              textStyle: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          )
+        else ...[
           OutlinedButton.icon(
             onPressed: state.isSaving || stageId == null
                 ? null
@@ -671,54 +1284,35 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ),
             ),
           ),
-        if (locked)
-          OutlinedButton.icon(
-            onPressed: null,
-            icon: const Icon(Icons.lock, size: 14),
-            label: const Text('Locked'),
-            style: OutlinedButton.styleFrom(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          )
-        else if (!published)
-          OutlinedButton.icon(
-            onPressed: state.isSaving || stageId == null
-                ? null
-                : () => ref
-                      .read(defenseStagesProvider.notifier)
-                      .updateStage(stageId, {
-                        'label': stage['label'],
-                        'display_order': stage['display_order'],
-                        'description': stage['description'] ?? '',
-                        'is_active': true,
-                      }),
-            icon: const Icon(Icons.send_rounded, size: 15),
-            label: const Text('Publish'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: const Color(0xFF047857),
-              side: const BorderSide(color: Color(0xFFA7F3D0)),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w900,
+          if (!published)
+            OutlinedButton.icon(
+              onPressed: state.isSaving || stageId == null
+                  ? null
+                  : () => ref
+                        .read(defenseStagesProvider.notifier)
+                        .updateStage(stageId, {
+                          'label': stage['label'],
+                          'display_order': stage['display_order'],
+                          'description': stage['description'] ?? '',
+                          'is_active': true,
+                        }),
+              icon: const Icon(Icons.send_rounded, size: 15),
+              label: const Text('Publish'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF047857),
+                side: const BorderSide(color: Color(0xFFA7F3D0)),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                minimumSize: Size.zero,
+                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                textStyle: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-          ),
-        if (!locked)
           IconButton(
             tooltip: 'Delete stage',
             style: IconButton.styleFrom(
@@ -736,6 +1330,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 ),
             icon: const Icon(Icons.delete_outline, size: 19),
           ),
+        ],
       ],
     );
   }
@@ -764,6 +1359,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     final label = TextEditingController(
       text: stage?['label']?.toString() ?? '',
+    );
+    final codeCtrl = TextEditingController(
+      text: stage?['code']?.toString() ?? '',
     );
     final description = TextEditingController(
       text: stage?['description']?.toString() ?? '',
@@ -823,9 +1421,30 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
               List<DropdownMenuItem<int>> buildRubricDropdownItems(String evaluationType) {
                 final options = getRubricOptions(evaluationType);
+                final currentStageId = stage != null ? _asInt(stage['id']) : null;
+
                 final items = options.map((r) {
+                  final id = _asInt(r['id']);
+                  final assignedStageId = _asInt(r['defense_stage_id']);
+                  final assignedStageLabel = r['defense_stage_label']?.toString();
+                  final isAssignedToOther = assignedStageId != null && assignedStageId != currentStageId;
+
+                  if (isAssignedToOther) {
+                    return DropdownMenuItem<int>(
+                      value: id,
+                      enabled: false,
+                      child: Text(
+                        '${r['name']} (Assigned to: ${assignedStageLabel ?? "Another Stage"})',
+                        style: const TextStyle(
+                          color: Color(0xFF9CA3AF),
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    );
+                  }
+
                   return DropdownMenuItem<int>(
-                    value: _asInt(r['id']),
+                    value: id,
                     child: Text(r['name']?.toString() ?? ''),
                   );
                 }).toList();
@@ -854,6 +1473,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           controller: label,
                           decoration: const InputDecoration(
                             labelText: 'Stage Name',
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
+                          controller: codeCtrl,
+                          decoration: const InputDecoration(
+                            labelText: 'Stage code',
+                            helperText: 'Unique system identifier'
                           ),
                         ),
                         const SizedBox(height: 12),
@@ -1002,6 +1629,32 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   horizontal: 12, vertical: 8),
                               textStyle: const TextStyle(
                                   fontSize: 12, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF0F9FF),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: const Color(0xFFBAE6FD)),
+                            ),
+                            child: const Row(
+                              children: [
+                                Icon(Icons.info_outline, size: 16, color: Color(0xFF0284C7)),
+                                SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    'Note: Assigning rubrics now is optional. You can leave them as "None" and attach published rubrics later before scheduling defenses.',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Color(0xFF0369A1),
+                                      fontWeight: FontWeight.w500,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                           const SizedBox(height: 14),
@@ -1211,6 +1864,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     } finally {
       if (saved != true) {
         label.dispose();
+        codeCtrl.dispose();
         description.dispose();
         order.dispose();
         panelCtrl.dispose();
@@ -1229,6 +1883,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     final payload = {
       'label': label.text.trim(),
+      'code': codeCtrl.text.trim(),
       'display_order': int.tryParse(order.text.trim()) ??
           _nextDisplayOrder(ref.read(defenseStagesProvider)),
       'description': description.text.trim(),

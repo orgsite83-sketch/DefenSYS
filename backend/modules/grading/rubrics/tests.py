@@ -452,3 +452,258 @@ class RubricEngineApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('criteria', response.data)
 
+    def test_rubric_deletion_tier_unassigned(self):
+        self.client.force_authenticate(user=self.admin)
+        create_res = self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Unassigned Rubric', defense_stage_id=None), format='json')
+        self.assertEqual(create_res.status_code, 201)
+        rubric_data = create_res.data['rubric']
+        self.assertEqual(rubric_data['deletion_tier'], 'unassigned')
+        self.assertTrue(rubric_data['can_delete'])
+
+        del_res = self.client.delete(f"/api/grading/rubrics/{rubric_data['id']}/")
+        self.assertEqual(del_res.status_code, 200)
+
+    def test_rubric_deletion_tier_assigned_no_schedule(self):
+        from defense.stages.models import StageGradingConfig
+        pit_a = User.objects.create_user(
+            username='pit-lead-a',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        pit_b = User.objects.create_user(
+            username='pit-lead-b',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+
+        self.client.force_authenticate(user=pit_a)
+        create = self.client.post(
+            '/api/grading/rubrics/',
+            self.pit_rubric_payload(name='PIT Rubric A'),
+            format='json',
+        )
+        self.assertEqual(create.status_code, 201)
+
+        list_a = self.client.get('/api/grading/rubrics/')
+        self.assertEqual(list_a.status_code, 200)
+        self.assertEqual(len(list_a.data['rubrics']), 1)
+        self.assertEqual(list_a.data['rubrics'][0]['name'], 'PIT Rubric A')
+
+        self.client.force_authenticate(user=pit_b)
+        list_b = self.client.get('/api/grading/rubrics/')
+        self.assertEqual(list_b.status_code, 200)
+        self.assertEqual(len(list_b.data['rubrics']), 0)
+
+        self.client.force_authenticate(user=self.admin)
+        list_admin = self.client.get('/api/grading/rubrics/')
+        self.assertEqual(list_admin.status_code, 200)
+        self.assertGreaterEqual(len(list_admin.data['rubrics']), 1)
+
+    def test_pit_lead_cannot_mutate_another_pit_leads_rubric(self):
+        pit_a = User.objects.create_user(
+            username='pit-lead-a2',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+        pit_b = User.objects.create_user(
+            username='pit-lead-b2',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='3rd Year',
+        )
+
+        self.client.force_authenticate(user=pit_a)
+        create = self.client.post(
+            '/api/grading/rubrics/',
+            self.pit_rubric_payload(name='Owned By A'),
+            format='json',
+        )
+        rubric_id = create.data['rubric']['id']
+
+        self.client.force_authenticate(user=pit_b)
+        patch = self.client.patch(
+            f'/api/grading/rubrics/{rubric_id}/',
+            {'name': 'Hijacked'},
+            format='json',
+        )
+        delete = self.client.delete(f'/api/grading/rubrics/{rubric_id}/')
+        publish = self.client.post(f'/api/grading/rubrics/{rubric_id}/publish/')
+
+        self.assertEqual(patch.status_code, 404)
+        self.assertEqual(delete.status_code, 404)
+        self.assertEqual(publish.status_code, 404)
+
+    def test_admin_dashboard_counts_published_rubrics_and_phase_eight(self):
+        for index in range(6):
+            Rubric.objects.create(
+                name=f'Published Rubric {index + 1}',
+                scope=Rubric.SCOPE_CAPSTONE,
+                semester=self.semester,
+                defense_stage=self.stage,
+                evaluation_type=Rubric.EVAL_PANEL,
+                status=Rubric.STATUS_PUBLISHED,
+                created_by=self.admin,
+            )
+
+        response = self.client.get('/api/dashboards/admin/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['stats']['published_rubrics'], 6)
+        self.assertEqual(response.data['migration']['phase'], 15)
+
+    def test_both_rubric_creation_and_forcing_constraints(self):
+        payload = self.rubric_payload(
+            target_type='both',
+            criteria=[
+                {
+                    'name': 'Team Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                },
+                {
+                    'name': 'Individual Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 1,
+                    'target_type': 'individual',
+                },
+            ]
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        rubric_id = response.data['rubric']['id']
+        rubric = Rubric.objects.get(id=rubric_id)
+        self.assertEqual(rubric.target_type, 'both')
+        self.assertEqual(rubric.criteria.count(), 2)
+        criteria_list = list(rubric.criteria.order_by('display_order'))
+        self.assertEqual(criteria_list[0].target_type, 'team')
+        self.assertEqual(criteria_list[1].target_type, 'individual')
+
+        payload_team = self.rubric_payload(
+            name='Team Rubric Forcing Test',
+            target_type='team',
+            criteria=[
+                {
+                    'name': 'C1',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'individual',
+                }
+            ]
+        )
+        response_team = self.client.post('/api/grading/rubrics/', payload_team, format='json')
+        self.assertEqual(response_team.status_code, 201)
+        r_team = Rubric.objects.get(id=response_team.data['rubric']['id'])
+        self.assertEqual(r_team.criteria.get().target_type, 'team')
+
+        payload_ind = self.rubric_payload(
+            name='Individual Rubric Forcing Test',
+            target_type='individual',
+            criteria=[
+                {
+                    'name': 'C1',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                }
+            ]
+        )
+        response_ind = self.client.post('/api/grading/rubrics/', payload_ind, format='json')
+        self.assertEqual(response_ind.status_code, 201)
+        r_ind = Rubric.objects.get(id=response_ind.data['rubric']['id'])
+        self.assertEqual(r_ind.criteria.get().target_type, 'individual')
+
+    def test_both_rubric_without_both_types_is_rejected(self):
+        payload = self.rubric_payload(
+            name='Invalid Both Rubric Test',
+            target_type='both',
+            criteria=[
+                {
+                    'name': 'Team Only Criterion',
+                    'scale': Rubric.SCALE_10,
+                    'max_score': 10,
+                    'weight': 1,
+                    'display_order': 0,
+                    'target_type': 'team',
+                }
+            ]
+        )
+        response = self.client.post('/api/grading/rubrics/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('criteria', response.data)
+
+    def test_rubric_deletion_tier_assigned_no_schedule(self):
+        from defense.stages.models import StageGradingConfig
+        self.client.force_authenticate(user=self.admin)
+        create_res = self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Assigned No Schedule Rubric'), format='json')
+        rubric_id = create_res.data['rubric']['id']
+        rubric = Rubric.objects.get(id=rubric_id)
+
+        config, _ = StageGradingConfig.objects.get_or_create(
+            defense_stage=self.stage,
+            semester=self.semester,
+        )
+        config.panel_rubric = rubric
+        config.save()
+
+        get_res = self.client.get('/api/grading/rubrics/')
+        r_item = next(r for r in get_res.data['rubrics'] if r['id'] == rubric_id)
+        self.assertEqual(r_item['deletion_tier'], 'assigned_no_schedule')
+        self.assertTrue(r_item['can_delete'])
+
+        del_res = self.client.delete(f'/api/grading/rubrics/{rubric_id}/')
+        self.assertEqual(del_res.status_code, 200)
+        config.refresh_from_db()
+        self.assertIsNone(config.panel_rubric)
+
+    def test_rubric_deletion_tier_locked_with_schedule(self):
+        from defense.stages.models import StageGradingConfig
+        from defense.scheduler.models import DefenseSchedule
+        from student_teams.models import StudentTeam
+
+        self.client.force_authenticate(user=self.admin)
+        student = User.objects.create_user(username='student-test-del', password='pass12345', role='student')
+        team = StudentTeam.objects.create(
+            name='Test Team Del',
+            semester=self.semester,
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            leader=student,
+        )
+        create_res = self.client.post('/api/grading/rubrics/', self.rubric_payload(name='Locked Rubric', status=Rubric.STATUS_PUBLISHED), format='json')
+        rubric_id = create_res.data['rubric']['id']
+        rubric = Rubric.objects.get(id=rubric_id)
+
+        DefenseSchedule.objects.create(
+            semester=self.semester,
+            team=team,
+            defense_stage=self.stage,
+            rubric=rubric,
+            scheduled_date='2026-08-01',
+            start_time='09:00:00',
+            room='Room 101',
+        )
+
+        get_res = self.client.get('/api/grading/rubrics/')
+        r_item = next(r for r in get_res.data['rubrics'] if r['id'] == rubric_id)
+        self.assertEqual(r_item['deletion_tier'], 'locked')
+        self.assertFalse(r_item['can_delete'])
+        self.assertIsNotNone(r_item['lock_reason'])
+
+        del_res = self.client.delete(f'/api/grading/rubrics/{rubric_id}/')
+        self.assertEqual(del_res.status_code, 400)

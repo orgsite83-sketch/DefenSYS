@@ -55,6 +55,36 @@ class DefenseStageApiTests(APITestCase):
         self.assertEqual(response.data['counts']['total'], 4)
         self.assertTrue(DefenseStage.objects.filter(label='Prototype Demo').exists())
 
+    def test_admin_can_create_stage_with_custom_code(self):
+        response = self.client.post(
+            '/api/defense/stages/',
+            {
+                'label': 'Design Assessment',
+                'code': 'custom-design-stage',
+                'display_order': 5,
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['stage']['code'], 'custom-design-stage')
+        stage = DefenseStage.objects.get(label='Design Assessment')
+        self.assertEqual(stage.code, 'custom-design-stage')
+
+    def test_admin_can_update_stage_code(self):
+        stage = DefenseStage.objects.get(label='Final Defense')
+        response = self.client.patch(
+            f'/api/defense/stages/{stage.id}/',
+            {
+                'code': 'custom-final-code',
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        stage.refresh_from_db()
+        self.assertEqual(stage.code, 'custom-final-code')
+
     def test_create_stage_with_blank_deliverable_label_is_rejected(self):
         response = self.client.post(
             '/api/defense/stages/',
@@ -442,3 +472,56 @@ class StageGradingConfigApiTests(APITestCase):
         self.assertEqual(published_grade.panel_weight, 50)
         self.assertEqual(published_grade.adviser_weight, 30)
         self.assertEqual(published_grade.peer_weight, 20)
+
+    def test_stage_with_schedule_is_locked_and_cannot_be_updated_or_deleted(self):
+        stage = DefenseStage.objects.get(label='Concept Proposal')
+
+        student = User.objects.create_user(username='sched-team-lead', password='pass12345', role='student')
+        team = StudentTeam.objects.create(
+            name='Sched Team',
+            project_title='Sched Project',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=self.semester,
+            leader=student,
+        )
+        DefenseSchedule.objects.create(
+            team=team,
+            defense_stage=stage,
+            semester=self.semester,
+            scheduled_date=date(2026, 9, 1),
+            start_time=time(9, 0),
+            slot_duration=60,
+            room='Room 101',
+        )
+
+        res_get = self.client.get('/api/defense/stages/')
+        stage_data = next(s for s in res_get.data['stages'] if s['id'] == stage.id)
+        self.assertTrue(stage_data['is_locked'])
+
+        res_patch = self.client.patch(
+            f'/api/defense/stages/{stage.id}/',
+            {'label': 'Renamed Concept Proposal'},
+            format='json',
+        )
+        self.assertEqual(res_patch.status_code, 400)
+
+        res_del = self.client.delete(f'/api/defense/stages/{stage.id}/')
+        self.assertEqual(res_del.status_code, 409)
+
+    def test_officially_completed_stage_is_locked(self):
+        stage = DefenseStage.objects.get(label='Concept Proposal')
+        config = get_or_create_stage_grading_config(stage, self.semester)
+        config.is_officially_complete = True
+        config.save()
+
+        res_get = self.client.get('/api/defense/stages/')
+        stage_data = next(s for s in res_get.data['stages'] if s['id'] == stage.id)
+        self.assertTrue(stage_data['is_locked'])
+
+        res_config = self.client.patch(
+            f'/api/defense/stages/{stage.id}/grading-config/?semester_id={self.semester.id}',
+            {'panel_weight': 60, 'adviser_weight': 20, 'peer_weight': 20},
+            format='json',
+        )
+        self.assertEqual(res_config.status_code, 400)

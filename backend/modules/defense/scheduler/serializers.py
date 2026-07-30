@@ -1033,7 +1033,7 @@ def minutes_to_time(minutes):
     return value.time().replace(second=0, microsecond=0)
 
 
-def schedule_options_payload(user=None):
+def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
     from authentication_access_control.scopes import is_admin_user, is_pit_lead_only, visible_teams_for
     from student_teams.term_scope import (
         PIT_MODE_AUDIT,
@@ -1041,8 +1041,9 @@ def schedule_options_payload(user=None):
         pit_lead_operating_mode,
     )
 
-    semester = active_semester()
-    pit_lead_only = is_pit_lead_only(user)
+    semester = semester or active_semester()
+    if pit_lead_only is None:
+        pit_lead_only = is_pit_lead_only(user)
     admin_user = is_admin_user(user)
     pit_operating_mode = (
         pit_lead_operating_mode(user, active=semester)

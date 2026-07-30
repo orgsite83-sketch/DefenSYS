@@ -7,6 +7,7 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../widgets/feedback_toast.dart';
 import 'rubric_full_page_editor.dart';
 import 'widgets/defensys_admin_shell.dart';
 
@@ -170,6 +171,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             ? () => _confirmDelete(
                   rubricId,
                   target!['name']?.toString() ?? 'rubric',
+                  rubric: target,
                   closeEditorOnSuccess: true,
                 )
             : null,
@@ -845,10 +847,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _defenseStageCell(Map<String, dynamic> rubric) {
     final scope = rubric['scope']?.toString() ?? '';
     if (scope == 'pit') {
-      return _bodyText('PIT (template)');
+      final event = rubric['event_name']?.toString().trim();
+      return _bodyText(event != null && event.isNotEmpty ? event : 'Unassigned');
     }
     final stage = rubric['defense_stage_label']?.toString().trim();
-    return _bodyText(stage != null && stage.isNotEmpty ? stage : '—');
+    return _bodyText(stage != null && stage.isNotEmpty ? stage : 'Unassigned');
   }
 
   Widget _scopeCell(Map<String, dynamic> rubric) {
@@ -977,13 +980,34 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Future<void> _confirmDelete(
     int rubricId,
     String rubricName, {
+    Map<String, dynamic>? rubric,
     bool closeEditorOnSuccess = false,
   }) async {
+    final canDelete = rubric?['can_delete'] != false;
+    final lockReason = rubric?['lock_reason']?.toString();
+    final isAssigned = rubric?['is_assigned'] == true;
+    final assignedContext = rubric?['assigned_context_name']?.toString();
+
+    if (!canDelete) {
+      showErrorToast(
+        context,
+        lockReason ?? 'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
+      );
+      return;
+    }
+
+    String dialogMessage = 'Delete $rubricName? This removes its criteria too.';
+    if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
+      dialogMessage =
+          'This rubric is currently assigned to Defense Stage "$assignedContext". '
+          'Deleting it will remove the assignment from the stage configuration. Are you sure you want to proceed?';
+    }
+
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (dialogContext) => AlertDialog(
         title: const Text('Delete Rubric'),
-        content: Text('Delete $rubricName? This removes its criteria too.'),
+        content: Text(dialogMessage),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogContext, false),

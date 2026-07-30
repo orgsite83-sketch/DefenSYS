@@ -292,7 +292,25 @@ class RubricDetailView(APIView):
 
     def delete(self, request, rubric_id):
         from django.db.models import ProtectedError
+        from .serializers import get_rubric_deletion_info
         rubric = self.get_object(request, rubric_id)
+
+        info = get_rubric_deletion_info(rubric)
+        if not info['can_delete']:
+            return Response(
+                {'error': info['lock_reason'] or 'This rubric is in active use and cannot be deleted.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if info['deletion_tier'] == 'assigned_no_schedule':
+            from defense.stages.models import StageGradingConfig
+            from defense.scheduler.models import PitEventGradingConfig
+            StageGradingConfig.objects.filter(panel_rubric=rubric).update(panel_rubric=None)
+            StageGradingConfig.objects.filter(adviser_rubric=rubric).update(adviser_rubric=None)
+            StageGradingConfig.objects.filter(peer_rubric=rubric).update(peer_rubric=None)
+            PitEventGradingConfig.objects.filter(panel_rubric=rubric).update(panel_rubric=None)
+            PitEventGradingConfig.objects.filter(peer_rubric=rubric).update(peer_rubric=None)
+
         old_values = {
             'name': rubric.name,
             'scope': rubric.scope,

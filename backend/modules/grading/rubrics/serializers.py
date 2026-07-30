@@ -1,5 +1,5 @@
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import models, transaction
 from rest_framework import serializers
 
 from academic_period_management.models import Semester
@@ -100,17 +100,27 @@ class RubricSerializer(serializers.ModelSerializer):
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
-        if instance.scope == Rubric.SCOPE_CAPSTONE and instance.defense_stage_id:
-            resolved = weights_for_capstone_stage(instance.defense_stage, instance.semester)
-            data['panel_weight'] = resolved['panel_weight']
-            data['adviser_weight'] = resolved['adviser_weight']
-            data['peer_weight'] = resolved['peer_weight']
+        if instance.scope == Rubric.SCOPE_CAPSTONE:
+            from defense.stages.models import StageGradingConfig
+            if not instance.defense_stage_id:
+                cfg = StageGradingConfig.objects.filter(
+                    semester=instance.semester
+                ).filter(
+                    models.Q(panel_rubric=instance) | models.Q(adviser_rubric=instance) | models.Q(peer_rubric=instance)
+                ).select_related('defense_stage').first()
+                if cfg:
+                    data['defense_stage_id'] = cfg.defense_stage_id
+                    data['defense_stage_label'] = cfg.defense_stage.label
+            if instance.defense_stage_id:
+                resolved = weights_for_capstone_stage(instance.defense_stage, instance.semester)
+                data['panel_weight'] = resolved['panel_weight']
+                data['adviser_weight'] = resolved['adviser_weight']
+                data['peer_weight'] = resolved['peer_weight']
         elif instance.scope == Rubric.SCOPE_PIT:
             data['panel_weight'] = 0
             data['adviser_weight'] = 0
             data['peer_weight'] = 0
             try:
-                from django.db import models
                 from defense.scheduler.models import PitEventGradingConfig
                 config = PitEventGradingConfig.objects.filter(
                     semester=instance.semester
@@ -123,9 +133,101 @@ class RubricSerializer(serializers.ModelSerializer):
                     ).first()
                 if config:
                     data['event_name'] = config.event_name
+                    data['pit_event_id'] = config.id
             except Exception:
                 pass
+
+        info = get_rubric_deletion_info(instance)
+        data['is_assigned'] = info['is_assigned']
+        data['assigned_context_name'] = info['assigned_context_name']
+        data['has_schedule'] = info['has_schedule']
+        data['has_evaluations'] = info['has_evaluations']
+        data['is_stage_completed'] = info['is_stage_completed']
+        data['deletion_tier'] = info['deletion_tier']
+        data['can_delete'] = info['can_delete']
+        data['lock_reason'] = info['lock_reason']
         return data
+
+
+def get_rubric_deletion_info(instance):
+    from defense.stages.models import StageGradingConfig
+    from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
+    from grading.grades.models import PanelistCriterionScore
+
+    is_assigned = False
+    assigned_context_name = None
+    is_stage_completed = False
+
+    if instance.scope == Rubric.SCOPE_CAPSTONE:
+        stage_cfg = StageGradingConfig.objects.filter(
+            models.Q(panel_rubric=instance) | models.Q(adviser_rubric=instance) | models.Q(peer_rubric=instance)
+        ).select_related('defense_stage').first()
+        if stage_cfg:
+            is_assigned = True
+            assigned_context_name = stage_cfg.defense_stage.label
+            if stage_cfg.is_officially_complete:
+                is_stage_completed = True
+        elif instance.defense_stage:
+            is_assigned = True
+            assigned_context_name = instance.defense_stage.label
+    elif instance.scope == Rubric.SCOPE_PIT:
+        pit_cfg = PitEventGradingConfig.objects.filter(
+            models.Q(panel_rubric=instance) | models.Q(peer_rubric=instance)
+        ).first()
+        if pit_cfg:
+            is_assigned = True
+            assigned_context_name = pit_cfg.event_name or 'PIT Event'
+        elif instance.event_name:
+            is_assigned = True
+            assigned_context_name = instance.event_name
+
+    has_schedule = False
+    if instance.scope == Rubric.SCOPE_CAPSTONE and instance.defense_stage_id:
+        has_schedule = DefenseSchedule.objects.filter(
+            semester=instance.semester,
+            defense_stage_id=instance.defense_stage_id,
+        ).exclude(status=DefenseSchedule.STATUS_CANCELLED).exists()
+
+    if not has_schedule:
+        has_schedule = DefenseSchedule.objects.filter(
+            rubric=instance
+        ).exclude(status=DefenseSchedule.STATUS_CANCELLED).exists()
+
+    has_evaluations = PanelistCriterionScore.objects.filter(
+        criterion__rubric=instance
+    ).exists()
+
+    if has_evaluations:
+        deletion_tier = 'locked'
+        context_str = f'Defense Stage "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_CAPSTONE and assigned_context_name else (f'PIT Event "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_PIT and assigned_context_name else 'defense operations')
+        lock_reason = f'This rubric is assigned to {context_str} and has recorded evaluations, so it cannot be deleted.'
+    elif is_stage_completed:
+        deletion_tier = 'locked'
+        lock_reason = f'This rubric is assigned to Defense Stage "{assigned_context_name or "Capstone"}" (Completed) and cannot be deleted.'
+    elif instance.scope == Rubric.SCOPE_PIT and is_assigned:
+        deletion_tier = 'locked'
+        lock_reason = f'This rubric is assigned to PIT Event "{assigned_context_name or "PIT Event"}" and cannot be deleted.'
+    elif has_schedule:
+        deletion_tier = 'locked'
+        context_str = f'Defense Stage "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_CAPSTONE and assigned_context_name else f'"{instance.name}"'
+        lock_reason = f'This rubric is assigned to active scheduled defense sessions for {context_str} and cannot be deleted.'
+    elif is_assigned:
+        deletion_tier = 'assigned_no_schedule'
+        lock_reason = None
+    else:
+        deletion_tier = 'unassigned'
+        lock_reason = None
+
+    return {
+        'is_assigned': is_assigned,
+        'assigned_context_name': assigned_context_name,
+        'has_schedule': has_schedule,
+        'has_evaluations': has_evaluations,
+        'is_stage_completed': is_stage_completed,
+        'deletion_tier': deletion_tier,
+        'can_delete': deletion_tier != 'locked',
+        'lock_reason': lock_reason,
+    }
 
 
 class RubricWriteSerializer(serializers.Serializer):
@@ -195,8 +297,6 @@ class RubricWriteSerializer(serializers.Serializer):
                 attrs['peer_weight'] = attrs.get('peer_weight') if attrs.get('peer_weight') is not None else 20
                 if attrs['panel_weight'] + attrs['adviser_weight'] + attrs['peer_weight'] != 100:
                     raise serializers.ValidationError({'weights': 'Panel, adviser, and peer weights must total 100%.'})
-
-        self._validate_duplicate(attrs)
         attrs['criteria'] = self._normalized_criteria(attrs['criteria'], attrs.get('target_type', Rubric.TARGET_TEAM))
         return attrs
 
@@ -308,16 +408,6 @@ class RubricWriteSerializer(serializers.Serializer):
         total = attrs['panel_weight'] + attrs['peer_weight']
         if total != 100:
             raise serializers.ValidationError({'weights': 'Panel and peer weights must total 100%.'})
-
-    def _validate_duplicate(self, attrs):
-        queryset = Rubric.objects.filter(
-            semester=attrs['semester'],
-            name__iexact=attrs['name'],
-        )
-        if self.instance is not None:
-            queryset = queryset.exclude(pk=self.instance.pk)
-        if queryset.exists():
-            raise serializers.ValidationError({'name': 'A rubric with this name already exists for this semester.'})
 
     def _normalized_criteria(self, criteria, rubric_target_type):
         normalized = []

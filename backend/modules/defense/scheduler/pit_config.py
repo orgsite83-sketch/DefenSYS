@@ -51,6 +51,7 @@ def upsert_pit_event_config(
     *,
     semester,
     event_name,
+    event_code=None,
     panel_rubric,
     peer_rubric,
     panel_weight,
@@ -58,18 +59,62 @@ def upsert_pit_event_config(
     archive_file_template=None,
     deliverables=None,
 ):
+    from django.db.models import Q
+    from grading.grades.models import TeamGrade
+
     event_name = (event_name or '').strip()
     if not event_name:
         raise ValidationError({'event_name': 'PIT event name is required.'})
     if panel_weight + peer_weight != 100:
         raise ValidationError('Panel and peer weights must total 100%.')
-    
+
+    existing_config = PitEventGradingConfig.objects.filter(
+        semester=semester, event_name__iexact=event_name
+    ).first()
+
+    # Rubric Exclusivity Check
+    if panel_rubric:
+        other = PitEventGradingConfig.objects.filter(semester=semester).exclude(
+            event_name__iexact=event_name
+        ).filter(
+            Q(panel_rubric=panel_rubric) | Q(peer_rubric=panel_rubric)
+        ).first()
+        if other:
+            raise ValidationError(
+                f"Panel Rubric '{panel_rubric.name}' is already assigned to PIT event '{other.event_name}'."
+            )
+
+    if peer_rubric:
+        other = PitEventGradingConfig.objects.filter(semester=semester).exclude(
+            event_name__iexact=event_name
+        ).filter(
+            Q(panel_rubric=peer_rubric) | Q(peer_rubric=peer_rubric)
+        ).first()
+        if other:
+            raise ValidationError(
+                f"Peer Rubric '{peer_rubric.name}' is already assigned to PIT event '{other.event_name}'."
+            )
+
+    # Lock Check for existing config
+    if existing_config:
+        changing_rubrics = (
+            existing_config.panel_rubric_id != (panel_rubric.id if panel_rubric else None)
+            or existing_config.peer_rubric_id != (peer_rubric.id if peer_rubric else None)
+        )
+        if changing_rubrics:
+            if existing_config.is_officially_complete:
+                raise ValidationError('Rubrics cannot be changed because this PIT event is officially complete.')
+            if TeamGrade.objects.filter(pit_event_config=existing_config).exclude(status=TeamGrade.STATUS_PENDING).exists():
+                raise ValidationError('Rubrics cannot be changed because evaluations have already been recorded for this PIT event.')
+
     defaults = {
         'panel_rubric': panel_rubric,
         'peer_rubric': peer_rubric,
         'panel_weight': panel_weight,
         'peer_weight': peer_weight,
     }
+    if event_code is not None:
+        defaults['event_code'] = event_code.strip()
     if archive_file_template is not None:
         defaults['archive_file_template'] = archive_file_template.strip()
 
@@ -164,6 +209,7 @@ def pit_event_config_payload(config):
     return {
         'id': config.id,
         'event_name': config.event_name,
+        'event_code': config.event_code,
         'panel_rubric_id': config.panel_rubric_id,
         'peer_rubric_id': config.peer_rubric_id,
         'panel_weight': config.panel_weight,

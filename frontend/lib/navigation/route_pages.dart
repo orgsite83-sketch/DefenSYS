@@ -211,12 +211,31 @@ class AdminRubricEditorRoute extends ConsumerWidget {
     Future<void> handleDelete() async {
       if (rubricId == null) return;
       final rubricName = rubric?['name']?.toString() ?? 'rubric';
+      final canDelete = rubric?['can_delete'] != false;
+      final lockReason = rubric?['lock_reason']?.toString();
+      final isAssigned = rubric?['is_assigned'] == true;
+      final assignedContext = rubric?['assigned_context_name']?.toString();
+
+      if (!canDelete) {
+        showErrorToast(
+          context,
+          lockReason ?? 'This rubric is assigned to active defenses or evaluations and cannot be deleted.',
+        );
+        return;
+      }
+
+      String dialogMessage = 'Delete $rubricName? This removes its criteria too.';
+      if (isAssigned && assignedContext != null && assignedContext.isNotEmpty) {
+        dialogMessage =
+            'This rubric is currently assigned to Defense Stage "$assignedContext". '
+            'Deleting it will remove the assignment from the stage configuration. Are you sure you want to proceed?';
+      }
 
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: const Text('Delete Rubric'),
-          content: Text('Delete $rubricName? This removes its criteria too.'),
+          content: Text(dialogMessage),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),

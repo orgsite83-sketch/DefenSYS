@@ -29,6 +29,7 @@ class DefenseStageEditorScreen extends ConsumerStatefulWidget {
 class _DefenseStageEditorScreenState
     extends ConsumerState<DefenseStageEditorScreen> {
   final _label = TextEditingController();
+  final _code = TextEditingController();
   final _description = TextEditingController();
   final _order = TextEditingController();
   final _panel = TextEditingController(text: '50');
@@ -68,6 +69,7 @@ class _DefenseStageEditorScreenState
   void _attachFieldListeners() {
     for (final controller in [
       _label,
+      _code,
       _description,
       _order,
       _panel,
@@ -92,6 +94,7 @@ class _DefenseStageEditorScreenState
   @override
   void dispose() {
     _label.dispose();
+    _code.dispose();
     _description.dispose();
     _order.dispose();
     _panel.dispose();
@@ -157,6 +160,7 @@ class _DefenseStageEditorScreenState
   void _applyStage(Map<String, dynamic> stage) {
     _stage = stage;
     _label.text = stage['label']?.toString() ?? '';
+    _code.text = stage['code']?.toString() ?? '';
     _description.text = stage['description']?.toString() ?? '';
     _order.text = stage['display_order']?.toString() ?? '1';
     _isActive = stage['is_active'] != false;
@@ -209,6 +213,7 @@ class _DefenseStageEditorScreenState
   }
 
   Future<void> _save() async {
+    if (_isLocked) return;
     if (_label.text.trim().isEmpty) {
       setState(() => _error = 'Stage name is required.');
       return;
@@ -240,6 +245,7 @@ class _DefenseStageEditorScreenState
           widget.stageId,
           {
             'label': _label.text.trim(),
+            'code': _code.text.trim(),
             'display_order': int.tryParse(_order.text.trim()) ?? 1,
             'description': _description.text.trim(),
             'is_active': _isActive,
@@ -278,12 +284,10 @@ class _DefenseStageEditorScreenState
     final rubrics = ref.watch(rubricEngineProvider).rubrics;
     return rubrics.where((r) {
       final scopeMatch = r['scope'] == 'capstone';
-      final stageMatch = r['defense_stage_id'] == null ||
-          _asInt(r['defense_stage_id']) == widget.stageId;
       final semMatch = _asInt(r['semester_id']) == _semesterId;
       final evalMatch = r['evaluation_type'] == evaluationType;
       final publishedMatch = r['status'] == 'published';
-      return scopeMatch && stageMatch && semMatch && evalMatch && publishedMatch;
+      return scopeMatch && semMatch && evalMatch && publishedMatch;
     }).toList();
   }
 
@@ -294,14 +298,33 @@ class _DefenseStageEditorScreenState
   ) {
     final options = _getRubricOptions(evaluationType);
     final items = options.map((r) {
+      final id = _asInt(r['id']);
+      final assignedStageId = _asInt(r['defense_stage_id']);
+      final assignedStageLabel = r['defense_stage_label']?.toString();
+      final isAssignedToOther = assignedStageId != null && assignedStageId != widget.stageId;
+
+      if (isAssignedToOther) {
+        return DropdownMenuItem<int>(
+          value: id,
+          enabled: false,
+          child: Text(
+            '${r['name']} (Assigned to: ${assignedStageLabel ?? "Another Stage"})',
+            style: const TextStyle(
+              color: Color(0xFF9CA3AF),
+              fontStyle: FontStyle.italic,
+            ),
+          ),
+        );
+      }
+
       return DropdownMenuItem<int>(
-        value: _asInt(r['id']),
+        value: id,
         child: Text(r['name']?.toString() ?? ''),
       );
     }).toList();
 
-    // If currentId is set but not in options, add a fallback item to avoid Flutter crash
-    if (currentId != null && !options.any((r) => _asInt(r['id']) == currentId)) {
+    // If currentId is set but not in options, add fallback item
+    if (currentId != null && !items.any((item) => item.value == currentId)) {
       items.add(DropdownMenuItem<int>(
         value: currentId,
         child: Text(currentName ?? 'Rubric #$currentId'),
@@ -326,6 +349,56 @@ class _DefenseStageEditorScreenState
       _adviser.text = '30';
       _peer.text = '20';
     });
+  }
+
+  bool get _isLocked =>
+      _stage?['is_locked'] == true || _stage?['status'] == 'locked';
+  String? get _lockReason => _stage?['lock_reason']?.toString();
+
+  Widget _buildLockedBanner() {
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.lock_rounded, color: Color(0xFFD97706), size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'Defense Stage Locked (Read-Only)',
+                  style: TextStyle(
+                    color: Color(0xFF92400E),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  _lockReason ??
+                      'This defense stage is locked because defenses have been scheduled or officially completed for this semester.',
+                  style: const TextStyle(
+                    color: Color(0xFFB45309),
+                    fontSize: 12.5,
+                    height: 1.35,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -383,6 +456,7 @@ class _DefenseStageEditorScreenState
               ),
             ),
             const SizedBox(height: 20),
+            if (_isLocked) _buildLockedBanner(),
             if (_error != null) ...[
                     _notice(_error!, warning: true),
                     const SizedBox(height: 14),
@@ -394,17 +468,29 @@ class _DefenseStageEditorScreenState
                       children: [
                         TextField(
                           controller: _label,
+                          readOnly: _isLocked,
                           decoration: const InputDecoration(labelText: 'Stage name'),
                         ),
                         const SizedBox(height: 12),
                         TextField(
+                          controller: _code,
+                          readOnly: _isLocked,
+                          decoration: const InputDecoration(
+                            labelText: 'Stage code',
+                            helperText: 'Unique stage identifier'
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        TextField(
                           controller: _order,
+                          readOnly: _isLocked,
                           keyboardType: TextInputType.number,
                           decoration: const InputDecoration(labelText: 'Stage order'),
                         ),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _description,
+                          readOnly: _isLocked,
                           minLines: 2,
                           maxLines: 4,
                           decoration: const InputDecoration(labelText: 'Description'),
@@ -414,10 +500,12 @@ class _DefenseStageEditorScreenState
                           contentPadding: EdgeInsets.zero,
                           title: const Text('Published stage'),
                           value: _isActive,
-                          onChanged: (v) {
-                            setState(() => _isActive = v);
-                            _markDirty();
-                          },
+                          onChanged: _isLocked
+                              ? null
+                              : (v) {
+                                  setState(() => _isActive = v);
+                                  _markDirty();
+                                },
                         ),
                       ],
                     ),
@@ -455,7 +543,7 @@ class _DefenseStageEditorScreenState
                                   ),
                                 )
                                 .toList(),
-                            onChanged: _saving
+                            onChanged: (_saving || _isLocked)
                                 ? null
                                 : (value) async {
                                     setState(() => _semesterId = value);
@@ -468,6 +556,7 @@ class _DefenseStageEditorScreenState
                             Expanded(
                               child: TextField(
                                 controller: _panel,
+                                readOnly: _isLocked,
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(labelText: 'Panel %'),
                                 onChanged: (_) => setState(() {}),
@@ -477,6 +566,7 @@ class _DefenseStageEditorScreenState
                             Expanded(
                               child: TextField(
                                 controller: _adviser,
+                                readOnly: _isLocked,
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(labelText: 'Adviser %'),
                                 onChanged: (_) => setState(() {}),
@@ -486,6 +576,7 @@ class _DefenseStageEditorScreenState
                             Expanded(
                               child: TextField(
                                 controller: _peer,
+                                readOnly: _isLocked,
                                 keyboardType: TextInputType.number,
                                 decoration: const InputDecoration(labelText: 'Peer %'),
                                 onChanged: (_) => setState(() {}),
@@ -503,6 +594,32 @@ class _DefenseStageEditorScreenState
                           ),
                         ),
                         const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF0F9FF),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFBAE6FD)),
+                          ),
+                          child: const Row(
+                            children: [
+                              Icon(Icons.info_outline, size: 16, color: Color(0xFF0284C7)),
+                              SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  'Note: Assigning rubrics now is optional. You can leave them as "None" and attach published rubrics later before scheduling defenses.',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF0369A1),
+                                    fontWeight: FontWeight.w500,
+                                    height: 1.3,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 14),
                         DropdownButtonFormField<int>(
                           initialValue: _panelRubricId,
                           decoration: const InputDecoration(
@@ -515,7 +632,7 @@ class _DefenseStageEditorScreenState
                             _panelRubricId,
                             _panelRubricName,
                           ),
-                          onChanged: _saving
+                          onChanged: (_saving || _isLocked)
                               ? null
                               : (value) {
                                   setState(() {
@@ -537,7 +654,7 @@ class _DefenseStageEditorScreenState
                             _adviserRubricId,
                             _adviserRubricName,
                           ),
-                          onChanged: _saving
+                          onChanged: (_saving || _isLocked)
                               ? null
                               : (value) {
                                   setState(() {
@@ -559,7 +676,7 @@ class _DefenseStageEditorScreenState
                             _peerRubricId,
                             _peerRubricName,
                           ),
-                          onChanged: _saving
+                          onChanged: (_saving || _isLocked)
                               ? null
                               : (value) {
                                   setState(() {
@@ -570,7 +687,7 @@ class _DefenseStageEditorScreenState
                         ),
                         const SizedBox(height: 14),
                         OutlinedButton.icon(
-                          onPressed: _resetWeights,
+                          onPressed: _isLocked ? null : _resetWeights,
                           icon: const Icon(Icons.restore, size: 16),
                           label: const Text('Reset to 50 / 30 / 20'),
                         ),
@@ -582,21 +699,23 @@ class _DefenseStageEditorScreenState
                     title: 'Deliverables',
                     icon: Icons.inventory_2_outlined,
                     trailing: OutlinedButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _deliverables.add({
-                            'deliverable_id': 'D${_deliverables.length + 1}',
-                            'label': '',
-                            'deliverable_type': 'pre',
-                            'required': true,
-                            'display_order': _deliverables.length + 1,
-                            'archive_note': '',
-                            'archive_file_template': '',
-                            'is_restricted': false,
-                          });
-                        });
-                        _markDirty();
-                      },
+                      onPressed: _isLocked
+                          ? null
+                          : () {
+                              setState(() {
+                                _deliverables.add({
+                                  'deliverable_id': 'D${_deliverables.length + 1}',
+                                  'label': '',
+                                  'deliverable_type': 'pre',
+                                  'required': true,
+                                  'display_order': _deliverables.length + 1,
+                                  'archive_note': '',
+                                  'archive_file_template': '',
+                                  'is_restricted': false,
+                                });
+                              });
+                              _markDirty();
+                            },
                       icon: const Icon(Icons.add, size: 16),
                       label: const Text('Add deliverable'),
                     ),
@@ -623,24 +742,49 @@ class _DefenseStageEditorScreenState
                     children: [
                       TextButton(
                         onPressed: _saving ? null : _handleBack,
-                        child: const Text('Cancel'),
+                        child: Text(_isLocked ? 'Back' : 'Cancel'),
                       ),
                       const Spacer(),
-                      FilledButton.icon(
-                        onPressed: _saving || _weightTotal != 100 ? null : _save,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: AppColors.maroon,
-                          foregroundColor: AppColors.gold,
+                      if (!_isLocked)
+                        FilledButton.icon(
+                          onPressed: (_saving || _weightTotal != 100) ? null : _save,
+                          style: FilledButton.styleFrom(
+                            backgroundColor: AppColors.maroon,
+                            foregroundColor: AppColors.gold,
+                          ),
+                          icon: _saving
+                              ? const SizedBox(
+                                  width: 16,
+                                  height: 16,
+                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                )
+                              : const Icon(Icons.save, size: 18),
+                          label: Text(_saving ? 'Saving…' : 'Save changes'),
+                        )
+                      else
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.lock_outline, size: 16, color: Color(0xFF64748B)),
+                              SizedBox(width: 6),
+                              Text(
+                                'Read-Only Mode',
+                                style: TextStyle(
+                                  color: Color(0xFF64748B),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        icon: _saving
-                            ? const SizedBox(
-                                width: 16,
-                                height: 16,
-                                child: CircularProgressIndicator(strokeWidth: 2),
-                              )
-                            : const Icon(Icons.save, size: 18),
-                        label: Text(_saving ? 'Saving…' : 'Save changes'),
-                      ),
                     ],
                   ),
           ],
@@ -710,6 +854,7 @@ class _DefenseStageEditorScreenState
                 flex: 3,
                 child: TextField(
                   controller: labelController,
+                  readOnly: _isLocked,
                   decoration: const InputDecoration(
                     labelText: 'Label',
                     isDense: true,
@@ -738,37 +883,43 @@ class _DefenseStageEditorScreenState
                     DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
                     DropdownMenuItem(value: 'post', child: Text('Post-Defense')),
                   ],
-                  onChanged: (v) {
-                    setState(() {
-                      item['deliverable_type'] = v;
-                      if (v == 'post') {
-                        item['required'] = true;
-                      } else if (v == 'pre') {
-                        item['required'] = true;
-                      }
-                    });
-                    _markDirty();
-                  },
+                  onChanged: _isLocked
+                      ? null
+                      : (v) {
+                          setState(() {
+                            item['deliverable_type'] = v;
+                            if (v == 'post') {
+                              item['required'] = true;
+                            } else if (v == 'pre') {
+                              item['required'] = true;
+                            }
+                          });
+                          _markDirty();
+                        },
                 ),
               ),
               Checkbox(
                 value: item['required'] == true,
-                onChanged: (v) {
-                  setState(() => item['required'] = v ?? false);
-                  _markDirty();
-                },
+                onChanged: _isLocked
+                    ? null
+                    : (v) {
+                        setState(() => item['required'] = v ?? false);
+                        _markDirty();
+                      },
               ),
               const Text('Required', style: TextStyle(fontSize: 12)),
               IconButton(
                 icon: const Icon(Icons.delete_outline, color: AppColors.danger),
-                onPressed: () {
-                  setState(() {
-                    final removed = _deliverables.removeAt(index);
-                    (removed['_labelController'] as TextEditingController?)?.dispose();
-                    (removed['_templateController'] as TextEditingController?)?.dispose();
-                  });
-                  _markDirty();
-                },
+                onPressed: _isLocked
+                    ? null
+                    : () {
+                        setState(() {
+                          final removed = _deliverables.removeAt(index);
+                          (removed['_labelController'] as TextEditingController?)?.dispose();
+                          (removed['_templateController'] as TextEditingController?)?.dispose();
+                        });
+                        _markDirty();
+                      },
               ),
             ],
           ),
@@ -778,12 +929,14 @@ class _DefenseStageEditorScreenState
               children: [
                 Checkbox(
                   value: item['is_restricted'] == true,
-                  onChanged: (v) {
-                    setState(() {
-                      item['is_restricted'] = v ?? false;
-                    });
-                    _markDirty();
-                  },
+                  onChanged: _isLocked
+                      ? null
+                      : (v) {
+                          setState(() {
+                            item['is_restricted'] = v ?? false;
+                          });
+                          _markDirty();
+                        },
                 ),
                 const Text(
                   'Restricted (Private in Archive)',
@@ -798,6 +951,7 @@ class _DefenseStageEditorScreenState
             const SizedBox(height: 12),
             TextField(
               controller: templateController,
+              readOnly: _isLocked,
               decoration: const InputDecoration(
                 labelText: 'Archive File Template',
                 isDense: true,
