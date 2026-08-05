@@ -14,6 +14,10 @@ class NotificationSerializer(serializers.ModelSerializer):
             'sender_name',
             'title',
             'message',
+            'category',
+            'priority',
+            'action_route',
+            'action_payload',
             'is_read',
             'created_at',
         ]

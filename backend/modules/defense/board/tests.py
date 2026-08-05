@@ -78,7 +78,7 @@ class DefenseBoardApiTests(APITestCase):
             semester=self.semester,
             team=self.capstone_team,
             defense_stage=self.stage,
-            scheduled_date='2026-05-15',
+            scheduled_date='2099-05-15',
             start_time='08:00',
             slot_duration=60,
             room='Room 301',
@@ -90,7 +90,7 @@ class DefenseBoardApiTests(APITestCase):
             semester=self.first_semester,
             team=self.pit_team,
             event_name='PIT Expo',
-            scheduled_date='2026-05-16',
+            scheduled_date='2099-05-16',
             start_time='09:00',
             slot_duration=45,
             room='Lab 2',
@@ -136,12 +136,17 @@ class DefenseBoardApiTests(APITestCase):
             {'status': DefenseSchedule.STATUS_DONE},
             format='json',
         )
+        self.pit_schedule.status = DefenseSchedule.STATUS_SCHEDULED
+        self.pit_schedule.scheduled_date = '2099-05-16'
+        self.pit_schedule.save()
         delete = self.client.delete(f'/api/defense/board/{self.pit_schedule.id}/')
+        delete_completed = self.client.delete(f'/api/defense/board/{self.capstone_schedule.id}/')
 
         self.assertEqual(update.status_code, 200)
         self.assertEqual(update.data['schedule']['status'], DefenseSchedule.STATUS_DONE)
         self.assertEqual(delete.status_code, 200)
         self.assertFalse(DefenseSchedule.objects.filter(pk=self.pit_schedule.id).exists())
+        self.assertEqual(delete_completed.status_code, 409)
 
     def test_admin_dashboard_reports_phase_ten(self):
         response = self.client.get('/api/dashboards/admin/')

@@ -158,9 +158,12 @@ class ConfirmPasswordResetAPIView(APIView):
         user.save(update_fields=['password'])
 
         # Send confirmation email (best-effort).
-        email_sent = send_password_changed_email(user)
-        if not email_sent:
-            logger.warning('password_reset: password changed but confirmation email failed for user_id=%s', user.pk)
+        try:
+            email_sent = send_password_changed_email(user)
+            if not email_sent:
+                logger.warning('password_reset: password changed but confirmation email failed for user_id=%s', user.pk)
+        except Exception as e:
+            logger.warning('password_reset: error sending confirmation email for user_id=%s: %s', user.pk, e)
 
         logger.info('password_reset: user_id=%s successfully reset password', user.pk)
         return Response({'detail': 'Your password has been reset successfully.'})

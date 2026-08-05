@@ -64,12 +64,17 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
         setState(() => _success = true);
         showSuccessToast(context, 'Password reset successful!');
       } else {
-        final data = jsonDecode(response.body);
-        final detail = data['detail'] ?? 'Password reset failed.';
-        showErrorToast(context, detail.toString());
+        dynamic data;
+        try {
+          data = jsonDecode(response.body);
+        } catch (_) {
+          data = null;
+        }
+        final detail = data is Map ? (data['detail'] ?? data.values.firstOrNull) : null;
+        showErrorToast(context, (detail ?? 'Password reset failed (${response.statusCode}). Please try again later.').toString());
       }
     } catch (e) {
-      if (mounted) showErrorToast(context, 'Connection error: $e');
+      if (mounted) showErrorToast(context, 'Connection error: ${e.toString().split('\n').first}');
     } finally {
       if (mounted) setState(() => _isSaving = false);
     }
@@ -96,7 +101,7 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
               constraints: const BoxConstraints(maxWidth: 440),
               child: Card(
                 elevation: 8,
-                shadowColor: Colors.black.withOpacity(0.3),
+                shadowColor: Colors.black.withValues(alpha: 0.3),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(20),
                 ),
@@ -128,7 +133,7 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
             child: Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: DefensysTokens.maroon.withOpacity(0.08),
+                color: DefensysTokens.maroon.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
               child: const Icon(
@@ -166,6 +171,7 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
           TextFormField(
             controller: _newPassCtrl,
             obscureText: _obscureNew,
+            onChanged: (_) => setState(() {}),
             validator: (v) {
               if (v == null || v.isEmpty) return 'Enter new password';
               if (v.length < 8) return 'Password must be at least 8 characters';
@@ -193,10 +199,79 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
               ),
             ),
           ),
+          
+          if (_newPassCtrl.text.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            // Guidelines Box
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(
+                    children: [
+                      Icon(Icons.info_outline_rounded, size: 15, color: DefensysTokens.maroon),
+                      SizedBox(width: 8),
+                      Text(
+                        'Password Guidelines',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '• Allowed: Letters (A-Z, a-z), Numbers (0-9), and Symbols (! @ # \$ % ^ & *)\n'
+                    '• Minimum 8 characters required.',
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade700,
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAFAFA),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF1F5F9)),
+              ),
+              child: Column(
+                children: [
+                  _reqItem('At least 8 characters long', _newPassCtrl.text.length >= 8),
+                  const SizedBox(height: 4),
+                  _reqItem(
+                    'Contains letters & numbers/symbols',
+                    RegExp(r'[A-Za-z]').hasMatch(_newPassCtrl.text) &&
+                        RegExp(r'[0-9!@#$%^&*(),.?":{}|<>]').hasMatch(_newPassCtrl.text),
+                  ),
+                  const SizedBox(height: 4),
+                  _reqItem(
+                    'Matches confirmation password',
+                    _confirmPassCtrl.text.isNotEmpty && _newPassCtrl.text == _confirmPassCtrl.text,
+                  ),
+                ],
+              ),
+            ),
+          ],
+
           const SizedBox(height: 14),
           TextFormField(
             controller: _confirmPassCtrl,
             obscureText: _obscureConfirm,
+            onChanged: (_) => setState(() {}),
             validator: (v) {
               if (v == null || v.isEmpty) return 'Confirm your new password';
               if (v != _newPassCtrl.text) return 'Passwords do not match';
@@ -325,6 +400,29 @@ class _ConfirmPasswordResetScreenState extends State<ConfirmPasswordResetScreen>
                 fontWeight: FontWeight.bold,
                 fontFamily: 'Poppins',
               ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _reqItem(String label, bool isSatisfied) {
+    return Row(
+      children: [
+        Icon(
+          isSatisfied ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+          size: 14,
+          color: isSatisfied ? const Color(0xFF10B981) : Colors.grey.shade400,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSatisfied ? FontWeight.w600 : FontWeight.normal,
+              color: isSatisfied ? const Color(0xFF0F172A) : Colors.grey.shade600,
             ),
           ),
         ),

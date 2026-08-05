@@ -203,6 +203,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               ),
               const SizedBox(height: 14),
               _buildSummaryCard(
+                icon: Icons.play_circle_fill_rounded,
+                iconColor: const Color(0xFFD97706),
+                label: 'Ongoing',
+                value: _count(state, 'ongoing'),
+              ),
+              const SizedBox(height: 14),
+              _buildSummaryCard(
                 icon: Icons.check_circle,
                 iconColor: const Color(0xFF0F9D58),
                 label: 'Completed',
@@ -222,7 +229,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 value: _count(state, 'all'),
               ),
             ),
-            const SizedBox(width: 18),
+            const SizedBox(width: 14),
             Expanded(
               child: _buildSummaryCard(
                 icon: Icons.access_time_filled,
@@ -231,7 +238,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 value: _count(state, 'scheduled'),
               ),
             ),
-            const SizedBox(width: 18),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildSummaryCard(
+                icon: Icons.play_circle_fill_rounded,
+                iconColor: const Color(0xFFD97706),
+                label: 'Ongoing',
+                value: _count(state, 'ongoing'),
+              ),
+            ),
+            const SizedBox(width: 14),
             Expanded(
               child: _buildSummaryCard(
                 icon: Icons.check_circle,
@@ -254,15 +270,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }) {
     return Container(
       height: 94,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
+            color: Color(0x06000000),
+            blurRadius: 12,
             offset: Offset(0, 4),
           ),
         ],
@@ -270,13 +286,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: Row(
         children: [
           Container(
-            width: 46,
-            height: 46,
+            width: 48,
+            height: 48,
             decoration: BoxDecoration(
-              color: iconColor.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(13),
+              color: iconColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(14),
             ),
-            child: Icon(icon, color: iconColor, size: 23),
+            child: Icon(icon, color: iconColor, size: 24),
           ),
           const SizedBox(width: 16),
           Column(
@@ -286,18 +302,19 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Text(
                 '$value',
                 style: const TextStyle(
-                  fontSize: 19,
-                  fontWeight: FontWeight.w900,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
                   color: AppColors.textPrimary,
+                  letterSpacing: -0.5,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 label,
                 style: const TextStyle(
-                  fontSize: 14,
+                  fontSize: 13,
                   color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w500,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ],
@@ -308,31 +325,45 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildFilterBar(DefenseBoardState state) {
+    final showStageOrEventFilter = state.scope.isNotEmpty;
+
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x08000000),
-            blurRadius: 10,
+            color: Color(0x06000000),
+            blurRadius: 12,
             offset: Offset(0, 4),
           ),
         ],
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final stacked = constraints.maxWidth < 980;
+          final isStacked = constraints.maxWidth < 950;
 
-          if (stacked) {
+          if (isStacked) {
             return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildStageDropdown(state, double.infinity),
-                const SizedBox(height: 12),
-                _buildStatusDropdown(state, double.infinity),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: _buildScopeTabs(state),
+                ),
+                const SizedBox(height: 14),
+                Row(
+                  children: [
+                    if (showStageOrEventFilter) ...[
+                      Expanded(child: _buildStageOrEventDropdown(state, null)),
+                      const SizedBox(width: 10),
+                    ],
+                    Expanded(child: _buildStatusDropdown(state, null)),
+                  ],
+                ),
                 const SizedBox(height: 12),
                 _buildSearchField(state, double.infinity),
               ],
@@ -341,9 +372,13 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
           return Row(
             children: [
-              _buildStageDropdown(state, 155),
-              const SizedBox(width: 12),
-              _buildStatusDropdown(state, 155),
+              _buildScopeTabs(state),
+              const SizedBox(width: 16),
+              if (showStageOrEventFilter) ...[
+                _buildStageOrEventDropdown(state, 160),
+                const SizedBox(width: 12),
+              ],
+              _buildStatusDropdown(state, 160),
               const SizedBox(width: 12),
               Expanded(child: _buildSearchField(state, null)),
             ],
@@ -353,37 +388,159 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
-  Widget _buildStageDropdown(DefenseBoardState state, double? width) {
-    final stages = state.stageOptions.toSet().toList();
-    final currentValue = stages.contains(state.stage)
-        ? state.stage
-        : '';
+  Widget _buildScopeTabs(DefenseBoardState state) {
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildScopeTabItem(
+            state: state,
+            label: 'All Defenses',
+            scopeValue: '',
+            icon: Icons.grid_view_rounded,
+          ),
+          _buildScopeTabItem(
+            state: state,
+            label: 'Capstone',
+            scopeValue: 'capstone',
+            icon: Icons.school_rounded,
+          ),
+          _buildScopeTabItem(
+            state: state,
+            label: 'PIT',
+            scopeValue: 'pit',
+            icon: Icons.alt_route_rounded,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildScopeTabItem({
+    required DefenseBoardState state,
+    required String label,
+    required String scopeValue,
+    required IconData icon,
+  }) {
+    final isSelected = state.scope == scopeValue;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
+                stage: '',
+                status: state.status,
+                scope: scopeValue,
+                search: _searchController.text.trim(),
+              );
+        },
+        borderRadius: BorderRadius.circular(9),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: isSelected
+                ? const [
+                    BoxShadow(
+                      color: Color(0x0F000000),
+                      blurRadius: 6,
+                      offset: Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: isSelected ? AppColors.maroon : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                  color: isSelected ? AppColors.maroon : AppColors.textSecondary,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStageOrEventDropdown(DefenseBoardState state, double? width) {
+    final isPit = state.scope == 'pit';
+    final defaultLabel = isPit ? 'All Events' : 'All Stages';
+    final icon = isPit ? Icons.event_rounded : Icons.layers_outlined;
+
+    final Set<String> scopeOptions = {};
+
+    // 1. Gather stage/event labels directly from schedule records matching the selected scope
+    for (final schedule in state.schedules) {
+      final itemScope = schedule['scope']?.toString() ?? 'capstone';
+      final stageLabel = schedule['stage_label']?.toString();
+      if (stageLabel != null && stageLabel.isNotEmpty) {
+        if (state.scope.isEmpty || itemScope == state.scope) {
+          scopeOptions.add(stageLabel);
+        }
+      }
+    }
+
+    // 2. Fallback to state.stageOptions if schedules list is empty
+    if (scopeOptions.isEmpty && state.stageOptions.isNotEmpty) {
+      scopeOptions.addAll(state.stageOptions);
+    }
+
+    final List<String> options = scopeOptions.toList()..sort();
+    final currentValue = options.contains(state.stage) ? state.stage : '';
 
     return SizedBox(
       width: width,
       height: 48,
       child: DropdownButtonFormField<String>(
+        key: ValueKey('stage_or_event_${state.scope}'),
         initialValue: currentValue,
-        decoration: _inputDecoration(),
+        decoration: _inputDecoration(
+          prefixIcon: Icon(icon, color: AppColors.textSecondary, size: 18),
+        ),
         dropdownColor: Colors.white,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
-          const DropdownMenuItem<String>(
+          DropdownMenuItem<String>(
             value: '',
-            child: Text('All Stages', overflow: TextOverflow.ellipsis),
+            child: Text(
+              defaultLabel,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
           ),
-          ...stages.map(
-            (stage) => DropdownMenuItem<String>(
-              value: stage,
-              child: Text(stage, overflow: TextOverflow.ellipsis),
+          ...options.map(
+            (opt) => DropdownMenuItem<String>(
+              value: opt,
+              child: Text(
+                opt,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
             ),
           ),
         ],
         onChanged: (value) {
-          ref
-              .read(defenseBoardProvider.notifier)
-              .fetchBoard(
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
                 stage: value ?? '',
                 status: state.status,
                 scope: state.scope,
@@ -405,19 +562,21 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       height: 48,
       child: DropdownButtonFormField<String>(
         initialValue: currentValue,
-        decoration: _inputDecoration(),
+        decoration: _inputDecoration(
+          prefixIcon: const Icon(Icons.filter_list_rounded, color: AppColors.textSecondary, size: 18),
+        ),
         dropdownColor: Colors.white,
         borderRadius: BorderRadius.circular(12),
         isExpanded: true,
         items: [
           const DropdownMenuItem<String>(
             value: '',
-            child: Text('All Statuses', overflow: TextOverflow.ellipsis),
+            child: Text('All Statuses', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
           ),
           ...statuses.map(
             (status) => DropdownMenuItem<String>(
               value: status,
-              child: Text(_statusLabel(status), overflow: TextOverflow.ellipsis),
+              child: Text(_statusLabel(status), overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
             ),
           ),
         ],
@@ -442,9 +601,24 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: TextField(
         controller: _searchController,
         textInputAction: TextInputAction.search,
+        style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
         decoration: _inputDecoration(
           hintText: 'Search team or room...',
-          prefixIcon: const Icon(Icons.search, color: AppColors.textSecondary),
+          prefixIcon: const Icon(Icons.search_rounded, color: AppColors.textSecondary, size: 20),
+          suffixIcon: _searchController.text.isNotEmpty
+              ? IconButton(
+                  icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.textSecondary),
+                  onPressed: () {
+                    _searchController.clear();
+                    ref.read(defenseBoardProvider.notifier).fetchBoard(
+                          stage: state.stage,
+                          status: state.status,
+                          scope: state.scope,
+                          search: '',
+                        );
+                  },
+                )
+              : null,
         ),
         onSubmitted: (value) {
           ref
@@ -521,11 +695,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: const Color(0xFFE6E8EF)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 12,
+            color: Color(0x05000000),
+            blurRadius: 14,
             offset: Offset(0, 4),
           ),
         ],
@@ -534,7 +708,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _buildSessionHeader(group),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFE9EDF4)),
+          const Divider(height: 1, thickness: 1, color: Color(0xFFEDF2F7)),
           LayoutBuilder(
             builder: (context, constraints) {
               if (constraints.maxWidth < 900) {
@@ -550,14 +724,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   Widget _buildSessionHeader(_SessionGroup group) {
     final isPit = group.scope == 'pit';
-    final docDisplay = group.documenterName.isNotEmpty
-        ? group.documenterName
-        : (isPit ? '-' : 'Unassigned');
 
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: const BoxDecoration(
-        color: Color(0xFFFAFBFD),
+        color: Color(0xFFF8FAFC),
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       child: Column(
@@ -566,31 +737,31 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Stage badge
+              // Scope & Stage Badge
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
                   color: isPit
                       ? const Color(0xFFE0F2FE)
-                      : AppColors.maroon.withValues(alpha: 0.12),
+                      : AppColors.maroon.withValues(alpha: 0.10),
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: isPit
                         ? const Color(0xFFBAE6FD)
-                        : AppColors.maroon.withValues(alpha: 0.25),
+                        : AppColors.maroon.withValues(alpha: 0.22),
                   ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      isPit ? Icons.alt_route : Icons.assignment,
-                      size: 14,
-                      color: isPit ? const Color(0xFF0369A1) : AppColors.maroon,
+                      isPit ? Icons.alt_route_rounded : Icons.school_rounded,
+                      size: 15,
+                      color: isPit ? const Color(0xFF0284C7) : AppColors.maroon,
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      group.stageLabel,
+                      isPit ? 'PIT Scope • ${group.stageLabel}' : group.stageLabel,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w800,
@@ -600,12 +771,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ],
                 ),
               ),
-              const SizedBox(width: 12),
-              // Date chip
+              const SizedBox(width: 14),
+              // Date Chip
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.calendar_today, size: 15, color: AppColors.textSecondary),
+                  const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
                   Text(
                     group.scheduledDate,
@@ -618,11 +789,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 ],
               ),
               const SizedBox(width: 16),
-              // Room chip
+              // Room Chip
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.location_on_outlined, size: 16, color: AppColors.textSecondary),
+                  const Icon(Icons.place_rounded, size: 15, color: AppColors.textSecondary),
                   const SizedBox(width: 4),
                   Text(
                     group.room,
@@ -637,16 +808,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               const Spacer(),
               // Teams count badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
+                  color: const Color(0xFFEDF2F7),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
                   '${group.schedules.length} ${group.schedules.length == 1 ? 'Team' : 'Teams'}',
                   style: const TextStyle(
                     fontSize: 12,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                     color: AppColors.textSecondary,
                   ),
                 ),
@@ -663,7 +834,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.people_outline, size: 16, color: AppColors.textSecondary),
+                  const Icon(Icons.people_outline_rounded, size: 16, color: AppColors.textSecondary),
                   const SizedBox(width: 6),
                   const Text(
                     'Panel: ',
@@ -689,7 +860,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    const Icon(Icons.edit_note, size: 16, color: AppColors.textSecondary),
+                    const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.textSecondary),
                     const SizedBox(width: 6),
                     const Text(
                       'Documenter: ',
@@ -700,7 +871,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       ),
                     ),
                     Text(
-                      docDisplay,
+                      group.documenterName.isNotEmpty ? group.documenterName : 'Unassigned',
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: group.documenterName.isEmpty ? FontWeight.w600 : FontWeight.w700,
@@ -720,23 +891,25 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildDesktopTeamTable(_SessionGroup group, DefenseBoardState state) {
+    final isPit = group.scope == 'pit';
+
     return Column(
       children: [
         // Sub-table Header
         Container(
-          height: 40,
+          height: 42,
           color: const Color(0xFFF8FAFC),
-          child: const Row(
+          child: Row(
             children: [
-              _HeaderCell('Time Slot', flex: 1),
-              _HeaderCell('Team & Project Title', flex: 4),
-              _HeaderCell('Minutes', flex: 2),
-              _HeaderCell('Status', flex: 2),
-              _HeaderCell('Action', flex: 1),
+              const _HeaderCell('Time Slot', flex: 1),
+              _HeaderCell('Team & Project Title', flex: isPit ? 6 : 4),
+              if (!isPit) const _HeaderCell('Minutes', flex: 2),
+              const _HeaderCell('Status', flex: 2),
+              const _HeaderCell('Action', flex: 1),
             ],
           ),
         ),
-        const Divider(height: 1, thickness: 1, color: Color(0xFFE9EDF4)),
+        const Divider(height: 1, thickness: 1, color: Color(0xFFEDF2F7)),
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
@@ -748,16 +921,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             final projectTitle = schedule['project_title']?.toString() ?? '';
 
             return SizedBox(
-              height: 56,
+              height: 58,
               child: Row(
                 children: [
                   _BodyCell(
                     flex: 1,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
                         _shortTime(schedule['start_time']),
@@ -770,7 +943,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     ),
                   ),
                   _BodyCell(
-                    flex: 4,
+                    flex: isPit ? 6 : 4,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -800,10 +973,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       ],
                     ),
                   ),
-                  _BodyCell(
-                    flex: 2,
-                    child: _minutesStatusChip(schedule),
-                  ),
+                  if (!isPit)
+                    _BodyCell(
+                      flex: 2,
+                      child: _minutesStatusChip(schedule),
+                    ),
                   _BodyCell(
                     flex: 2,
                     child: _statusChip(schedule['status']?.toString() ?? ''),
@@ -822,18 +996,21 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildCompactTeamList(_SessionGroup group, DefenseBoardState state) {
+    final isPit = group.scope == 'pit';
+
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
         children: group.schedules.map((schedule) {
+          final teamName = schedule['team_name']?.toString() ?? 'Unnamed Team';
           final projectTitle = schedule['project_title']?.toString() ?? '';
 
           return Container(
             margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.all(14),
             decoration: BoxDecoration(
               color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: BorderRadius.circular(12),
               border: Border.all(color: const Color(0xFFE9EDF4)),
             ),
             child: Column(
@@ -859,12 +1036,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     ),
                     const SizedBox(width: 10),
                     Expanded(
-                      child: Text(
-                        schedule['team_name']?.toString() ?? '',
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        child: Text(
+                          teamName,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
                         ),
                       ),
                     ),
@@ -884,9 +1065,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
-                    _statusChip(schedule['status']?.toString() ?? ''),
-                    const SizedBox(width: 8),
-                    _minutesStatusChip(schedule),
+                    _statusChip(
+                      schedule['display_status']?.toString() ??
+                          schedule['status']?.toString() ??
+                          '',
+                    ),
+                    if (!isPit) ...[
+                      const SizedBox(width: 8),
+                      _minutesStatusChip(schedule),
+                    ],
                   ],
                 ),
               ],
@@ -906,19 +1093,30 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     if (!canDelete) return const SizedBox.shrink();
 
+    final currentStatus = (schedule['display_status']?.toString() ??
+            schedule['status']?.toString() ??
+            '')
+        .toLowerCase();
+    if (['ongoing', 'done', 'completed', 'archived'].contains(currentStatus)) {
+      return const SizedBox.shrink();
+    }
+
     final scheduleId = _asInt(schedule['id']);
 
     return IconButton(
       tooltip: 'Delete schedule',
       splashRadius: 20,
-      color: const Color(0xFF3B82F6),
+      color: const Color(0xFFEF4444),
+      style: IconButton.styleFrom(
+        hoverColor: const Color(0xFFFEE2E2),
+      ),
       onPressed: state.isSaving || scheduleId == null
           ? null
           : () => _confirmDelete(
               scheduleId,
               schedule['team_name']?.toString() ?? 'schedule',
             ),
-      icon: const Icon(Icons.delete, size: 20),
+      icon: const Icon(Icons.delete_outline_rounded, size: 20),
     );
   }
 
@@ -927,28 +1125,39 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     Color bg;
     Color fg;
+    IconData iconData;
     String text;
 
     switch (normalized) {
+      case 'ongoing':
+        bg = const Color(0xFFFEF3C7);
+        fg = const Color(0xFFB45309);
+        iconData = Icons.play_circle_rounded;
+        text = 'ongoing';
+        break;
       case 'done':
       case 'completed':
-        bg = const Color(0xFFDDF5E8);
+        bg = const Color(0xFFDCFCE7);
         fg = const Color(0xFF15803D);
+        iconData = Icons.check_circle_rounded;
         text = 'completed';
         break;
       case 'cancelled':
-        bg = const Color(0xFFFDE2E2);
-        fg = const Color(0xFFDC2626);
+        bg = const Color(0xFFFEE2E2);
+        fg = const Color(0xFFB91C1C);
+        iconData = Icons.cancel_rounded;
         text = 'cancelled';
         break;
       case 'archived':
-        bg = const Color(0xFFE5E7EB);
-        fg = const Color(0xFF6B7280);
+        bg = const Color(0xFFF3F4F6);
+        fg = const Color(0xFF4B5563);
+        iconData = Icons.archive_rounded;
         text = 'archived';
         break;
       default:
-        bg = const Color(0xFFDCEAFE);
-        fg = const Color(0xFF2563EB);
+        bg = const Color(0xFFE0F2FE);
+        fg = const Color(0xFF0369A1);
+        iconData = Icons.schedule_rounded;
         text = 'scheduled';
     }
 
@@ -958,9 +1167,16 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         color: bg,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        text,
-        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(iconData, size: 13, color: fg),
+          const SizedBox(width: 4),
+          Text(
+            text,
+            style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800),
+          ),
+        ],
       ),
     );
   }
@@ -1020,10 +1236,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
 
 
-  InputDecoration _inputDecoration({String? hintText, Widget? prefixIcon}) {
+  InputDecoration _inputDecoration({String? hintText, Widget? prefixIcon, Widget? suffixIcon}) {
     return InputDecoration(
       hintText: hintText,
       prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
       hintStyle: const TextStyle(color: AppColors.textSecondary),
       filled: true,
       fillColor: const Color(0xFFFBFCFE),
@@ -1127,29 +1344,34 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     final status = schedule['minutes_status']?.toString();
     final scheduleId = _asInt(schedule['id']);
     if (scheduleId == null || schedule['scope'] != 'capstone') {
-      return const Text('-');
+      return const SizedBox.shrink();
     }
 
     String label = 'No Minutes';
-    Color bg = Colors.grey.shade100;
-    Color fg = Colors.grey.shade700;
+    Color bg = const Color(0xFFF1F5F9);
+    Color fg = const Color(0xFF64748B);
+    IconData icon = Icons.description_outlined;
 
     if (status == 'draft') {
       label = 'Draft';
-      bg = const Color(0xFFFFF3CD);
-      fg = const Color(0xFF856404);
+      bg = const Color(0xFFFEF3C7);
+      fg = const Color(0xFF92400E);
+      icon = Icons.edit_note_rounded;
     } else if (status == 'submitted') {
       label = 'Submitted';
-      bg = const Color(0xFFCCE5FF);
-      fg = const Color(0xFF004085);
+      bg = const Color(0xFFDBEAFE);
+      fg = const Color(0xFF1E40AF);
+      icon = Icons.send_rounded;
     } else if (status == 'adviser_signed') {
       label = 'Adviser Signed';
-      bg = const Color(0xFFE2E3E5);
-      fg = const Color(0xFF383D41);
+      bg = const Color(0xFFF3E8FF);
+      fg = const Color(0xFF6B21A8);
+      icon = Icons.draw_rounded;
     } else if (status == 'completed') {
       label = 'Completed';
-      bg = const Color(0xFFD4EDDA);
-      fg = const Color(0xFF155724);
+      bg = const Color(0xFFDCFCE7);
+      fg = const Color(0xFF15803D);
+      icon = Icons.task_alt_rounded;
     }
 
     return InkWell(
@@ -1158,26 +1380,28 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           _selectedMinutesScheduleId = scheduleId;
         });
       },
-      borderRadius: BorderRadius.circular(4),
+      borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(
           color: bg,
-          borderRadius: BorderRadius.circular(4),
+          borderRadius: BorderRadius.circular(6),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
+            Icon(icon, size: 13, color: fg),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
                 color: fg,
-                fontSize: 11,
-                fontWeight: FontWeight.bold,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
               ),
             ),
             const SizedBox(width: 4),
-            Icon(Icons.open_in_new, size: 10, color: fg),
+            Icon(Icons.open_in_new_rounded, size: 11, color: fg),
           ],
         ),
       ),

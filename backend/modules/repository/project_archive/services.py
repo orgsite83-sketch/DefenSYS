@@ -671,7 +671,7 @@ def repository_scope(user):
             'pit_year_level': pit_year,
             'can_upload_pit': False,
             'can_upload_capstone': False,
-            'can_override': False,
+            'can_override': True,
             'can_export': True,
             'has_assigned_assistant': False,
         }
@@ -1480,7 +1480,7 @@ def upload_capstone_files(user, file_names=None, uploaded_files=None, academic_y
 def request_archive_resubmission(user, entry_id, status=ArchiveEntry.STATUS_NEEDS_REVISION, feedback=''):
     target_type, instance, scope = resolve_archive_target(user, entry_id)
     if not scope['can_override']:
-        raise PermissionDenied('Only admins can request repository resubmissions.')
+        raise PermissionDenied('You do not have permission to request repository resubmissions.')
     
     if target_type == 'submission_file' and hasattr(instance, 'submission'):
         instance = instance.submission
@@ -1572,6 +1572,8 @@ def resolve_archive_target(user, entry_id):
         raise PermissionDenied('You do not have permission to replace repository files.')
 
     raw_id = str(entry_id).strip()
+    target_type = None
+    instance = None
 
     if raw_id.startswith('pit-deliverable-') or raw_id.startswith('capstone-'):
         clean = raw_id.replace('pit-deliverable-', '').replace('capstone-', '')
@@ -1590,18 +1592,38 @@ def resolve_archive_target(user, entry_id):
             from repository.deliverables.models import DeliverableSubmissionFile
             sub_file = DeliverableSubmissionFile.objects.filter(pk=int(file_id), submission=submission).first()
             if sub_file:
-                return ('submission_file', sub_file, scope)
+                target_type, instance = ('submission_file', sub_file)
+            else:
+                target_type, instance = ('submission', submission)
+        else:
+            target_type, instance = ('submission', submission)
 
-        return ('submission', submission, scope)
+    else:
+        clean_id = raw_id.replace('pit-', '').replace('capstone-vault-', '')
+        if not clean_id.isdigit():
+            raise ValidationError('Invalid archive entry id.')
 
-    clean_id = raw_id.replace('pit-', '').replace('capstone-vault-', '')
-    if not clean_id.isdigit():
-        raise ValidationError('Invalid archive entry id.')
+        entry = ArchiveEntry.objects.filter(pk=int(clean_id)).first()
+        if not entry:
+            raise ValidationError('Archive entry not found.')
+        target_type, instance = ('archive_entry', entry)
 
-    entry = ArchiveEntry.objects.filter(pk=int(clean_id)).first()
-    if not entry:
-        raise ValidationError('Archive entry not found.')
-    return ('archive_entry', entry, scope)
+    if scope['scope'] == 'pit_lead':
+        pit_year = scope.get('pit_year_level') or ''
+        if target_type in ('submission', 'submission_file'):
+            sub = instance.submission if target_type == 'submission_file' else instance
+            team = sub.team
+            if not team or not team.is_pit:
+                raise PermissionDenied('PIT leads cannot modify Capstone submissions.')
+            if pit_year and team.year_level != pit_year:
+                raise PermissionDenied(f'PIT lead is restricted to {pit_year} entries.')
+        elif target_type == 'archive_entry':
+            if instance.entry_type != ArchiveEntry.TYPE_PIT:
+                raise PermissionDenied('PIT leads cannot modify Capstone archive entries.')
+            if pit_year and instance.year_level != pit_year:
+                raise PermissionDenied(f'PIT lead is restricted to {pit_year} entries.')
+
+    return (target_type, instance, scope)
 
 
 @transaction.atomic

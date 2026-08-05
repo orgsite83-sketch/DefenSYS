@@ -105,6 +105,32 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }).toList();
   }
 
+  int _getReadyTeamsCount(DefenseSchedulerState state) {
+    final activeScopeTeams = teamsForScope(state, widget.scope);
+
+    String activeStageOrEvent = '';
+    if (widget.scope == 'capstone') {
+      if (widget.stageId != null) {
+        final stage = state.defenseStages.firstWhere(
+          (s) => asInt(s['id']) == widget.stageId,
+          orElse: () => <String, dynamic>{},
+        );
+        activeStageOrEvent = stage['label']?.toString() ?? '';
+      }
+    } else {
+      activeStageOrEvent = widget.eventController.text.trim();
+    }
+
+    return activeScopeTeams.where((team) {
+      final readyForStage = team['ready_for_stage']?.toString() ?? '';
+      if (readyForStage.isEmpty) return false;
+      if (activeStageOrEvent.isNotEmpty) {
+        return readyForStage.toLowerCase() == activeStageOrEvent.toLowerCase();
+      }
+      return true;
+    }).length;
+  }
+
   List<Map<String, dynamic>> _rubricsForContext() {
     return _rubricsForScopeAndStage(widget.state, widget.scope, widget.stageId);
   }
@@ -1094,10 +1120,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   const SizedBox(height: 10),
                   _summaryInfoCard(
                     'Ready Teams',
-                    '${state.teams.where((t) {
-                      final ready = t['ready_for_stage']?.toString() ?? '';
-                      return ready.isNotEmpty;
-                    }).length} teams ready',
+                    '${_getReadyTeamsCount(state)} teams ready',
                     Icons.check_circle_outline,
                   ),
                 ],

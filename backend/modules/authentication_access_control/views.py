@@ -1,3 +1,4 @@
+import logging
 import os
 from django.contrib.auth import get_user_model
 from django.db.models import Q
@@ -23,6 +24,7 @@ from .models import SystemAuditLog
 from .scopes import audit_logs_for, can_review_audit_logs
 
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -68,7 +70,7 @@ class CurrentUserView(APIView):
         remove_avatar = (
             request.data.get('remove_avatar') == 'true' or
             request.data.get('avatar') == '' or
-            request.data.get('avatar') is None
+            (request.data.get('avatar') is None and 'remove_avatar' in request.data)
         )
         
         if 'avatar' in request.data or 'avatar' in request.FILES or remove_avatar:
@@ -88,10 +90,10 @@ class CurrentUserView(APIView):
                     
                     # Validate extension and content type
                     ext = os.path.splitext(avatar_file.name)[1].lower().replace('.', '')
-                    if (
-                        ext not in ['png', 'jpg', 'jpeg', 'webp'] or
-                        avatar_file.content_type not in ['image/jpeg', 'image/png', 'image/webp']
-                    ):
+                    allowed_exts = ['png', 'jpg', 'jpeg', 'webp']
+                    allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream']
+                    ct = (avatar_file.content_type or '').lower()
+                    if ext not in allowed_exts or (ct and ct not in allowed_types and not ct.startswith('image/')):
                         return Response(
                             {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
                             status=status.HTTP_400_BAD_REQUEST
@@ -102,6 +104,39 @@ class CurrentUserView(APIView):
                         user.avatar.delete(save=False)
                     
                     user.avatar = avatar_file
+
+        # Check if we are removing the e_signature
+        remove_e_sig = (
+            request.data.get('remove_e_signature') == 'true' or
+            request.data.get('e_signature') == '' or
+            (request.data.get('e_signature') is None and 'remove_e_signature' in request.data)
+        )
+
+        if 'e_signature' in request.data or 'e_signature' in request.FILES or remove_e_sig:
+            if remove_e_sig:
+                if user.e_signature:
+                    user.e_signature.delete(save=False)
+                user.e_signature = None
+            else:
+                sig_file = request.FILES.get('e_signature')
+                if sig_file:
+                    if sig_file.size > 10 * 1024 * 1024:
+                        return Response(
+                            {'detail': 'Signature file size must not exceed 10MB.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    ext = os.path.splitext(sig_file.name)[1].lower().replace('.', '')
+                    allowed_exts = ['png', 'jpg', 'jpeg', 'webp']
+                    allowed_types = ['image/jpeg', 'image/png', 'image/webp', 'application/octet-stream']
+                    ct = (sig_file.content_type or '').lower()
+                    if ext not in allowed_exts or (ct and ct not in allowed_types and not ct.startswith('image/')):
+                        return Response(
+                            {'detail': 'Unsupported file format. Please upload JPEG, PNG, or WEBP.'},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+                    if user.e_signature:
+                        user.e_signature.delete(save=False)
+                    user.e_signature = sig_file
 
         serializer = UserSerializer(user, data=request.data, partial=True, context={'request': request})
         serializer.is_valid(raise_exception=True)
@@ -123,10 +158,13 @@ class ChangePasswordView(APIView):
         user.save(update_fields=['password'])
 
         # Send confirmation email (best-effort).
-        from notifications.email_service import send_password_changed_email
-        email_sent = send_password_changed_email(user)
-        if not email_sent:
-            logger.warning('change_password: password changed but confirmation email failed for user_id=%s', user.pk)
+        try:
+            from notifications.email_service import send_password_changed_email
+            email_sent = send_password_changed_email(user)
+            if not email_sent:
+                logger.warning('change_password: password changed but confirmation email failed for user_id=%s', user.pk)
+        except Exception as e:
+            logger.warning('change_password: error sending confirmation email for user_id=%s: %s', user.pk, e)
 
         return Response({'detail': 'Password changed successfully.'})
 
@@ -314,3 +352,34 @@ class SystemAuditLogListView(APIView):
                 .order_by('username')
             ],
         }
+
+
+class SystemAuditLogReviewView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, pk):
+        if not can_review_audit_logs(request.user):
+            raise PermissionDenied('Audit Trail is available to admins and assigned PIT leaders.')
+        base_queryset = audit_logs_for(request.user)
+        try:
+            log = base_queryset.get(pk=pk)
+        except SystemAuditLog.DoesNotExist:
+            return Response({'detail': 'Audit log record not found.'}, status=status.HTTP_404_NOT_FOUND)
+
+        new_status = request.data.get('review_status', SystemAuditLog.REVIEW_REVIEWED).strip()
+        if new_status not in [choice[0] for choice in SystemAuditLog.REVIEW_STATUS_CHOICES]:
+            return Response({'detail': 'Invalid review status.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        log.review_status = new_status
+        note = request.data.get('reason', '').strip()
+        if note:
+            existing = f"{log.reason}\n" if log.reason else ""
+            log.reason = f"{existing}[Reviewed by {request.user.username}]: {note}".strip()
+        log.save(update_fields=['review_status', 'reason'])
+
+        serializer = SystemAuditLogSerializer(log)
+        return Response({
+            'detail': 'Audit record review status updated successfully.',
+            'audit_log': serializer.data,
+        })
+

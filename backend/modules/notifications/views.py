@@ -28,11 +28,19 @@ class NotificationListView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        notifications = Notification.objects.filter(recipient=request.user)
-        unread_count = notifications.filter(is_read=False).count()
+        qs = Notification.objects.filter(recipient=request.user)
+        unread_count = qs.filter(is_read=False).count()
+
+        category = request.query_params.get('category')
+        if category:
+            qs = qs.filter(category=category.upper())
+
+        unread_only = request.query_params.get('unread')
+        if unread_only and unread_only.lower() in ('true', '1'):
+            qs = qs.filter(is_read=False)
 
         paginator = NotificationPagination()
-        page = paginator.paginate_queryset(notifications, request, view=self)
+        page = paginator.paginate_queryset(qs, request, view=self)
         if page is not None:
             serializer = NotificationSerializer(page, many=True)
             return paginator.get_paginated_response({
@@ -40,7 +48,7 @@ class NotificationListView(APIView):
                 'unread_count': unread_count
             })
 
-        serializer = NotificationSerializer(notifications, many=True)
+        serializer = NotificationSerializer(qs, many=True)
         return Response({
             'notifications': serializer.data,
             'unread_count': unread_count,

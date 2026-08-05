@@ -255,6 +255,8 @@ class DefenseSchedulerApiTests(APITestCase):
     def test_delete_schedule_reverts_stage_progress_to_ready(self):
         # Create a scheduled defense
         schedule = self.create_scheduled_defense()
+        schedule.scheduled_date = '2099-05-15'
+        schedule.save()
         progress = TeamStageProgress.objects.get(team=self.team, defense_stage=self.stage)
         # Update progress to scheduled since we just manually created schedule
         from student_teams.services import mark_stage_scheduled
@@ -270,9 +272,24 @@ class DefenseSchedulerApiTests(APITestCase):
         progress.refresh_from_db()
         self.assertEqual(progress.status, TeamStageProgress.STATUS_READY)
 
+    def test_delete_schedule_blocked_when_ongoing_or_completed(self):
+        schedule = self.create_scheduled_defense()
+        schedule.scheduled_date = '2020-01-01'
+        schedule.save()
+        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
+        self.assertEqual(response.status_code, 409)
+
+        schedule.scheduled_date = '2099-05-15'
+        schedule.status = DefenseSchedule.STATUS_DONE
+        schedule.save()
+        response = self.client.delete(f'/api/defense/schedules/{schedule.id}/')
+        self.assertEqual(response.status_code, 409)
+
     def test_delete_schedule_blocked_when_has_grade_submissions(self):
         # Create a scheduled defense
         schedule = self.create_scheduled_defense()
+        schedule.scheduled_date = '2099-05-15'
+        schedule.save()
         
         # Create a grade submission for this schedule
         from grading.grades.models import TeamGrade, PanelistGradeSubmission

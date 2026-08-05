@@ -1,8 +1,7 @@
-import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/project_archive_provider.dart';
+import 'package:defensys/screens/web/shared/project_archive/dialogs/stage_access_management_dialog.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
 import 'package:defensys/widgets/status_badge.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,6 +42,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   static const _kRepoDataTableWidth =
       _kRepoMinTableWidth - _kRepoActionColumnWidth;
   static const _kDeliverableMinTableWidth = 1100.0;
+
+  final _teamSearchController = TextEditingController();
+  String _teamSearchQuery = '';
+  String _selectedPitEventFilter = '';
+  final Set<String> _collapsedPitEvents = {};
+  String _mainViewMode = 'stage';
+
+  @override
+  void dispose() {
+    _teamSearchController.dispose();
+    super.dispose();
+  }
 
   String _scopeKey(RepositoryAuditState state) =>
       state.scope['scope']?.toString() ?? 'admin';
@@ -143,15 +154,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final state = widget.state;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
@@ -159,13 +171,29 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         children: [
           Align(
             alignment: Alignment.centerLeft,
-            child: Text(
-              'Project Archive Records',
-              style: const TextStyle(
-                color: AppColors.maroon,
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-              ),
+            child: Row(
+              children: [
+                Container(
+                  width: 3.5,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    color: AppColors.maroon,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Project Archive Records',
+                  style: TextStyle(
+                    color: AppColors.maroon,
+                    fontSize: 15.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const Spacer(),
+                _buildViewModeToggle(),
+              ],
             ),
           ),
           const SizedBox(height: 16),
@@ -322,6 +350,100 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 fontSize: 12,
                 fontWeight: FontWeight.w700,
               ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildViewModeToggle() {
+    Widget modeBtn(String label, IconData icon, String mode) {
+      final selected = _mainViewMode == mode;
+      return InkWell(
+        onTap: () {
+          setState(() {
+            _mainViewMode = mode;
+          });
+        },
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                icon,
+                size: 14,
+                color: selected ? AppColors.maroon : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+                  color: selected ? AppColors.maroon : const Color(0xFF64748B),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          modeBtn('By Stage', Icons.style_rounded, 'stage'),
+          const SizedBox(width: 2),
+          modeBtn('By Team', Icons.groups_rounded, 'team'),
+        ],
+      ),
+    );
+  }
+
+  Widget _teamBadge(String teamName) {
+    if (teamName.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        color: AppColors.maroon.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(4),
+        border: Border.all(color: AppColors.maroon.withValues(alpha: 0.15)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.groups_rounded, size: 11, color: AppColors.maroon),
+          const SizedBox(width: 4),
+          Text(
+            teamName,
+            style: const TextStyle(
+              color: AppColors.maroon,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ],
@@ -653,10 +775,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _repositoryHeaderData({bool compactColumns = false}) {
     return Container(
-      height: 51,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(5)),
+      height: 44,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
@@ -676,7 +799,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _repositoryActionColumn(
     List<Widget> actionRows, {
-    double headerHeight = 51,
+    double headerHeight = 44,
   }) {
     return SizedBox(
       width: _kRepoActionColumnWidth,
@@ -690,22 +813,23 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
-  Widget _repositoryActionHeader({double height = 51}) {
+  Widget _repositoryActionHeader({double height = 44}) {
     return Container(
       height: height,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.horizontal(right: Radius.circular(5)),
-        border: Border(left: BorderSide(color: Color(0xFFE5E7EB))),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: const Text(
-        'Action',
+        'Actions',
         style: TextStyle(
-          color: Color(0xFF5D6678),
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
+          color: Color(0xFF64748B),
+          fontSize: 11.5,
+          fontWeight: FontWeight.w700,
+          letterSpacing: 0.3,
         ),
       ),
     );
@@ -717,8 +841,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(
-          left: BorderSide(color: Color(0xFFE5E7EB)),
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
+          left: BorderSide(color: Color(0xFFE2E8F0)),
+          bottom: BorderSide(color: Color(0xFFE2E8F0)),
         ),
       ),
     );
@@ -795,6 +919,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             '';
     final uploadedBy = entry['uploaded_by']?.toString() ?? 'System';
     final deliverableId = entry['deliverable_id']?.toString() ?? '';
+    final teamName = entry['team_name']?.toString() ?? entry['team']?.toString() ?? '';
 
     return Container(
       constraints: const BoxConstraints(minHeight: 66),
@@ -817,6 +942,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      if (widget.state.teamId.isEmpty && teamName.isNotEmpty) ...[
+                        _teamBadge(teamName),
+                        const SizedBox(height: 3),
+                      ],
                       Text(
                         deliverableId.isNotEmpty
                             ? '$deliverableId · ${title.isEmpty ? '—' : title}'
@@ -1088,9 +1217,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: Icon(icon, color: color, size: 18),
+        child: Container(
+          padding: const EdgeInsets.all(6),
+          decoration: BoxDecoration(
+            color: color.withValues(alpha: 0.10),
+            borderRadius: BorderRadius.circular(6),
+          ),
+          child: Icon(icon, color: color, size: 16),
         ),
       ),
     );
@@ -1151,77 +1284,452 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
+  List<String> _teamStagesFromEntries(RepositoryAuditState state, String teamId) {
+    final stages = <String>{};
+    for (final entry in state.entries) {
+      if (entry['team_id']?.toString() == teamId && entry['has_file'] == true) {
+        final stage = entry['stage']?.toString() ?? '';
+        if (stage.isNotEmpty) stages.add(stage);
+      }
+    }
+    return stages.toList();
+  }
+
+  Map<String, List<Map<String, dynamic>>> _groupPitTeamsByEvent(
+    List<Map<String, dynamic>> pitTeams,
+    RepositoryAuditState state,
+  ) {
+    final grouped = <String, List<Map<String, dynamic>>>{};
+    for (final team in pitTeams) {
+      final level = team['level']?.toString() ?? '';
+      final course = team['course_code']?.toString() ?? '';
+      String eventKey = 'PIT Event';
+      if (level.isNotEmpty && course.isNotEmpty) {
+        eventKey = '$level ($course)';
+      } else if (level.isNotEmpty) {
+        eventKey = level;
+      } else if (course.isNotEmpty) {
+        eventKey = course;
+      }
+      grouped.putIfAbsent(eventKey, () => []).add(team);
+    }
+    return grouped;
+  }
+
+  Widget _buildPitEventFilterChips(List<String> eventKeys) {
+    if (eventKeys.length <= 1) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 6, bottom: 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            InkWell(
+              onTap: () => setState(() => _selectedPitEventFilter = ''),
+              borderRadius: BorderRadius.circular(20),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: _selectedPitEventFilter.isEmpty
+                      ? const Color(0xFF2563EB)
+                      : const Color(0xFF2563EB).withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: _selectedPitEventFilter.isEmpty
+                        ? const Color(0xFF2563EB)
+                        : const Color(0xFF2563EB).withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Text(
+                  'All Events',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: _selectedPitEventFilter.isEmpty
+                        ? FontWeight.w800
+                        : FontWeight.w600,
+                    color: _selectedPitEventFilter.isEmpty
+                        ? Colors.white
+                        : const Color(0xFF2563EB),
+                  ),
+                ),
+              ),
+            ),
+            ...eventKeys.map((evt) {
+              final selected = _selectedPitEventFilter == evt;
+              return Padding(
+                padding: const EdgeInsets.only(left: 4),
+                child: InkWell(
+                  onTap: () => setState(() {
+                    _selectedPitEventFilter = selected ? '' : evt;
+                  }),
+                  borderRadius: BorderRadius.circular(20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: selected
+                          ? const Color(0xFF2563EB)
+                          : const Color(0xFF2563EB).withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: selected
+                            ? const Color(0xFF2563EB)
+                            : const Color(0xFF2563EB).withValues(alpha: 0.2),
+                      ),
+                    ),
+                    child: Text(
+                      evt,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight:
+                            selected ? FontWeight.w800 : FontWeight.w600,
+                        color: selected ? Colors.white : const Color(0xFF2563EB),
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildTeamSidebar(RepositoryAuditState state) {
-    final teams = _mapList(state.options['team_counts']);
+    final allTeams = _mapList(state.options['team_counts']);
+    
+    final teams = _teamSearchQuery.isEmpty
+        ? allTeams
+        : allTeams.where((team) {
+            final name = (team['name']?.toString() ?? '').toLowerCase();
+            final level = (team['level']?.toString() ?? '').toLowerCase();
+            final project = (_teamProjectFromEntries(state, team['id']?.toString() ?? '') ?? '').toLowerCase();
+            return name.contains(_teamSearchQuery) ||
+                level.contains(_teamSearchQuery) ||
+                project.contains(_teamSearchQuery);
+          }).toList();
+
     final capstoneTeams =
         teams.where((team) => _teamTrack(team) == 'capstone').toList();
     final pitTeams = teams.where((team) => _teamTrack(team) == 'pit').toList();
     final showCapstone = state.type.isEmpty || state.type == 'capstone';
-    final showPit = state.type.isEmpty;
+    final showPit = state.type.isEmpty || state.type == 'pit';
 
-    Widget teamSection(String title, List<Map<String, dynamic>> sectionTeams) {
-      if (sectionTeams.isEmpty) return const SizedBox.shrink();
+    Widget capstoneSection() {
+      if (capstoneTeams.isEmpty) return const SizedBox.shrink();
       return Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const SizedBox(height: 8),
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-              color: Color(0xFF6B7280),
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'CAPSTONE TEAMS',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.maroon.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${capstoneTeams.length}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.maroon,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 6),
-          ...sectionTeams.map((team) {
+          ...capstoneTeams.map((team) {
             final id = team['id']?.toString() ?? '';
             final name = team['name']?.toString() ?? 'Team';
             final level = team['level']?.toString() ?? '';
-            final project = _teamProjectFromEntries(state, id) ??
-                team['name']?.toString() ??
-                '';
+            final project = _teamProjectFromEntries(state, id) ?? '';
             final track = _teamTrack(team);
             final pre = _asInt(team['pre']);
             final vault = _asInt(team['post']);
-            final counts = track == 'pit'
-                ? '$vault archive'
-                : '$pre pre · $vault archive';
-            final subtitle = [
-              if (level.isNotEmpty) level,
-              if (project.isNotEmpty && project != name) project,
-              counts,
-            ].join(' · ');
-            return _sidebarTeamTile(state, id, name, subtitle, track: track);
+            final stages = _teamStagesFromEntries(state, id);
+            return _sidebarTeamTile(
+              state,
+              id: id,
+              name: name,
+              level: level,
+              projectTitle: project,
+              preCount: pre,
+              vaultCount: vault,
+              track: track,
+              stages: stages,
+            );
+          }),
+        ],
+      );
+    }
+
+    Widget pitSection() {
+      if (pitTeams.isEmpty) return const SizedBox.shrink();
+      final pitGroups = _groupPitTeamsByEvent(pitTeams, state);
+      final eventKeys = pitGroups.keys.toList();
+
+      final filteredGroups = _selectedPitEventFilter.isEmpty
+          ? pitGroups
+          : Map.fromEntries(
+              pitGroups.entries.where((e) => e.key == _selectedPitEventFilter),
+            );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: 14),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text(
+                  'PIT TEAMS (BY EVENT)',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 0.8,
+                    color: Color(0xFF64748B),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${pitTeams.length}',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      color: Color(0xFF2563EB),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          _buildPitEventFilterChips(eventKeys),
+          const SizedBox(height: 4),
+          ...filteredGroups.entries.map((group) {
+            final eventTitle = group.key;
+            final eventTeams = group.value;
+            final isCollapsed = _collapsedPitEvents.contains(eventTitle);
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                InkWell(
+                  onTap: () {
+                    setState(() {
+                      if (isCollapsed) {
+                        _collapsedPitEvents.remove(eventTitle);
+                      } else {
+                        _collapsedPitEvents.add(eventTitle);
+                      }
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isCollapsed
+                              ? Icons.keyboard_arrow_right_rounded
+                              : Icons.keyboard_arrow_down_rounded,
+                          size: 16,
+                          color: const Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.event_note_rounded,
+                          size: 13,
+                          color: Color(0xFF2563EB),
+                        ),
+                        const SizedBox(width: 5),
+                        Expanded(
+                          child: Text(
+                            eventTitle,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          padding:
+                              const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF2563EB).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            '${eventTeams.length}',
+                            style: const TextStyle(
+                              fontSize: 9.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF2563EB),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (!isCollapsed) ...[
+                  ...eventTeams.map((team) {
+                    final id = team['id']?.toString() ?? '';
+                    final name = team['name']?.toString() ?? 'Team';
+                    final level = team['level']?.toString() ?? '';
+                    final project = _teamProjectFromEntries(state, id) ?? '';
+                    final track = _teamTrack(team);
+                    final vault = _asInt(team['post']);
+                    return _sidebarTeamTile(
+                      state,
+                      id: id,
+                      name: name,
+                      level: level,
+                      projectTitle: project,
+                      preCount: 0,
+                      vaultCount: vault,
+                      track: track,
+                    );
+                  }),
+                ],
+              ],
+            );
           }),
         ],
       );
     }
 
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'TEAMS',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w800,
-              letterSpacing: 1.1,
-              color: Color(0xFF6B7280),
+          Row(
+            children: [
+              const Icon(
+                Icons.groups_outlined,
+                size: 18,
+                color: AppColors.maroon,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'TEAMS',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 0.8,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: AppColors.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Text(
+                  '${allTeams.length}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.maroon,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            height: 36,
+            child: TextField(
+              controller: _teamSearchController,
+              onChanged: (val) {
+                setState(() {
+                  _teamSearchQuery = val.toLowerCase().trim();
+                });
+              },
+              style: const TextStyle(fontSize: 12),
+              decoration: InputDecoration(
+                hintText: 'Filter teams...',
+                hintStyle: const TextStyle(
+                  color: Color(0xFF94A3B8),
+                  fontSize: 12,
+                ),
+                prefixIcon: const Icon(
+                  Icons.search_rounded,
+                  size: 16,
+                  color: Color(0xFF94A3B8),
+                ),
+                suffixIcon: _teamSearchQuery.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear_rounded, size: 14),
+                        onPressed: () {
+                          _teamSearchController.clear();
+                          setState(() => _teamSearchQuery = '');
+                        },
+                      )
+                    : null,
+                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
+                filled: true,
+                fillColor: Colors.white,
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+                ),
+              ),
             ),
           ),
           const SizedBox(height: 10),
-          _sidebarTeamTile(state, null, 'All teams', null),
-          if (showCapstone) teamSection('CAPSTONE TEAMS', capstoneTeams),
-          if (showPit) teamSection('PIT TEAMS', pitTeams),
+          _sidebarTeamTile(
+            state,
+            id: null,
+            name: 'All teams',
+            level: '',
+            projectTitle: '',
+            preCount: 0,
+            vaultCount: 0,
+            track: '',
+          ),
+          if (showCapstone) capstoneSection(),
+          if (showPit) pitSection(),
         ],
       ),
     );
@@ -1238,82 +1746,195 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _sidebarTeamTile(
-    RepositoryAuditState state,
-    String? teamId,
-    String label,
-    String? subtitle, {
-    String track = '',
+    RepositoryAuditState state, {
+    required String? id,
+    required String name,
+    required String level,
+    required String projectTitle,
+    required int preCount,
+    required int vaultCount,
+    required String track,
+    List<String> stages = const [],
   }) {
-    final selected = (teamId ?? '') == state.teamId;
-    return Material(
-      color: selected ? Colors.white : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: state.isSaving
-            ? null
-            : () {
-                if (teamId == null) {
-                  ref
-                      .read(repositoryAuditProvider.notifier)
-                      .fetchEntries(clearTeam: true);
-                } else {
-                  ref
-                      .read(repositoryAuditProvider.notifier)
-                      .fetchEntries(teamId: teamId, clearDeliverable: true);
-                }
-              },
-        child: Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-          decoration: BoxDecoration(
-            border: Border(
-              left: BorderSide(
-                color: selected ? AppColors.maroon : Colors.transparent,
-                width: 3,
+    final selected = (id ?? '') == state.teamId;
+    final isAllTeams = id == null;
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Material(
+        color: selected
+            ? AppColors.maroon.withValues(alpha: 0.08)
+            : Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: state.isSaving
+              ? null
+              : () {
+                  if (id == null) {
+                    ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(clearTeam: true);
+                  } else {
+                    ref
+                        .read(repositoryAuditProvider.notifier)
+                        .fetchEntries(teamId: id, clearDeliverable: true);
+                  }
+                },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 150),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: selected
+                    ? AppColors.maroon.withValues(alpha: 0.35)
+                    : const Color(0xFFE2E8F0),
+                width: selected ? 1.5 : 1,
               ),
-            ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Icon(
-                    Icons.folder_outlined,
-                    size: 16,
-                    color:
-                        selected ? AppColors.maroon : const Color(0xFF6B7280),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12.5,
-                        color:
-                            selected ? AppColors.maroon : AppColors.textPrimary,
+              boxShadow: selected
+                  ? [
+                      BoxShadow(
+                        color: AppColors.maroon.withValues(alpha: 0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
                       ),
-                    ),
+                    ]
+                  : null,
+            ),
+            child: Row(
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 150),
+                  width: 3,
+                  height: isAllTeams ? 16 : 36,
+                  decoration: BoxDecoration(
+                    color: selected ? AppColors.maroon : Colors.transparent,
+                    borderRadius: BorderRadius.circular(2),
                   ),
-                  if (track.isNotEmpty) _trackBadge(track),
-                ],
-              ),
-              if (subtitle != null) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    fontSize: 10.5,
-                    color: AppColors.textSecondary,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            isAllTeams
+                                ? Icons.folder_special_rounded
+                                : Icons.folder_outlined,
+                            size: 15,
+                            color: selected
+                                ? AppColors.maroon
+                                : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                fontWeight:
+                                    selected ? FontWeight.w800 : FontWeight.w700,
+                                fontSize: 12.5,
+                                color: selected
+                                    ? AppColors.maroon
+                                    : AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (track.isNotEmpty) _trackBadge(track),
+                        ],
+                      ),
+                      if (!isAllTeams) ...[
+                        const SizedBox(height: 3),
+                        if (projectTitle.isNotEmpty && projectTitle != name)
+                          Text(
+                            projectTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        if (stages.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Wrap(
+                            spacing: 3,
+                            runSpacing: 2,
+                            children: stages.map((stg) {
+                              return Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: AppColors.maroon.withValues(alpha: 0.08),
+                                  borderRadius: BorderRadius.circular(4),
+                                  border: Border.all(color: AppColors.maroon.withValues(alpha: 0.15)),
+                                ),
+                                child: Text(
+                                  stg,
+                                  style: const TextStyle(
+                                    fontSize: 9,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          ),
+                        ],
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            if (level.isNotEmpty) ...[
+                              Text(
+                                level,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Color(0xFF94A3B8),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                            ],
+                            const Spacer(),
+                            if (track != 'pit' && preCount > 0)
+                              _microCountPill('$preCount pre', const Color(0xFF2563EB)),
+                            if (vaultCount > 0) ...[
+                              if (track != 'pit' && preCount > 0)
+                                const SizedBox(width: 4),
+                              _microCountPill('$vaultCount archive', AppColors.maroon),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ],
-            ],
+            ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _microCountPill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.10),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9.5,
+          fontWeight: FontWeight.w700,
+          color: color,
         ),
       ),
     );
@@ -1351,88 +1972,131 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
+        gradient: LinearGradient(
+          colors: [
+            AppColors.maroon.withValues(alpha: 0.03),
+            Colors.white,
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
           Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            child: Row(
               children: [
-                Row(
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15,
-                        color: AppColors.maroon,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    _trackBadge(track),
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  [
-                    if (level.isNotEmpty) level,
-                    if (project.isNotEmpty) 'Project: $project',
-                  ].join(' · '),
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12,
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: AppColors.maroon.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.business_center_rounded,
+                    color: AppColors.maroon,
+                    size: 22,
                   ),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Showing files for this team only.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              name,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w900,
+                                fontSize: 16,
+                                color: AppColors.maroon,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _trackBadge(track),
+                          if (level.isNotEmpty) ...[
+                            const SizedBox(width: 6),
+                            _yearBadge(level),
+                          ],
+                        ],
+                      ),
+                      if (project.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          'Project: $project',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.textPrimary,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ],
+                      const SizedBox(height: 2),
+                      const Text(
+                        'Showing files for this team only.',
+                        style: TextStyle(
+                          color: Color(0xFF64748B),
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
           ),
-          if (_scopeKey(state) == 'admin' && teamId > 0) ...[
-            OutlinedButton.icon(
-              onPressed: state.isSaving
-                  ? null
-                  : () async {
-                      final stage = state.stage.isNotEmpty
-                          ? state.stage
-                          : (state.groupedByStage.isNotEmpty
-                              ? state.groupedByStage.first['stage']?.toString() ?? 'Concept Proposal'
-                              : 'Concept Proposal');
-                      final success = await ref
-                          .read(capstoneDeliverablesProvider.notifier)
-                          .unlockDeliverables(
-                            teamId: teamId,
-                            stageLabel: stage,
-                          );
-                      if (success && mounted) {
-                        showInfoToast(
-                          context,
-                          'Deliverable unlock status updated for $name ($stage).',
-                        );
-                        ref.read(repositoryAuditProvider.notifier).fetchEntries();
-                      }
-                    },
-              icon: const Icon(Icons.lock_open_outlined, size: 15),
-              label: const Text('Unlock Deliverables'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: AppColors.maroon,
-                side: const BorderSide(color: AppColors.maroon),
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                visualDensity: VisualDensity.compact,
+          const SizedBox(width: 12),
+          if ((_scopeKey(state) == 'admin' || _scopeKey(state) == 'pit_lead') && teamId > 0) ...[
+            Tooltip(
+              message: 'Manually grant or revoke student file upload permissions for this team',
+              child: OutlinedButton.icon(
+                onPressed: () {
+                  StageAccessManagementDialog.show(
+                    context: context,
+                    ref: ref,
+                    teamId: teamId,
+                    teamName: name,
+                    scope: 'team',
+                  );
+                },
+                icon: const Icon(Icons.lock_open_rounded, size: 15),
+                label: const Text('Manage Team Access ▾'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.maroon,
+                  side: const BorderSide(color: AppColors.maroon),
+                  backgroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ),
           ],
@@ -1463,7 +2127,127 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
+  Widget _buildTeamCentricGroupedPanel(RepositoryAuditState state) {
+    final teams = _mapList(state.options['team_counts']);
+    if (teams.isEmpty || state.entries.isEmpty) {
+      return _emptyRepositoryTable();
+    }
+
+    final capstoneTeams = teams.where((t) => _teamTrack(t) == 'capstone').toList();
+    final pitTeams = teams.where((t) => _teamTrack(t) == 'pit').toList();
+    final showCapstone = state.type.isEmpty || state.type == 'capstone';
+    final showPit = state.type.isEmpty || state.type == 'pit';
+
+    Widget teamCardGroup(Map<String, dynamic> team) {
+      final teamId = team['id']?.toString() ?? '';
+      final name = team['name']?.toString() ?? 'Team';
+      final level = team['level']?.toString() ?? '';
+      final track = _teamTrack(team);
+      final project = _teamProjectFromEntries(state, teamId) ?? '';
+
+      final teamEntries = state.entries.where((entry) {
+        if (entry['team_id']?.toString() != teamId) return false;
+        if (entry['has_file'] != true || entry['is_missing'] == true) return false;
+        return track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry);
+      }).toList();
+
+      if (teamEntries.isEmpty) return const SizedBox.shrink();
+
+      final accentColor = track == 'pit' ? const Color(0xFF2563EB) : AppColors.maroon;
+
+      return Container(
+        margin: const EdgeInsets.only(bottom: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.02),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.05),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    Icons.groups_rounded,
+                    size: 16,
+                    color: accentColor,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    name,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13.5,
+                      color: accentColor,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  _trackBadge(track),
+                  if (level.isNotEmpty) ...[
+                    const SizedBox(width: 6),
+                    _yearBadge(level),
+                  ],
+                  if (project.isNotEmpty && project != name) ...[
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '· $project',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11.5,
+                          color: Color(0xFF64748B),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (track == 'pit')
+              _buildPitGroupedPanel(teamEntries, compactColumns: true)
+            else
+              _buildCapstoneGroupedPanel(state, entries: teamEntries, compactColumns: true),
+          ],
+        ),
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (showCapstone && capstoneTeams.isNotEmpty) ...[
+          _trackSectionTitle('CAPSTONE TEAMS & DELIVERABLES', AppColors.maroon),
+          ...capstoneTeams.map(teamCardGroup),
+          const SizedBox(height: 16),
+        ],
+        if (showPit && pitTeams.isNotEmpty) ...[
+          _trackSectionTitle('PIT TEAMS & DELIVERABLES', const Color(0xFF2563EB)),
+          ...pitTeams.map(teamCardGroup),
+        ],
+      ],
+    );
+  }
+
   Widget _buildAllTeamsBrowsePanel(RepositoryAuditState state) {
+    if (_mainViewMode == 'team') {
+      return _buildTeamCentricGroupedPanel(state);
+    }
     if (state.type == 'capstone') {
       return _buildCapstoneGroupedPanel(
         state,
@@ -1736,15 +2520,28 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _stageTitle(String stage, {Color color = AppColors.maroon}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 4),
-      child: Text(
-        stage.toUpperCase(),
-        style: TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: color,
-          letterSpacing: 0.6,
-        ),
+      padding: const EdgeInsets.only(bottom: 10, top: 12),
+      child: Row(
+        children: [
+          Container(
+            width: 4,
+            height: 18,
+            decoration: BoxDecoration(
+              color: color,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            stage.toUpperCase(),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: color,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1796,21 +2593,32 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _subsectionHeader(String title, Color background) {
+    final isPre = title.toLowerCase().contains('pre-defense');
+    final icon = isPre ? Icons.folder_open_rounded : Icons.inventory_2_rounded;
+    final iconColor = isPre ? const Color(0xFF2563EB) : AppColors.maroon;
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 6, top: 4),
+      margin: const EdgeInsets.only(bottom: 8, top: 6),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
         color: background,
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: iconColor.withValues(alpha: 0.15)),
       ),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w800,
-          color: AppColors.textPrimary,
-        ),
+      child: Row(
+        children: [
+          Icon(icon, size: 16, color: iconColor),
+          const SizedBox(width: 8),
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: iconColor,
+            ),
+          ),
+        ],
       ),
     );
   }

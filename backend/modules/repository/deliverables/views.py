@@ -384,22 +384,48 @@ class CapstoneDeliverableUnlockView(APIView):
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
-        if getattr(request.user, 'role', None) != 'admin' and not getattr(request.user, 'is_superuser', False):
-            return Response({'detail': 'Only Admin or Capstone Coordinator can unlock deliverables for completed defenses.'}, status=status.HTTP_403_FORBIDDEN)
-
-        team_id = request.data.get('team_id')
+        user = request.user
         stage_label = request.data.get('stage_label')
-        if not team_id or not stage_label:
-            return Response({'detail': 'team_id and stage_label are required.'}, status=status.HTTP_400_BAD_REQUEST)
+        unlock_type = request.data.get('unlock_type', 'all')
+        scope = request.data.get('scope', 'team')
+        team_id = request.data.get('team_id')
+        year_level = request.data.get('year_level')
+        target_state = request.data.get('target_state')
 
-        team = get_allowed_team(request, team_id)
-        from .services import toggle_stage_deliverables_unlock
+        if not stage_label:
+            return Response({'detail': 'stage_label is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from .services import toggle_stage_deliverables_unlock, toggle_global_stage_deliverables_unlock
         try:
-            unlocked = toggle_stage_deliverables_unlock(team, stage_label, request.user)
+            if scope == 'global':
+                target_program_scope = request.data.get('program_scope', 'capstone')
+                unlocked = toggle_global_stage_deliverables_unlock(
+                    stage_label=stage_label,
+                    user=user,
+                    scope=target_program_scope,
+                    year_level=year_level,
+                    unlock_type=unlock_type,
+                    target_state=target_state,
+                )
+                payload_scope = target_program_scope
+            else:
+                if not team_id:
+                    return Response({'detail': 'team_id is required for team scope unlock.'}, status=status.HTTP_400_BAD_REQUEST)
+                team = get_allowed_team(request, team_id)
+                unlocked = toggle_stage_deliverables_unlock(
+                    team=team,
+                    stage_label=stage_label,
+                    user=user,
+                    unlock_type=unlock_type,
+                    target_state=target_state,
+                )
+                payload_scope = 'pit' if team.is_pit else 'capstone'
+
         except PermissionError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_403_FORBIDDEN)
 
         return Response({
             'unlocked': unlocked,
-            **deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'),
+            **deliverables_payload(request, scope=payload_scope),
         }, status=status.HTTP_200_OK)
+

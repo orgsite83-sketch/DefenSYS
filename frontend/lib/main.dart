@@ -3,12 +3,12 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:toastification/toastification.dart';
 
-import 'l10n/app_localizations.dart';
-import 'navigation/app_router.dart';
-import 'services/auth_provider.dart';
-import 'services/realtime_sync_service.dart';
-import 'services/session_keepalive_service.dart';
-import 'theme/app_theme.dart';
+import 'package:defensys/l10n/app_localizations.dart';
+import 'package:defensys/navigation/app_router.dart';
+import 'package:defensys/services/auth_provider.dart';
+import 'package:defensys/services/realtime_sync_service.dart';
+import 'package:defensys/services/session_keepalive_service.dart';
+import 'package:defensys/theme/app_theme.dart';
 
 void main() {
   runApp(const ProviderScope(child: DefenSYSApp()));

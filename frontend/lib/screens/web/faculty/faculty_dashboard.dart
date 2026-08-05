@@ -7,6 +7,7 @@ import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../theme/app_theme.dart';
 import '../../../widgets/offline_banner.dart';
+import '../../../widgets/defensys_logo_mark.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
@@ -429,35 +430,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             padding: const EdgeInsets.symmetric(horizontal: 20),
             child: Row(
               children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  padding: const EdgeInsets.all(3),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.white, width: 2),
-                    color: Colors.white,
-                  ),
-                  child: ClipOval(
-                    child: Image.asset(
-                      'assets/logo-login-mark-48.png',
-                      fit: BoxFit.contain,
-                      filterQuality: FilterQuality.high,
-                      isAntiAlias: true,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.shield_rounded,
-                        color: DefensysTokens.maroon,
-                        size: 20,
-                      ),
-                    ),
-                  ),
-                ),
+                const DefensysLogoMark(size: 40),
                 const SizedBox(width: 14),
                 const Text(
                   'DefenSYS',
                   style: TextStyle(
                     fontFamily: DefensysTokens.fontFamily,
-                    color: DefensysTokens.gold,
+                    color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),

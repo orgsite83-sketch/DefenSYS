@@ -29,6 +29,7 @@ class TeamReadinessTracker extends StatefulWidget {
 class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
   final TextEditingController _trackerSearchController = TextEditingController();
   final Map<String, String?> _selectedSectionAdviserFilter = {};
+  String? _selectedPitYearLevel;
 
   @override
   void dispose() {
@@ -73,7 +74,20 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
   Widget build(BuildContext context) {
     final activeStageOrEventName = widget.activeStageOrEventName;
 
-    final teams = teamsForScope(widget.state, widget.scope).where((team) {
+    final pitYearLevels = widget.scope == 'pit'
+        ? (teamsForScope(widget.state, 'pit')
+            .map((t) => t['level']?.toString().trim() ?? '')
+            .where((l) => l.isNotEmpty)
+            .toSet()
+            .toList()
+          ..sort())
+        : <String>[];
+
+    final teams = teamsForScope(
+      widget.state,
+      widget.scope,
+      yearLevel: widget.scope == 'pit' ? _selectedPitYearLevel : null,
+    ).where((team) {
       final query = _trackerSearchController.text.toLowerCase().trim();
       if (query.isEmpty) return true;
       final name = (team['name']?.toString() ?? '').toLowerCase();
@@ -102,6 +116,45 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                 ),
               ),
               const Spacer(),
+              if (widget.scope == 'pit' && pitYearLevels.length > 1) ...[
+                Container(
+                  height: 38,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFD0D5DD)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: pitYearLevels.contains(_selectedPitYearLevel)
+                          ? _selectedPitYearLevel
+                          : 'all',
+                      isDense: true,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: 'all',
+                          child: Text('All Year Levels'),
+                        ),
+                        ...pitYearLevels.map(
+                          (lvl) => DropdownMenuItem(value: lvl, child: Text(lvl)),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        setState(() {
+                          _selectedPitYearLevel = val == 'all' ? null : val;
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+              ],
               Container(
                 width: 260,
                 height: 38,
@@ -166,7 +219,11 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           else ...[
             Builder(
               builder: (context) {
-                final allScopeTeams = teamsForScope(widget.state, widget.scope);
+                final allScopeTeams = teamsForScope(
+                  widget.state,
+                  widget.scope,
+                  yearLevel: widget.scope == 'pit' ? _selectedPitYearLevel : null,
+                );
                 final Map<String, int> adviserLoadCounts = {};
                 for (final t in allScopeTeams) {
                   final adviser = t['adviser_name']?.toString().trim() ?? '';

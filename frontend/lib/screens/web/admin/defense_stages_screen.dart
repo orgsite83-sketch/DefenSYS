@@ -24,6 +24,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   int? _editingStageId;
   Map<String, dynamic>? _editingStage;
   bool _isPipelineView = true;
+  final Set<int> _expandedStageIds = {};
 
   @override
   void initState() {
@@ -98,7 +99,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             _buildExecutiveStatCards(state),
             const SizedBox(height: 20),
             _buildLifecycleLegend(state),
-
             const SizedBox(height: 24),
             if (state.isLoading)
               _buildLoadingState()
@@ -126,11 +126,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       color: Color(0xFFFEE2E2),
                       shape: BoxShape.circle,
                     ),
-                    child: const Icon(Icons.layers_rounded, color: AppColors.maroon, size: 22),
+                    child: const Icon(Icons.account_tree_rounded,
+                        color: AppColors.maroon, size: 22),
                   ),
                   const SizedBox(width: 12),
                   const Text(
-                    'Defense Stages Setup',
+                    'Capstone Stage Chain & Governance',
                     style: TextStyle(
                       color: AppColors.maroon,
                       fontSize: 22,
@@ -143,7 +144,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Configure sequential academic defense milestones, deliverables, and lifecycle locking rules.',
+                'Define sequential defense milestones, evaluation rubrics, and deliverable vault templates for Capstone.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,
@@ -684,10 +685,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     );
   }
 
-  Widget _pipelineConnectorLine() {
+  Widget _pipelineConnectorLine([String nextLabel = '']) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      height: 28,
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      height: 30,
       child: Row(
         children: [
           const SizedBox(width: 44),
@@ -696,15 +697,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             color: const Color(0xFFCBD5E1),
           ),
           const SizedBox(width: 12),
-          const Icon(Icons.arrow_downward_rounded, size: 14, color: Color(0xFF94A3B8)),
+          const Icon(Icons.arrow_downward_rounded, size: 14, color: AppColors.maroon),
           const SizedBox(width: 6),
-          const Text(
-            'Unlocks Next Academic Milestone',
-            style: TextStyle(
-              color: Color(0xFF94A3B8),
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
+          Text(
+            nextLabel.isNotEmpty
+                ? 'Unlocks Next Academic Milestone: $nextLabel'
+                : 'Unlocks Next Academic Milestone',
+            style: const TextStyle(
+              color: AppColors.maroon,
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.1,
             ),
           ),
         ],
@@ -718,10 +721,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int index,
     int totalStages,
   ) {
+    final stageId = _asInt(stage['id']) ?? index;
     final status = _stageStatus(stage);
     final isPublished = status == 'published';
     final isLocked = status == 'locked';
     final order = stage['display_order']?.toString() ?? '${index + 1}';
+    final isExpanded = _expandedStageIds.contains(stageId);
 
     Color sideAccentColor;
     if (isLocked) {
@@ -732,8 +737,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       sideAccentColor = const Color(0xFFF59E0B);
     }
 
-    final delivCount = _deliverablesCount(stage);
+    final delivs = (stage['deliverables'] is List) ? (stage['deliverables'] as List) : [];
+    final delivCount = delivs.length;
+    final preCount = delivs.where((d) => (d is Map) && (d['deliverable_type'] == 'pre' || d['type'] == 'pre')).length;
+    final postCount = delivs.where((d) => (d is Map) && (d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post')).length;
+
     final previousLabel = stage['previous_stage_label']?.toString();
+    final rubricName = stage['rubric_name']?.toString() ??
+        (stage['rubric'] is Map ? stage['rubric']['name']?.toString() : null) ??
+        'Evaluation Rubric Attached';
 
     return Container(
       width: double.infinity,
@@ -765,6 +777,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Header Row
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -773,14 +786,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             height: 36,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
+                              color: sideAccentColor.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                              border: Border.all(color: sideAccentColor.withValues(alpha: 0.3)),
                             ),
                             child: Text(
                               order.padLeft(2, '0'),
-                              style: const TextStyle(
-                                color: AppColors.textPrimary,
+                              style: TextStyle(
+                                color: sideAccentColor,
                                 fontSize: 13,
                                 fontWeight: FontWeight.w900,
                               ),
@@ -823,14 +836,167 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           _statusChip(stage),
                         ],
                       ),
-                      const SizedBox(height: 16),
+                      const SizedBox(height: 14),
+                      // Rubric Micro-card
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.assignment_outlined, size: 14, color: AppColors.maroon),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Stage Rubric: ',
+                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                            ),
+                            Text(
+                              rubricName,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      // Deliverables Accordion Expander
+                      InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (isExpanded) {
+                              _expandedStageIds.remove(stageId);
+                            } else {
+                              _expandedStageIds.add(stageId);
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          decoration: BoxDecoration(
+                            color: delivCount > 0 ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: delivCount > 0 ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(
+                                    Icons.folder_outlined,
+                                    size: 16,
+                                    color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textSecondary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    '$delivCount Deliverables Configured ($preCount Pre, $postCount Post)',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textPrimary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              Icon(
+                                isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                                size: 18,
+                                color: delivCount > 0 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                      if (isExpanded) ...[
+                        const SizedBox(height: 8),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: delivs.isEmpty
+                              ? const Text(
+                                  'No deliverables configured for this stage.',
+                                  style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                                )
+                              : Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: delivs.map<Widget>((item) {
+                                    final d = Map<String, dynamic>.from(item as Map);
+                                    final label = d['label']?.toString() ?? d['name']?.toString() ?? 'Deliverable';
+                                    final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post';
+                                    final isReq = d['required'] == true;
+                                    final isRestricted = d['is_restricted'] == true;
+
+                                    return Padding(
+                                      padding: const EdgeInsets.only(bottom: 6),
+                                      child: Row(
+                                        children: [
+                                          Icon(
+                                            isPost ? Icons.archive_outlined : Icons.description_outlined,
+                                            size: 13,
+                                            color: isPost ? const Color(0xFF6366F1) : AppColors.maroon,
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Expanded(
+                                            child: Text(
+                                              label,
+                                              style: const TextStyle(
+                                                fontSize: 11.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                              maxLines: 1,
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                          if (isReq)
+                                            Container(
+                                              margin: const EdgeInsets.only(left: 4),
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFFEE2E2),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text(
+                                                'Req',
+                                                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: AppColors.maroon),
+                                              ),
+                                            ),
+                                          if (isRestricted)
+                                            Container(
+                                              margin: const EdgeInsets.only(left: 4),
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFFEF3C7),
+                                                borderRadius: BorderRadius.circular(4),
+                                              ),
+                                              child: const Text(
+                                                'Private Archive',
+                                                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    );
+                                  }).toList(),
+                                ),
+                        ),
+                      ],
+                      const SizedBox(height: 14),
                       const Divider(height: 1, color: Color(0xFFF1F5F9)),
                       const SizedBox(height: 12),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
                               borderRadius: BorderRadius.circular(8),
@@ -839,8 +1005,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.turn_right_rounded,
-                                    size: 14, color: AppColors.textSecondary),
+                                const Icon(Icons.turn_right_rounded, size: 14, color: AppColors.textSecondary),
                                 const SizedBox(width: 6),
                                 Text(
                                   previousLabel == null || previousLabel.isEmpty
@@ -850,45 +1015,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     color: AppColors.textSecondary,
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 10),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 10, vertical: 5),
-                            decoration: BoxDecoration(
-                              color: delivCount > 0
-                                  ? const Color(0xFFEFF6FF)
-                                  : const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
-                                color: delivCount > 0
-                                    ? const Color(0xFFBFDBFE)
-                                    : const Color(0xFFE2E8F0),
-                              ),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.assignment_outlined,
-                                  size: 14,
-                                  color: delivCount > 0
-                                      ? const Color(0xFF1D4ED8)
-                                      : AppColors.textSecondary,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  '$delivCount Deliverables Configured',
-                                  style: TextStyle(
-                                    color: delivCount > 0
-                                        ? const Color(0xFF1D4ED8)
-                                        : AppColors.textSecondary,
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
                                   ),
                                 ),
                               ],
@@ -951,13 +1077,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageThFixed('STAGE ORDER', 100, maxLines: 1),
-          Expanded(flex: 26, child: _stageTh('NAME')),
-          Expanded(flex: 15, child: _stageTh('CODE')),
-          Expanded(flex: 17, child: _stageTh('PREVIOUS STAGE')),
-          _stageThFixed('DELIVERABLES', 118),
-          _stageThFixed('STATUS', 128),
-          _stageThFixed('ACTIONS', 184),
+          _stageThFixed('ORDER', 80, maxLines: 1),
+          Expanded(flex: 24, child: _stageTh('STAGE NAME & CODE')),
+          Expanded(flex: 18, child: _stageTh('PREREQUISITE')),
+          Expanded(flex: 20, child: _stageTh('RUBRIC')),
+          _stageThFixed('DELIVERABLES', 120),
+          _stageThFixed('STATUS', 120),
+          _stageThFixed('ACTIONS', 160),
         ],
       ),
     );
@@ -1008,6 +1134,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int index,
   ) {
     final zebra = index.isOdd;
+    final rubricName = stage['rubric_name']?.toString() ??
+        (stage['rubric'] is Map ? stage['rubric']['name']?.toString() : null) ??
+        'Attached';
+
     return Container(
       constraints: const BoxConstraints(minHeight: 58),
       decoration: BoxDecoration(
@@ -1019,38 +1149,49 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageTdFixed(100, _orderTableBadge(stage['display_order'])),
+          _stageTdFixed(80, _orderTableBadge(stage['display_order'])),
           Expanded(
-            flex: 26,
-            child: _stageTd(_stageNameCell(stage)),
-          ),
-          Expanded(
-            flex: 15,
+            flex: 24,
             child: _stageTd(
-              _codeTag(stage['code']?.toString() ?? ''),
-            ),
-          ),
-          Expanded(
-            flex: 17,
-            child: _stageTd(_previousStageCell(stage)),
-          ),
-          _stageTdFixed(
-            118,
-            Text(
-              '${_deliverablesCount(stage)} deliverables',
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.left,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w600,
-                height: 1.2,
+              Row(
+                children: [
+                  Expanded(child: _stageNameCell(stage)),
+                  const SizedBox(width: 6),
+                  _codeTag(stage['code']?.toString() ?? ''),
+                ],
               ),
             ),
           ),
-          _stageTdFixed(128, _statusChip(stage)),
-          _stageTdFixedActions(184, _buildStageActions(state, stage)),
+          Expanded(
+            flex: 18,
+            child: _stageTd(_previousStageCell(stage)),
+          ),
+          Expanded(
+            flex: 20,
+            child: _stageTd(
+              Text(
+                rubricName,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ),
+          _stageTdFixed(
+            120,
+            Text(
+              '${_deliverablesCount(stage)} attached',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          _stageTdFixed(120, _statusChip(stage)),
+          _stageTdFixedActions(160, _buildStageActions(state, stage)),
         ],
       ),
     );

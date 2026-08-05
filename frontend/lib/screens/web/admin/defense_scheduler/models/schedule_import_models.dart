@@ -117,13 +117,24 @@ String normalizeImportDate(String? value) {
 
 List<Map<String, dynamic>> teamsForScope(
   DefenseSchedulerState state,
-  String scope,
-) {
+  String scope, {
+  String? yearLevel,
+}) {
   return state.teams.where((team) {
     final level = team['level']?.toString() ?? '';
-    return scope == 'pit'
-        ? level.contains('PIT')
-        : level.contains('Capstone');
+    final isPit = level.toUpperCase().contains('PIT');
+    final isCapstone = level.toUpperCase().contains('CAPSTONE');
+    if (scope == 'pit') {
+      if (!isPit) return false;
+      if (yearLevel != null && yearLevel.isNotEmpty && yearLevel != 'all') {
+        return level.toLowerCase().contains(yearLevel.toLowerCase());
+      }
+      return true;
+    }
+    if (yearLevel != null && yearLevel.isNotEmpty && yearLevel != 'all') {
+      return level.toLowerCase().contains(yearLevel.toLowerCase());
+    }
+    return isCapstone;
   }).toList();
 }
 

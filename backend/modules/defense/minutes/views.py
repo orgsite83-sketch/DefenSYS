@@ -11,7 +11,7 @@ from django.contrib.auth import get_user_model
 from user_management.permissions import IsFacultyRole
 from defense.scheduler.serializers import schedule_queryset
 from defense.scheduler.models import DefenseSchedule, SchedulePanelist
-from notifications.models import Notification
+from notifications.models import Notification, NotificationCategory
 from .models import DefenseMinutes, MinutesPanelistComment
 from .serializers import DocumenterAssignmentSerializer, DefenseMinutesSerializer
 from .pdf_generator import generate_minutes_pdf
@@ -348,7 +348,9 @@ class MinutesSignAdviserView(APIView):
                     recipient=recipient,
                     sender=request.user,
                     title="Minutes Awaiting Final Signature",
-                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been reviewed by the adviser and await your signature"
+                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been reviewed by the adviser and await your signature",
+                    category=NotificationCategory.MINUTES,
+                    action_route="/admin/overview",
                 )
                 
         serializer = DefenseMinutesSerializer(minutes)
@@ -415,7 +417,9 @@ class MinutesSignChairmanView(APIView):
                     recipient=documenter,
                     sender=request.user,
                     title="Minutes Finalized",
-                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been finalized with all signatures"
+                    message=f"The minutes for {minutes.team_name}'s {stage_label} defense have been finalized with all signatures",
+                    category=NotificationCategory.MINUTES,
+                    action_route="/faculty/defense_board",
                 )
                 
         serializer = DefenseMinutesSerializer(minutes)

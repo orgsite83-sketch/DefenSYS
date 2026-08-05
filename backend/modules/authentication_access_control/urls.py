@@ -6,6 +6,7 @@ from .views import (
     CustomTokenObtainPairView,
     LogoutView,
     SystemAuditLogListView,
+    SystemAuditLogReviewView,
     ThrottledTokenRefreshView,
     UserHistoryView,
 )
@@ -18,4 +19,5 @@ urlpatterns = [
     path('me/history/', UserHistoryView.as_view(), name='user_history'),
     path('change-password/', ChangePasswordView.as_view(), name='change_password'),
     path('audit-logs/', SystemAuditLogListView.as_view(), name='system_audit_logs'),
+    path('audit-logs/<int:pk>/review/', SystemAuditLogReviewView.as_view(), name='system_audit_log_review'),
 ]

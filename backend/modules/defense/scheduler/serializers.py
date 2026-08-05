@@ -199,6 +199,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     documenter_name = serializers.SerializerMethodField()
     minutes_status = serializers.SerializerMethodField()
     minutes_id = serializers.SerializerMethodField()
+    display_status = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseSchedule
@@ -224,6 +225,7 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'slot_duration',
             'room',
             'status',
+            'display_status',
             'panelists',
             'panelist_ids',
             'created_by_name',
@@ -234,6 +236,20 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def get_display_status(self, obj):
+        if obj.status == DefenseSchedule.STATUS_SCHEDULED:
+            from django.utils import timezone
+            from datetime import datetime
+            now = timezone.localtime()
+            scheduled_start = timezone.make_aware(
+                datetime.combine(obj.scheduled_date, obj.start_time),
+                timezone.get_current_timezone(),
+            )
+            if now >= scheduled_start:
+                return 'ongoing'
+        return obj.status
+
 
     def get_panelist_ids(self, obj):
         return [assignment.panelist_id for assignment in obj.panel_assignments.all()]
@@ -346,14 +362,14 @@ class ScheduleBaseSerializer(serializers.Serializer):
             attrs['rubric'] = config.panel_rubric
 
         if not attrs.get('rubric'):
-            raise serializers.ValidationError({'rubric_id': 'PIT schedules require a panel rubric.'})
+            raise serializers.ValidationError({'rubric_id': 'Assign published panel and peer rubrics for this PIT event before scheduling.'})
 
         peer_rubric = self._resolve_peer_rubric(attrs)
         if peer_rubric is None and config and config.peer_rubric:
             peer_rubric = config.peer_rubric
 
         if peer_rubric is None:
-            raise serializers.ValidationError({'peer_rubric_id': 'PIT schedules require a peer rubric.'})
+            raise serializers.ValidationError({'peer_rubric_id': 'Assign published panel and peer rubrics for this PIT event before scheduling.'})
 
         panel_weight = attrs.get('panel_weight')
         peer_weight = attrs.get('peer_weight')
@@ -896,7 +912,7 @@ class DefenseScheduleStatusSerializer(serializers.Serializer):
 def send_documenter_assignment_notification(schedule):
     if not schedule.documenter:
         return
-    from notifications.models import Notification
+    from notifications.models import Notification, NotificationCategory
 
     stage = schedule.defense_stage.label if schedule.defense_stage else schedule.event_name or 'defense'
     date_str = schedule.scheduled_date.strftime('%B %d, %Y')
@@ -912,6 +928,8 @@ def send_documenter_assignment_notification(schedule):
         title=title,
         message=message,
         sender=schedule.created_by,
+        category=NotificationCategory.DEFENSE,
+        action_route="/faculty/defense_board",
     )
 
 

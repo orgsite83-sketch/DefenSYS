@@ -46,7 +46,7 @@ class SystemAuditState {
     this.currentPage = 1,
     this.totalPages = 1,
     this.totalCount = 0,
-    this.pageSize = 50,
+    this.pageSize = 10,
     this.selectedLog,
     this.error,
   });
@@ -157,6 +157,12 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
     }
   }
 
+  void setPageSize(int size) {
+    if (size <= 0 || size == state.pageSize) return;
+    state = state.copyWith(pageSize: size, currentPage: 1);
+    fetch(page: 1);
+  }
+
   void setCategory(String value) {
     state = state.copyWith(category: value, currentPage: 1);
     fetch(page: 1);
@@ -196,5 +202,39 @@ class SystemAuditNotifier extends Notifier<SystemAuditState> {
 
   void selectLog(Map<String, dynamic> log) {
     state = state.copyWith(selectedLog: log);
+  }
+
+  Future<bool> updateReviewStatus(int logId, String reviewStatus, {String? reason}) async {
+    final uri = Uri.parse('${ApiConfig.baseUrl}/audit-logs/$logId/review/');
+    try {
+      final response = await ref.read(authenticatedHttpClientProvider).patch(
+        uri,
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'review_status': reviewStatus,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        }),
+      );
+      if (response.statusCode >= 200 && response.statusCode < 300) {
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final updatedLog = Map<String, dynamic>.from(body['audit_log'] ?? {});
+        final newLogs = state.logs.map((log) {
+          if (log['id'] == logId) return updatedLog;
+          return log;
+        }).toList();
+        state = state.copyWith(
+          logs: newLogs,
+          selectedLog: state.selectedLog?['id'] == logId ? updatedLog : state.selectedLog,
+        );
+        fetch();
+        return true;
+      } else {
+        final body = jsonDecode(response.body);
+        throw Exception(body['detail']?.toString() ?? 'Failed to update review status.');
+      }
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+      return false;
+    }
   }
 }

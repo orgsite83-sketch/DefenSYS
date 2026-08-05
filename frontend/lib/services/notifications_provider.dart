@@ -92,29 +92,29 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
   }
 
   Future<bool> markAsRead(int notificationId) async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    final updatedList = state.notifications.map((n) {
+      if (n['id'] == notificationId) {
+        return {...n, 'is_read': true};
+      }
+      return n;
+    }).toList();
+
+    final newUnread = updatedList.where((n) => n['is_read'] != true).length;
+
+    state = state.copyWith(
+      isSaving: true,
+      notifications: updatedList,
+      unreadCount: newUnread,
+      clearError: true,
+      clearMessage: true,
+    );
 
     try {
       final url = '$baseUrl/$notificationId/read/';
-      final response = await _client.post(Uri.parse(url), body: {});
+      final response = await _client.post(Uri.parse(url), body: jsonEncode({}));
 
       if (response.statusCode == 200) {
-        // Update local list state
-        final updatedList = state.notifications.map((n) {
-          if (n['id'] == notificationId) {
-            return {...n, 'is_read': true};
-          }
-          return n;
-        }).toList();
-
-        // Recalculate unread count
-        final newUnread = updatedList.where((n) => n['is_read'] != true).length;
-
-        state = state.copyWith(
-          isSaving: false,
-          notifications: updatedList,
-          unreadCount: newUnread,
-        );
+        state = state.copyWith(isSaving: false);
         return true;
       }
 
@@ -133,22 +133,25 @@ class NotificationsNotifier extends Notifier<NotificationsState> {
   }
 
   Future<bool> markAllAsRead() async {
-    state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
+    final updatedList = state.notifications.map((n) {
+      return {...n, 'is_read': true};
+    }).toList();
+
+    state = state.copyWith(
+      isSaving: true,
+      notifications: updatedList,
+      unreadCount: 0,
+      clearError: true,
+      clearMessage: true,
+    );
 
     try {
       final url = '$baseUrl/read-all/';
-      final response = await _client.post(Uri.parse(url), body: {});
+      final response = await _client.post(Uri.parse(url), body: jsonEncode({}));
 
       if (response.statusCode == 200) {
-        // Update all locally to read
-        final updatedList = state.notifications.map((n) {
-          return {...n, 'is_read': true};
-        }).toList();
-
         state = state.copyWith(
           isSaving: false,
-          notifications: updatedList,
-          unreadCount: 0,
           message: 'All notifications marked as read.',
         );
         return true;

@@ -296,10 +296,24 @@ def filter_teams(request, queryset):
     return queryset
 
 
-def archive_unlocked(team, stage_label):
+def archive_unlocked(team, stage_label, deliverable_type='post'):
+    if deliverable_type == 'pre':
+        if team.status == StudentTeam.STATUS_APPROVED:
+            return True
+        if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre'):
+            return True
+        if team.is_capstone:
+            stage_obj = defense_stage_for_label(stage_label)
+            if stage_obj and was_stage_endorsed(team, stage_obj):
+                return True
+        else:
+            if team.ready_for_stage == stage_label:
+                return True
+        return is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label)
+
     if team.status == StudentTeam.STATUS_APPROVED:
         return True
-    if is_stage_unlocked_by_admin(team, stage_label):
+    if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
         return True
     if is_stage_defense_done(team, stage_label):
         return True
@@ -307,6 +321,7 @@ def archive_unlocked(team, stage_label):
         team=team,
         status=DefenseSchedule.STATUS_DONE,
     ).filter(Q(defense_stage__label=stage_label) | Q(event_name=stage_label)).exists()
+
 
 
 def submissions_for(team, stage_label):
@@ -460,28 +475,128 @@ def is_stage_defense_done(team, stage_label):
     return progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule or is_officially_complete
 
 
-def is_stage_unlocked_by_admin(team, stage_label):
+def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
     unlocked_stages = getattr(team, 'unlocked_stages', []) or []
-    return stage_label in unlocked_stages
+    if stage_label in unlocked_stages:
+        return True
+    if f"{stage_label}:all" in unlocked_stages:
+        return True
+    if deliverable_type and f"{stage_label}:{deliverable_type}" in unlocked_stages:
+        return True
+    return False
 
 
 @transaction.atomic
-def toggle_stage_deliverables_unlock(team, stage_label, user):
+def toggle_stage_deliverables_unlock(team, stage_label, user, unlock_type='all', target_state=None):
     is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
-    if not is_admin:
-        raise PermissionError('Only Admin or Capstone Coordinator can unlock deliverables for completed defenses.')
+    is_pit_lead = getattr(user, 'is_pit_lead', False) and getattr(team, 'is_pit', False)
+    
+    if not (is_admin or is_pit_lead):
+        raise PermissionError('Only Admin, Capstone Coordinator, or PIT Lead can unlock deliverables for defense stages.')
 
-    unlocked_stages = list(getattr(team, 'unlocked_stages', []) or [])
-    if stage_label in unlocked_stages:
-        unlocked_stages.remove(stage_label)
-        unlocked = False
+    if is_pit_lead and not is_admin:
+        from student_teams.team_levels import normalize_year_level
+        pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+        if pit_year and normalize_year_level(team.year_level) != normalize_year_level(pit_year):
+            raise PermissionError('PIT Leads can only unlock deliverables for teams in their assigned year level.')
+
+    unlocked_stages = set(getattr(team, 'unlocked_stages', []) or [])
+    
+    all_key = f"{stage_label}:all"
+    pre_key = f"{stage_label}:pre"
+    post_key = f"{stage_label}:post"
+    legacy_key = stage_label
+
+    if unlock_type == 'pre':
+        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or pre_key in unlocked_stages)
+    elif unlock_type == 'post':
+        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or post_key in unlocked_stages)
     else:
-        unlocked_stages.append(stage_label)
-        unlocked = True
+        currently_unlocked = (legacy_key in unlocked_stages or all_key in unlocked_stages or (pre_key in unlocked_stages and post_key in unlocked_stages))
 
-    team.unlocked_stages = unlocked_stages
+    new_state = (not currently_unlocked) if target_state is None else bool(target_state)
+
+    if new_state:
+        if unlock_type == 'all':
+            unlocked_stages.add(all_key)
+            unlocked_stages.add(pre_key)
+            unlocked_stages.add(post_key)
+            unlocked_stages.add(legacy_key)
+        elif unlock_type == 'pre':
+            unlocked_stages.add(pre_key)
+        elif unlock_type == 'post':
+            unlocked_stages.add(post_key)
+    else:
+        if unlock_type == 'all':
+            unlocked_stages.discard(all_key)
+            unlocked_stages.discard(pre_key)
+            unlocked_stages.discard(post_key)
+            unlocked_stages.discard(legacy_key)
+        elif unlock_type == 'pre':
+            unlocked_stages.discard(pre_key)
+            unlocked_stages.discard(all_key)
+            unlocked_stages.discard(legacy_key)
+        elif unlock_type == 'post':
+            unlocked_stages.discard(post_key)
+            unlocked_stages.discard(all_key)
+            unlocked_stages.discard(legacy_key)
+
+    team.unlocked_stages = list(unlocked_stages)
     team.save(update_fields=['unlocked_stages', 'updated_at'])
-    return unlocked
+    return new_state
+
+
+@transaction.atomic
+def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone', year_level=None, unlock_type='all', target_state=None):
+    is_admin = getattr(user, 'role', None) == 'admin' or getattr(user, 'is_superuser', False)
+    is_pit_lead = getattr(user, 'is_pit_lead', False)
+    
+    if not (is_admin or (is_pit_lead and scope == 'pit')):
+        raise PermissionError('Permission denied to perform global stage unlock.')
+
+    if scope == 'capstone' and not is_admin:
+        raise PermissionError('Only Admin or Capstone Coordinator can manage global Capstone stage unlocks.')
+
+    from student_teams.models import StudentTeam
+    from student_teams.team_levels import normalize_year_level
+
+    teams_qs = StudentTeam.objects.all()
+    if scope == 'capstone':
+        teams = [t for t in teams_qs if t.is_capstone]
+    else:
+        if is_pit_lead and not is_admin:
+            user_pit_year = (getattr(user, 'pit_lead_year', None) or '').strip()
+            if not user_pit_year:
+                raise PermissionError('PIT Leads must have an assigned year level to manage stage access.')
+            year_level = user_pit_year
+
+            # Validate that stage_label is actually a PIT event for this year level
+            from repository.project_archive.services import pit_event_matches_year_level
+            from defense.scheduler.models import PitEventGradingConfig
+            from academic_period_management.models import Semester
+            active_sem = Semester.objects.filter(is_active=True).first()
+            valid_event_names = list(
+                PitEventGradingConfig.objects.filter(semester=active_sem)
+                .values_list('event_name', flat=True)
+            ) if active_sem else []
+            stage_is_valid_pit_event = (
+                stage_label in valid_event_names
+                and pit_event_matches_year_level(stage_label, user_pit_year)
+            )
+            if not stage_is_valid_pit_event:
+                raise PermissionError(
+                    f'Stage "{stage_label}" is not a configured PIT event for {user_pit_year}.'
+                )
+
+        teams = [t for t in teams_qs if t.is_pit]
+        if year_level:
+            teams = [t for t in teams if normalize_year_level(t.year_level) == normalize_year_level(year_level)]
+
+    for t in teams:
+        toggle_stage_deliverables_unlock(t, stage_label, user, unlock_type=unlock_type, target_state=target_state)
+
+    return True
+
 
 
 def stage_payload(team, stage_label):
@@ -549,6 +664,8 @@ def stage_payload(team, stage_label):
         'endorsed': is_endorsed,
         'archive_unlocked': unlocked,
         'vault_unlocked': unlocked,
+        'pre_unlocked': archive_unlocked(team, stage_label, deliverable_type='pre'),
+        'post_unlocked': archive_unlocked(team, stage_label, deliverable_type='post'),
         'required_complete': configured and required_complete(team, stage_label),
         'status': team_stage_status(team, stage_label),
         'stage_progress_status': progress_status,

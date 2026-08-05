@@ -191,13 +191,25 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
   }
 
   Future<bool> unlockDeliverables({
-    required int teamId,
+    int? teamId,
     required String stageLabel,
+    String unlockType = 'all',
+    String scope = 'team',
+    String? programScope,
+    String? yearLevel,
+    bool? targetState,
   }) async {
-    return _postAction('unlock', {
-      'team_id': teamId,
+    final Map<String, dynamic> payload = {
       'stage_label': stageLabel,
-    }, successMessage: 'Deliverable submission unlock status toggled.');
+      'unlock_type': unlockType,
+      'scope': scope,
+    };
+    if (teamId != null) payload['team_id'] = teamId;
+    if (programScope != null) payload['program_scope'] = programScope;
+    if (yearLevel != null) payload['year_level'] = yearLevel;
+    if (targetState != null) payload['target_state'] = targetState;
+
+    return _postAction('unlock', payload, successMessage: 'Deliverable submission unlock status updated.');
   }
 
   Future<bool> _postAction(

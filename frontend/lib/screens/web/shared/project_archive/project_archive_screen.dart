@@ -1,6 +1,5 @@
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
-import 'package:defensys/utils/clipboard_copy.dart';
 import 'package:defensys/widgets/feedback_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'components/project_archive_table.dart';
 import 'components/project_archive_summary_cards.dart';
 import 'dialogs/archive_resubmission_dialog.dart';
+import 'dialogs/stage_access_management_dialog.dart';
 
 typedef RepositoryAuditScreen = ProjectArchiveScreen;
 
@@ -56,24 +56,7 @@ class _ProjectArchiveScreenState
     }
   }
 
-  Future<void> _copySuggestedFileName(String? rawName) async {
-    final name = rawName?.trim() ?? '';
-    if (name.isEmpty) {
-      return;
-    }
-    final copied = await copyTextToClipboard(name);
-    if (!mounted) {
-      return;
-    }
-    if (copied) {
-      showInfoToast(context, 'Copied $name');
-    } else {
-      showValidationToast(
-        context,
-        'Copy failed — select the filename below and copy manually',
-      );
-    }
-  }
+
 
   Widget _notice(IconData icon, String text, Color color) {
     return Container(
@@ -95,7 +78,7 @@ class _ProjectArchiveScreenState
   }
 
   Widget _buildTypeTabs(RepositoryAuditState state) {
-    Widget tab(String label, String typeValue, bool selected) {
+    Widget segment(String label, String typeValue, bool selected) {
       return InkWell(
         onTap: state.isSaving
             ? null
@@ -106,22 +89,32 @@ class _ProjectArchiveScreenState
                       clearDeliverable: true,
                     );
               },
-        child: Container(
-          padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 18),
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
           decoration: BoxDecoration(
-            border: Border(
-              bottom: BorderSide(
-                color: selected ? AppColors.maroon : Colors.transparent,
-                width: 2.5,
-              ),
-            ),
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            border: selected
+                ? Border.all(color: const Color(0xFFE2E8F0))
+                : Border.all(color: Colors.transparent),
+            boxShadow: selected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.04),
+                      blurRadius: 4,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: selected ? AppColors.maroon : const Color(0xFF6B7280),
-              fontWeight: FontWeight.w700,
-              fontSize: 14.5,
+              color: selected ? AppColors.maroon : const Color(0xFF64748B),
+              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
+              fontSize: 13,
             ),
           ),
         ),
@@ -129,20 +122,20 @@ class _ProjectArchiveScreenState
     }
 
     return Container(
-      decoration: const BoxDecoration(
-        border: Border(
-          bottom: BorderSide(
-            color: Color(0xFFE5E7EB),
-            width: 1.2,
-          ),
-        ),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          tab('Capstone', 'capstone', state.type == 'capstone'),
-          tab('PIT', 'pit', state.type == 'pit'),
-          tab('All records', '', state.type.isEmpty),
+          segment('Capstone', 'capstone', state.type == 'capstone'),
+          const SizedBox(width: 4),
+          segment('PIT', 'pit', state.type == 'pit'),
+          const SizedBox(width: 4),
+          segment('All records', '', state.type.isEmpty),
         ],
       ),
     );
@@ -198,7 +191,23 @@ class _ProjectArchiveScreenState
               context: context,
               ref: ref,
             ),
-            onCopySuggestedFileName: _copySuggestedFileName,
+            onManageProgramStageAccess: () {
+              final scopeKey = state.scope['scope']?.toString() ?? 'admin';
+              final programScope = (scopeKey == 'pit_lead' || state.type.toLowerCase() == 'pit') ? 'pit' : 'capstone';
+              // For PIT Leads use their backend-assigned year level, not the filter
+              final pitYearLevel = state.scope['pit_year_level']?.toString() ?? '';
+              final effectiveYearLevel = pitYearLevel.isNotEmpty
+                  ? pitYearLevel
+                  : (state.yearLevel.isNotEmpty ? state.yearLevel : null);
+              StageAccessManagementDialog.show(
+                context: context,
+                ref: ref,
+                scope: 'global',
+                programScope: programScope,
+                yearLevel: effectiveYearLevel,
+                state: state,
+              );
+            },
             typeTabs: _buildTypeTabs(state),
             deliverableFilterChip: _buildDeliverableFilterChip(state),
           ),

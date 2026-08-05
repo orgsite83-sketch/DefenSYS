@@ -75,6 +75,24 @@ def delete_schedule(schedule, *, actor=None, request=None):
     if schedule.panelist_grade_submissions.exists():
         raise ScheduleDeletionBlocked()
 
+    if schedule.status in (DefenseSchedule.STATUS_DONE, DefenseSchedule.STATUS_ARCHIVED):
+        raise ScheduleDeletionBlocked(
+            detail={'warning': 'Cannot delete a completed or archived schedule.'},
+        )
+
+    if schedule.status == DefenseSchedule.STATUS_SCHEDULED:
+        from django.utils import timezone
+        from datetime import datetime
+        now = timezone.localtime()
+        scheduled_start = timezone.make_aware(
+            datetime.combine(schedule.scheduled_date, schedule.start_time),
+            timezone.get_current_timezone(),
+        )
+        if now >= scheduled_start:
+            raise ScheduleDeletionBlocked(
+                detail={'warning': 'Cannot delete an ongoing defense schedule.'},
+            )
+
     schedule_pk = schedule.pk
     audit_values = schedule_audit_values(schedule, status=schedule.status)
     schedule.delete()

@@ -29,7 +29,7 @@ from user_management.permissions import IsPanelist, CanManageModule
 from .models import DefenseSchedule, SchedulePanelist, PitEventGradingConfig
 from academic_period_management.models import Semester
 
-from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
+from .pit_config import check_pit_event_locked, get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
 from .serializers import (
     ConfirmSchedulePlanSerializer,
     DefenseScheduleSerializer,
@@ -232,6 +232,13 @@ class PitEventConfigLookupView(APIView):
                     status=status.HTTP_403_FORBIDDEN,
                 )
 
+        is_locked, lock_reason = check_pit_event_locked(config)
+        if is_locked:
+            return Response(
+                {'detail': f'Cannot delete PIT event configuration "{config.event_name}": {lock_reason}'},
+                status=status.HTTP_409_CONFLICT,
+            )
+
         config.delete()
         return Response({'success': True}, status=status.HTTP_200_OK)
 
@@ -297,20 +304,20 @@ class PitEventConfigLookupView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Retrieve Rubrics
-        panel_rubric = get_object_or_404(Rubric, pk=panel_rubric_id)
-        peer_rubric = get_object_or_404(Rubric, pk=peer_rubric_id)
+        # Retrieve Rubrics (optional)
+        panel_rubric = Rubric.objects.filter(pk=panel_rubric_id).first() if panel_rubric_id else None
+        peer_rubric = Rubric.objects.filter(pk=peer_rubric_id).first() if peer_rubric_id else None
 
         if pit_lead:
             rubric_check = Q(created_by=request.user) | Q(created_by__isnull=True)
             if pit_year:
                 rubric_check |= Q(created_by__pit_lead_year=pit_year)
-            if not Rubric.objects.filter(rubric_check, pk=panel_rubric_id).exists():
+            if panel_rubric_id and not Rubric.objects.filter(rubric_check, pk=panel_rubric_id).exists():
                 return Response(
                     {'detail': 'Selected Panel Rubric is not permitted for your PIT year level.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
-            if not Rubric.objects.filter(rubric_check, pk=peer_rubric_id).exists():
+            if peer_rubric_id and not Rubric.objects.filter(rubric_check, pk=peer_rubric_id).exists():
                 return Response(
                     {'detail': 'Selected Peer Rubric is not permitted for your PIT year level.'},
                     status=status.HTTP_400_BAD_REQUEST,

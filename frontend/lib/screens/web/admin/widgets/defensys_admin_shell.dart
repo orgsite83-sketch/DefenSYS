@@ -9,6 +9,7 @@ import '../../../../services/notifications_provider.dart';
 import '../../../../widgets/notifications_modal.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../config/api_config.dart';
+import '../../../../widgets/defensys_logo_mark.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
 
 export '../../../../widgets/status_badge.dart';
@@ -479,7 +480,7 @@ class _SidebarState extends State<_Sidebar> {
                   'DefenSYS',
                   style: TextStyle(
                     fontFamily: DefensysUi.fontFamily,
-                    color: DefensysUi.accentGold,
+                    color: Colors.white,
                     fontSize: 18,
                     fontWeight: FontWeight.w700,
                   ),
@@ -943,37 +944,12 @@ class _SemesterPill extends StatelessWidget {
 }
 
 class _BrandSeal extends StatelessWidget {
-  final double size;
+  const _BrandSeal({this.size = 40});
 
-  const _BrandSeal({required this.size});
+  final double size;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 2),
-        color: Colors.white,
-      ),
-      child: ClipOval(
-        child: Image.asset(
-          'assets/logo-login-mark-48.png',
-          fit: BoxFit.contain,
-          filterQuality: FilterQuality.high,
-          isAntiAlias: true,
-          errorBuilder: (_, __, ___) => const ColoredBox(
-            color: DefensysUi.primaryMaroon,
-            child: Icon(
-              Icons.shield_rounded,
-              color: DefensysUi.accentGold,
-              size: 20,
-            ),
-          ),
-        ),
-      ),
-    );
+    return DefensysLogoMark(size: size);
   }
 }

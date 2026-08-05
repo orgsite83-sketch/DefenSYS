@@ -23,10 +23,21 @@ def board_queryset_for_user(user):
 
 def counts_payload(base_queryset, current_queryset=None):
     current = current_queryset if current_queryset is not None else base_queryset
+    from django.utils import timezone
+    now = timezone.localtime()
+
+    scheduled_qs = current.filter(status=DefenseSchedule.STATUS_SCHEDULED)
+    ongoing_qs = scheduled_qs.filter(
+        Q(scheduled_date__lt=now.date())
+        | Q(scheduled_date=now.date(), start_time__lte=now.time())
+    )
+    upcoming_qs = scheduled_qs.exclude(pk__in=ongoing_qs)
+
     return {
         'all': base_queryset.count(),
         'filtered': current.count(),
-        'scheduled': current.filter(status=DefenseSchedule.STATUS_SCHEDULED).count(),
+        'scheduled': upcoming_qs.count(),
+        'ongoing': ongoing_qs.count(),
         'done': current.filter(status=DefenseSchedule.STATUS_DONE).count(),
         'cancelled': current.filter(status=DefenseSchedule.STATUS_CANCELLED).count(),
         'archived': current.filter(status=DefenseSchedule.STATUS_ARCHIVED).count(),
@@ -71,7 +82,21 @@ def filter_board_queryset(request, queryset):
         ).distinct()
     if stage:
         queryset = queryset.filter(Q(defense_stage__label=stage) | Q(event_name=stage))
-    if status_filter:
+    if status_filter == 'ongoing':
+        from django.utils import timezone
+        now = timezone.localtime()
+        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED).filter(
+            Q(scheduled_date__lt=now.date())
+            | Q(scheduled_date=now.date(), start_time__lte=now.time())
+        )
+    elif status_filter == 'scheduled':
+        from django.utils import timezone
+        now = timezone.localtime()
+        queryset = queryset.filter(status=DefenseSchedule.STATUS_SCHEDULED).exclude(
+            Q(scheduled_date__lt=now.date())
+            | Q(scheduled_date=now.date(), start_time__lte=now.time())
+        )
+    elif status_filter:
         queryset = queryset.filter(status=status_filter)
     if scope:
         queryset = queryset.filter(scope=scope)
@@ -86,7 +111,13 @@ def board_payload(request, queryset=None):
         'schedules': DefenseScheduleSerializer(current, many=True).data,
         'counts': counts_payload(base, current),
         'stage_options': stage_options(base),
-        'statuses': [choice[0] for choice in DefenseSchedule.STATUS_CHOICES],
+        'statuses': [
+            DefenseSchedule.STATUS_SCHEDULED,
+            'ongoing',
+            DefenseSchedule.STATUS_DONE,
+            DefenseSchedule.STATUS_CANCELLED,
+            DefenseSchedule.STATUS_ARCHIVED,
+        ],
         'scopes': [
             {'value': key, 'label': label}
             for key, label in DefenseSchedule.SCOPE_CHOICES

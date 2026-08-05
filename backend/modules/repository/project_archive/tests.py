@@ -437,8 +437,10 @@ class RepositoryAuditApiTests(APITestCase):
         file_names = [entry['file_name'] for entry in response.data['entries']]
         self.assertIn(self.pit_entry.file_name, file_names)
 
-    def test_admin_override_update_pit_status_and_logs(self):
-        self.client.force_authenticate(user=self.pit_lead)
+    def test_pit_lead_and_admin_override_update_pit_status_and_logs(self):
+        # A non-PIT lead faculty is forbidden
+        regular_faculty = User.objects.create_user(username='fac1', password='pass12345', role='faculty', is_pit_lead=False)
+        self.client.force_authenticate(user=regular_faculty)
         forbidden = self.client.post(
             '/api/repository/audit/override-status/',
             {'entry_id': f'pit-{self.pit_entry.id}', 'status': ArchiveEntry.STATUS_NEEDS_REVISION},
@@ -446,17 +448,26 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.assertEqual(forbidden.status_code, 403)
 
-        self.client.force_authenticate(user=self.admin)
-        override = self.client.post(
+        # PIT lead for the entry's year level can override
+        self.client.force_authenticate(user=self.pit_lead)
+        pit_lead_override = self.client.post(
             '/api/repository/audit/override-status/',
             {'entry_id': f'pit-{self.pit_entry.id}', 'status': ArchiveEntry.STATUS_NEEDS_REVISION},
             format='json',
         )
+        self.assertEqual(pit_lead_override.status_code, 200)
 
+        # Admin can override
+        self.client.force_authenticate(user=self.admin)
+        override = self.client.post(
+            '/api/repository/audit/override-status/',
+            {'entry_id': f'pit-{self.pit_entry.id}', 'status': ArchiveEntry.STATUS_APPROVED},
+            format='json',
+        )
         self.assertEqual(override.status_code, 200)
         self.pit_entry.refresh_from_db()
-        self.assertEqual(self.pit_entry.status, ArchiveEntry.STATUS_NEEDS_REVISION)
-        self.assertEqual(RepositoryAuditLog.objects.filter(source_id=self.pit_entry.id).count(), 1)
+        self.assertEqual(self.pit_entry.status, ArchiveEntry.STATUS_APPROVED)
+        self.assertEqual(RepositoryAuditLog.objects.filter(source_id=self.pit_entry.id).count(), 2)
 
     def _open_capstone_upload_window(self, stage_label='Concept Proposal'):
         stage, _ = DefenseStage.objects.get_or_create(
@@ -955,7 +966,87 @@ class RepositoryAuditApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         submission.refresh_from_db()
         self.assertEqual(submission.status, DeliverableSubmission.STATUS_REJECTED)
-        self.assertEqual(submission.feedback, 'Fix Chapter 3')
+        self.assertIn('Fix Chapter 3', submission.feedback)
+
+    def test_pit_lead_can_resubmit_and_replace_file_for_assigned_year(self):
+        # 3rd Year PIT entry managed by self.pit_lead (whose pit_lead_year is '3rd Year')
+        entry_3rd = ArchiveEntry.objects.create(
+            file_name='3rd_year_project.pdf',
+            entry_type=ArchiveEntry.TYPE_PIT,
+            year_level='3rd Year',
+            status='Approved',
+        )
+        self.client.force_authenticate(user=self.pit_lead)
+
+        # 1. Request resubmission for 3rd year entry
+        response = self.client.post(
+            '/api/repository/audit/request-resubmission/',
+            {
+                'entry_id': f'pit-{entry_3rd.id}',
+                'status': 'Needs Revision',
+                'feedback': 'Please fix title page formatting',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        entry_3rd.refresh_from_db()
+        self.assertEqual(entry_3rd.status, 'Needs Revision')
+
+        # 2. Replace file for 3rd year entry
+        replacement = SimpleUploadedFile('3rd_year_fixed.pdf', b'PDF 3rd year content', content_type='application/pdf')
+        replace_resp = self.client.post(
+            '/api/repository/audit/replace-file/',
+            {
+                'entry_id': f'pit-{entry_3rd.id}',
+                'file': replacement,
+            },
+            format='multipart',
+        )
+        self.assertEqual(replace_resp.status_code, 200)
+        entry_3rd.refresh_from_db()
+        self.assertEqual(entry_3rd.file_name, '3rd_year_fixed.pdf')
+
+    def test_pit_lead_forbidden_from_overriding_capstone_or_other_year_entries(self):
+        # 2nd Year PIT entry (outside self.pit_lead's '3rd Year' scope)
+        entry_2nd = ArchiveEntry.objects.create(
+            file_name='2nd_year_project.pdf',
+            entry_type=ArchiveEntry.TYPE_PIT,
+            year_level='2nd Year',
+            status='Approved',
+        )
+        # Capstone submission
+        capstone_sub = DeliverableSubmission.objects.create(
+            team=self.capstone_team,
+            stage_label='Concept Proposal',
+            deliverable_id='D100',
+            label='Capstone Document',
+            deliverable_type='pre',
+            status='accepted',
+        )
+
+        self.client.force_authenticate(user=self.pit_lead)
+
+        # Attempt override on 2nd year entry -> PermissionDenied
+        resub_2nd = self.client.post(
+            '/api/repository/audit/request-resubmission/',
+            {
+                'entry_id': f'pit-{entry_2nd.id}',
+                'status': 'Needs Revision',
+            },
+            format='json',
+        )
+        self.assertEqual(resub_2nd.status_code, 403)
+
+        # Attempt override on Capstone submission -> PermissionDenied
+        resub_cap = self.client.post(
+            '/api/repository/audit/request-resubmission/',
+            {
+                'entry_id': f'capstone-{capstone_sub.id}',
+                'status': 'Needs Revision',
+            },
+            format='json',
+        )
+        self.assertEqual(resub_cap.status_code, 403)
 
 
 

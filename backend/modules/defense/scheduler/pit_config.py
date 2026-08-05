@@ -47,15 +47,57 @@ def peer_rubric_for_pit_event(semester, event_name):
     return config.peer_rubric
 
 
+def check_pit_event_locked(config, semester=None):
+    if not config:
+        return False, None
+
+    if config.is_officially_complete:
+        return True, 'This PIT event is officially complete for the active semester.'
+
+    sem = semester or config.semester
+
+    from django.db.models import Q
+    from defense.scheduler.models import DefenseSchedule
+    from grading.grades.models import TeamGrade
+
+    # 1. Scheduled Defenses
+    if sem and DefenseSchedule.objects.filter(semester=sem, event_name__iexact=config.event_name).exists():
+        return True, 'This PIT event has scheduled defenses for the active semester.'
+
+    # 2. Recorded Evaluation Grades
+    grades_exist = TeamGrade.objects.filter(pit_event_config=config).exclude(status=TeamGrade.STATUS_PENDING).exists()
+    if not grades_exist and sem:
+        grades_exist = TeamGrade.objects.filter(
+            semester=sem,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label__iexact=config.event_name,
+        ).exclude(status=TeamGrade.STATUS_PENDING).exists()
+
+    if grades_exist:
+        return True, 'This PIT event has recorded evaluation grades.'
+
+    # 3. Deliverable Submissions
+    from repository.deliverables.models import DeliverableSubmission
+    deliv_ids = list(config.deliverables.values_list('deliverable_id', flat=True))
+    if deliv_ids:
+        if DeliverableSubmission.objects.filter(
+            stage_label__iexact=config.event_name,
+            deliverable_id__in=deliv_ids,
+        ).exists():
+            return True, 'This PIT event has student deliverable submissions.'
+
+    return False, None
+
+
 def upsert_pit_event_config(
     *,
     semester,
     event_name,
     event_code=None,
-    panel_rubric,
-    peer_rubric,
-    panel_weight,
-    peer_weight,
+    panel_rubric=None,
+    peer_rubric=None,
+    panel_weight=80,
+    peer_weight=20,
     archive_file_template=None,
     deliverables=None,
 ):
@@ -97,15 +139,41 @@ def upsert_pit_event_config(
 
     # Lock Check for existing config
     if existing_config:
-        changing_rubrics = (
-            existing_config.panel_rubric_id != (panel_rubric.id if panel_rubric else None)
-            or existing_config.peer_rubric_id != (peer_rubric.id if peer_rubric else None)
-        )
-        if changing_rubrics:
-            if existing_config.is_officially_complete:
-                raise ValidationError('Rubrics cannot be changed because this PIT event is officially complete.')
-            if TeamGrade.objects.filter(pit_event_config=existing_config).exclude(status=TeamGrade.STATUS_PENDING).exists():
-                raise ValidationError('Rubrics cannot be changed because evaluations have already been recorded for this PIT event.')
+        is_locked, lock_reason = check_pit_event_locked(existing_config, semester)
+        if is_locked:
+            changing_rubrics = (
+                existing_config.panel_rubric_id != (panel_rubric.id if panel_rubric else None)
+                or existing_config.peer_rubric_id != (peer_rubric.id if peer_rubric else None)
+            )
+            changing_weights = (
+                existing_config.panel_weight != panel_weight
+                or existing_config.peer_weight != peer_weight
+            )
+            changing_code = (
+                event_code is not None and (existing_config.event_code or '').strip() != event_code.strip()
+            )
+            if changing_rubrics or changing_weights or changing_code:
+                raise ValidationError(f"Cannot update configuration parameters: {lock_reason}")
+
+            if deliverables is not None:
+                existing_delivs = list(existing_config.deliverables.all().values(
+                    'id', 'label', 'deliverable_type', 'required'
+                ))
+                if len(deliverables) != len(existing_delivs):
+                    raise ValidationError(f"Cannot add or remove deliverables: {lock_reason}")
+                for d in deliverables:
+                    d_id = d.get('id')
+                    if not d_id:
+                        raise ValidationError(f"Cannot add new deliverables: {lock_reason}")
+                    existing_d = next((item for item in existing_delivs if item['id'] == d_id), None)
+                    if not existing_d:
+                        raise ValidationError(f"Cannot modify deliverables: {lock_reason}")
+                    if (
+                        existing_d['label'] != d.get('label', '').strip()
+                        or existing_d['deliverable_type'] != d.get('deliverable_type', 'pre').strip()
+                        or existing_d['required'] != bool(d.get('required', True))
+                    ):
+                        raise ValidationError(f"Cannot modify deliverable checklist: {lock_reason}")
 
     defaults = {
         'panel_rubric': panel_rubric,
@@ -192,6 +260,7 @@ def upsert_pit_event_config(
 def pit_event_config_payload(config):
     if config is None:
         return None
+    is_locked, lock_reason = check_pit_event_locked(config)
     deliverables_data = [
         {
             'id': d.id,
@@ -217,5 +286,8 @@ def pit_event_config_payload(config):
         'is_officially_complete': config.is_officially_complete,
         'peer_grading_enabled': config.peer_grading_enabled,
         'archive_file_template': config.archive_file_template,
+        'is_locked': is_locked,
+        'lock_reason': lock_reason,
         'deliverables': deliverables_data,
     }
+

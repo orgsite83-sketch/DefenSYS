@@ -11,6 +11,7 @@ import '../services/session_storage.dart';
 import '../theme/defensys_tokens.dart';
 import '../theme/app_theme.dart';
 import '../widgets/feedback_toast.dart';
+import '../widgets/defensys_logo_mark.dart';
 import '../config/api_config.dart';
 import '../services/api_http.dart';
 import 'about_screen.dart';
@@ -85,120 +86,17 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   }
 
   Future<void> _showForgotPasswordDialog() async {
-    final identifierCtrl = TextEditingController();
-    final dialogFormKey = GlobalKey<FormState>();
-    bool isSubmitting = false;
-
-    await showDialog<void>(
+    final sent = await showDialog<bool>(
       context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setDialogState) {
-            return AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              title: const Text(
-                'Reset Password',
-                style: TextStyle(
-                  fontFamily: 'Poppins',
-                  fontWeight: FontWeight.w700,
-                  fontSize: 18,
-                  color: Color(0xFF0F172A),
-                ),
-              ),
-              content: Form(
-                key: dialogFormKey,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Text(
-                      'Enter your Student/Employee ID or email address. '
-                      'If an account exists, a reset link will be sent.',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 13,
-                        color: Color(0xFF64748B),
-                        height: 1.5,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    TextFormField(
-                      controller: identifierCtrl,
-                      autofocus: true,
-                      decoration: InputDecoration(
-                        labelText: 'ID or Email',
-                        prefixIcon: const Icon(Icons.person_outline, size: 20),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        focusedBorder: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(12),
-                          borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
-                        ),
-                      ),
-                      validator: (v) => v == null || v.trim().isEmpty
-                          ? 'Please enter your ID or email'
-                          : null,
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: isSubmitting ? null : () => Navigator.pop(ctx),
-                  child: const Text('Cancel'),
-                ),
-                ElevatedButton(
-                  onPressed: isSubmitting
-                      ? null
-                      : () async {
-                          if (!dialogFormKey.currentState!.validate()) return;
-                          setDialogState(() => isSubmitting = true);
-                          try {
-                            await apiHttpClient.post(
-                              Uri.parse('${ApiConfig.baseUrl}/password-reset/'),
-                              headers: {'Content-Type': 'application/json'},
-                              body: jsonEncode({
-                                'identifier': identifierCtrl.text.trim(),
-                              }),
-                            );
-                          } catch (_) {
-                            // Best-effort; always show same success message.
-                          }
-                          if (ctx.mounted) Navigator.pop(ctx);
-                          if (mounted) {
-                            showSuccessToast(
-                              context,
-                              'If an account exists with that ID or email, '
-                              'a password reset link has been sent.',
-                            );
-                          }
-                        },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DefensysTokens.maroon,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: isSubmitting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Send Reset Link'),
-                ),
-              ],
-            );
-          },
-        );
-      },
+      builder: (ctx) => const _ForgotPasswordDialog(),
     );
-    identifierCtrl.dispose();
+    if (sent == true && mounted) {
+      showSuccessToast(
+        context,
+        'If an account exists with that ID or email, '
+        'a password reset link has been sent.',
+      );
+    }
   }
 
   Future<void> _login() async {
@@ -403,10 +301,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       width: 130,
                       height: 130,
                       decoration: BoxDecoration(
-                        color: DefensysTokens.maroon.withOpacity(0.05),
+                        color: DefensysTokens.maroon.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: DefensysTokens.maroon.withOpacity(0.08),
+                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
                           width: 1.5,
                         ),
                       ),
@@ -422,10 +320,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                       width: 130,
                       height: 130,
                       decoration: BoxDecoration(
-                        color: DefensysTokens.gold.withOpacity(0.05),
+                        color: DefensysTokens.gold.withValues(alpha: 0.05),
                         borderRadius: BorderRadius.circular(16),
                         border: Border.all(
-                          color: DefensysTokens.gold.withOpacity(0.08),
+                          color: DefensysTokens.gold.withValues(alpha: 0.08),
                           width: 1.5,
                         ),
                       ),
@@ -539,7 +437,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               width: 4,
               height: 4,
               decoration: BoxDecoration(
-                color: color.withOpacity(opacity),
+                color: color.withValues(alpha: opacity),
                 shape: BoxShape.circle,
               ),
             ),
@@ -610,7 +508,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        _webLogoMark(size: isCompact ? 48 : 58),
+        _webLogoMark(size: isCompact ? 48 : 58, color: isDarkTheme ? Colors.white : null),
         const SizedBox(width: 18),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -638,51 +536,18 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     );
   }
 
-  Widget _webLogoMark({required double size}) {
-    // Select the best resolution mark based on required size to prevent pixelation
-    final String assetPath;
-    if (size <= 48) {
-      assetPath = 'assets/logo-login-mark-48.png';
-    } else if (size <= 58) {
-      assetPath = 'assets/logo-login-mark-58.png';
-    } else if (size <= 74) {
-      assetPath = 'assets/logo-login-mark-74.png';
-    } else {
-      assetPath = 'assets/logo-login-mark-116.png';
-    }
-
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Image.asset(
-        assetPath,
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        isAntiAlias: true,
-        errorBuilder: (context, error, stackTrace) {
-          return _sealLogo(size: size, framed: false, cropToMark: true);
-        },
-      ),
+  Widget _webLogoMark({required double size, Color? color}) {
+    return DefensysLogoMark(
+      size: size,
+      customColor: color,
+      colorMode: DefensysLogoColorMode.white,
     );
   }
 
   Widget _cardLogoMark({required double size}) {
-    return SizedBox(
-      width: size,
-      height: size,
-      child: Image.asset(
-        'assets/logo-web-mark-smooth.png',
-        width: size,
-        height: size,
-        fit: BoxFit.contain,
-        filterQuality: FilterQuality.high,
-        isAntiAlias: true,
-        errorBuilder: (context, error, stackTrace) {
-          return _sealLogo(size: size, framed: false, cropToMark: true);
-        },
-      ),
+    return DefensysLogoMark(
+      size: size,
+      colorMode: DefensysLogoColorMode.brand,
     );
   }
 
@@ -699,12 +564,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 24,
             offset: const Offset(0, 8),
           ),
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
+            color: Colors.black.withValues(alpha: 0.04),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -880,411 +745,409 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
 
   Widget _buildMobileLayout(AuthState authState) {
     return Scaffold(
-      backgroundColor: Colors.white, // Pure white background to match bottom card and avoid color bleed
-      body: MediaQuery.withClampedTextScaling(
-        maxScaleFactor: 1.3,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // Top header with maroon-to-burgundy gradient
-              Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      Color(0xFF1E0302), // Deep near-black burgundy
-                      DefensysTokens.maroon,     // Corporate maroon
-                    ],
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                  ),
-                ),
-                child: SafeArea(
-                  bottom: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(24, 36, 24, 40),
-                    child: Column(
-                      children: [
-                        _sealLogo(size: 80), // Slightly larger logo for premium presence
-                        const SizedBox(height: 16),
-                        const Text(
-                          'DefenSYS',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 28,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white,
-                            letterSpacing: 1.2,
-                          ),
+      backgroundColor: const Color(0xFF4D0817),
+      body: Stack(
+        children: [
+          // Background organic vector curves & white sweeping wave
+          Positioned.fill(
+            child: CustomPaint(
+              painter: const _HeaderWavePainter(),
+            ),
+          ),
+          SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const SizedBox(height: 12),
+                  // Header Brand Lockup (Shield Logo + Title + Subtitles)
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: [
+                      _webLogoMark(size: 52, color: Colors.white),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Text(
+                              'DefenSYS',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 24,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                            const SizedBox(height: 1),
+                            const Text(
+                              'Capstone & PIT Management',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white,
+                              ),
+                            ),
+                            Text(
+                              'University Portal',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w400,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(height: 6),
-                        // Glassmorphic tagline badge
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(30), // Pill shape matching mockup
-                            border: Border.all(
-                              color: Colors.white.withValues(alpha: 0.25),
-                              width: 1.2,
-                            ),
-                          ),
-                          child: const Text(
-                            'Capstone & PIT Management',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFFFDE68A), // Warm light gold
-                              letterSpacing: 0.5,
-                            ),
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+                  // WHITE CARD CONTAINER
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.12),
+                          blurRadius: 20,
+                          offset: const Offset(0, 6),
                         ),
                       ],
                     ),
-                  ),
-                ),
-              ),
-              // Main white card area (wrapped in a maroon container to provide background for curved top corners)
-              Container(
-                color: DefensysTokens.maroon, // Matches bottom of header gradient
-                child: Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(32), // Curved top corners matching mockup
-                    ),
-                  ),
-                  padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Welcome back',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textDark,
-                        letterSpacing: -0.5,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      context.l10n.loginSignIn,
-                      style: const TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 14,
-                        color: DefensysTokens.textSecondary,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    const SizedBox(height: 28),
-                    if (_buildSessionBanner() != null) _buildSessionBanner()!,
-                    Form(
-                      key: _formKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          TextFormField(
-                            controller: _emailCtrl,
-                            keyboardType: TextInputType.text,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 15,
-                              color: DefensysTokens.textDark,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.loginStudentIdLabel,
-                              labelStyle: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.grey[500],
-                                fontSize: 14,
-                              ),
-                              floatingLabelStyle: const TextStyle(
-                                fontFamily: 'Poppins',
-                                color: DefensysTokens.maroon,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              filled: true,
-                              fillColor: const Color(0xFFF8FAFC), // Ultra-clean light slate fill
-                              prefixIcon: const Icon(
-                                Icons.badge_outlined,
-                                color: Color(0xFF64748B),
-                                size: 20,
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2.0),
-                              ),
-                              errorBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
-                              ),
-                              focusedErrorBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 2.0),
-                              ),
-                            ),
-                            validator: (v) => v == null || v.trim().isEmpty
-                                ? context.l10n.loginRequiredField
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                          TextFormField(
-                            controller: _passCtrl,
-                            obscureText: _obscure,
-                            style: const TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 15,
-                              color: DefensysTokens.textDark,
-                            ),
-                            decoration: InputDecoration(
-                              labelText: context.l10n.loginPasswordLabel,
-                              labelStyle: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Colors.grey[500],
-                                fontSize: 14,
-                              ),
-                              floatingLabelStyle: const TextStyle(
-                                fontFamily: 'Poppins',
-                                color: DefensysTokens.maroon,
-                                fontWeight: FontWeight.w600,
-                              ),
-                              filled: true,
-                              fillColor: const Color(0xFFF8FAFC), // Ultra-clean light slate fill
-                              prefixIcon: const Icon(
-                                Icons.lock_outline,
-                                color: Color(0xFF64748B),
-                                size: 20,
-                              ),
-                              suffixIcon: IconButton(
-                                tooltip: _obscure ? 'Show password' : 'Hide password',
-                                icon: Icon(
-                                  _obscure
-                                      ? Icons.visibility_off_outlined
-                                      : Icons.visibility_outlined,
-                                  color: const Color(0xFF64748B),
-                                  size: 20,
-                                ),
-                                onPressed: () => setState(() => _obscure = !_obscure),
-                              ),
-                              contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                              enabledBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: Color(0xFFE2E8F0), width: 1.0),
-                              ),
-                              focusedBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2.0),
-                              ),
-                              errorBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
-                              ),
-                              focusedErrorBorder: OutlineInputBorder(
-                                borderRadius: BorderRadius.circular(16),
-                                borderSide: const BorderSide(color: DefensysTokens.danger, width: 2.0),
-                              ),
-                            ),
-                            validator: (v) => v == null || v.trim().isEmpty
-                                ? 'Enter your password'
-                                : null,
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: TextButton(
-                        onPressed: _showForgotPasswordDialog,
-                        style: TextButton.styleFrom(
-                          foregroundColor: DefensysTokens.maroon,
-                          padding: EdgeInsets.zero,
-                          minimumSize: Size.zero,
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        ),
-                        child: const Text(
-                          'Forgot password?',
+                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Welcome back',
                           style: TextStyle(
                             fontFamily: 'Poppins',
-                            fontSize: 13,
-                            fontWeight: FontWeight.w600,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w400,
+                            color: Color(0xFF1E293B),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 24),
-                    // Primary Sign In Button (Solid background to eliminate emulator banding)
-                    SizedBox(
-                      width: double.infinity,
-                      height: 52,
-                      child: ElevatedButton(
-                        onPressed: authState.isLoading ? null : _login,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: DefensysTokens.maroon,
-                          foregroundColor: Colors.white,
-                          elevation: 2,
-                          shadowColor: DefensysTokens.maroon.withValues(alpha: 0.35),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Sign in',
+                          style: TextStyle(
+                            fontFamily: 'Poppins',
+                            fontSize: 30,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF0F172A),
+                            letterSpacing: -0.5,
                           ),
                         ),
-                        child: authState.isLoading
-                            ? const SizedBox(
-                                width: 20,
-                                height: 20,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2.5,
-                                ),
-                              )
-                            : const Text(
-                                'Sign In',
+                        const SizedBox(height: 20),
+                        if (_buildSessionBanner() != null) _buildSessionBanner()!,
+                        Form(
+                          key: _formKey,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Student ID',
                                 style: TextStyle(
                                   fontFamily: 'Poppins',
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  letterSpacing: 0.5,
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF334155),
                                 ),
                               ),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (!kIsWeb)
-                      // Premium Restyled Guest Panelist Access Button
-                      SizedBox(
-                        width: double.infinity,
-                        height: 50,
-                        child: OutlinedButton.icon(
-                          onPressed: _showGuestDialog,
-                          icon: const Icon(Icons.vpn_key_rounded, size: 18),
-                          label: const Text(
-                            'Guest Panelist Access',
-                            style: TextStyle(
-                              fontFamily: 'Poppins',
-                              fontSize: 14,
-                              fontWeight: FontWeight.w600,
-                            ),
+                              const SizedBox(height: 6),
+                              TextFormField(
+                                controller: _emailCtrl,
+                                keyboardType: TextInputType.text,
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 15,
+                                  color: DefensysTokens.textDark,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Student ID',
+                                  hintStyle: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 14,
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  prefixIcon: const Icon(
+                                    Icons.person_outline,
+                                    color: Color(0xFF64748B),
+                                    size: 20,
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                                  ),
+                                  focusedErrorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                                  ),
+                                ),
+                                validator: (v) => v == null || v.trim().isEmpty
+                                    ? context.l10n.loginRequiredField
+                                    : null,
+                              ),
+                              const SizedBox(height: 12),
+                              // Field 2: Password (No text label above input box in Image 2)
+                              TextFormField(
+                                controller: _passCtrl,
+                                obscureText: _obscure,
+                                style: const TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 15,
+                                  color: DefensysTokens.textDark,
+                                ),
+                                decoration: InputDecoration(
+                                  hintText: 'Password',
+                                  hintStyle: const TextStyle(
+                                    fontFamily: 'Poppins',
+                                    color: Color(0xFF94A3B8),
+                                    fontSize: 14,
+                                  ),
+                                  filled: true,
+                                  fillColor: Colors.white,
+                                  prefixIcon: const Icon(
+                                    Icons.lock_outline,
+                                    color: Color(0xFF64748B),
+                                    size: 20,
+                                  ),
+                                  suffixIcon: IconButton(
+                                    tooltip: _obscure ? 'Show password' : 'Hide password',
+                                    icon: Icon(
+                                      _obscure
+                                          ? Icons.visibility_off_outlined
+                                          : Icons.visibility_outlined,
+                                      color: const Color(0xFF64748B),
+                                      size: 20,
+                                    ),
+                                    onPressed: () => setState(() => _obscure = !_obscure),
+                                  ),
+                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                                  enabledBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                                  ),
+                                  focusedBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                                  ),
+                                  errorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                                  ),
+                                  focusedErrorBorder: OutlineInputBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                                  ),
+                                ),
+                                validator: (v) => v == null || v.trim().isEmpty
+                                    ? 'Enter your password'
+                                    : null,
+                              ),
+                            ],
                           ),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: const Color(0xFFB45309), // Contrast darkGold
-                            side: const BorderSide(
-                              color: Color(0xFFFDE68A), // Warm gold border
-                              width: 1.5,
-                            ),
-                            backgroundColor: const Color(0xFFFFFBEB), // Warm cream background
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                        ),
+                        const SizedBox(height: 10),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: GestureDetector(
+                            onTap: _showForgotPasswordDialog,
+                            child: const Text(
+                              'Forgot password?',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                color: Color(0xFF334155),
+                                fontSize: 13,
+                                fontWeight: FontWeight.w500,
+                                decoration: TextDecoration.underline,
+                              ),
                             ),
                           ),
                         ),
-                      ),
-                    const SizedBox(height: 32),
-                    Center(
-                      child: Text(
-                        'Department of Information Technology',
-                        style: TextStyle(
-                          fontFamily: 'Poppins',
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary.withValues(
-                            alpha: 0.6,
+                        const SizedBox(height: 22),
+                        // Primary Sign In Button (Wine red fill)
+                        SizedBox(
+                          width: double.infinity,
+                          height: 50,
+                          child: ElevatedButton(
+                            onPressed: authState.isLoading ? null : _login,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF6B1527),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: authState.isLoading
+                                ? const SizedBox(
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                      color: Colors.white,
+                                      strokeWidth: 2.5,
+                                    ),
+                                  )
+                                : const Text(
+                                    'Sign In',
+                                    style: TextStyle(
+                                      fontFamily: 'Poppins',
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.white,
+                                    ),
+                                  ),
                           ),
                         ),
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    // Refined dot-separated footer links
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        _buildFooterLink('About Us', () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const AboutScreen(),
+                        const SizedBox(height: 12),
+                        if (!kIsWeb)
+                          // Guest Panelist Access Button (Light cream fill + gold border & key)
+                          SizedBox(
+                            width: double.infinity,
+                            height: 50,
+                            child: OutlinedButton.icon(
+                              onPressed: _showGuestDialog,
+                              icon: const Icon(Icons.key_outlined, size: 18, color: Color(0xFF92400E)),
+                              label: const Text(
+                                'Guest Panelist Access',
+                                style: TextStyle(
+                                  fontFamily: 'Poppins',
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w600,
+                                  color: Color(0xFF92400E),
+                                ),
+                              ),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: const Color(0xFF92400E),
+                                side: const BorderSide(
+                                  color: Color(0xFFFDE68A),
+                                  width: 1.2,
+                                ),
+                                backgroundColor: const Color(0xFFFFFBEB),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                            ),
                           ),
-                        )),
-                        _buildFooterDivider(),
-                        _buildFooterLink('Privacy Policy', () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const PrivacyScreen(),
-                          ),
-                        )),
-                        _buildFooterDivider(),
-                        _buildFooterLink('Terms', () => Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const TermsScreen(),
-                          ),
-                        )),
                       ],
                     ),
-                  ],
-                ),
+                  ),
+                  const SizedBox(height: 36),
+                  // Footer section over dark burgundy background in light colors
+                  Center(
+                    child: Text(
+                      'Department of Information Technology',
+                      style: TextStyle(
+                        fontFamily: 'Poppins',
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _buildLightFooterLink('About Us', () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const AboutScreen(),
+                        ),
+                      ), color: Colors.white.withValues(alpha: 0.85)),
+                      _buildLightFooterDivider(),
+                      _buildLightFooterLink('Privacy Policy', () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const PrivacyScreen(),
+                        ),
+                      ), color: Colors.white.withValues(alpha: 0.85)),
+                      _buildLightFooterDivider(),
+                      _buildLightFooterLink('Terms', () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const TermsScreen(),
+                        ),
+                      ), color: Colors.white.withValues(alpha: 0.85)),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                ],
               ),
             ),
-          ],
           ),
-        ),
+        ],
       ),
     );
   }
 
-  Widget _buildFooterLink(String label, VoidCallback onTap) {
+  Widget _buildLightFooterLink(String label, VoidCallback onTap, {Color? color}) {
+    final textColor = color ?? const Color(0xFFFDE68A);
     return TextButton(
       onPressed: onTap,
       style: TextButton.styleFrom(
-        foregroundColor: DefensysTokens.maroon,
-        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+        foregroundColor: textColor,
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
         minimumSize: Size.zero,
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
       ),
       child: Text(
         label,
-        style: const TextStyle(
+        style: TextStyle(
           fontFamily: 'Poppins',
           fontSize: 12,
           fontWeight: FontWeight.w600,
+          color: textColor,
         ),
       ),
     );
   }
 
-  Widget _buildFooterDivider() {
+  Widget _buildLightFooterDivider() {
     return const Padding(
       padding: EdgeInsets.symmetric(horizontal: 4),
       child: Text(
         '•',
         style: TextStyle(
-          color: Color(0xFFCBD5E1),
+          color: Colors.white54,
           fontSize: 12,
         ),
       ),
     );
   }
+
+
 
   Widget _sealLogo({
     double size = 74,
     bool framed = true,
     String assetPath = 'assets/logo.png',
     bool cropToMark = false,
+    Color? color,
   }) {
-    final logo = Image.asset(
-      assetPath,
-      width: size,
-      height: size,
-      fit: BoxFit.contain,
-      filterQuality: FilterQuality.high,
-      isAntiAlias: true,
+    final logo = DefensysLogoMark(
+      size: size,
+      customColor: color,
+      colorMode: DefensysLogoColorMode.white,
     );
 
     if (cropToMark) {
@@ -1686,14 +1549,14 @@ class _LoginButtonState extends State<_LoginButton> {
               boxShadow: _isHovered && isEnabled
                   ? [
                       BoxShadow(
-                        color: const Color(0xFF7A110A).withOpacity(0.4),
+                        color: const Color(0xFF7A110A).withValues(alpha: 0.4),
                         blurRadius: 18,
                         offset: const Offset(0, 6),
                       )
                     ]
                   : [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.12),
+                        color: Colors.black.withValues(alpha: 0.12),
                         blurRadius: 8,
                         offset: const Offset(0, 3),
                       )
@@ -1794,7 +1657,7 @@ class _WebInputFieldState extends State<_WebInputField> {
             boxShadow: _isFocused && !hasError
                 ? [
                     BoxShadow(
-                      color: const Color(0xFF7A110A).withOpacity(0.08),
+                      color: const Color(0xFF7A110A).withValues(alpha: 0.08),
                       blurRadius: 8,
                       offset: const Offset(0, 2),
                     ),
@@ -1878,7 +1741,7 @@ class _TechnicalGridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = const Color(0xFFE2E8F0).withOpacity(0.35)
+      ..color = const Color(0xFFE2E8F0).withValues(alpha: 0.35)
       ..strokeWidth = 1.0;
 
     const double step = 32.0;
@@ -1894,4 +1757,233 @@ class _TechnicalGridPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
+
+class _HeaderWavePainter extends CustomPainter {
+  const _HeaderWavePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // 1. Dark wine red base background
+    final bgPaint = Paint()..color = const Color(0xFF4D0817);
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), bgPaint);
+
+    // 2. Top-right dark maroon wave
+    final topWavePaint = Paint()
+      ..color = const Color(0xFF6E0D22).withValues(alpha: 0.5)
+      ..style = PaintingStyle.fill;
+
+    final topPath = Path();
+    topPath.moveTo(0, size.height * 0.22);
+    topPath.cubicTo(
+      size.width * 0.35,
+      size.height * 0.10,
+      size.width * 0.75,
+      size.height * 0.32,
+      size.width,
+      size.height * 0.20,
+    );
+    topPath.lineTo(size.width, 0);
+    topPath.lineTo(0, 0);
+    topPath.close();
+    canvas.drawPath(topPath, topWavePaint);
+
+    // 3. Middle sweeping white organic wave
+    final whiteWavePaint = Paint()
+      ..color = Colors.white
+      ..style = PaintingStyle.fill;
+
+    final whitePath = Path();
+    whitePath.moveTo(0, size.height * 0.30);
+    whitePath.cubicTo(
+      size.width * 0.35,
+      size.height * 0.22,
+      size.width * 0.85,
+      size.height * 0.36,
+      size.width,
+      size.height * 0.28,
+    );
+    whitePath.lineTo(size.width, size.height * 0.72);
+    whitePath.cubicTo(
+      size.width * 0.65,
+      size.height * 0.84,
+      size.width * 0.15,
+      size.height * 0.64,
+      0,
+      size.height * 0.76,
+    );
+    whitePath.close();
+    canvas.drawPath(whitePath, whiteWavePaint);
+
+    // 4. Bottom dark maroon wave over white wave
+    final bottomWavePaint = Paint()
+      ..color = const Color(0xFF38040F)
+      ..style = PaintingStyle.fill;
+
+    final bottomPath = Path();
+    bottomPath.moveTo(0, size.height * 0.78);
+    bottomPath.cubicTo(
+      size.width * 0.35,
+      size.height * 0.70,
+      size.width * 0.75,
+      size.height * 0.88,
+      size.width,
+      size.height * 0.78,
+    );
+    bottomPath.lineTo(size.width, size.height);
+    bottomPath.lineTo(0, size.height);
+    bottomPath.close();
+    canvas.drawPath(bottomPath, bottomWavePaint);
+
+    // 5. Subtle lower overlay wave for organic depth
+    final bottomWavePaint2 = Paint()
+      ..color = const Color(0xFF5E0B1B).withValues(alpha: 0.6)
+      ..style = PaintingStyle.fill;
+
+    final bottomPath2 = Path();
+    bottomPath2.moveTo(0, size.height * 0.86);
+    bottomPath2.cubicTo(
+      size.width * 0.4,
+      size.height * 0.80,
+      size.width * 0.8,
+      size.height * 0.94,
+      size.width,
+      size.height * 0.88,
+    );
+    bottomPath2.lineTo(size.width, size.height);
+    bottomPath2.lineTo(0, size.height);
+    bottomPath2.close();
+    canvas.drawPath(bottomPath2, bottomWavePaint2);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+
+
+class _ForgotPasswordDialog extends StatefulWidget {
+  const _ForgotPasswordDialog();
+
+  @override
+  State<_ForgotPasswordDialog> createState() => _ForgotPasswordDialogState();
+}
+
+class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
+  late final TextEditingController _identifierCtrl;
+  final _dialogFormKey = GlobalKey<FormState>();
+  bool _isSubmitting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _identifierCtrl = TextEditingController();
+  }
+
+  @override
+  void dispose() {
+    _identifierCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _submit() async {
+    if (!_dialogFormKey.currentState!.validate()) return;
+    setState(() => _isSubmitting = true);
+    try {
+      await apiHttpClient.post(
+        Uri.parse('${ApiConfig.baseUrl}/password-reset/'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'identifier': _identifierCtrl.text.trim(),
+        }),
+      );
+    } catch (_) {
+      // Best-effort; always show same success message.
+    }
+    if (!mounted) return;
+    Navigator.pop(context, true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: const Text(
+        'Reset Password',
+        style: TextStyle(
+          fontFamily: 'Poppins',
+          fontWeight: FontWeight.w700,
+          fontSize: 18,
+          color: Color(0xFF0F172A),
+        ),
+      ),
+      content: Form(
+        key: _dialogFormKey,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const Text(
+              'Enter your Student/Employee ID or email address. '
+              'If an account exists, a reset link will be sent.',
+              style: TextStyle(
+                fontFamily: 'Poppins',
+                fontSize: 13,
+                color: Color(0xFF64748B),
+                height: 1.5,
+              ),
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _identifierCtrl,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'ID or Email',
+                prefixIcon: const Icon(Icons.person_outline, size: 20),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
+                ),
+              ),
+              validator: (v) => v == null || v.trim().isEmpty
+                  ? 'Please enter your ID or email'
+                  : null,
+              onFieldSubmitted: (_) => _isSubmitting ? null : _submit(),
+            ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _isSubmitting ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        ElevatedButton(
+          onPressed: _isSubmitting ? null : _submit,
+          style: ElevatedButton.styleFrom(
+            backgroundColor: DefensysTokens.maroon,
+            foregroundColor: Colors.white,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+          ),
+          child: _isSubmitting
+              ? const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+              : const Text('Send Reset Link'),
+        ),
+      ],
+    );
+  }
+}
+
+
 

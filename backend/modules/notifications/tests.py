@@ -2,7 +2,13 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
-from .models import Notification
+from notifications.models import Notification, NotificationCategory
+from notifications.email_service import (
+    _send,
+    send_password_reset_email,
+    send_password_changed_email,
+    send_admin_password_reset_email,
+)
 
 User = get_user_model()
 
@@ -126,12 +132,6 @@ class NotificationAPITests(APITestCase):
 
 
 from unittest.mock import patch
-from .email_service import (
-    _send,
-    send_password_reset_email,
-    send_password_changed_email,
-    send_admin_password_reset_email,
-)
 
 
 class EmailServiceTests(APITestCase):

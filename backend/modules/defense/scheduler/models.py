@@ -278,12 +278,16 @@ class PitEventGradingConfig(models.Model):
     panel_rubric = models.ForeignKey(
         'grading.Rubric',
         related_name='pit_event_configs_as_panel',
-        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
     )
     peer_rubric = models.ForeignKey(
         'grading.Rubric',
         related_name='pit_event_configs_as_peer',
-        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
     )
     panel_weight = models.PositiveSmallIntegerField(default=80)
     peer_weight = models.PositiveSmallIntegerField(default=20)
@@ -345,6 +349,17 @@ class PitEventGradingConfig(models.Model):
             self.event_code = unique_pit_event_code(self.event_code or self.event_name, semester=self.semester, instance_id=self.pk, is_custom=bool(self.event_code))
         self.full_clean()
         super().save(*args, **kwargs)
+        from grading.grades.models import TeamGrade
+        from django.db.models import Q
+
+        TeamGrade.objects.filter(
+            Q(pit_event_config=self) | Q(semester=self.semester, scope=TeamGrade.SCOPE_PIT, stage_label__iexact=self.event_name),
+            status=TeamGrade.STATUS_PENDING,
+        ).update(
+            pit_event_config=self,
+            panel_weight=self.panel_weight,
+            peer_weight=self.peer_weight,
+        )
 
     def __str__(self):
         return f'{self.event_name} ({self.semester})'

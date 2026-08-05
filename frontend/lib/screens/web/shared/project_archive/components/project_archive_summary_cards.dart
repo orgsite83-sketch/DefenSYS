@@ -7,17 +7,17 @@ typedef AuditSummaryCards = ProjectArchiveSummaryCards;
 class ProjectArchiveSummaryCards extends StatelessWidget {
   final ProjectArchiveState state;
   final VoidCallback? onExportCsv;
-  final ValueChanged<String?> onCopySuggestedFileName;
   final Widget? typeTabs;
   final Widget? deliverableFilterChip;
+  final VoidCallback? onManageProgramStageAccess;
 
   const ProjectArchiveSummaryCards({
     super.key,
     required this.state,
     required this.onExportCsv,
-    required this.onCopySuggestedFileName,
     this.typeTabs,
     this.deliverableFilterChip,
+    this.onManageProgramStageAccess,
   });
 
   String _scopeKey(RepositoryAuditState state) =>
@@ -41,24 +41,6 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 
-  Widget _notice(IconData icon, String text, Color color) {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: color.withValues(alpha: 0.25)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: color),
-          const SizedBox(width: 10),
-          Expanded(child: Text(text)),
-        ],
-      ),
-    );
-  }
 
   Widget _primaryButton({
     required IconData icon,
@@ -66,45 +48,20 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     required VoidCallback? onTap,
   }) {
     return SizedBox(
-      height: 42,
+      height: 40,
       child: ElevatedButton.icon(
         onPressed: onTap,
-        icon: Icon(icon, size: 16),
+        icon: Icon(icon, size: 16, color: AppColors.gold),
         label: Text(label),
         style: ElevatedButton.styleFrom(
           backgroundColor: AppColors.maroon,
-          foregroundColor: AppColors.gold,
+          foregroundColor: Colors.white,
           elevation: 0,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-          padding: const EdgeInsets.symmetric(horizontal: 22),
-          textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          textStyle: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
         ),
       ),
-    );
-  }
-
-  Widget _sectionHeader(String title, String subtitle) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          title,
-          style: const TextStyle(
-            color: AppColors.maroon,
-            fontSize: 16,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 4),
-        Text(
-          subtitle,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12.5,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 
@@ -116,8 +73,8 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     required Color iconTint,
   }) {
     return Container(
-      height: 104,
-      padding: const EdgeInsets.all(20),
+      height: 96,
+      padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
@@ -132,12 +89,12 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Text(
                   value.toString(),
@@ -145,19 +102,20 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: valueColor,
-                    fontSize: 24,
+                    fontSize: 26,
                     fontWeight: FontWeight.w800,
-                    height: 1,
+                    height: 1.0,
+                    letterSpacing: -0.5,
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 6),
                 Text(
                   title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
-                    color: Color(0xFF5D6678),
-                    fontSize: 13,
+                    color: Color(0xFF64748B),
+                    fontSize: 12.5,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -165,10 +123,10 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
             ),
           ),
           Container(
-            padding: const EdgeInsets.all(8),
+            padding: const EdgeInsets.all(10),
             decoration: BoxDecoration(
-              color: iconTint.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(8),
+              color: iconTint.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(10),
             ),
             child: Icon(
               icon,
@@ -183,42 +141,55 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
 
   Widget _buildHeader(RepositoryAuditState state) {
     return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(
+              const Text(
                 'Project Archive',
-                style: const TextStyle(
+                style: TextStyle(
                   color: AppColors.maroon,
-                  fontSize: 21,
+                  fontSize: 22,
                   fontWeight: FontWeight.w800,
                   height: 1.1,
+                  letterSpacing: -0.3,
                 ),
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
               Text(
                 _headerSubtitle(state),
                 style: const TextStyle(
                   color: AppColors.textSecondary,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w500,
                 ),
               ),
             ],
           ),
         ),
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            _primaryButton(
-              icon: Icons.file_download_rounded,
-              label: 'Export Archive Records',
-              onTap: state.isSaving ? null : onExportCsv,
+        const SizedBox(width: 16),
+        if (onManageProgramStageAccess != null) ...[
+          OutlinedButton.icon(
+            onPressed: onManageProgramStageAccess,
+            icon: const Icon(Icons.tune_rounded, size: 15),
+            label: const Text('Program Stage Access ▾'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.maroon,
+              side: const BorderSide(color: AppColors.maroon),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
             ),
-          ],
+          ),
+          const SizedBox(width: 12),
+        ],
+        _primaryButton(
+          icon: Icons.file_download_rounded,
+          label: 'Export Archive Records',
+          onTap: state.isSaving ? null : onExportCsv,
         ),
       ],
     );
@@ -308,211 +279,35 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
     );
   }
 
-  Widget _buildEmptyQueueBanner(RepositoryAuditState state) {
-    final scope = _scopeKey(state);
-    if (scope != 'pit_lead') {
-      return const SizedBox.shrink();
-    }
-    final open = state.uploadWindow['open'] == true;
-    final queue = state.uploadWindow['queue'];
-    final hasQueue = queue is List && queue.isNotEmpty;
-    if (!open || hasQueue) {
-      return const SizedBox.shrink();
-    }
 
-    final diagnostics = state.uploadWindow['diagnostics'];
-    if (diagnostics is! Map) {
-      return _notice(
-        Icons.info_outline_rounded,
-        'No teams are ready to upload to vault yet. Mark the PIT event officially complete in Evaluation & Grades so passed teams become ready to upload to vault.',
-        const Color(0xFFD97706),
-      );
-    }
 
-    final diag = Map<String, dynamic>.from(diagnostics);
-    final parts = <String>[
-      'No teams are ready to upload to vault for your year level.',
-    ];
-    final forYear = diag['completed_events_for_year'];
-    if (forYear is List && forYear.isNotEmpty) {
-      parts.add('Completed events for your year: ${forYear.join(', ')}.');
-    } else {
-      parts.add('No officially complete PIT event matches your year yet.');
-    }
-    final other = diag['completed_events_other_years'];
-    if (other is List && other.isNotEmpty) {
-      parts.add('Other completed events: ${other.join(', ')}.');
-    }
-    final stages = diag['pit_stage_labels'];
-    if (stages is List && stages.isNotEmpty) {
-      parts.add('Grade event names in use: ${stages.join(', ')}.');
-    }
-    final unpublished = diag['unpublished_passed_count'];
-    if (unpublished is int && unpublished > 0) {
-      parts.add(
-        '$unpublished team(s) passed but are not published — mark their PIT event officially complete.',
-      );
-    }
-    return _notice(
-      Icons.warning_amber_rounded,
-      parts.join(' '),
-      const Color(0xFFD97706),
-    );
-  }
-
-  Widget _buildUploadWindowBanner(RepositoryAuditState state) {
-    final scope = _scopeKey(state);
-    if (scope == 'admin') {
-      return const SizedBox.shrink();
-    }
-    final open = state.uploadWindow['open'] == true;
-    final queue = state.uploadWindow['queue'];
-    final hasQueue = queue is List && queue.isNotEmpty;
-    if (open || hasQueue) {
-      return const SizedBox.shrink();
-    }
-    const message =
-        'Mark your year\'s PIT event officially complete in Evaluation & Grades. Upload PDFs here while teams are ready to upload; Evaluation & Grades shows Published after archive_save.';
-    return _notice(
-      Icons.info_outline_rounded,
-      message,
-      const Color(0xFF2563EB),
-    );
-  }
-
-  Widget _buildUploadQueuePanel(RepositoryAuditState state) {
-    final queue = (state.uploadWindow['queue'] as List?) ?? [];
-    final events =
-        (state.uploadWindow['completed_events'] as List?)
-            ?.map((e) => e.toString())
-            .join(', ') ??
-        '';
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(20, 18, 20, 16),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Ready to archive${events.isNotEmpty ? ' · $events' : ''}',
-            style: const TextStyle(
-              color: AppColors.maroon,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'Awaiting PDF means the team passed and still needs a correctly named upload—not that Evaluation & Grades is incomplete.',
-            style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
-          ),
-          const SizedBox(height: 12),
-          ...queue.map((raw) {
-            final row = Map<String, dynamic>.from(raw as Map);
-            final pending = row['archive_status'] == 'pending';
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          row['team_name']?.toString() ?? 'Team',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 13,
-                          ),
-                        ),
-                        Text(
-                          '${row['event_name'] ?? ''} · ${row['project_title'] ?? ''}',
-                          style: const TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 12,
-                          ),
-                        ),
-                        SelectableText(
-                          row['suggested_file_name']?.toString() ?? '',
-                          style: const TextStyle(
-                            color: Color(0xFF6B7280),
-                            fontSize: 11.5,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  Text(
-                    pending ? 'Awaiting PDF' : 'In archive',
-                    style: TextStyle(
-                      color: pending
-                          ? const Color(0xFFD97706)
-                          : const Color(0xFF059669),
-                      fontWeight: FontWeight.w700,
-                      fontSize: 12,
-                    ),
-                  ),
-                  if (pending &&
-                      (row['suggested_file_name']?.toString() ?? '')
-                          .isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    IconButton(
-                      tooltip: 'Copy filename',
-                      icon: const Icon(Icons.copy_outlined, size: 18),
-                      onPressed: () => onCopySuggestedFileName(
-                        row['suggested_file_name']?.toString(),
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-            );
-          }),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
+    final showDeliverableChip =
+        state.deliverableId.isNotEmpty && deliverableFilterChip != null;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildHeader(state),
-        const SizedBox(height: 22),
-        _sectionHeader(
-          'Project Archive Summary',
-          'Current archive status and record counts for your scope.',
-        ),
-        const SizedBox(height: 12),
+        const SizedBox(height: 18),
         _buildStats(state),
         if (_scopeKey(state) == 'admin') ...[
-          if (typeTabs != null) ...[
-            const SizedBox(height: 18),
-            typeTabs!,
-          ],
-          if (state.deliverableId.isNotEmpty && deliverableFilterChip != null) ...[
-            const SizedBox(height: 10),
-            deliverableFilterChip!,
-          ],
-        ],
-        if (_scopeKey(state) != 'admin') ...[
-          const SizedBox(height: 18),
-          _buildUploadWindowBanner(state),
-          _buildEmptyQueueBanner(state),
-          if (state.uploadWindow['queue'] is List &&
-              (state.uploadWindow['queue'] as List).isNotEmpty &&
-              _scopeKey(state) == 'pit_lead') ...[
+          if (typeTabs != null || showDeliverableChip) ...[
             const SizedBox(height: 16),
-            _buildUploadQueuePanel(state),
+            Wrap(
+              spacing: 12,
+              runSpacing: 10,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              alignment: WrapAlignment.spaceBetween,
+              children: [
+                if (typeTabs != null) typeTabs!,
+                if (showDeliverableChip) deliverableFilterChip!,
+              ],
+            ),
           ],
         ],
+
       ],
     );
   }
