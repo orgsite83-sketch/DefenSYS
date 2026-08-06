@@ -754,345 +754,473 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               painter: const _HeaderWavePainter(),
             ),
           ),
+          // 1. Watermark logo in upper right of dark background (Subtle faded black)
+          Positioned(
+            top: -15,
+            right: -35,
+            child: IgnorePointer(
+              child: Opacity(
+                opacity: 0.14,
+                child: DefensysLogoMark(
+                  size: 230,
+                  customColor: Colors.black,
+                ),
+              ),
+            ),
+          ),
           SafeArea(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const SizedBox(height: 12),
-                  // Header Brand Lockup (Shield Logo + Title + Subtitles)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.center,
-                    children: [
-                      _webLogoMark(size: 52, color: Colors.white),
-                      const SizedBox(width: 14),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Text(
-                              'DefenSYS',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 24,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                            const SizedBox(height: 1),
-                            const Text(
-                              'Capstone & PIT Management',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white,
-                              ),
-                            ),
-                            Text(
-                              'University Portal',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                fontSize: 12,
-                                fontWeight: FontWeight.w400,
-                                color: Colors.white.withValues(alpha: 0.85),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 28),
-                  // WHITE CARD CONTAINER
-                  Container(
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(16),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.12),
-                          blurRadius: 20,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      minHeight: constraints.maxHeight,
                     ),
-                    padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Welcome back',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 16,
-                            fontWeight: FontWeight.w400,
-                            color: Color(0xFF1E293B),
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        const Text(
-                          'Sign in',
-                          style: TextStyle(
-                            fontFamily: 'Poppins',
-                            fontSize: 30,
-                            fontWeight: FontWeight.w800,
-                            color: Color(0xFF0F172A),
-                            letterSpacing: -0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 20),
-                        if (_buildSessionBanner() != null) _buildSessionBanner()!,
-                        Form(
-                          key: _formKey,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                    child: IntrinsicHeight(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          const SizedBox(height: 24),
+                          // Header Brand Lockup (Shield Logo + Title + Subtitles)
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
                             children: [
-                              const Text(
-                                'Student ID',
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF334155),
-                                ),
-                              ),
-                              const SizedBox(height: 6),
-                              TextFormField(
-                                controller: _emailCtrl,
-                                keyboardType: TextInputType.text,
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 15,
-                                  color: DefensysTokens.textDark,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Student ID',
-                                  hintStyle: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 14,
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  prefixIcon: const Icon(
-                                    Icons.person_outline,
-                                    color: Color(0xFF64748B),
-                                    size: 20,
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
-                                  ),
-                                  errorBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
-                                  ),
-                                ),
-                                validator: (v) => v == null || v.trim().isEmpty
-                                    ? context.l10n.loginRequiredField
-                                    : null,
-                              ),
-                              const SizedBox(height: 12),
-                              // Field 2: Password (No text label above input box in Image 2)
-                              TextFormField(
-                                controller: _passCtrl,
-                                obscureText: _obscure,
-                                style: const TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 15,
-                                  color: DefensysTokens.textDark,
-                                ),
-                                decoration: InputDecoration(
-                                  hintText: 'Password',
-                                  hintStyle: const TextStyle(
-                                    fontFamily: 'Poppins',
-                                    color: Color(0xFF94A3B8),
-                                    fontSize: 14,
-                                  ),
-                                  filled: true,
-                                  fillColor: Colors.white,
-                                  prefixIcon: const Icon(
-                                    Icons.lock_outline,
-                                    color: Color(0xFF64748B),
-                                    size: 20,
-                                  ),
-                                  suffixIcon: IconButton(
-                                    tooltip: _obscure ? 'Show password' : 'Hide password',
-                                    icon: Icon(
-                                      _obscure
-                                          ? Icons.visibility_off_outlined
-                                          : Icons.visibility_outlined,
-                                      color: const Color(0xFF64748B),
-                                      size: 20,
+                              _webLogoMark(size: 52, color: Colors.white),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'DefenSYS',
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 24,
+                                        fontWeight: FontWeight.w800,
+                                        color: Colors.white,
+                                        letterSpacing: 0.3,
+                                      ),
                                     ),
-                                    onPressed: () => setState(() => _obscure = !_obscure),
-                                  ),
-                                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                                  enabledBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
-                                  ),
-                                  focusedBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
-                                  ),
-                                  errorBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
-                                  ),
-                                  focusedErrorBorder: OutlineInputBorder(
-                                    borderRadius: BorderRadius.circular(12),
-                                    borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
-                                  ),
+                                    const SizedBox(height: 1),
+                                    const Text(
+                                      'Capstone & PIT Management',
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                    Text(
+                                      'University Portal',
+                                      style: TextStyle(
+                                        fontFamily: 'Poppins',
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w400,
+                                        color: Colors.white.withValues(alpha: 0.85),
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                validator: (v) => v == null || v.trim().isEmpty
-                                    ? 'Enter your password'
-                                    : null,
                               ),
                             ],
                           ),
-                        ),
-                        const SizedBox(height: 10),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: GestureDetector(
-                            onTap: _showForgotPasswordDialog,
-                            child: const Text(
-                              'Forgot password?',
-                              style: TextStyle(
-                                fontFamily: 'Poppins',
-                                color: Color(0xFF334155),
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                decoration: TextDecoration.underline,
+                          // Flexible spacing to position the form card lower into thumb zone
+                          const Spacer(),
+                          const SizedBox(height: 20),
+                          // WHITE CARD CONTAINER (Floating sheet)
+                          Container(
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: const Color(0xFFE2E8F0),
+                                width: 1.0,
                               ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.16),
+                                  blurRadius: 24,
+                                  offset: const Offset(0, 10),
+                                ),
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 6,
+                                  offset: const Offset(0, 2),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                        const SizedBox(height: 22),
-                        // Primary Sign In Button (Wine red fill)
-                        SizedBox(
-                          width: double.infinity,
-                          height: 50,
-                          child: ElevatedButton(
-                            onPressed: authState.isLoading ? null : _login,
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFF6B1527),
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                            child: authState.isLoading
-                                ? const SizedBox(
-                                    width: 20,
-                                    height: 20,
-                                    child: CircularProgressIndicator(
-                                      color: Colors.white,
-                                      strokeWidth: 2.5,
-                                    ),
-                                  )
-                                : const Text(
-                                    'Sign In',
-                                    style: TextStyle(
-                                      fontFamily: 'Poppins',
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.white,
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(20),
+                              child: Stack(
+                                children: [
+                                  // 2. Faded maroon logo watermark in lower right of the form card sheet
+                                  Positioned(
+                                    bottom: -25,
+                                    right: -25,
+                                    child: IgnorePointer(
+                                      child: Opacity(
+                                        opacity: 0.07,
+                                        child: Transform.rotate(
+                                          angle: -0.12,
+                                          child: const DefensysLogoMark(
+                                            size: 180,
+                                            customColor: Color(0xFF6B1527),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        if (!kIsWeb)
-                          // Guest Panelist Access Button (Light cream fill + gold border & key)
-                          SizedBox(
-                            width: double.infinity,
-                            height: 50,
-                            child: OutlinedButton.icon(
-                              onPressed: _showGuestDialog,
-                              icon: const Icon(Icons.key_outlined, size: 18, color: Color(0xFF92400E)),
-                              label: const Text(
-                                'Guest Panelist Access',
-                                style: TextStyle(
-                                  fontFamily: 'Poppins',
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.w600,
-                                  color: Color(0xFF92400E),
-                                ),
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: const Color(0xFF92400E),
-                                side: const BorderSide(
-                                  color: Color(0xFFFDE68A),
-                                  width: 1.2,
-                                ),
-                                backgroundColor: const Color(0xFFFFFBEB),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                                    children: [
+                                      // Top Accent Bar (Maroon & Gold Gradient)
+                                      Container(
+                                        height: 4,
+                                        decoration: const BoxDecoration(
+                                          gradient: LinearGradient(
+                                            colors: [
+                                              DefensysTokens.maroon,
+                                              DefensysTokens.gold,
+                                            ],
+                                            begin: Alignment.centerLeft,
+                                            end: Alignment.centerRight,
+                                          ),
+                                        ),
+                                      ),
+                                      Padding(
+                                        padding: const EdgeInsets.fromLTRB(22, 24, 22, 24),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            const Text(
+                                              'Welcome back',
+                                              style: TextStyle(
+                                                fontFamily: 'Poppins',
+                                                fontSize: 14,
+                                                fontWeight: FontWeight.w500,
+                                                color: Color(0xFF64748B),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 2),
+                                            const Text(
+                                              'Sign in',
+                                              style: TextStyle(
+                                                fontFamily: 'Poppins',
+                                                fontSize: 28,
+                                                fontWeight: FontWeight.w800,
+                                                color: Color(0xFF0F172A),
+                                                letterSpacing: -0.5,
+                                              ),
+                                            ),
+                                            const SizedBox(height: 20),
+                                            if (_buildSessionBanner() != null) _buildSessionBanner()!,
+                                            Form(
+                                              key: _formKey,
+                                              child: Column(
+                                                crossAxisAlignment: CrossAxisAlignment.start,
+                                                children: [
+                                                  const Text(
+                                                    'Student ID or Email',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF334155),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  TextFormField(
+                                                    controller: _emailCtrl,
+                                                    keyboardType: TextInputType.text,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      fontSize: 15,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: DefensysTokens.textDark,
+                                                    ),
+                                                    decoration: InputDecoration(
+                                                      hintText: 'Student ID or Username',
+                                                      hintStyle: const TextStyle(
+                                                        fontFamily: 'Poppins',
+                                                        color: Color(0xFF94A3B8),
+                                                        fontSize: 14,
+                                                      ),
+                                                      filled: true,
+                                                      fillColor: const Color(0xFFF8FAFC),
+                                                      prefixIcon: const Icon(
+                                                        Icons.person_outline,
+                                                        color: Color(0xFF64748B),
+                                                        size: 20,
+                                                      ),
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                                                      ),
+                                                      errorBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                                                      ),
+                                                      focusedErrorBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                                                      ),
+                                                    ),
+                                                    validator: (v) => v == null || v.trim().isEmpty
+                                                        ? context.l10n.loginRequiredField
+                                                        : null,
+                                                  ),
+                                                  const SizedBox(height: 16),
+                                                  const Text(
+                                                    'Password',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF334155),
+                                                    ),
+                                                  ),
+                                                  const SizedBox(height: 6),
+                                                  TextFormField(
+                                                    controller: _passCtrl,
+                                                    obscureText: _obscure,
+                                                    style: const TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      fontSize: 15,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: DefensysTokens.textDark,
+                                                    ),
+                                                    decoration: InputDecoration(
+                                                      hintText: 'Password',
+                                                      hintStyle: const TextStyle(
+                                                        fontFamily: 'Poppins',
+                                                        color: Color(0xFF94A3B8),
+                                                        fontSize: 14,
+                                                      ),
+                                                      filled: true,
+                                                      fillColor: const Color(0xFFF8FAFC),
+                                                      prefixIcon: const Icon(
+                                                        Icons.lock_outline,
+                                                        color: Color(0xFF64748B),
+                                                        size: 20,
+                                                      ),
+                                                      suffixIcon: IconButton(
+                                                        tooltip: _obscure ? 'Show password' : 'Hide password',
+                                                        icon: Icon(
+                                                          _obscure
+                                                              ? Icons.visibility_off_outlined
+                                                              : Icons.visibility_outlined,
+                                                          color: const Color(0xFF64748B),
+                                                          size: 20,
+                                                        ),
+                                                        onPressed: () => setState(() => _obscure = !_obscure),
+                                                      ),
+                                                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),
+                                                      enabledBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: Color(0xFFCBD5E1), width: 1.0),
+                                                      ),
+                                                      focusedBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: Color(0xFF6B1527), width: 1.5),
+                                                      ),
+                                                      errorBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.0),
+                                                      ),
+                                                      focusedErrorBorder: OutlineInputBorder(
+                                                        borderRadius: BorderRadius.circular(12),
+                                                        borderSide: const BorderSide(color: DefensysTokens.danger, width: 1.5),
+                                                      ),
+                                                    ),
+                                                    validator: (v) => v == null || v.trim().isEmpty
+                                                        ? 'Enter your password'
+                                                        : null,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            const SizedBox(height: 16),
+                                            // Inline Remember Me & Forgot Password Row
+                                            Row(
+                                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                              children: [
+                                                Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    SizedBox(
+                                                      width: 20,
+                                                      height: 20,
+                                                      child: Checkbox(
+                                                        value: _rememberMe,
+                                                        onChanged: (value) =>
+                                                            setState(() => _rememberMe = value ?? false),
+                                                        visualDensity: VisualDensity.compact,
+                                                        activeColor: DefensysTokens.maroon,
+                                                        side: const BorderSide(color: Color(0xFF64748B), width: 1.5),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(4),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    const Text(
+                                                      'Remember me',
+                                                      style: TextStyle(
+                                                        fontFamily: 'Poppins',
+                                                        fontSize: 13,
+                                                        color: Color(0xFF475569),
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                                GestureDetector(
+                                                  onTap: _showForgotPasswordDialog,
+                                                  child: const Text(
+                                                    'Forgot password?',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      color: Color(0xFF6B1527),
+                                                      fontSize: 13,
+                                                      fontWeight: FontWeight.w600,
+                                                    ),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 22),
+                                            // Primary Sign In Button (Wine red fill)
+                                            SizedBox(
+                                              width: double.infinity,
+                                              height: 52,
+                                              child: ElevatedButton(
+                                                onPressed: authState.isLoading ? null : _login,
+                                                style: ElevatedButton.styleFrom(
+                                                  backgroundColor: const Color(0xFF6B1527),
+                                                  foregroundColor: Colors.white,
+                                                  elevation: 2,
+                                                  shadowColor: const Color(0xFF6B1527).withValues(alpha: 0.35),
+                                                  shape: RoundedRectangleBorder(
+                                                    borderRadius: BorderRadius.circular(12),
+                                                  ),
+                                                ),
+                                                child: authState.isLoading
+                                                    ? const SizedBox(
+                                                        width: 20,
+                                                        height: 20,
+                                                        child: CircularProgressIndicator(
+                                                          color: Colors.white,
+                                                          strokeWidth: 2.5,
+                                                        ),
+                                                      )
+                                                    : const Text(
+                                                        'Sign In',
+                                                        style: TextStyle(
+                                                          fontFamily: 'Poppins',
+                                                          fontSize: 16,
+                                                          fontWeight: FontWeight.w700,
+                                                          color: Colors.white,
+                                                          letterSpacing: 0.2,
+                                                        ),
+                                                      ),
+                                              ),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            if (!kIsWeb)
+                                              // Guest Panelist Access Button (Light cream fill + gold border & key)
+                                              SizedBox(
+                                                width: double.infinity,
+                                                height: 52,
+                                                child: OutlinedButton.icon(
+                                                  onPressed: _showGuestDialog,
+                                                  icon: const Icon(Icons.key_outlined, size: 18, color: Color(0xFF92400E)),
+                                                  label: const Text(
+                                                    'Guest Panelist Access',
+                                                    style: TextStyle(
+                                                      fontFamily: 'Poppins',
+                                                      fontSize: 14,
+                                                      fontWeight: FontWeight.w600,
+                                                      color: Color(0xFF92400E),
+                                                    ),
+                                                  ),
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor: const Color(0xFF92400E),
+                                                    side: const BorderSide(
+                                                      color: Color(0xFFF59E0B),
+                                                      width: 1.2,
+                                                    ),
+                                                    backgroundColor: const Color(0xFFFFFBEB),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(12),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
                             ),
                           ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 36),
-                  // Footer section over dark burgundy background in light colors
-                  Center(
-                    child: Text(
-                      'Department of Information Technology',
-                      style: TextStyle(
-                        fontFamily: 'Poppins',
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: 0.85),
+                          const Spacer(),
+                          const SizedBox(height: 20),
+                          // Footer section over dark burgundy background in light colors
+                          Center(
+                            child: Text(
+                              'Department of Information Technology',
+                              style: TextStyle(
+                                fontFamily: 'Poppins',
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white.withValues(alpha: 0.85),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              _buildLightFooterLink('About Us', () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const AboutScreen(),
+                                ),
+                              ), color: Colors.white.withValues(alpha: 0.85)),
+                              _buildLightFooterDivider(),
+                              _buildLightFooterLink('Privacy Policy', () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const PrivacyScreen(),
+                                ),
+                              ), color: Colors.white.withValues(alpha: 0.85)),
+                              _buildLightFooterDivider(),
+                              _buildLightFooterLink('Terms', () => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const TermsScreen(),
+                                ),
+                              ), color: Colors.white.withValues(alpha: 0.85)),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                        ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 8),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      _buildLightFooterLink('About Us', () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AboutScreen(),
-                        ),
-                      ), color: Colors.white.withValues(alpha: 0.85)),
-                      _buildLightFooterDivider(),
-                      _buildLightFooterLink('Privacy Policy', () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const PrivacyScreen(),
-                        ),
-                      ), color: Colors.white.withValues(alpha: 0.85)),
-                      _buildLightFooterDivider(),
-                      _buildLightFooterLink('Terms', () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const TermsScreen(),
-                        ),
-                      ), color: Colors.white.withValues(alpha: 0.85)),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
+                );
+              },
             ),
           ),
         ],
