@@ -7,7 +7,7 @@ import '../../../services/defense_stages_provider.dart';
 import '../../../services/academic_period_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/defensys_admin_shell.dart';
 

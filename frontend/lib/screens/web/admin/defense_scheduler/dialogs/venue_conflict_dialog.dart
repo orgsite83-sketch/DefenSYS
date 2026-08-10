@@ -7,7 +7,7 @@ import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 
 class ScheduleImportDialog {

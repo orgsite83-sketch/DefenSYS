@@ -3,11 +3,11 @@ from PIL import Image, ImageDraw
 
 def render_concept_2(size, color_mode="white", padding_pct=0.0):
     """
-    Renders Concept 02 (Academic Manuscript Spire Vault) with 8x supersampling anti-aliasing.
+    Renders Concept 02 (Academic Manuscript Spire Vault) with supersampling anti-aliasing.
     color_mode: 'white', 'brand', 'black', 'favicon_brand'
     padding_pct: float percentage padding around emblem (e.g. 0.1 for 10% outer padding)
     """
-    scale = 8
+    scale = 2
     canvas_size = size * scale
     img = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
@@ -68,15 +68,31 @@ def render_concept_2(size, color_mode="white", padding_pct=0.0):
     final_img = img.resize((size, size), resample=Image.Resampling.LANCZOS)
     return final_img
 
-def render_app_icon(size, bg_color=(122, 17, 10, 255), is_maskable=False):
+def render_app_icon(size, bg_color=(122, 17, 10, 255), padding_pct=0.28):
     """
     Renders Concept 02 White mark centered on an Academic Maroon background for PWA/App launch icons.
     """
-    scale = 8
+    scale = 2
     canvas_size = size * scale
     img = Image.new("RGBA", (canvas_size, canvas_size), bg_color)
     
-    pad = int(canvas_size * 0.2) if is_maskable else int(canvas_size * 0.15)
+    pad = int(canvas_size * padding_pct)
+    mark_size = canvas_size - (pad * 2)
+    mark_img = render_concept_2(mark_size, "white")
+    
+    img.paste(mark_img, (pad, pad), mark_img)
+    final_img = img.resize((size, size), resample=Image.Resampling.LANCZOS)
+    return final_img
+
+def render_app_icon_foreground(size, padding_pct=0.28):
+    """
+    Renders Concept 02 White mark centered on a transparent background for Android adaptive launcher icons.
+    """
+    scale = 2
+    canvas_size = size * scale
+    img = Image.new("RGBA", (canvas_size, canvas_size), (0, 0, 0, 0))
+    
+    pad = int(canvas_size * padding_pct)
     mark_size = canvas_size - (pad * 2)
     mark_img = render_concept_2(mark_size, "white")
     
@@ -106,6 +122,10 @@ def main():
     master_brand.save(os.path.join(assets_dir, "logo-web-mark.png"))
     master_brand.save(os.path.join(assets_dir, "logo-web-mark-smooth.png"))
 
+    # App Launcher Icons (With 28% padding so emblem appears appropriately sized inside app launcher tiles)
+    render_app_icon(1024, padding_pct=0.28).save(os.path.join(assets_dir, "app_launcher_icon.png"))
+    render_app_icon_foreground(1024, padding_pct=0.28).save(os.path.join(assets_dir, "app_launcher_foreground.png"))
+
     # 2. Web Favicon (Transparent Emblem, No Square Box Card)
     # Generate clean transparent emblem favicons with subtle padding
     fav_128 = render_concept_2(128, "favicon_brand", padding_pct=0.06)
@@ -126,12 +146,12 @@ def main():
     )
 
     # 3. PWA Web Icons (Maskable & Standard App Icons)
-    render_app_icon(192, is_maskable=False).save(os.path.join(web_icons_dir, "Icon-192.png"))
-    render_app_icon(512, is_maskable=False).save(os.path.join(web_icons_dir, "Icon-512.png"))
-    render_app_icon(192, is_maskable=True).save(os.path.join(web_icons_dir, "Icon-maskable-192.png"))
-    render_app_icon(512, is_maskable=True).save(os.path.join(web_icons_dir, "Icon-maskable-512.png"))
+    render_app_icon(192, padding_pct=0.2).save(os.path.join(web_icons_dir, "Icon-192.png"))
+    render_app_icon(512, padding_pct=0.2).save(os.path.join(web_icons_dir, "Icon-512.png"))
+    render_app_icon(192, padding_pct=0.25).save(os.path.join(web_icons_dir, "Icon-maskable-192.png"))
+    render_app_icon(512, padding_pct=0.25).save(os.path.join(web_icons_dir, "Icon-maskable-512.png"))
 
-    print("Successfully generated ultra-sharp 1024x1024 PNG assets, transparent favicon.png/ico, and PWA icons!")
+    print("Successfully generated ultra-sharp 1024x1024 PNG assets, app launcher icons, transparent favicon.png/ico, and PWA icons!")
 
 if __name__ == "__main__":
     main()

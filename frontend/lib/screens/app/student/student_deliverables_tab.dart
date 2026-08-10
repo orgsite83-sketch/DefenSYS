@@ -12,9 +12,8 @@ import '../../../services/capstone_deliverables_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/status_badge.dart';
-import '../../../widgets/tactile_button.dart';
 import '../../../utils/progress_upload.dart';
 
 String _formatUploadFailureMessage(int statusCode, String responseBody) {
@@ -50,11 +49,15 @@ String _formatUploadFailureMessage(int statusCode, String responseBody) {
 class StudentDeliverablesTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final Map<String, dynamic>? studentData;
+  final bool isEmbedded;
+  final bool hideHeader;
 
   const StudentDeliverablesTab({
     super.key,
     required this.isCapstone,
     required this.studentData,
+    this.isEmbedded = false,
+    this.hideHeader = false,
   });
 
   @override
@@ -152,97 +155,91 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final pre = _deliverables(selectedStage, 'pre');
     final vault = _deliverables(selectedStage, 'post');
 
-    return Scaffold(
-      backgroundColor: Colors.grey.shade50,
-      body: RefreshIndicator(
-        color: DefensysTokens.maroon,
-        onRefresh: _refresh,
-        child: SingleChildScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header section
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroon,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+    final content = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!widget.hideHeader) ...[
+          // Header section
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: DefensysTokens.maroon,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
                   children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.upload_file, color: Colors.white, size: 28),
-                        const SizedBox(width: 12),
-                        const Expanded(
+                    const Icon(Icons.upload_file, color: Colors.white, size: 28),
+                    const SizedBox(width: 12),
+                    const Expanded(
+                      child: Text(
+                        'Deliverables',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                    Builder(
+                      builder: (context) {
+                        final detail = selectedStage['stage_status_detail']?.toString();
+                        String label = endorsed ? 'Endorsed' : 'Awaiting Endorsement';
+                        Color bg = endorsed ? Colors.green.shade600 : Colors.orange.shade600;
+
+                        if (detail == 'passed') {
+                          label = 'Completed';
+                          bg = Colors.green.shade600;
+                        } else if (detail == 'pending_post_defense') {
+                          label = 'Pending Post-Defense';
+                          bg = Colors.purple.shade600;
+                        } else if (detail == 'defense_ongoing') {
+                          label = 'Defense Ongoing';
+                          bg = Colors.indigo.shade600;
+                        } else if (detail == 'defense_scheduled') {
+                          label = 'Defense Scheduled';
+                          bg = Colors.blue.shade600;
+                        } else if (detail == 'endorsed') {
+                          label = 'Endorsed';
+                          bg = Colors.green.shade600;
+                        }
+
+                        return Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: bg,
+                            borderRadius: BorderRadius.circular(20),
+                          ),
                           child: Text(
-                            'Deliverables',
-                            style: TextStyle(
+                            label,
+                            style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 22,
-                              fontWeight: FontWeight.bold,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
                             ),
                           ),
-                        ),
-                        Builder(
-                          builder: (context) {
-                            final detail = selectedStage['stage_status_detail']?.toString();
-                            String label = endorsed ? 'Endorsed' : 'Awaiting Endorsement';
-                            Color bg = endorsed ? Colors.green.shade600 : Colors.orange.shade600;
-
-                            if (detail == 'passed') {
-                              label = 'Completed';
-                              bg = Colors.green.shade600;
-                            } else if (detail == 'pending_post_defense') {
-                              label = 'Pending Post-Defense';
-                              bg = Colors.purple.shade600;
-                            } else if (detail == 'defense_ongoing') {
-                              label = 'Defense Ongoing';
-                              bg = Colors.indigo.shade600;
-                            } else if (detail == 'defense_scheduled') {
-                              label = 'Defense Scheduled';
-                              bg = Colors.blue.shade600;
-                            } else if (detail == 'endorsed') {
-                              label = 'Endorsed';
-                              bg = Colors.green.shade600;
-                            }
-
-                            return Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: bg,
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Text(
-                                label,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            );
-                          },
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Stage/Event: ${state.selectedStage}',
-                      style: const TextStyle(
-                        color: Colors.white70,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
-                      ),
+                        );
+                      },
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(height: 20),
+                const SizedBox(height: 10),
+                Text(
+                  'Stage/Event: ${state.selectedStage}',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
+        ],
 
               if (state.message != null) ...[
                 Container(
@@ -319,7 +316,21 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ],
               ],
             ],
-          ),
+          );
+
+    if (widget.isEmbedded) {
+      return content;
+    }
+
+    return Scaffold(
+      backgroundColor: Colors.grey.shade50,
+      body: RefreshIndicator(
+        color: DefensysTokens.maroon,
+        onRefresh: _refresh,
+        child: SingleChildScrollView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.all(20),
+          child: content,
         ),
       ),
     );

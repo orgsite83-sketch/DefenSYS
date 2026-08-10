@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../services/academic_period_provider.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {

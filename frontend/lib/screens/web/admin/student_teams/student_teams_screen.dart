@@ -13,7 +13,7 @@ import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/student_teams_bulk_import.dart';
 import 'components/student_teams_grid.dart';

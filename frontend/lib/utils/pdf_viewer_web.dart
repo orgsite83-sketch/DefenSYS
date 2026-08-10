@@ -5,7 +5,7 @@ import 'package:flutter/material.dart';
 import 'dart:html' as html;
 import 'dart:ui_web' as ui_web;
 import '../theme/defensys_tokens.dart';
-import '../widgets/feedback_toast.dart';
+import '../toasts/feedback_toast.dart';
 
 Future<void> downloadBytesFile({
   required List<int> bytes,

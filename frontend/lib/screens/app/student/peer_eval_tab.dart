@@ -4,7 +4,7 @@ import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 
 class PeerEvalTab extends ConsumerStatefulWidget {
   final bool isCapstone;
@@ -17,6 +17,8 @@ class PeerEvalTab extends ConsumerStatefulWidget {
   final List<Map<String, dynamic>> myPeerSubmissions;
   final VoidCallback? onPeerSubmitted;
   final Future<void> Function()? onRefresh;
+  final bool isEmbedded;
+  final bool hideHistory;
 
   const PeerEvalTab({
     super.key,
@@ -30,6 +32,8 @@ class PeerEvalTab extends ConsumerStatefulWidget {
     required this.studentId,
     required this.teamId,
     this.peerWeight = 20,
+    this.isEmbedded = false,
+    this.hideHistory = false,
   });
 
   @override
@@ -151,7 +155,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   @override
   Widget build(BuildContext context) {
     Widget refreshWrapper(Widget child) {
-      if (widget.onRefresh == null) return child;
+      if (widget.isEmbedded || widget.onRefresh == null) return child;
       return LayoutBuilder(
         builder: (context, constraints) {
           return RefreshIndicator(
@@ -169,20 +173,55 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       );
     }
 
-    if (!widget.peerEvalAllowed) {
+    if (widget.hideHistory) {
       return refreshWrapper(
-        Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(Icons.lock_clock, size: 64, color: Colors.grey.shade400),
-              const SizedBox(height: 16),
-              const Text('Peer evaluation is not yet open.',
-                  style: TextStyle(color: Colors.grey, fontSize: 15)),
-              const SizedBox(height: 8),
-              const Text('Wait for your PIT Lead to enable it.',
-                  style: TextStyle(color: Colors.grey, fontSize: 13)),
-            ],
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.history_toggle_off_rounded, size: 56, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                const Text(
+                  'Peer Evaluation Archived',
+                  style: TextStyle(color: DefensysTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Peer evaluation history for past events is archived and hidden.',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (!widget.peerEvalAllowed && widget.myPeerSubmissions.isEmpty) {
+      return refreshWrapper(
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 32),
+          child: Center(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.lock_clock, size: 56, color: Colors.grey.shade400),
+                const SizedBox(height: 16),
+                const Text(
+                  'Peer evaluation is not open for this event.',
+                  style: TextStyle(color: DefensysTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Peer evaluation will open once enabled by your PIT Lead.',
+                  style: TextStyle(color: Colors.grey, fontSize: 13),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -190,48 +229,80 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
 
     if (widget.teammates.isEmpty) {
       return refreshWrapper(
-        const Center(
-          child: Text('No teammates found for peer evaluation.',
-              style: TextStyle(color: Colors.grey, fontSize: 14)),
+        const Padding(
+          padding: EdgeInsets.symmetric(vertical: 32),
+          child: Center(
+            child: Text('No teammates found for peer evaluation.',
+                style: TextStyle(color: Colors.grey, fontSize: 14)),
+          ),
         ),
       );
+    }
+
+    final column = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionHeader('Peer Evaluation'),
+        const SizedBox(height: 4),
+        const Text('Rate each teammate per criterion. Once submitted, scores are locked.',
+            style: TextStyle(color: Colors.grey, fontSize: 13)),
+        const SizedBox(height: 12),
+        if (widget.myPeerSubmissions.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.all(12),
+            margin: const EdgeInsets.only(bottom: 12),
+            decoration: BoxDecoration(
+              color: Colors.green.shade50,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: Colors.green.shade300),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: Text(
+                    'Peer evaluation submitted for this event.',
+                    style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: DefensysTokens.gold.withValues(alpha: 0.07),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.4)),
+          ),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
+              const SizedBox(width: 8),
+              Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
+                  style: TextStyle(fontSize: 12, color: DefensysTokens.gold)),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        ...widget.teammates.map((t) {
+          final id = _teammateId(t);
+          final name = _teammateName(t);
+          return _peerCard(id, name);
+        }),
+      ],
+    );
+
+    if (widget.isEmbedded) {
+      return column;
     }
 
     final mainContent = SingleChildScrollView(
       physics: const AlwaysScrollableScrollPhysics(),
       padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _sectionHeader('Peer Evaluation'),
-          const SizedBox(height: 4),
-          const Text('Rate each teammate per criterion. Once submitted, scores are locked.',
-              style: TextStyle(color: Colors.grey, fontSize: 13)),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: DefensysTokens.gold.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.4)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
-                const SizedBox(width: 8),
-                Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
-                    style: TextStyle(fontSize: 12, color: DefensysTokens.gold)),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-          ...widget.teammates.map((t) {
-            final id = _teammateId(t);
-            final name = _teammateName(t);
-            return _peerCard(id, name);
-          }),
-        ],
-      ),
+      child: column,
     );
 
     if (widget.onRefresh == null) return mainContent;

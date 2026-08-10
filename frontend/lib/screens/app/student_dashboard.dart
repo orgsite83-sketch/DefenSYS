@@ -2,10 +2,9 @@ import 'package:flutter/material.dart';
 import '../about_screen.dart';
 import '../privacy_screen.dart';
 import '../terms_screen.dart';
+import 'student/student_events_tab.dart';
 import 'student/team_tab.dart';
 import 'student/repository_tab.dart';
-import 'student/peer_eval_tab.dart';
-import 'student/student_deliverables_tab.dart';
 import 'student/section_integration_tab.dart';
 import 'student/profile_edit_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,8 +16,8 @@ import '../../l10n/l10n_ext.dart';
 import '../../widgets/confirm_dialog.dart';
 import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
-import '../../services/notifications_provider.dart';
-import '../../widgets/notifications_modal.dart';
+import '../../notifications/notifications_modal.dart';
+import '../../notifications/notifications_provider.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -74,34 +73,22 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         studentData: dataToPass,
         onRefresh: _refreshDashboardAndNotifications,
       ),
+      StudentEventsTab(
+        isCapstone: isCapstone,
+        studentData: dataToPass,
+      ),
       const RepositoryTab(),
       if (isPM)
         SectionIntegrationTab(studentData: dataToPass),
-      StudentDeliverablesTab(isCapstone: isCapstone, studentData: dataToPass),
-      PeerEvalTab(
-        isCapstone: isCapstone,
-        peerEvalAllowed: dataToPass['peerEvalEnabled'] == true,
-        teammates: (dataToPass['members'] as List? ?? [])
-            .cast<Map<String, dynamic>>()
-            .where(
-              (m) => m['id']?.toString() != widget.userData?['id']?.toString(),
-            )
-            .toList(),
-        peerCriteria: (dataToPass['peerCriteria'] as List? ?? [])
-            .cast<Map<String, dynamic>>(),
-        myPeerSubmissions: (dataToPass['myPeerSubmissions'] as List? ?? [])
-            .cast<Map<String, dynamic>>(),
-        studentId: widget.userData?['id']?.toString() ?? '',
-        teamId: dataToPass['team']?['id']?.toString() ?? '',
-        peerWeight: (dataToPass['weights']?['peer'] as num?)?.toInt() ?? 20,
-        onPeerSubmitted: _refreshDashboardAndNotifications,
-        onRefresh: _refreshDashboardAndNotifications,
-      ),
     ];
 
     final l10n = context.l10n;
     final destinations = <NavigationDestination>[
       NavigationDestination(icon: const Icon(Icons.group), label: l10n.navTeam),
+      NavigationDestination(
+        icon: Icon(isCapstone ? Icons.alt_route_rounded : Icons.event_note_rounded),
+        label: isCapstone ? 'Stages' : 'Events',
+      ),
       NavigationDestination(
         icon: const Icon(Icons.folder_open),
         label: l10n.navRepository,
@@ -111,14 +98,6 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
           icon: Icon(Icons.hub),
           label: 'Integration',
         ),
-      const NavigationDestination(
-        icon: Icon(Icons.upload_file),
-        label: 'Deliverables',
-      ),
-      NavigationDestination(
-        icon: const Icon(Icons.star_rate),
-        label: l10n.navPeerEval,
-      ),
     ];
 
     final safeIndex = _selectedIndex.clamp(0, tabChildren.length - 1);

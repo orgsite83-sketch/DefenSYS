@@ -7,7 +7,7 @@ import '../../../navigation/admin_route_paths.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
 import '../../../theme/app_theme.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import 'rubric_full_page_editor.dart';
 import 'widgets/defensys_admin_shell.dart';
 

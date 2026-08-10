@@ -5,7 +5,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 
 import 'access_control/access_control_view.dart';
 import 'bulk_import/bulk_import_view.dart';

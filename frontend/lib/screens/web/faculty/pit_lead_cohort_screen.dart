@@ -7,7 +7,7 @@ import '../../../services/pit_instructor_provider.dart';
 import '../../../services/pit_lead_cohort_provider.dart';
 import '../../../services/user_management_provider.dart';
 import '../../../utils/csv_file_io.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 enum _CohortViewMode { sections, students }

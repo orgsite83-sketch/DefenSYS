@@ -4,7 +4,7 @@ import '../../../services/defense_scheduler_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../admin/widgets/defensys_admin_shell.dart';

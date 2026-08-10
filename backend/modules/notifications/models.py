@@ -4,6 +4,7 @@ from django.db import models
 
 class NotificationCategory(models.TextChoices):
     GENERAL = 'GENERAL', 'General'
+    SECURITY = 'SECURITY', 'Account & Security'
     MINUTES = 'MINUTES', 'Minutes & Signatures'
     DEFENSE = 'DEFENSE', 'Defense Schedule'
     PEER_EVAL = 'PEER_EVAL', 'Peer Evaluation'

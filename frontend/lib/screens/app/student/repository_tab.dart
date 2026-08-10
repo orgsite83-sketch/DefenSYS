@@ -13,7 +13,7 @@ import '../../../widgets/empty_state.dart';
 import '../../../widgets/error_banner.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/dashboard_provider.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../../../utils/pdf_viewer.dart';
 
 

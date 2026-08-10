@@ -167,13 +167,37 @@ def current_stage_for_team(team):
                 configs_qs = configs_qs.exclude(exclude_filter)
         configs = list(configs_qs.order_by('event_name'))
         if configs:
-            completed_events = set(
-                DefenseSchedule.objects.filter(
+            from .models import DeliverableSubmission
+            completed_events = set()
+            for config in configs:
+                if config.is_officially_complete:
+                    completed_events.add(config.event_name)
+                    continue
+
+                has_done_sched = DefenseSchedule.objects.filter(
                     team=team,
                     scope=DefenseSchedule.SCOPE_PIT,
+                    event_name__iexact=config.event_name,
                     status=DefenseSchedule.STATUS_DONE,
-                ).values_list('event_name', flat=True)
-            )
+                ).exists()
+
+                if has_done_sched:
+                    req_deliv_ids = set(
+                        config.deliverables.filter(required=True).values_list('deliverable_id', flat=True)
+                    )
+                    if req_deliv_ids:
+                        submitted_deliv_ids = set(
+                            DeliverableSubmission.objects.filter(
+                                team=team,
+                                stage_label__iexact=config.event_name,
+                                deliverable_id__in=req_deliv_ids,
+                            ).values_list('deliverable_id', flat=True)
+                        )
+                        if req_deliv_ids.issubset(submitted_deliv_ids):
+                            completed_events.add(config.event_name)
+                    else:
+                        completed_events.add(config.event_name)
+
             for config in configs:
                 if config.event_name not in completed_events:
                     return config.event_name

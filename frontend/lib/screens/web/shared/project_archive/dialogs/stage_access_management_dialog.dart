@@ -4,7 +4,7 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/project_archive_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 
 class StageAccessManagementDialog {
   static Future<void> show({

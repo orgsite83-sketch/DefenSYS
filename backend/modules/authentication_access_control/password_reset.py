@@ -82,17 +82,14 @@ class RequestPasswordResetView(APIView):
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            logger.info('password_reset: link sent to user_id=%s', user.pk)
+            logger.info('password_reset: link sent to user_id=%s (reset_url: %s)', user.pk, reset_url)
         else:
             # No matching user or user has no email — log but don't reveal.
             logger.info('password_reset: no action for identifier=%r', identifier)
 
         # Same response regardless — prevents enumeration.
         return Response({
-            'detail': (
-                'If an account exists with that ID or email, '
-                'a password reset link has been sent.'
-            ),
+            'detail': 'A password reset link has been sent to your email address.',
         })
 
 
@@ -164,6 +161,21 @@ class ConfirmPasswordResetAPIView(APIView):
                 logger.warning('password_reset: password changed but confirmation email failed for user_id=%s', user.pk)
         except Exception as e:
             logger.warning('password_reset: error sending confirmation email for user_id=%s: %s', user.pk, e)
+
+        # Create in-app system notification.
+        try:
+            from notifications.services import create_notification
+            from notifications.models import NotificationCategory, NotificationPriority
+            create_notification(
+                recipient=user,
+                title='Password Reset Successful',
+                message='Your account password was successfully reset. If you did not request this change, please contact system support immediately.',
+                category=NotificationCategory.SECURITY,
+                priority=NotificationPriority.HIGH,
+                action_route='/me/profile',
+            )
+        except Exception as e:
+            logger.warning('password_reset: error creating system notification for user_id=%s: %s', user.pk, e)
 
         logger.info('password_reset: user_id=%s successfully reset password', user.pk)
         return Response({'detail': 'Your password has been reset successfully.'})

@@ -7,7 +7,7 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../utils/unsaved_changes.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 const _kDefaultScales = [

@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../config/api_config.dart';
-import 'authenticated_client.dart';
+import '../services/authenticated_client.dart';
 
 final notificationsProvider =
     NotifierProvider<NotificationsNotifier, NotificationsState>(

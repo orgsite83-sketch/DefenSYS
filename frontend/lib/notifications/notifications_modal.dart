@@ -4,8 +4,8 @@ import 'package:go_router/go_router.dart';
 import '../navigation/admin_route_paths.dart';
 import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
-import '../services/notifications_provider.dart';
 import '../theme/defensys_tokens.dart';
+import 'notifications_provider.dart';
 
 enum NotificationFilter { all, unread }
 
@@ -52,7 +52,9 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
     final cat = (category ?? '').toUpperCase();
     final lowerTitle = title.toLowerCase();
 
-    if (cat == 'MINUTES' || lowerTitle.contains('minute') || lowerTitle.contains('signature')) {
+    if (cat == 'SECURITY' || lowerTitle.contains('password') || lowerTitle.contains('security')) {
+      return Icons.shield_rounded;
+    } else if (cat == 'MINUTES' || lowerTitle.contains('minute') || lowerTitle.contains('signature')) {
       return Icons.draw_rounded;
     } else if (cat == 'DEFENSE' || lowerTitle.contains('defense') || lowerTitle.contains('schedule')) {
       return Icons.calendar_month_rounded;
@@ -68,7 +70,9 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
     final cat = (category ?? '').toUpperCase();
     final lowerTitle = title.toLowerCase();
 
-    if (cat == 'MINUTES' || lowerTitle.contains('minute') || lowerTitle.contains('signature')) {
+    if (cat == 'SECURITY' || lowerTitle.contains('password') || lowerTitle.contains('security')) {
+      return const Color(0xFF0284C7); // Tech Sky Blue
+    } else if (cat == 'MINUTES' || lowerTitle.contains('minute') || lowerTitle.contains('signature')) {
       return DefensysTokens.maroon;
     } else if (cat == 'DEFENSE' || lowerTitle.contains('defense') || lowerTitle.contains('schedule')) {
       return const Color(0xFF4F46E5); // Indigo
@@ -110,20 +114,21 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
     final id = notification['id'] as int;
     final isRead = notification['is_read'] as bool? ?? false;
     final actionRoute = _resolveActionRoute(notification);
-    final navContext = rootNavigatorKey.currentContext ?? context;
-    final navigator = Navigator.of(context);
 
     if (!isRead) {
       ref.read(notificationsProvider.notifier).markAsRead(id);
     }
 
     if (actionRoute != null && actionRoute.isNotEmpty) {
-      navigator.pop();
+      if (mounted) Navigator.of(context).pop();
       Future.microtask(() {
-        try {
-          GoRouter.of(navContext).go(actionRoute);
-        } catch (e) {
-          debugPrint('Notification route navigation error: $e');
+        final targetContext = rootNavigatorKey.currentContext;
+        if (targetContext != null && targetContext.mounted) {
+          try {
+            GoRouter.of(targetContext).go(actionRoute);
+          } catch (e) {
+            debugPrint('Notification route navigation error: $e');
+          }
         }
       });
     } else {

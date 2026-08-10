@@ -6,7 +6,7 @@ import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/services/weekly_progress_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 
 Future<void> showApproveWPRDialog({
   required BuildContext context,

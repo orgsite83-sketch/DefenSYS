@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/utils/clipboard_copy.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 
 /// Modal dialog for requesting guest code payload generation.
 class GuestCodeGenerateDialog extends StatefulWidget {

@@ -7,7 +7,7 @@ import '../../../services/auth_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../utils/pdf_viewer.dart';
 import 'e_signature_upload_dialog.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../admin/widgets/defensys_admin_shell.dart';
 
 class MinutesFormScreen extends ConsumerStatefulWidget {

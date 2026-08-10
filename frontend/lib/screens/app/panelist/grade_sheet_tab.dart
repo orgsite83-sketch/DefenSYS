@@ -10,7 +10,7 @@ import '../../../services/authz_errors.dart';
 import '../../../services/session_expired.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/tactile_button.dart';
 
 class GradeSheetTab extends ConsumerStatefulWidget {

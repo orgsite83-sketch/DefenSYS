@@ -9,7 +9,7 @@ import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
-import 'package:defensys/widgets/feedback_toast.dart';
+import 'package:defensys/toasts/feedback_toast.dart';
 
 import 'components/schedule_run_container.dart';
 import 'components/scheduler_toolbar.dart';

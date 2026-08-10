@@ -13,7 +13,7 @@ import '../../../utils/student_bulk_import_csv.dart';
 import '../../../utils/user_bulk_import_draft.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/defensys_skeleton.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import '../../../widgets/confirm_dialog.dart';
 import 'widgets/defensys_admin_shell.dart';
 

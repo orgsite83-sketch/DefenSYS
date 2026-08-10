@@ -212,12 +212,34 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
         for field, value in validated_data.items():
             setattr(instance, field, value)
-        if password:
-            instance.set_password(password)
-        instance.save()
 
         request = self.context.get('request')
         changed_by = getattr(request, 'user', None) if request else None
+
+        if password:
+            instance.set_password(password)
+            try:
+                from notifications.email_service import send_admin_password_reset_email
+                send_admin_password_reset_email(instance)
+            except Exception:
+                pass
+            try:
+                from notifications.services import create_notification
+                from notifications.models import NotificationCategory, NotificationPriority
+                create_notification(
+                    recipient=instance,
+                    sender=changed_by,
+                    title='Password Reset by Administrator',
+                    message='An administrator has reset your account password. Please sign in with your updated credentials.',
+                    category=NotificationCategory.SECURITY,
+                    priority=NotificationPriority.URGENT,
+                    action_route='/me/profile',
+                )
+            except Exception:
+                pass
+
+        instance.save()
+
         record_role_changes(instance, before_flags, changed_by=changed_by)
         ensure_active_role_history(instance, changed_by=changed_by)
         return instance

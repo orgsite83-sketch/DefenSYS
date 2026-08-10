@@ -8,7 +8,7 @@ import '../../../services/academic_period_provider.dart';
 import '../../../services/student_teams_provider.dart';
 import '../../../services/reports_provider.dart';
 import '../../../theme/defensys_tokens.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AuditComplianceScreen extends ConsumerStatefulWidget {

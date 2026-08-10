@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import '../widgets/feedback_toast.dart';
+import '../toasts/feedback_toast.dart';
 
 import '../screens/web/admin/defense_stage_editor_screen.dart';
 import '../screens/web/admin/grade_center_event_teams_screen.dart';

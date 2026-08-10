@@ -305,23 +305,27 @@ SIMPLE_JWT = {
 }
 
 # Email Backend (Gmail SMTP)
-EMAIL_BACKEND = os.environ.get(
-    'EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend'
-)
+EMAIL_BACKEND = os.environ.get('EMAIL_BACKEND')
+if not EMAIL_BACKEND:
+    if DEBUG and not os.environ.get('EMAIL_HOST_USER'):
+        EMAIL_BACKEND = 'django.core.mail.backends.console.EmailBackend'
+    else:
+        EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
+
 EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
 EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = _env_bool('EMAIL_USE_TLS', default=True)
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
 DEFAULT_FROM_EMAIL = os.environ.get(
-    'DEFAULT_FROM_EMAIL', f'DefenSYS <{EMAIL_HOST_USER}>'
+    'DEFAULT_FROM_EMAIL', f'DefenSYS <{EMAIL_HOST_USER}>' if EMAIL_HOST_USER else 'DefenSYS <no-reply@defensys.local>'
 )
 
 # Password reset token lifetime (seconds). Default: 1 hour.
 PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', '3600'))
 
-# Base URL shown in emails (no trailing slash).
-FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:8000').rstrip('/')
+# Base URL shown in emails (no trailing slash). Local default points to Flutter Web dev server port.
+FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:57583').rstrip('/')
 
 
 # Logging Configuration

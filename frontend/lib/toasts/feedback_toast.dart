@@ -16,6 +16,64 @@ class FeedbackToastAction {
   final Color? textColor;
 }
 
+/// Centralized Toast Notification Service for DefenSYS
+class ToastService {
+  ToastService._();
+
+  static void dismissAll() {
+    dismissFeedbackToasts();
+  }
+
+  static void success(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+    FeedbackToastAction? action,
+  }) {
+    showSuccessToast(context, message, duration: duration, action: action);
+  }
+
+  static void error(
+    BuildContext context,
+    String message, {
+    Duration? duration,
+  }) {
+    showErrorToast(context, message, duration: duration);
+  }
+
+  static void warning(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 5),
+  }) {
+    showValidationToast(context, message, duration: duration);
+  }
+
+  static void info(
+    BuildContext context,
+    String message, {
+    Duration duration = const Duration(seconds: 3),
+  }) {
+    showInfoToast(context, message, duration: duration);
+  }
+
+  static void undo(
+    BuildContext context,
+    String message, {
+    required VoidCallback onUndo,
+    String undoLabel = 'Undo',
+    Duration duration = const Duration(seconds: 5),
+  }) {
+    showUndoToast(
+      context,
+      message,
+      onUndo: onUndo,
+      undoLabel: undoLabel,
+      duration: duration,
+    );
+  }
+}
+
 void dismissFeedbackToasts() {
   toastification.dismissAll(delayForAnimation: false);
 }
@@ -154,7 +212,7 @@ void showInfoToast(
   );
 }
 
-/// Destructive action with optional undo (Phase 7F pilot).
+/// Destructive action with optional undo.
 void showUndoToast(
   BuildContext context,
   String message, {

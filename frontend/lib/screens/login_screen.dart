@@ -10,7 +10,7 @@ import '../services/auth_provider.dart';
 import '../services/session_storage.dart';
 import '../theme/defensys_tokens.dart';
 import '../theme/app_theme.dart';
-import '../widgets/feedback_toast.dart';
+import '../toasts/feedback_toast.dart';
 import '../widgets/defensys_logo_mark.dart';
 import '../config/api_config.dart';
 import '../services/api_http.dart';
@@ -93,8 +93,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     if (sent == true && mounted) {
       showSuccessToast(
         context,
-        'If an account exists with that ID or email, '
-        'a password reset link has been sent.',
+        'A password reset link has been sent to your email address.',
       );
     }
   }
@@ -2051,8 +2050,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             const Text(
-              'Enter your Student/Employee ID or email address. '
-              'If an account exists, a reset link will be sent.',
+              'Enter your Student/Employee ID or email address to receive a password reset link.',
               style: TextStyle(
                 fontFamily: 'Poppins',
                 fontSize: 13,

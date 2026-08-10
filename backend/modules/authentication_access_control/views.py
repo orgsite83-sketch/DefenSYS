@@ -166,6 +166,21 @@ class ChangePasswordView(APIView):
         except Exception as e:
             logger.warning('change_password: error sending confirmation email for user_id=%s: %s', user.pk, e)
 
+        # Create in-app system notification.
+        try:
+            from notifications.services import create_notification
+            from notifications.models import NotificationCategory, NotificationPriority
+            create_notification(
+                recipient=user,
+                title='Password Changed Successfully',
+                message='Your account password was updated successfully.',
+                category=NotificationCategory.SECURITY,
+                priority=NotificationPriority.HIGH,
+                action_route='/me/profile',
+            )
+        except Exception as e:
+            logger.warning('change_password: error creating system notification for user_id=%s: %s', user.pk, e)
+
         return Response({'detail': 'Password changed successfully.'})
 
 

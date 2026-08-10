@@ -8,7 +8,7 @@ import '../../../theme/defensys_tokens.dart';
 import 'package:intl/intl.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../utils/pdf_viewer.dart';
-import '../../../widgets/feedback_toast.dart';
+import '../../../toasts/feedback_toast.dart';
 
 class WeeklyProgressReportsScreen extends ConsumerStatefulWidget {
   final String? embeddedTeamId;
