@@ -2341,7 +2341,34 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                           ],
                         ),
                       ),
-                          const SizedBox(height: 12),
+                      const SizedBox(height: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF0F9FF),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFBAE6FD)),
+                        ),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, size: 16, color: Color(0xFF0284C7)),
+                            SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is officially complete.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF0369A1),
+                                  fontWeight: FontWeight.w500,
+                                  height: 1.3,
+                                  fontFamily: DefensysTokens.fontFamily,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       ListView.builder(
                         shrinkWrap: true,
                         physics: const NeverScrollableScrollPhysics(),
@@ -2511,6 +2538,16 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                                                 });
                                                 _markDirty();
                                               },
+                                            ),
+                                            const SizedBox(height: 4),
+                                            const Text(
+                                              'Note: If left blank, the project title will be used as default.',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                color: DefensysTokens.textSecondary,
+                                                fontStyle: FontStyle.italic,
+                                                fontFamily: DefensysTokens.fontFamily,
+                                              ),
                                             ),
                                             const SizedBox(height: 8),
                                             Wrap(

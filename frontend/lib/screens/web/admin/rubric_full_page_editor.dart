@@ -708,10 +708,18 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     if (_criteria.isEmpty) {
       return 'Add at least one criterion.';
     }
+    final seenNames = <String>{};
     for (final draft in _criteria) {
-      if (draft.name.text.trim().isEmpty) {
+      final name = draft.name.text.trim();
+      if (name.isEmpty) {
         return 'Enter a name for each criterion.';
       }
+      final lowerName = name.toLowerCase();
+      if (seenNames.contains(lowerName)) {
+        return 'Criterion names must be unique.';
+      }
+      seenNames.add(lowerName);
+
       final maxScore = num.tryParse(draft.maxScore.text.trim());
       if (maxScore == null || maxScore <= 0) {
         return 'Enter a valid max score for each criterion.';
@@ -721,6 +729,15 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
         return 'Enter a valid weight for each criterion.';
       }
     }
+
+    if (_targetType == 'both') {
+      final hasTeam = _criteria.any((c) => c.targetType == 'team');
+      final hasIndiv = _criteria.any((c) => c.targetType == 'individual');
+      if (!hasTeam || !hasIndiv) {
+        return "Rubrics set to 'Both (Team & Individual)' must contain at least one Team criterion and at least one Individual criterion. If all criteria are Team-based, please set the Scoring Target to 'Team'.";
+      }
+    }
+
     return null;
   }
 
@@ -1255,6 +1272,64 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                               : null,
                         ),
                       ),
+                      if (_targetType == 'both') ...[
+                        const SizedBox(height: 8),
+                        Builder(
+                          builder: (context) {
+                            final hasTeam =
+                                _criteria.any((c) => c.targetType == 'team');
+                            final hasIndiv = _criteria
+                                .any((c) => c.targetType == 'individual');
+                            final hasBothTargets = hasTeam && hasIndiv;
+                            return Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 12,
+                                vertical: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                color: hasBothTargets
+                                    ? const Color(0xFFEFF6FF)
+                                    : const Color(0xFFFFFBEB),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(
+                                  color: hasBothTargets
+                                      ? const Color(0xFFBFDBFE)
+                                      : const Color(0xFFFDE68A),
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    hasBothTargets
+                                        ? Icons.info_outline_rounded
+                                        : Icons.warning_amber_rounded,
+                                    size: 16,
+                                    color: hasBothTargets
+                                        ? const Color(0xFF1D4ED8)
+                                        : const Color(0xFFB45309),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      hasBothTargets
+                                          ? "Rubrics set to 'Both' contain both Team and Individual criteria."
+                                          : "Rubrics set to 'Both (Team & Individual)' must contain at least 1 Team criterion and 1 Individual criterion. Update criteria target types or set Scoring Target to 'Team'.",
+                                      style: TextStyle(
+                                        fontFamily: DefensysUi.fontFamily,
+                                        fontSize: _helperSize,
+                                        fontWeight: FontWeight.w600,
+                                        color: hasBothTargets
+                                            ? const Color(0xFF1E40AF)
+                                            : const Color(0xFF92400E),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                        ),
+                      ],
                       if (_evaluationType == 'peer') ...[
                         const SizedBox(height: 6),
                         Text(
@@ -1319,10 +1394,24 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                         Align(
                           alignment: Alignment.centerLeft,
                           child: OutlinedButton(
-                            onPressed: () {
+                             onPressed: () {
+                              String defaultTarget = 'team';
+                              if (_targetType == 'both') {
+                                final hasTeam = _criteria
+                                    .any((c) => c.targetType == 'team');
+                                final hasIndiv = _criteria
+                                    .any((c) => c.targetType == 'individual');
+                                if (hasTeam && !hasIndiv) {
+                                  defaultTarget = 'individual';
+                                }
+                              }
                               setState(() {
                                 _criteria.add(
-                                  RubricCriterionDraft(scales: _scales),
+                                  RubricCriterionDraft(
+                                    scales: _scales,
+                                    name: '',
+                                    targetType: defaultTarget,
+                                  ),
                                 );
                               });
                               _attachCriteriaListeners();

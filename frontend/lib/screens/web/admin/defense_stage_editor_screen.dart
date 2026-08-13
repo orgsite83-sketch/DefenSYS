@@ -404,6 +404,14 @@ class _DefenseStageEditorScreenState
   @override
   Widget build(BuildContext context) {
     final semesters = _semesterOptions();
+    final activePeriod = ref.read(academicPeriodProvider).activeSemester;
+    final activeSemObj = semesters.firstWhere(
+      (s) => _asInt(s['id']) == _semesterId,
+      orElse: () => activePeriod ?? (semesters.isNotEmpty ? semesters.first : {}),
+    );
+    final activeSemesterName = activeSemObj['display_name']?.toString() ??
+        activeSemObj['label']?.toString() ??
+        (_semesterId != null ? 'Semester $_semesterId' : 'No Active Semester');
     final total = _weightTotal;
     final stageTitle = _stage?['label']?.toString() ?? 'Edit Defense Stage';
 
@@ -527,29 +535,42 @@ class _DefenseStageEditorScreenState
                           ),
                         ),
                         const SizedBox(height: 14),
-                        if (semesters.isNotEmpty)
-                          DropdownButtonFormField<int>(
-                            initialValue: _semesterId,
-                            decoration: const InputDecoration(labelText: 'Semester'),
-                            items: semesters
-                                .map(
-                                  (sem) => DropdownMenuItem<int>(
-                                    value: _asInt(sem['id']),
-                                    child: Text(
-                                      sem['display_name']?.toString() ??
-                                          sem['label']?.toString() ??
-                                          'Semester ${sem['id']}',
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (_saving || _isLocked)
-                                ? null
-                                : (value) async {
-                                    setState(() => _semesterId = value);
-                                    await _load();
-                                  },
+                        InputDecorator(
+                          decoration: const InputDecoration(
+                            labelText: 'Semester',
+                            isDense: true,
+                            border: OutlineInputBorder(),
                           ),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  activeSemesterName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.w600,
+                                    fontSize: 14,
+                                    color: AppColors.textPrimary,
+                                  ),
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: AppColors.maroon.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Active',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
                         const SizedBox(height: 14),
                         Row(
                           children: [
@@ -722,7 +743,7 @@ class _DefenseStageEditorScreenState
                     child: Column(
                       children: [
                         _notice(
-                          'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is approved.',
+                          'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is officially complete.',
                         ),
                         const SizedBox(height: 12),
                         if (_deliverables.isEmpty)
@@ -830,6 +851,48 @@ class _DefenseStageEditorScreenState
     );
   }
 
+  InputDecoration _inputDecoration({
+    required String labelText,
+    String? hintText,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      labelStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
+        color: AppColors.textSecondary,
+      ),
+      hintStyle: const TextStyle(
+        fontSize: 13,
+        color: Colors.grey,
+      ),
+      filled: true,
+      fillColor: const Color(0xFFF9FAFB),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+      ),
+    );
+  }
+
   Widget _deliverableRow(Map<String, dynamic> item, int index) {
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
@@ -839,29 +902,38 @@ class _DefenseStageEditorScreenState
     final isPost = item['deliverable_type'] == 'post';
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE5E7EB)),
-        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
       ),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                flex: 3,
-                child: TextField(
+                flex: 4,
+                child: TextFormField(
                   controller: labelController,
                   readOnly: _isLocked,
-                  decoration: const InputDecoration(
-                    labelText: 'Label',
-                    isDense: true,
-                    border: OutlineInputBorder(),
+                  decoration: _inputDecoration(
+                    labelText: 'Name / Label',
+                    hintText: 'e.g. Concept Paper PDF',
                   ),
+                  style: const TextStyle(fontSize: 14),
                   onChanged: (v) {
-                    item['label'] = v;
+                    item['label'] = v.trim();
                     _markDirty();
                     if (isPost) {
                       setState(() {});
@@ -874,42 +946,63 @@ class _DefenseStageEditorScreenState
                 flex: 2,
                 child: DropdownButtonFormField<String>(
                   initialValue: item['deliverable_type']?.toString() ?? 'pre',
-                  decoration: const InputDecoration(
-                    labelText: 'Type',
-                    isDense: true,
-                    border: OutlineInputBorder(),
-                  ),
+                  decoration: _inputDecoration(labelText: 'Type'),
+                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
                   items: const [
-                    DropdownMenuItem(value: 'pre', child: Text('Pre-Defense')),
-                    DropdownMenuItem(value: 'post', child: Text('Post-Defense')),
+                    DropdownMenuItem(value: 'pre', child: Text('Pre-Defense', style: TextStyle(fontSize: 13))),
+                    DropdownMenuItem(value: 'post', child: Text('Post-Defense', style: TextStyle(fontSize: 13))),
                   ],
                   onChanged: _isLocked
                       ? null
                       : (v) {
-                          setState(() {
-                            item['deliverable_type'] = v;
-                            if (v == 'post') {
-                              item['required'] = true;
-                            } else if (v == 'pre') {
-                              item['required'] = true;
-                            }
-                          });
-                          _markDirty();
+                          if (v != null) {
+                            setState(() {
+                              item['deliverable_type'] = v;
+                              if (v == 'post' || v == 'pre') {
+                                item['required'] = true;
+                              }
+                            });
+                            _markDirty();
+                          }
                         },
                 ),
               ),
-              Checkbox(
-                value: item['required'] == true,
-                onChanged: _isLocked
-                    ? null
-                    : (v) {
-                        setState(() => item['required'] = v ?? false);
-                        _markDirty();
-                      },
+              const SizedBox(width: 12),
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: item['required'] == true,
+                      activeColor: AppColors.maroon,
+                      onChanged: _isLocked
+                          ? null
+                          : (v) {
+                              setState(() => item['required'] = v == true);
+                              _markDirty();
+                            },
+                    ),
+                    const Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                  ],
+                ),
               ),
-              const Text('Required', style: TextStyle(fontSize: 12)),
+              const SizedBox(width: 12),
               IconButton(
-                icon: const Icon(Icons.delete_outline, color: AppColors.danger),
                 onPressed: _isLocked
                     ? null
                     : () {
@@ -920,6 +1013,12 @@ class _DefenseStageEditorScreenState
                         });
                         _markDirty();
                       },
+                icon: Icon(Icons.delete_outline_rounded, color: _isLocked ? Colors.grey : AppColors.danger),
+                style: IconButton.styleFrom(
+                  hoverColor: _isLocked ? Colors.grey.shade100 : AppColors.danger.withValues(alpha: 0.08),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.all(12),
+                ),
               ),
             ],
           ),
@@ -929,11 +1028,12 @@ class _DefenseStageEditorScreenState
               children: [
                 Checkbox(
                   value: item['is_restricted'] == true,
+                  activeColor: AppColors.maroon,
                   onChanged: _isLocked
                       ? null
                       : (v) {
                           setState(() {
-                            item['is_restricted'] = v ?? false;
+                            item['is_restricted'] = v == true;
                           });
                           _markDirty();
                         },
@@ -941,60 +1041,110 @@ class _DefenseStageEditorScreenState
                 const Text(
                   'Restricted (Private in Archive)',
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.maroon,
+                    color: AppColors.textPrimary,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
-            TextField(
-              controller: templateController,
-              readOnly: _isLocked,
-              decoration: const InputDecoration(
-                labelText: 'Archive File Template',
-                isDense: true,
-                border: OutlineInputBorder(),
-                hintText: '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
-              ),
-              onChanged: (v) {
-                setState(() {
-                  item['archive_file_template'] = v;
-                });
-                _markDirty();
-              },
-            ),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              runSpacing: 4,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                const Text(
-                  'Click to insert: ',
-                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                ),
-                _variableChip(item, templateController, '{year}'),
-                _variableChip(item, templateController, '{course}'),
-                _variableChip(item, templateController, '{project}'),
-                _variableChip(item, templateController, '{stage}'),
-                _variableChip(item, templateController, '{deliverable}'),
-                _variableChip(item, templateController, '{semester}'),
-              ],
-            ),
-            const SizedBox(height: 4),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.insert_drive_file_outlined, size: 14, color: AppColors.textSecondary),
-                const SizedBox(width: 4),
                 Expanded(
-                  child: Text(
-                    'Preview: ${_resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '')}',
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.maroon,
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: templateController,
+                        readOnly: _isLocked,
+                        decoration: _inputDecoration(
+                          labelText: 'Archive Naming Template',
+                          hintText: 'e.g. {year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                        ),
+                        style: const TextStyle(fontSize: 13),
+                        onChanged: (v) {
+                          setState(() {
+                            item['archive_file_template'] = v.trim();
+                          });
+                          _markDirty();
+                        },
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Note: If left blank, the project title will be used as default.',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
+                            .map((varName) => ActionChip(
+                                  label: Text(
+                                    varName,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                  labelStyle: TextStyle(color: _isLocked ? Colors.grey : AppColors.maroon),
+                                  backgroundColor: AppColors.maroon.withValues(alpha: 0.05),
+                                  side: BorderSide(color: AppColors.maroon.withValues(alpha: 0.15)),
+                                  padding: EdgeInsets.zero,
+                                  onPressed: _isLocked
+                                      ? null
+                                      : () => _insertVariable(item, templateController, varName),
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: AppColors.maroon.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.maroon.withValues(alpha: 0.1)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(Icons.remove_red_eye_outlined, size: 14, color: AppColors.maroon),
+                            const SizedBox(width: 6),
+                            const Text(
+                              'Filename Preview',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.maroon,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        SelectableText(
+                          _resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? ''),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.maroon,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1048,29 +1198,6 @@ class _DefenseStageEditorScreenState
     return resolved;
   }
 
-  Widget _variableChip(Map<String, dynamic> item, TextEditingController controller, String variable) {
-    return InkWell(
-      onTap: () => _insertVariable(item, controller, variable),
-      borderRadius: BorderRadius.circular(4),
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-        decoration: BoxDecoration(
-          color: const Color(0xFFF3F4F6),
-          border: Border.all(color: const Color(0xFFD1D5DB)),
-          borderRadius: BorderRadius.circular(4),
-        ),
-        child: Text(
-          variable,
-          style: const TextStyle(
-            fontSize: 11,
-            fontFamily: 'monospace',
-            fontWeight: FontWeight.bold,
-            color: AppColors.textPrimary,
-          ),
-        ),
-      ),
-    );
-  }
 
   void _insertVariable(Map<String, dynamic> item, TextEditingController controller, String variable) {
     final text = controller.text;

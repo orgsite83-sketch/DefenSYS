@@ -4694,7 +4694,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final confirmed = await showConfirmDialog(
       context,
       title: 'Reset Password?',
-      message: 'Are you sure you want to reset $name\'s password to their Student/Employee ID ($username)?',
+      message: 'Are you sure you want to reset $name\'s password to default? Student/Employee ID ($username)',
       confirmLabel: 'Reset Password',
       cancelLabel: 'Cancel',
       icon: Icons.lock_reset_outlined,

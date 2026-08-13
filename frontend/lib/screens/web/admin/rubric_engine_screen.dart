@@ -267,7 +267,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                 Text(
                   isPitLeadOnly || scope == 'pit'
                       ? 'PIT rubrics define criteria and scoring scales. Evaluation grade splits are configured per event in Defense Scheduler.'
-                      : 'Capstone weights (Panel / Adviser / Peer) are defined per Defense Stage in Defense Stages Setup. PIT grade splits are specified on the Defense Scheduler.',
+                      : 'Capstone weights (Panel / Adviser / Peer) are defined per Defense Stage in Defense Stages Setup. PIT grade splits are defined per event in PIT Events Setup.',
                   style: const TextStyle(
                     color: Color(0xFF64748B),
                     fontSize: 12,

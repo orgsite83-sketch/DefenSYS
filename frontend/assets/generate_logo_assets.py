@@ -68,7 +68,7 @@ def render_concept_2(size, color_mode="white", padding_pct=0.0):
     final_img = img.resize((size, size), resample=Image.Resampling.LANCZOS)
     return final_img
 
-def render_app_icon(size, bg_color=(122, 17, 10, 255), padding_pct=0.28):
+def render_app_icon(size, bg_color=(122, 17, 10, 255), padding_pct=0.15):
     """
     Renders Concept 02 White mark centered on an Academic Maroon background for PWA/App launch icons.
     """
@@ -84,7 +84,7 @@ def render_app_icon(size, bg_color=(122, 17, 10, 255), padding_pct=0.28):
     final_img = img.resize((size, size), resample=Image.Resampling.LANCZOS)
     return final_img
 
-def render_app_icon_foreground(size, padding_pct=0.28):
+def render_app_icon_foreground(size, padding_pct=0.15):
     """
     Renders Concept 02 White mark centered on a transparent background for Android adaptive launcher icons.
     """
@@ -122,9 +122,9 @@ def main():
     master_brand.save(os.path.join(assets_dir, "logo-web-mark.png"))
     master_brand.save(os.path.join(assets_dir, "logo-web-mark-smooth.png"))
 
-    # App Launcher Icons (With 28% padding so emblem appears appropriately sized inside app launcher tiles)
-    render_app_icon(1024, padding_pct=0.28).save(os.path.join(assets_dir, "app_launcher_icon.png"))
-    render_app_icon_foreground(1024, padding_pct=0.28).save(os.path.join(assets_dir, "app_launcher_foreground.png"))
+    # App Launcher Icons (With 15% padding so emblem appears medium sized inside app launcher tiles)
+    render_app_icon(1024, padding_pct=0.15).save(os.path.join(assets_dir, "app_launcher_icon.png"))
+    render_app_icon_foreground(1024, padding_pct=0.15).save(os.path.join(assets_dir, "app_launcher_foreground.png"))
 
     # 2. Web Favicon (Transparent Emblem, No Square Box Card)
     # Generate clean transparent emblem favicons with subtle padding
@@ -146,10 +146,10 @@ def main():
     )
 
     # 3. PWA Web Icons (Maskable & Standard App Icons)
-    render_app_icon(192, padding_pct=0.2).save(os.path.join(web_icons_dir, "Icon-192.png"))
-    render_app_icon(512, padding_pct=0.2).save(os.path.join(web_icons_dir, "Icon-512.png"))
-    render_app_icon(192, padding_pct=0.25).save(os.path.join(web_icons_dir, "Icon-maskable-192.png"))
-    render_app_icon(512, padding_pct=0.25).save(os.path.join(web_icons_dir, "Icon-maskable-512.png"))
+    render_app_icon(192, padding_pct=0.15).save(os.path.join(web_icons_dir, "Icon-192.png"))
+    render_app_icon(512, padding_pct=0.15).save(os.path.join(web_icons_dir, "Icon-512.png"))
+    render_app_icon(192, padding_pct=0.18).save(os.path.join(web_icons_dir, "Icon-maskable-192.png"))
+    render_app_icon(512, padding_pct=0.18).save(os.path.join(web_icons_dir, "Icon-maskable-512.png"))
 
     print("Successfully generated ultra-sharp 1024x1024 PNG assets, app launcher icons, transparent favicon.png/ico, and PWA icons!")
 
