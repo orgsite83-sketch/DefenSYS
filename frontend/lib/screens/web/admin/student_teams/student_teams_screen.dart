@@ -9,6 +9,7 @@ import 'package:defensys/l10n/l10n_ext.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
+import 'package:defensys/services/unsaved_changes_provider.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
@@ -34,12 +35,14 @@ class StudentTeamsScreen extends ConsumerStatefulWidget {
     this.onOpenStudentRecords,
     this.initialBulkImport = false,
     this.pitYearLevel,
+    this.pitSection,
   });
 
   final TeamListMode mode;
   final VoidCallback? onOpenStudentRecords;
   final bool initialBulkImport;
   final String? pitYearLevel;
+  final String? pitSection;
 
   @override
   ConsumerState<StudentTeamsScreen> createState() => _StudentTeamsScreenState();
@@ -114,9 +117,16 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     }
   }
 
+  StreamSubscription? _dropSubscription;
+
   @override
   void initState() {
     super.initState();
+    _dropSubscription = setupDropzoneListener((files) {
+      if (mounted && _isBulkImportVisible) {
+        _handleFilesDropped(files);
+      }
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       await _loadBulkDraft();
       _fetchTeamsForCurrentRole();
@@ -124,6 +134,19 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         _openBulkImport();
       }
     });
+  }
+
+  @override
+  void dispose() {
+    _dropSubscription?.cancel();
+    _draftSaveTimer?.cancel();
+    _rowPreviewTimer?.cancel();
+    _searchController.dispose();
+    try {
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    } catch (_) {}
+    super.dispose();
   }
 
   void _openTeamDetailRoute(int teamId) {
@@ -139,15 +162,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
           level: initialLevel,
           scope: (_isPitLeadManager || _isPitInstructor) ? (scope ?? _teamListScope) : null,
           yearLevel: widget.pitYearLevel,
+          section: widget.pitSection,
         );
-  }
-
-  @override
-  void dispose() {
-    _draftSaveTimer?.cancel();
-    _rowPreviewTimer?.cancel();
-    _searchController.dispose();
-    super.dispose();
   }
 
   bool _canCreateCapstoneTeams(StudentTeamsState state) =>
@@ -271,6 +287,15 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       setState(() => _savedDraft = draft);
       _bulkImportPersistedSnapshot = _bulkImportSnapshot();
     }
+  }
+
+  Future<bool> _handleSaveDraft({bool showToast = true}) async {
+    _draftSaveTimer?.cancel();
+    await _persistBulkDraft();
+    if (mounted && showToast) {
+      showSuccessToast(context, 'Team import draft saved.');
+    }
+    return true;
   }
 
   void _scheduleDraftSave() {
@@ -397,68 +422,87 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
   Future<void> _pickBulkCsvFile() async {
     try {
-      final csv = await pickCsvTextFile();
-      if (!mounted || csv == null) return;
+      final files = await pickMultipleTabularDataFiles();
+      if (!mounted || files.isEmpty) return;
+      await _handleFilesDropped(files);
+    } catch (e) {
+      _snack('Could not read file(s): $e');
+    }
+  }
 
-      final lines = csv
-          .split(RegExp(r'\r?\n'))
-          .map((line) => line.trim())
-          .where((line) => line.isNotEmpty)
+  Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
+    if (!mounted || files.isEmpty) return;
+    try {
+      final texts = files
+          .map((f) => f.text ?? utf8.decode(f.bytes, allowMalformed: true))
+          .where((t) => t.trim().isNotEmpty)
           .toList();
-      List<String> headers = [];
-      if (lines.isNotEmpty) {
-        headers = lines.first
-            .split(',')
-            .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
-            .toList();
+      if (texts.isEmpty) return;
+      _processCsvContent(texts.join('\n\n'));
+    } catch (e) {
+      _snack('Could not read file(s): $e');
+    }
+  }
 
-        String? warning;
-        final isClientTemplate = (headers.contains('team name') || headers.contains('team_name')) &&
-            (headers.contains('team members') || headers.contains('team_members') || headers.contains('members'));
-        final recognizedHeaders = {
-          'team_name', 'project_title', 'level', 'year_level', 'member_ids',
-          'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
-          'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
-        };
-        final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
+  void _processCsvContent(String csv) {
+    if (!mounted) return;
 
-        if (unrecognized.isNotEmpty) {
-          warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
-        } else if (!_isCapstoneAdmin) {
-          if (!isClientTemplate) {
-            if (headers.contains('adviser_id') || headers.contains('adviser_name') || headers.contains('year_level')) {
-              warning = 'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
-            } else if (!headers.contains('member_ids') || !headers.contains('leader_id')) {
-              warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
-            }
-          }
-        } else {
-          if (!isClientTemplate) {
-            if ((!headers.contains('adviser_id') && !headers.contains('adviser_name')) || !headers.contains('year_level')) {
-              warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
-            }
+    final lines = csv
+        .split(RegExp(r'\r?\n'))
+        .map((line) => line.trim())
+        .where((line) => line.isNotEmpty)
+        .toList();
+    List<String> headers = [];
+    if (lines.isNotEmpty) {
+      headers = lines.first
+          .split(',')
+          .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
+          .toList();
+
+      String? warning;
+      final isClientTemplate = (headers.contains('team name') || headers.contains('team_name')) &&
+          (headers.contains('team members') || headers.contains('team_members') || headers.contains('members'));
+      final recognizedHeaders = {
+        'team_name', 'project_title', 'level', 'year_level', 'member_ids',
+        'leader_id', 'adviser_id', 'adviser_name', 'team name', 'capstone project',
+        'pit project', 'project', 'project title', 'adviser', 'team members', 'members',
+      };
+      final unrecognized = headers.where((h) => !recognizedHeaders.contains(h)).toList();
+
+      if (unrecognized.isNotEmpty) {
+        warning = 'Wrong template? Unrecognized column(s) detected: ${unrecognized.join(", ")}. Please use the correct CSV template.';
+      } else if (!_isCapstoneAdmin) {
+        if (!isClientTemplate) {
+          if (headers.contains('adviser_id') || headers.contains('adviser_name') || headers.contains('year_level')) {
+            warning = 'Wrong template? PIT import templates should not contain "adviser_name" or "year_level" columns. These will be ignored or cleared.';
+          } else if (!headers.contains('member_ids') || !headers.contains('leader_id')) {
+            warning = 'Wrong template? PIT import templates must contain "team_name", "project_title", "member_ids", and "leader_id" columns (or "Team Name" and "Team Members" for multi-row format).';
           }
         }
-        setState(() {
-          _templateWarning = warning;
-          _csvColumns = headers;
-        });
+      } else {
+        if (!isClientTemplate) {
+          if ((!headers.contains('adviser_id') && !headers.contains('adviser_name')) || !headers.contains('year_level')) {
+            warning = 'Wrong template? Capstone import templates should contain "year_level" and "adviser_name" columns (or "Team Name" and "Team Members" for client format).';
+          }
+        }
       }
-
-      final result = parseTeamBulkCsvWithContext(
-        csv,
-        isCapstoneAdmin: _isCapstoneAdmin,
-        pitLeadYear: _pitLeadYear,
-      );
-      if (result.rows.isEmpty) {
-        _snack('Selected file is not a valid DefenSYS team CSV template.');
-        return;
-      }
-
-      _applyParsedRows(result);
-    } catch (e) {
-      _snack('Could not read CSV file: $e');
+      setState(() {
+        _templateWarning = warning;
+        _csvColumns = headers;
+      });
     }
+
+    final result = parseTeamBulkCsvWithContext(
+      csv,
+      isCapstoneAdmin: _isCapstoneAdmin,
+      pitLeadYear: _pitLeadYear,
+    );
+    if (result.rows.isEmpty) {
+      _snack('Selected file is not a valid DefenSYS team CSV template.');
+      return;
+    }
+
+    _applyParsedRows(result);
   }
 
   Future<void> _refreshBulkPreview() async {
@@ -747,6 +791,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     final state = ref.watch(studentTeamsProvider);
 
     if (_isBulkImportVisible) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(
+          _parsedBulkRows.isNotEmpty ? () => _handleSaveDraft(showToast: false) : null,
+        );
+        ref.read(unsavedChangesProvider.notifier).setDirty(_isBulkImportDirty);
+      });
+
       return StudentTeamsBulkImportView(
         state: state,
         isCapstoneAdmin: _isCapstoneAdmin,
@@ -766,6 +818,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         onPickBulkCsvFile: _pickBulkCsvFile,
         onImportBulkTeams: _importBulkTeams,
         onExportBulkCsv: _exportBulkCsv,
+        onSaveDraft: _handleSaveDraft,
         onScheduleRowPreview: _scheduleRowPreview,
         onDeleteBulkRow: _deleteBulkRow,
         onAddBulkRow: _addBulkRow,
@@ -778,6 +831,12 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         onShowIssuesOnlyChanged: (value) => setState(() => _showIssuesOnly = value),
       );
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    });
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,

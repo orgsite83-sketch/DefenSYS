@@ -4,6 +4,7 @@ import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../widgets/confirm_dialog.dart';
+import '../../../widgets/status_badge.dart';
 import '../../../toasts/feedback_toast.dart';
 
 class PeerEvalTab extends ConsumerStatefulWidget {
@@ -200,27 +201,49 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       );
     }
 
+    final roleLead = widget.isCapstone ? 'Capstone Coordinator / Adviser' : 'PIT Lead';
+    final scopeName = widget.isCapstone ? 'defense stage' : 'event';
+
     if (!widget.peerEvalAllowed && widget.myPeerSubmissions.isEmpty) {
       return refreshWrapper(
         Padding(
-          padding: const EdgeInsets.symmetric(vertical: 32),
-          child: Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.lock_clock, size: 56, color: Colors.grey.shade400),
-                const SizedBox(height: 16),
-                const Text(
-                  'Peer evaluation is not open for this event.',
-                  style: TextStyle(color: DefensysTokens.textPrimary, fontSize: 15, fontWeight: FontWeight.bold),
-                ),
-                const SizedBox(height: 8),
-                const Text(
-                  'Peer evaluation will open once enabled by your PIT Lead.',
-                  style: TextStyle(color: Colors.grey, fontSize: 13),
-                  textAlign: TextAlign.center,
-                ),
-              ],
+          padding: const EdgeInsets.symmetric(vertical: 16),
+          child: Card(
+            elevation: 0,
+            color: Colors.grey.shade100,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(10),
+              side: BorderSide(color: Colors.grey.shade300),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(20),
+              child: Row(
+                children: [
+                  Icon(Icons.lock_outline, color: Colors.grey.shade600, size: 24),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Peer evaluation is locked for this $scopeName.',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13.5,
+                            color: DefensysTokens.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          'It will open once enabled by your $roleLead.',
+                          style: TextStyle(color: Colors.grey.shade600, fontSize: 12.5),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),
@@ -239,15 +262,21 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       );
     }
 
+    final total = widget.teammates.length;
+    final done = widget.teammates.where((t) => _posted[_teammateId(t)] == true).length;
+    final hasPending = widget.peerEvalAllowed && done < total;
+
     final column = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        _sectionHeader('Peer Evaluation'),
+        _buildPeerProgressBlock(done, total),
+        const SizedBox(height: 16),
+        _sectionHeader('Peer Evaluation', showRedDot: hasPending),
         const SizedBox(height: 4),
         const Text('Rate each teammate per criterion. Once submitted, scores are locked.',
             style: TextStyle(color: Colors.grey, fontSize: 13)),
         const SizedBox(height: 12),
-        if (widget.myPeerSubmissions.isNotEmpty) ...[
+        if (done == total && total > 0) ...[
           Container(
             padding: const EdgeInsets.all(12),
             margin: const EdgeInsets.only(bottom: 12),
@@ -256,13 +285,13 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
               borderRadius: BorderRadius.circular(10),
               border: Border.all(color: Colors.green.shade300),
             ),
-            child: Row(
+            child: const Row(
               children: [
-                const Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
-                const SizedBox(width: 8),
-                const Expanded(
+                Icon(Icons.check_circle_rounded, color: Colors.green, size: 18),
+                SizedBox(width: 8),
+                Expanded(
                   child: Text(
-                    'Peer evaluation submitted for this event.',
+                    'All peer evaluations submitted and locked for this event.',
                     style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold, color: Colors.green),
                   ),
                 ),
@@ -313,6 +342,57 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     );
   }
 
+  Widget _buildPeerProgressBlock(int done, int total) {
+    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
+    final isComplete = done == total && total > 0;
+    final color = isComplete ? DefensysTokens.success : DefensysTokens.gold;
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFF1F5F9)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text(
+                'Required Peer Evaluation Check',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimary,
+                ),
+              ),
+              Text(
+                total > 0 ? '$done / $total Complete' : 'No Teammates',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct,
+              minHeight: 6,
+              backgroundColor: const Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _peerCard(String teammateId, String name) {
     final scores = _scores[teammateId] ?? {};
     final isPosted = _posted[teammateId] ?? false;
@@ -354,11 +434,9 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                   ],
                 ),
                 if (isPosted)
-                  const Row(children: [
-                    Icon(Icons.lock, size: 14, color: Colors.red),
-                    SizedBox(width: 4),
-                    Text('Locked', style: TextStyle(color: Colors.red, fontSize: 12)),
-                  ]),
+                  const StatusBadge.success(label: 'Submitted & Locked')
+                else
+                  const StatusBadge.warning(label: 'Pending Evaluation'),
               ],
             ),
             if (isPosted)
@@ -504,13 +582,37 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     );
   }
 
-  Widget _sectionHeader(String title) {
+  Widget _sectionHeader(String title, {bool showRedDot = false}) {
     return Row(
       children: [
-        Container(width: 4, height: 20,
-            decoration: BoxDecoration(color: DefensysTokens.maroon, borderRadius: BorderRadius.circular(2))),
+        Container(
+          width: 4,
+          height: 20,
+          decoration: BoxDecoration(
+            color: DefensysTokens.maroon,
+            borderRadius: BorderRadius.circular(2),
+          ),
+        ),
         const SizedBox(width: 8),
-        Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: DefensysTokens.maroon)),
+        Text(
+          title,
+          style: const TextStyle(
+            fontSize: 18,
+            fontWeight: FontWeight.bold,
+            color: DefensysTokens.maroon,
+          ),
+        ),
+        if (showRedDot) ...[
+          const SizedBox(width: 6),
+          Container(
+            width: 7,
+            height: 7,
+            decoration: const BoxDecoration(
+              color: Colors.redAccent,
+              shape: BoxShape.circle,
+            ),
+          ),
+        ],
       ],
     );
   }

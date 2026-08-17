@@ -412,7 +412,7 @@ class BulkImportUsersMixin:
                 return Response({'detail': 'Your PIT Lead account has no assigned year level.'}, status=status.HTTP_400_BAD_REQUEST)
         else:
             context_semester = self._resolve_context_semester(student_context)
-            context_year_level = (student_context.get('year_level') or '').strip()
+            context_year_level = _normalize_year_level(student_context.get('year_level') or '')
         context_section = ' '.join((student_context.get('section') or '').strip().split())
         faculty_name = _clean_spaces(
             student_context.get('instructor_name')
@@ -477,7 +477,7 @@ class BulkImportUsersMixin:
                 role='student' if self.force_student_only else role,
             )
             created.append(user)
-            year_level = (data.get('year_level') or context_year_level or '').strip()
+            year_level = _normalize_year_level(data.get('year_level') or context_year_level or '')
             if self.force_pit_lead_context:
                 row_year = (data.get('year_level') or '').strip()
                 if row_year and row_year != context_year_level:

@@ -95,6 +95,7 @@ class StudentTeamsBulkImportView extends StatelessWidget {
     required this.onPickBulkCsvFile,
     required this.onImportBulkTeams,
     required this.onExportBulkCsv,
+    required this.onSaveDraft,
     required this.onScheduleRowPreview,
     required this.onDeleteBulkRow,
     required this.onAddBulkRow,
@@ -121,6 +122,7 @@ class StudentTeamsBulkImportView extends StatelessWidget {
   final VoidCallback onPickBulkCsvFile;
   final VoidCallback onImportBulkTeams;
   final VoidCallback onExportBulkCsv;
+  final VoidCallback? onSaveDraft;
   final ValueChanged<int> onScheduleRowPreview;
   final ValueChanged<int> onDeleteBulkRow;
   final VoidCallback onAddBulkRow;
@@ -560,13 +562,22 @@ class StudentTeamsBulkImportView extends StatelessWidget {
                           : onImportBulkTeams,
                     ),
                     const SizedBox(width: 12),
-                    if (parsedBulkRows.isNotEmpty && templateWarning == null)
+                    if (onSaveDraft != null && parsedBulkRows.isNotEmpty) ...[
+                      buildSecondaryButton(
+                        icon: Icons.save_as_rounded,
+                        label: 'Save draft',
+                        onTap: state.isSaving ? null : onSaveDraft,
+                      ),
+                      const SizedBox(width: 12),
+                    ],
+                    if (parsedBulkRows.isNotEmpty && templateWarning == null) ...[
                       buildSecondaryButton(
                         icon: Icons.file_download_rounded,
                         label: 'Export CSV',
                         onTap: onExportBulkCsv,
                       ),
-                    const SizedBox(width: 12),
+                      const SizedBox(width: 12),
+                    ],
                     buildSecondaryButton(
                       icon: Icons.close_rounded,
                       label: 'Cancel',

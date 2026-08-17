@@ -46,11 +46,11 @@ class ReportsApiTests(APITestCase):
         )
 
         # 2. Semester Setup
-        self.school_year = SchoolYear.objects.create(label='2026-2027')
-        self.semester = Semester.objects.create(
+        self.school_year, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        self.semester, _ = Semester.objects.get_or_create(
             school_year=self.school_year,
             label=Semester.FIRST,
-            is_active=True,
+            defaults={'is_active': True},
         )
 
         # 3. Defense Stage (needed for TeamGrade)
@@ -258,4 +258,21 @@ class ReportsApiTests(APITestCase):
             'search': 'Charles'
         })
         self.assertEqual(response.status_code, 200)
+
+    def test_individual_grade_report_generation(self):
+        self.client.force_authenticate(user=self.admin)
+        from authentication_access_control.models import SystemAuditLog
+
+        url = f'/api/reports/individual-grade/{self.student.id}/'
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertIn('attachment', response['Content-Disposition'])
+
+        # Verify audit trail was logged
+        log = SystemAuditLog.objects.filter(action='report.generate_individual_grade').first()
+        self.assertIsNotNone(log)
+        self.assertEqual(log.category, 'compliance')
+        self.assertEqual(log.target_id, str(self.student.id))
+
 

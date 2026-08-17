@@ -3,6 +3,7 @@ from . import views
 
 urlpatterns = [
     path('team-grade/<int:team_id>/', views.TeamGradeReportView.as_view(), name='report_team_grade'),
+    path('individual-grade/<int:student_id>/', views.IndividualGradeReportView.as_view(), name='report_individual_grade'),
     path('semester-grades/', views.SemesterGradesReportView.as_view(), name='report_semester_grades'),
     path('defense-schedules/', views.DefenseScheduleReportView.as_view(), name='report_defense_schedules'),
     path('team-roster/', views.TeamRosterReportView.as_view(), name='report_team_roster'),

@@ -99,6 +99,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         if (!ok || !mounted) return;
       }
     }
+    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
     ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
   }
@@ -164,6 +165,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       }
     }
     if (!await confirmLogout(context)) return;
+    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
     await ref.read(authProvider.notifier).logout();
     router.go(AppRoutes.login);

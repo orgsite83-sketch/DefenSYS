@@ -20,14 +20,16 @@ from authentication_access_control.scopes import (
     audit_logs_for,
 )
 
-from grading.grades.models import TeamGrade
+from grading.grades.models import TeamGrade, StudentStageGrade
 from defense.scheduler.models import DefenseSchedule
 from academic_period_management.models import Semester
 from academic_period_management.services import active_semester
 from authentication_access_control.models import SystemAuditLog
+from authentication_access_control.audit import log_high_impact_action
 
 # Import PDF Generators
 from reports.generators.team_grade_report import generate_team_grade_pdf
+from reports.generators.individual_grade_report import generate_individual_grade_pdf
 from reports.generators.semester_grades_report import generate_semester_grades_pdf
 from reports.generators.defense_schedule_report import generate_defense_schedule_pdf
 from reports.generators.team_roster_report import generate_team_roster_pdf
@@ -60,12 +62,105 @@ class TeamGradeReportView(APIView):
             
         generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
         pdf_data = generate_team_grade_pdf(grade_record, generated_by)
+
+        # Audit Trail Logging
+        log_high_impact_action(
+            category='compliance',
+            action='report.generate_team_grade',
+            target=grade_record.team,
+            target_id=grade_record.team.id,
+            reason=f"Generated Team Grade Report Card for {grade_record.team.name} ({grade_record.stage_label})",
+            request=request,
+            new_values={
+                'team_id': grade_record.team.id,
+                'team_name': grade_record.team.name,
+                'stage': grade_record.stage_label,
+            },
+        )
         
         # Filename safe format
         team_name_safe = "".join(c for c in grade_record.team.name if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         stage_safe = "".join(c for c in grade_record.stage_label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         filename = f"DefenSYS_Grade_Report_{team_name_safe}_{stage_safe}.pdf"
         
+        response = HttpResponse(pdf_data, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename="{filename}"'
+        return response
+
+
+class IndividualGradeReportView(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request, student_id):
+        student = get_object_or_404(User, pk=student_id, role='student')
+        
+        # Check permissions: Admin, PIT lead, faculty adviser of team, or self
+        is_self = request.user.id == student.id
+        membership = student.team_memberships.first()
+        team = membership.team if membership else None
+        
+        if not is_self:
+            if team:
+                visible_grades = grade_records_for(request.user).filter(team=team)
+                if not visible_grades.exists() and not is_admin_user(request.user):
+                    raise PermissionDenied("You do not have permission to generate individual grade audit cards for this student.")
+            else:
+                if not is_admin_user(request.user):
+                    raise PermissionDenied("You do not have permission to view this student's grade audit card.")
+
+        if not team:
+            return Response(
+                {"detail": "This student is not currently assigned to a team."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        # Get relevant team grade record
+        grade_id = request.query_params.get('grade_id')
+        stage_id = request.query_params.get('stage_id')
+        semester_id = request.query_params.get('semester_id')
+
+        team_grades = TeamGrade.objects.filter(team=team)
+        if semester_id:
+            team_grades = team_grades.filter(semester_id=semester_id)
+        if grade_id:
+            team_grade = get_object_or_404(team_grades, pk=grade_id)
+        elif stage_id:
+            team_grade = get_object_or_404(team_grades, defense_stage_id=stage_id)
+        else:
+            team_grade = team_grades.order_by('-updated_at', '-id').first()
+
+        if not team_grade:
+            return Response(
+                {"detail": "No evaluation records found for this student."},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+
+        student_grade = StudentStageGrade.objects.filter(team_grade=team_grade, student=student).first()
+
+        generated_by = f"{request.user.first_name} {request.user.last_name}".strip() or request.user.username
+        pdf_data = generate_individual_grade_pdf(student, student_grade, team_grade, generated_by)
+
+        # Audit Trail Logging
+        log_high_impact_action(
+            category='compliance',
+            action='report.generate_individual_grade',
+            target=student,
+            target_id=student.id,
+            reason=f"Generated Individual Grade Audit Report for {student.username} ({team_grade.stage_label})",
+            request=request,
+            new_values={
+                'student_id': student.id,
+                'student_name': student.get_full_name() or student.username,
+                'team_id': team.id,
+                'team_name': team.name,
+                'stage': team_grade.stage_label,
+            },
+        )
+
+        student_name_safe = "".join(c for c in (student.get_full_name() or student.username) if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        stage_safe = "".join(c for c in team_grade.stage_label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
+        filename = f"DefenSYS_Individual_Grade_{student_name_safe}_{stage_safe}.pdf"
+
         response = HttpResponse(pdf_data, content_type='application/pdf')
         response['Content-Disposition'] = f'attachment; filename="{filename}"'
         return response

@@ -167,7 +167,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: ErrorBanner(
-        title: 'Could not refresh vault',
+        title: 'Could not refresh archive',
         message: message,
         onRetry: _refreshVault,
       ),
@@ -1288,7 +1288,7 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                   ),
                   content: const Text(
                     'This document is available for secure viewing only. '
-                    'Downloading and copying are disabled for vault submissions.',
+                    'Downloading and copying are disabled for archive submissions.',
                     style: TextStyle(fontSize: 14),
                   ),
                   actions: [

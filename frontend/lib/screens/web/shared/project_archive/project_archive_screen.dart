@@ -295,7 +295,7 @@ class _ProjectArchiveScreenState
                         ),
                         const SizedBox(height: 20),
                         const Text(
-                          'Uploading files to vault...',
+                          'Uploading files to project archive...',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             fontSize: 16,

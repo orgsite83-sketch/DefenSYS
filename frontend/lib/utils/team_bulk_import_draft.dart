@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../services/auth_storage_keys.dart';
+
 const _draftKeyPrefix = 'team_bulk_import_draft';
 
 class TeamBulkImportDraft {
@@ -48,7 +50,9 @@ class TeamBulkImportDraft {
 
 Future<String> _draftStorageKey() async {
   final prefs = await SharedPreferences.getInstance();
-  final userDataRaw = prefs.getString('user_data');
+  final userDataRaw =
+      prefs.getString(AuthStorageKeys.user) ??
+      prefs.getString(AuthStorageKeys.legacyUserData);
   if (userDataRaw != null && userDataRaw.isNotEmpty) {
     try {
       final userData = jsonDecode(userDataRaw);
@@ -68,6 +72,11 @@ Future<String> _draftStorageKey() async {
 Future<TeamBulkImportDraft?> loadTeamBulkImportDraft() async {
   final prefs = await SharedPreferences.getInstance();
   final key = await _draftStorageKey();
+  if (key == _draftKeyPrefix) {
+    // Purge legacy unscoped draft so it doesn't bleed across user sessions.
+    await prefs.remove(_draftKeyPrefix);
+    return null;
+  }
   final raw = prefs.getString(key);
   if (raw == null || raw.isEmpty) {
     return null;
@@ -90,13 +99,19 @@ Future<TeamBulkImportDraft?> loadTeamBulkImportDraft() async {
 Future<void> saveTeamBulkImportDraft(TeamBulkImportDraft draft) async {
   final prefs = await SharedPreferences.getInstance();
   final key = await _draftStorageKey();
+  if (key == _draftKeyPrefix) {
+    return;
+  }
   await prefs.setString(key, jsonEncode(draft.toJson()));
 }
 
 Future<void> clearTeamBulkImportDraft() async {
   final prefs = await SharedPreferences.getInstance();
   final key = await _draftStorageKey();
-  await prefs.remove(key);
+  if (key != _draftKeyPrefix) {
+    await prefs.remove(key);
+  }
+  await prefs.remove(_draftKeyPrefix);
 }
 
 int countPreviewIssues(Map<String, dynamic>? preview) {
@@ -112,3 +127,4 @@ int countPreviewIssues(Map<String, dynamic>? preview) {
   }
   return count;
 }
+

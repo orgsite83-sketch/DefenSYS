@@ -9,6 +9,7 @@ import '../../../services/student_teams_provider.dart';
 import '../../../services/reports_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../toasts/feedback_toast.dart';
+import '../../../widgets/searchable_entity_picker.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AuditComplianceScreen extends ConsumerStatefulWidget {
@@ -30,6 +31,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   int _selectedReportIndex = 0;
   String? _selectedSemesterId;
   String? _selectedTeamId;
+  String? _selectedStudentId;
   String _selectedLevel = '';
   String _selectedYearLevel = '';
   String _selectedRole = '';
@@ -39,6 +41,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   String _selectedScope = '';
   String _reportTrackFilter = '';
   String _reportYearLevelFilter = '';
+  String _selectedStudentSectionFilter = '';
+  String _selectedTeamSectionFilter = '';
 
   @override
   void initState() {
@@ -362,6 +366,14 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         'meta': 'PDF • Team Breakdown',
       },
       {
+        'title': 'Individual Student Grade Audit Card',
+        'desc': 'Official confidential evaluation card detailing individual student performance, peer review contribution, panel remarks, and certification seal.',
+        'icon': Icons.person_outline,
+        'endpoint': 'individual-grade',
+        'tag': 'Audit Slip',
+        'meta': 'PDF • Individual Breakdown',
+      },
+      {
         'title': 'Semester Grade Summary',
         'desc': 'Compilation sheet of all student teams and final pass/fail results for the semester.',
         'icon': Icons.grade_outlined,
@@ -671,6 +683,152 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       _selectedTeamId = teamsState.teams.first['id']?.toString();
     }
 
+    // Load first student ID initially
+    if (_selectedStudentId == null && teamsState.students.isNotEmpty) {
+      _selectedStudentId = teamsState.students.first['id']?.toString();
+    }
+
+    // Build student metadata lookup map from teams data
+    final Map<String, Map<String, dynamic>> studentMetaMap = {};
+    for (final student in teamsState.students) {
+      final sId = student['id']?.toString() ?? '';
+      Map<String, dynamic>? assignedTeam;
+      bool isLeader = false;
+      String? section;
+
+      for (final team in teamsState.teams) {
+        final members = team['members'];
+        if (members is List) {
+          for (final m in members) {
+            if (m is Map && m['id']?.toString() == sId) {
+              assignedTeam = team;
+              isLeader = m['is_leader'] == true;
+              section = team['section']?.toString() ?? team['year_level']?.toString();
+              break;
+            }
+          }
+        }
+        if (assignedTeam != null) break;
+      }
+
+      studentMetaMap[sId] = {
+        'student': student,
+        'team': assignedTeam,
+        'isLeader': isLeader,
+        'section': section,
+      };
+    }
+
+    // Extract student sections & counts
+    final Set<String> studentSectionsSet = {};
+    final Map<String, int> studentSectionCounts = {};
+    for (final meta in studentMetaMap.values) {
+      final sec = meta['section'] as String?;
+      if (sec != null && sec.trim().isNotEmpty) {
+        studentSectionsSet.add(sec.trim());
+        studentSectionCounts[sec.trim()] = (studentSectionCounts[sec.trim()] ?? 0) + 1;
+      }
+    }
+    final List<String> studentSections = studentSectionsSet.toList()..sort();
+
+    // Filter students by section if selected
+    final List<Map<String, dynamic>> filteredStudents = teamsState.students.where((s) {
+      if (_selectedStudentSectionFilter.isEmpty) return true;
+      final meta = studentMetaMap[s['id']?.toString() ?? ''];
+      return meta?['section'] == _selectedStudentSectionFilter;
+    }).toList();
+
+    // Build student entity picker items
+    final List<EntityPickerItem<String>> studentPickerItems = filteredStudents.map((s) {
+      final sId = s['id']?.toString() ?? '';
+      final meta = studentMetaMap[sId];
+      final name = s['name'] ?? s['username'] ?? 'Student';
+      final username = s['username']?.toString() ?? sId;
+      final team = meta?['team'] as Map<String, dynamic>?;
+      final section = meta?['section'] as String?;
+
+      final subtitleParts = <String>[];
+      if (team != null && team['name'] != null) {
+        subtitleParts.add(team['name'].toString());
+      } else {
+        subtitleParts.add('No Team Assigned');
+      }
+      if (section != null && section.isNotEmpty) {
+        subtitleParts.add(section);
+      }
+
+      return EntityPickerItem<String>(
+        value: sId,
+        label: name.toString(),
+        badge: username,
+        subtitle: subtitleParts.join(' • '),
+        avatarText: _getInitials(name.toString()),
+        meta: meta,
+      );
+    }).toList();
+
+    // Extract team sections & counts
+    final Set<String> teamSectionsSet = {};
+    final Map<String, int> teamSectionCounts = {};
+    for (final team in teamsState.teams) {
+      final sec = team['section']?.toString() ?? team['year_level']?.toString();
+      if (sec != null && sec.trim().isNotEmpty) {
+        teamSectionsSet.add(sec.trim());
+        teamSectionCounts[sec.trim()] = (teamSectionCounts[sec.trim()] ?? 0) + 1;
+      }
+    }
+    final List<String> teamSections = teamSectionsSet.toList()..sort();
+
+    // Filter teams by section if selected
+    final List<Map<String, dynamic>> filteredTeams = teamsState.teams.where((t) {
+      if (_selectedTeamSectionFilter.isEmpty) return true;
+      final sec = t['section']?.toString() ?? t['year_level']?.toString();
+      return sec == _selectedTeamSectionFilter;
+    }).toList();
+
+    // Build team entity picker items
+    final List<EntityPickerItem<String>> teamPickerItems = filteredTeams.map((t) {
+      final tId = t['id']?.toString() ?? '';
+      final name = t['name']?.toString() ?? 'Team';
+      final sec = t['section']?.toString() ?? t['year_level']?.toString();
+      final projectTitle = t['project_title']?.toString() ?? t['system_name']?.toString() ?? '';
+      final leader = t['leader_name']?.toString() ?? '';
+
+      final subtitleParts = <String>[];
+      if (projectTitle.isNotEmpty) {
+        subtitleParts.add(projectTitle);
+      } else if (leader.isNotEmpty) {
+        subtitleParts.add('Lead: $leader');
+      }
+      if (sec != null && sec.isNotEmpty) {
+        subtitleParts.add(sec);
+      }
+
+      return EntityPickerItem<String>(
+        value: tId,
+        label: name,
+        badge: sec,
+        subtitle: subtitleParts.isNotEmpty ? subtitleParts.join(' • ') : null,
+        icon: Icons.groups_rounded,
+        meta: t,
+      );
+    }).toList();
+
+    // Selected Student Metadata
+    final selectedStudentMeta = _selectedStudentId != null ? studentMetaMap[_selectedStudentId] : null;
+    final selectedStudentObj = selectedStudentMeta?['student'] as Map<String, dynamic>?;
+    final selectedStudentTeam = selectedStudentMeta?['team'] as Map<String, dynamic>?;
+    final selectedStudentIsLeader = selectedStudentMeta?['isLeader'] == true;
+    final selectedStudentSection = selectedStudentMeta?['section'] as String?;
+
+    // Selected Team Metadata
+    final selectedTeamObj = _selectedTeamId != null
+        ? teamsState.teams.firstWhere(
+            (t) => t['id']?.toString() == _selectedTeamId,
+            orElse: () => <String, dynamic>{},
+          )
+        : null;
+
     final List<Map<String, dynamic>> semestersList = [];
     for (final year in academicState.schoolYears) {
       final sems = year['semesters'];
@@ -686,16 +844,19 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       }
     }
 
-    // Build Live Summary string
+    // Build Live Summary strings
     String selectedSemLabel = semestersList.firstWhere(
       (s) => s['id'] == _selectedSemesterId,
       orElse: () => {'label': 'Active Semester'},
     )['label'] as String;
 
-    String selectedTeamLabel = teamsState.teams.firstWhere(
-      (t) => t['id']?.toString() == _selectedTeamId,
-      orElse: () => {'name': 'Selected Team'},
-    )['name']?.toString() ?? 'Selected Team';
+    String selectedTeamLabel = selectedTeamObj != null && selectedTeamObj.isNotEmpty
+        ? (selectedTeamObj['name']?.toString() ?? 'Selected Team')
+        : 'Selected Team';
+
+    String selectedStudentLabel = selectedStudentObj != null
+        ? '${selectedStudentObj['name'] ?? selectedStudentObj['username']} (${selectedStudentObj['username'] ?? ''})'
+        : 'Selected Student Candidate';
 
     return Container(
       decoration: BoxDecoration(
@@ -826,23 +987,100 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 ),
 
                 if (endpoint == 'team-grade') ...[
-                  const _FormSectionLabel('SELECT STUDENT TEAM'),
+                  // Section / Cohort Quick Filter Chips for Teams
+                  if (teamSections.isNotEmpty)
+                    _buildSectionFilterChips(
+                      sections: teamSections,
+                      selectedSection: _selectedTeamSectionFilter,
+                      totalCount: teamsState.teams.length,
+                      sectionCounts: teamSectionCounts,
+                      onSelected: (sec) {
+                        setState(() {
+                          _selectedTeamSectionFilter = sec;
+                        });
+                      },
+                    ),
+
+                  const _FormSectionLabel('SEARCH & SELECT STUDENT TEAM'),
                   const SizedBox(height: 6),
                   teamsState.isLoading
                       ? const LinearProgressIndicator()
-                      : DropdownButtonFormField<String>(
-                          initialValue: _selectedTeamId,
-                          isExpanded: true,
-                          decoration: _inputDecoration('Choose team...'),
-                          items: teamsState.teams.map((t) {
-                            return DropdownMenuItem<String>(
-                              value: t['id']?.toString(),
-                              child: Text(t['name']?.toString() ?? 'N/A'),
-                            );
-                          }).toList(),
+                      : SearchableEntityPicker<String>(
+                          items: teamPickerItems,
+                          selectedValue: _selectedTeamId,
+                          hintText: 'Search team by name, project, leader, or section...',
+                          searchHintText: 'Type team name, title, leader, or section...',
+                          searchMatcher: (item, query) {
+                            final q = query.toLowerCase();
+                            final meta = item.meta;
+                            final nameMatch = item.label.toLowerCase().contains(q);
+                            final titleMatch = meta?['project_title']?.toString().toLowerCase().contains(q) ?? false;
+                            final leadMatch = meta?['leader_name']?.toString().toLowerCase().contains(q) ?? false;
+                            final adviserMatch = meta?['adviser_name']?.toString().toLowerCase().contains(q) ?? false;
+                            final secMatch = (meta?['section']?.toString().toLowerCase().contains(q) ?? false) ||
+                                (meta?['year_level']?.toString().toLowerCase().contains(q) ?? false);
+                            return nameMatch || titleMatch || leadMatch || adviserMatch || secMatch;
+                          },
                           onChanged: (val) => setState(() => _selectedTeamId = val),
                         ),
-                  const SizedBox(height: 18),
+
+                  // Selected Team Rich Preview Context Card
+                  if (selectedTeamObj != null && selectedTeamObj.isNotEmpty)
+                    _buildSelectedTeamCard(selectedTeamObj)
+                  else
+                    const SizedBox(height: 18),
+                ],
+
+                if (endpoint == 'individual-grade') ...[
+                  // Section / Cohort Quick Filter Chips for Students
+                  if (studentSections.isNotEmpty)
+                    _buildSectionFilterChips(
+                      sections: studentSections,
+                      selectedSection: _selectedStudentSectionFilter,
+                      totalCount: teamsState.students.length,
+                      sectionCounts: studentSectionCounts,
+                      onSelected: (sec) {
+                        setState(() {
+                          _selectedStudentSectionFilter = sec;
+                        });
+                      },
+                    ),
+
+                  const _FormSectionLabel('SEARCH & SELECT STUDENT CANDIDATE'),
+                  const SizedBox(height: 6),
+                  teamsState.isLoading
+                      ? const LinearProgressIndicator()
+                      : SearchableEntityPicker<String>(
+                          items: studentPickerItems,
+                          selectedValue: _selectedStudentId,
+                          hintText: 'Search student by ID, full name, team, or section...',
+                          searchHintText: 'Type student ID (e.g. 4011), name, or team...',
+                          searchMatcher: (item, query) {
+                            final q = query.toLowerCase();
+                            final meta = item.meta;
+                            final student = meta?['student'] as Map<String, dynamic>?;
+                            final team = meta?['team'] as Map<String, dynamic>?;
+                            final nameMatch = item.label.toLowerCase().contains(q);
+                            final usernameMatch = student?['username']?.toString().toLowerCase().contains(q) ?? false;
+                            final idMatch = student?['id']?.toString().contains(q) ?? false;
+                            final emailMatch = student?['email']?.toString().toLowerCase().contains(q) ?? false;
+                            final teamMatch = team?['name']?.toString().toLowerCase().contains(q) ?? false;
+                            final secMatch = meta?['section']?.toString().toLowerCase().contains(q) ?? false;
+                            return nameMatch || usernameMatch || idMatch || emailMatch || teamMatch || secMatch;
+                          },
+                          onChanged: (val) => setState(() => _selectedStudentId = val),
+                        ),
+
+                  // Selected Candidate Rich Preview Context Card
+                  if (selectedStudentObj != null)
+                    _buildSelectedCandidateCard(
+                      selectedStudentObj,
+                      selectedStudentTeam,
+                      selectedStudentIsLeader,
+                      selectedStudentSection,
+                    )
+                  else
+                    const SizedBox(height: 18),
                 ],
 
                 if (endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster') ...[
@@ -973,7 +1211,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                       DropdownMenuItem(value: 'academic_period', child: Text('Academic Period Changes')),
                       DropdownMenuItem(value: 'grade_center', child: Text('Grade & Result Decisions')),
                       DropdownMenuItem(value: 'scheduling', child: Text('Schedule Changes')),
-                      DropdownMenuItem(value: 'repository', child: Text('Repository Vault Evidence')),
+                      DropdownMenuItem(value: 'repository', child: Text('Project Archive Evidence')),
                       DropdownMenuItem(value: 'guest_access', child: Text('Guest Access Activity')),
                     ],
                     onChanged: (val) => setState(() => _reportCategoryFilter = val ?? ''),
@@ -1039,9 +1277,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                         child: Text(
                           endpoint == 'team-grade'
                               ? 'Exporting: $selectedTeamLabel Grade Card'
-                              : endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster'
-                                  ? 'Exporting: ${report['title']} for $selectedSemLabel'
-                                  : 'Exporting: ${report['title']} (Official Audit PDF)',
+                              : endpoint == 'individual-grade'
+                                  ? 'Exporting: $selectedStudentLabel Audit Slip'
+                                  : endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster'
+                                      ? 'Exporting: ${report['title']} for $selectedSemLabel'
+                                      : 'Exporting: ${report['title']} (Official Audit PDF)',
                           style: const TextStyle(
                             fontSize: 11.5,
                             fontWeight: FontWeight.w600,
@@ -1091,6 +1331,419 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     );
   }
 
+  String _getInitials(String name) {
+    final parts = name.trim().split(RegExp(r'\s+'));
+    if (parts.isEmpty || parts[0].isEmpty) return '?';
+    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  }
+
+  Widget _buildSectionFilterChips({
+    required List<String> sections,
+    required String selectedSection,
+    required ValueChanged<String> onSelected,
+    required int totalCount,
+    required Map<String, int> sectionCounts,
+  }) {
+    if (sections.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.filter_alt_outlined, size: 14, color: DefensysTokens.steelGrey),
+            SizedBox(width: 4),
+            Text(
+              'QUICK FILTER BY SECTION / COHORT',
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w800,
+                color: DefensysTokens.steelGrey,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              _buildSectionChip(
+                label: 'All Sections ($totalCount)',
+                isSelected: selectedSection.isEmpty,
+                onTap: () => onSelected(''),
+              ),
+              const SizedBox(width: 6),
+              ...sections.map((sec) {
+                final count = sectionCounts[sec] ?? 0;
+                return Padding(
+                  padding: const EdgeInsets.only(right: 6),
+                  child: _buildSectionChip(
+                    label: '$sec ($count)',
+                    isSelected: selectedSection == sec,
+                    onTap: () => onSelected(sec),
+                  ),
+                );
+              }),
+            ],
+          ),
+        ),
+        const SizedBox(height: 14),
+      ],
+    );
+  }
+
+  Widget _buildSectionChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            border: Border.all(
+              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSelectedCandidateCard(
+    Map<String, dynamic> student,
+    Map<String, dynamic>? team,
+    bool isLeader,
+    String? section,
+  ) {
+    final studentName = student['name'] ?? student['username'] ?? 'Student';
+    final studentId = student['username'] ?? student['id']?.toString() ?? '';
+    final studentEmail = student['email']?.toString() ?? '';
+    final teamName = team?['name']?.toString() ?? 'No Team Assigned';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(top: 10, bottom: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: DefensysTokens.maroon.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: DefensysTokens.maroon.withValues(alpha: 0.1),
+              shape: BoxShape.circle,
+              border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              _getInitials(studentName.toString()),
+              style: const TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+                color: DefensysTokens.maroon,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        studentName.toString(),
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon,
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                      ),
+                      child: Text(
+                        'ID: $studentId',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (isLeader) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.gold.withValues(alpha: 0.2),
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        ),
+                        child: const Text(
+                          'LEADER',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.darkGold,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    const Icon(Icons.groups_outlined, size: 14, color: DefensysTokens.steelGrey),
+                    const SizedBox(width: 4),
+                    Text(
+                      teamName,
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.steelGrey,
+                      ),
+                    ),
+                    if (section != null && section.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Text(
+                          section,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ),
+                    ],
+                    if (studentEmail.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• $studentEmail',
+                        style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ],
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: DefensysTokens.successBg,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+              border: Border.all(color: DefensysTokens.successBorder),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 14, color: DefensysTokens.successText),
+                SizedBox(width: 5),
+                Text(
+                  'Ready to Export',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.successText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectedTeamCard(Map<String, dynamic> team) {
+    final teamName = team['name']?.toString() ?? 'Team';
+    final projectTitle = team['project_title']?.toString() ?? team['system_name']?.toString() ?? 'No Project Title Recorded';
+    final leaderName = team['leader_name']?.toString() ?? 'Unassigned';
+    final adviserName = team['adviser_name']?.toString() ?? 'Unassigned';
+    final section = team['section']?.toString() ?? team['year_level']?.toString() ?? '';
+    final members = team['members'] is List ? (team['members'] as List) : [];
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      margin: const EdgeInsets.only(top: 10, bottom: 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+        boxShadow: [
+          BoxShadow(
+            color: DefensysTokens.maroon.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 42,
+            height: 42,
+            decoration: BoxDecoration(
+              color: DefensysTokens.maroon.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+              border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
+            ),
+            alignment: Alignment.center,
+            child: const Icon(Icons.groups_rounded, color: DefensysTokens.maroon, size: 22),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        teamName,
+                        style: const TextStyle(
+                          fontSize: 13.5,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.textDark,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (section.isNotEmpty) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        ),
+                        child: Text(
+                          section,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.maroon,
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Text(
+                        '${members.length} members',
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w600,
+                          color: DefensysTokens.steelGrey,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  projectTitle,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: DefensysTokens.textSecondary,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'Leader: $leaderName  •  Adviser: $adviserName',
+                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: DefensysTokens.successBg,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+              border: Border.all(color: DefensysTokens.successBorder),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.check_circle_rounded, size: 14, color: DefensysTokens.successText),
+                SizedBox(width: 5),
+                Text(
+                  'Ready to Export',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.successText,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   InputDecoration _inputDecoration(String hint) {
     return InputDecoration(
       hintText: hint,
@@ -1128,6 +1781,23 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         endpoint: fullEndpoint,
         queryParams: queryParams,
         defaultFilename: 'DefenSYS_Team_Grade_Report.pdf',
+      );
+
+      _showDownloadResultToast(success);
+      return;
+    }
+
+    if (endpoint == 'individual-grade') {
+      if (_selectedStudentId == null) {
+        showValidationToast(context, 'Please select a student candidate.');
+        return;
+      }
+      final fullEndpoint = 'individual-grade/$_selectedStudentId/';
+
+      final success = await ref.read(reportsProvider.notifier).downloadReport(
+        endpoint: fullEndpoint,
+        queryParams: queryParams,
+        defaultFilename: 'DefenSYS_Individual_Grade_Audit.pdf',
       );
 
       _showDownloadResultToast(success);
@@ -2825,7 +3495,7 @@ const _categoryOptions = [
   {'value': 'academic_period', 'label': 'Academic Period Changes'},
   {'value': 'grade_center', 'label': 'Grade & Result Decisions'},
   {'value': 'scheduling', 'label': 'Schedule Changes'},
-  {'value': 'repository', 'label': 'Repository Vault Evidence'},
+  {'value': 'repository', 'label': 'Project Archive Evidence'},
   {'value': 'guest_access', 'label': 'Guest Access Activity'},
 ];
 

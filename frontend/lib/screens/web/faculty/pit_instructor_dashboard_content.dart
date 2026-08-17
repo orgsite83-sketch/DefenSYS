@@ -8,6 +8,7 @@ class PitInstructorDashboardContent extends StatefulWidget {
   final Map<String, dynamic>? data;
   final String facultyName;
   final String? yearLevel;
+  final String? section;
   final VoidCallback onOpenDeliverables;
   final VoidCallback onOpenGrading;
 
@@ -16,6 +17,7 @@ class PitInstructorDashboardContent extends StatefulWidget {
     required this.data,
     required this.facultyName,
     this.yearLevel,
+    this.section,
     required this.onOpenDeliverables,
     required this.onOpenGrading,
   });
@@ -44,9 +46,13 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
   Widget build(BuildContext context) {
     final rawTeams = (widget.data?['pit_teams'] as List?) ?? [];
     final allPitTeams = rawTeams.map((t) => Map<String, dynamic>.from(t as Map)).toList();
-    final pitTeams = widget.yearLevel != null
-        ? allPitTeams.where((t) => t['yearLevel']?.toString().toLowerCase() == widget.yearLevel!.toLowerCase()).toList()
-        : allPitTeams;
+    var pitTeams = allPitTeams;
+    if (widget.yearLevel != null && widget.yearLevel!.isNotEmpty) {
+      pitTeams = pitTeams.where((t) => t['yearLevel']?.toString().toLowerCase() == widget.yearLevel!.toLowerCase()).toList();
+    }
+    if (widget.section != null && widget.section!.isNotEmpty) {
+      pitTeams = pitTeams.where((t) => t['section']?.toString().toLowerCase() == widget.section!.toLowerCase()).toList();
+    }
 
     // Calculate metrics
     final totalTeams = pitTeams.length;
@@ -99,6 +105,10 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
     }).toList();
 
     const titleLabel = 'PIT Instructor workspace';
+    final scopeLabel = [
+      if (widget.yearLevel != null && widget.yearLevel!.isNotEmpty) widget.yearLevel!,
+      if (widget.section != null && widget.section!.isNotEmpty) widget.section!,
+    ].join(' — ');
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isDesktop = screenWidth >= 1100;
@@ -109,7 +119,7 @@ class _PitInstructorDashboardContentState extends State<PitInstructorDashboardCo
         DefensysPageHeader(
           icon: Icons.school_outlined,
           title: 'Welcome, ${widget.facultyName}',
-          subtitle: '$titleLabel${widget.yearLevel != null ? " — ${widget.yearLevel}" : ""} · ${widget.data?['active_semester'] ?? 'Active Semester'}',
+          subtitle: '$titleLabel${scopeLabel.isNotEmpty ? " — $scopeLabel" : ""} · ${widget.data?['active_semester'] ?? 'Active Semester'}',
         ),
         const SizedBox(height: 20),
 

@@ -29,6 +29,21 @@ Future<PickedTabularFile?> pickTabularDataFile() async {
   return null;
 }
 
+Future<PickedTabularFile?> pickSingleTabularDataFile() async {
+  return null;
+}
+
+Future<List<PickedTabularFile>> pickMultipleTabularDataFiles() async {
+  return [];
+}
+
+dynamic setupDropzoneListener(
+  void Function(List<PickedTabularFile> files) onFilesDropped,
+) {
+  return null;
+}
+
+
 Future<void> downloadBinaryFile({
   required String filename,
   required List<int> bytes,

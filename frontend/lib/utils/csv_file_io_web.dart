@@ -57,69 +57,109 @@ Future<void> downloadBinaryFile({
   html.Url.revokeObjectUrl(url);
 }
 
-Future<String?> pickCsvTextFile() {
-  final completer = Completer<String?>();
-  final input = html.FileUploadInputElement()
-    ..accept = '.csv,text/csv'
-    ..multiple = false;
+Future<String?> pickCsvTextFile() async {
+  final files = await pickMultipleTabularDataFiles();
+  if (files.isEmpty) return null;
+  final texts = files
+      .map((f) => f.text ?? utf8.decode(f.bytes, allowMalformed: true))
+      .where((t) => t.trim().isNotEmpty)
+      .toList();
+  if (texts.isEmpty) return null;
+  return texts.join('\n\n');
+}
 
-  input.onChange.first.then((_) {
+Future<PickedTabularFile?> pickTabularDataFile() async {
+  return pickSingleTabularDataFile();
+}
+
+Future<PickedTabularFile?> pickSingleTabularDataFile() async {
+  final files = await _pickTabularFilesInternal(multiple: false);
+  return files.isNotEmpty ? files.first : null;
+}
+
+Future<List<PickedTabularFile>> pickMultipleTabularDataFiles() {
+  return _pickTabularFilesInternal(multiple: true);
+}
+
+Future<List<PickedTabularFile>> _pickTabularFilesInternal({required bool multiple}) {
+  final completer = Completer<List<PickedTabularFile>>();
+  final input = html.FileUploadInputElement()
+    ..accept =
+        '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ..multiple = multiple
+    ..style.display = 'none';
+
+  if (multiple) {
+    input.setAttribute('multiple', 'multiple');
+  }
+  html.document.body?.append(input);
+
+  StreamSubscription? changeSub;
+  StreamSubscription? cancelSub;
+  StreamSubscription? focusSub;
+  Timer? focusTimer;
+
+  void cleanup() {
+    changeSub?.cancel();
+    cancelSub?.cancel();
+    focusSub?.cancel();
+    focusTimer?.cancel();
+    input.remove();
+  }
+
+  void completeWith(List<PickedTabularFile> result) {
+    cleanup();
+    if (!completer.isCompleted) {
+      completer.complete(result);
+    }
+  }
+
+  changeSub = input.onChange.listen((_) async {
     final files = input.files;
     if (files == null || files.isEmpty) {
-      completer.complete(null);
+      completeWith([]);
       return;
     }
+    final pickedFiles = await _parseHtmlFiles(files);
+    completeWith(pickedFiles);
+  });
 
-    final reader = html.FileReader();
-    reader.onError.first.then((_) {
-      if (!completer.isCompleted) {
-        completer.completeError('Unable to read the selected CSV file.');
-      }
+  // Modern browsers dispatch 'cancel' on <input type="file"> when cancelled
+  cancelSub = input.on['cancel'].listen((_) {
+    completeWith([]);
+  });
+
+  // Fallback: When OS file picker dialog closes on cancel, window regains focus.
+  // Wait 400ms to allow onChange to fire first if a file was selected.
+  focusSub = html.window.onFocus.listen((_) {
+    focusTimer?.cancel();
+    focusTimer = Timer(const Duration(milliseconds: 400), () {
+      completeWith([]);
     });
-    reader.onLoadEnd.first.then((_) {
-      if (!completer.isCompleted) {
-        completer.complete(reader.result?.toString());
-      }
-    });
-    reader.readAsText(files.first);
   });
 
   input.click();
   return completer.future;
 }
 
-Future<PickedTabularFile?> pickTabularDataFile() {
-  final completer = Completer<PickedTabularFile?>();
-  final input = html.FileUploadInputElement()
-    ..accept =
-        '.csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    ..multiple = false;
-
-  input.onChange.first.then((_) {
-    final files = input.files;
-    if (files == null || files.isEmpty) {
-      completer.complete(null);
-      return;
-    }
-
-    final file = files.first;
+Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
+  final pickedFiles = <PickedTabularFile>[];
+  for (final file in files) {
     final extension = file.name.toLowerCase().split('.').last;
     if (extension != 'csv' && extension != 'xlsx') {
-      completer.completeError('Select a CSV or XLSX file.');
-      return;
+      continue;
     }
 
+    final fileCompleter = Completer<PickedTabularFile?>();
     final reader = html.FileReader();
     reader.onError.first.then((_) {
-      if (!completer.isCompleted) {
-        completer.completeError('Unable to read the selected class list file.');
-      }
+      if (!fileCompleter.isCompleted) fileCompleter.complete(null);
     });
     reader.onLoadEnd.first.then((_) {
-      if (completer.isCompleted) return;
+      if (fileCompleter.isCompleted) return;
       final result = reader.result;
       if (result == null) {
-        completer.completeError('Unable to read the selected class list file.');
+        fileCompleter.complete(null);
         return;
       }
       try {
@@ -133,7 +173,7 @@ Future<PickedTabularFile?> pickTabularDataFile() {
         } else {
           bytes = (result as dynamic).asUint8List().toList();
         }
-        completer.complete(
+        fileCompleter.complete(
           PickedTabularFile(
             name: file.name,
             extension: extension,
@@ -144,12 +184,34 @@ Future<PickedTabularFile?> pickTabularDataFile() {
           ),
         );
       } catch (e) {
-        completer.completeError('Unable to read file bytes: $e');
+        fileCompleter.complete(null);
       }
     });
     reader.readAsArrayBuffer(file);
-  });
 
-  input.click();
-  return completer.future;
+    final picked = await fileCompleter.future;
+    if (picked != null) {
+      pickedFiles.add(picked);
+    }
+  }
+  return pickedFiles;
 }
+
+StreamSubscription? setupDropzoneListener(
+  void Function(List<PickedTabularFile> files) onFilesDropped,
+) {
+  html.document.body?.onDragOver.listen((event) {
+    event.preventDefault();
+  });
+  return html.document.body?.onDrop.listen((event) async {
+    event.preventDefault();
+    final dtFiles = event.dataTransfer.files;
+    if (dtFiles == null || dtFiles.isEmpty) return;
+
+    final pickedFiles = await _parseHtmlFiles(dtFiles);
+    if (pickedFiles.isNotEmpty) {
+      onFilesDropped(pickedFiles);
+    }
+  });
+}
+

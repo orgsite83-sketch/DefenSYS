@@ -30,9 +30,9 @@ void main() {
   });
 
   group('loadUserBulkImportDraft', () {
-    test('loads draft for user from preferences', () async {
+    test('loads draft for user from preferences using defensys_user', () async {
       SharedPreferences.setMockInitialValues({
-        'user_data': '{"id":44,"username":"admin"}',
+        'defensys_user': '{"id":44,"username":"admin"}',
         'user_bulk_import_draft_44': '''
 {
   "csv": "id_number,first_name,last_name,email,role\\n1,A,B,a@b.test,student",
@@ -64,3 +64,4 @@ void main() {
     });
   });
 }
+

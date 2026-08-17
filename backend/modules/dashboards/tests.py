@@ -414,11 +414,11 @@ class DashboardApiTests(APITestCase):
             password='pass12345',
             role='student',
         )
-        school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        school_year, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        semester, _ = Semester.objects.get_or_create(
             school_year=school_year,
             label=Semester.SECOND,
-            is_active=True,
+            defaults={'is_active': True},
         )
         team = StudentTeam.objects.create(
             name='Capstone No Stage Team',
@@ -443,11 +443,11 @@ class DashboardApiTests(APITestCase):
             password='pass12345',
             role='student',
         )
-        school_year = SchoolYear.objects.create(label='2026-2027')
-        semester = Semester.objects.create(
+        school_year, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        semester, _ = Semester.objects.get_or_create(
             school_year=school_year,
             label=Semester.SECOND,
-            is_active=True,
+            defaults={'is_active': True},
         )
         concept_stage = DefenseStage.objects.get(label='Concept Proposal')
         project_stage = DefenseStage.objects.get(label='Project Proposal')
@@ -489,6 +489,53 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['schedule']['stage'], project_stage.label)
         self.assertIsNone(response.data['grades'])
+
+    def test_student_dashboard_masks_raw_numeric_grades(self):
+        student = User.objects.create_user(
+            username='student-grade-privacy',
+            password='pass12345',
+            role='student',
+        )
+        school_year, _ = SchoolYear.objects.get_or_create(label='2026-2027')
+        semester, _ = Semester.objects.get_or_create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            defaults={'is_active': True},
+        )
+        team = StudentTeam.objects.create(
+            name='Privacy Team',
+            project_title='Privacy Project',
+            level=StudentTeam.LEVEL_3_PIT,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student,
+        )
+        TeamMembership.objects.create(team=team, student=student, is_leader=True)
+        TeamGrade.objects.create(
+            team=team,
+            semester=semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='Concept Proposal',
+            panel_score=Decimal('88.50'),
+            peer_score=Decimal('90.00'),
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+
+        self.client.force_authenticate(user=student)
+        response = self.client.get('/api/dashboards/student/')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIsNone(response.data['final_grade'])
+        grades = response.data['grades']
+        self.assertIsNotNone(grades)
+        self.assertEqual(grades['status'], TeamGrade.STATUS_PUBLISHED)
+        self.assertEqual(grades['stage'], 'Concept Proposal')
+        self.assertTrue(grades['is_published'])
+        self.assertTrue(grades['has_panel_evaluated'])
+        # Assert numeric score keys are not exposed
+        self.assertNotIn('finalGrade', grades)
+        self.assertNotIn('panelist', grades)
+        self.assertNotIn('peer', grades)
 
     def test_student_cannot_get_admin_dashboard(self):
         student = User.objects.create_user(

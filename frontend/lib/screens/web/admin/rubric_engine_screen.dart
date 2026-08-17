@@ -6,6 +6,7 @@ import 'package:toastification/toastification.dart';
 import '../../../navigation/admin_route_paths.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/rubric_engine_provider.dart';
+import '../../../services/unsaved_changes_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../toasts/feedback_toast.dart';
 import 'rubric_full_page_editor.dart';
@@ -78,6 +79,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     _tableHScrollController.dispose();
     _searchController.dispose();
     super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    });
   }
 
   void _openRubricEditor({
@@ -103,6 +108,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }
 
   void _closeRubricEditor() {
+    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+    ref.read(unsavedChangesProvider.notifier).setDirty(false);
     setState(() {
       _rubricEditorOpen = false;
       _rubricEditorReadOnly = false;
@@ -177,6 +184,12 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             : null,
       );
     }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    });
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,

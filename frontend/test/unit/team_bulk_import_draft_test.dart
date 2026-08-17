@@ -25,9 +25,9 @@ void main() {
   });
 
   group('loadTeamBulkImportDraft', () {
-    test('loads draft for user from preferences', () async {
+    test('loads draft for user from preferences using defensys_user', () async {
       SharedPreferences.setMockInitialValues({
-        'user_data': '{"id":99,"username":"admin"}',
+        'defensys_user': '{"id":99,"username":"admin"}',
         'team_bulk_import_draft_99': '''
 {
   "rows": [{"team_name": "Saved"}],
@@ -52,5 +52,44 @@ void main() {
 
       expect(draft, isNull);
     });
+
+    test('saves and clears draft correctly', () async {
+      SharedPreferences.setMockInitialValues({
+        'defensys_user': '{"id":99,"username":"admin"}',
+      });
+
+      final draft = TeamBulkImportDraft(
+        rows: [
+          {'team_name': 'Team Manual Draft', 'member_ids': ['10']},
+        ],
+        adviserFilter: 'with_adviser',
+        savedAt: DateTime.now(),
+        issueCount: 2,
+      );
+
+      await saveTeamBulkImportDraft(draft);
+      final loaded = await loadTeamBulkImportDraft();
+      expect(loaded, isNotNull);
+      expect(loaded!.rows.first['team_name'], 'Team Manual Draft');
+      expect(loaded.adviserFilter, 'with_adviser');
+      expect(loaded.issueCount, 2);
+
+      await clearTeamBulkImportDraft();
+      final cleared = await loadTeamBulkImportDraft();
+      expect(cleared, isNull);
+    });
+
+    test('countPreviewIssues counts non-ready rows correctly', () {
+      final preview = {
+        'rows': [
+          {'row': 1, 'ready': true},
+          {'row': 2, 'ready': false},
+          {'row': 3, 'ready': false},
+        ]
+      };
+      expect(countPreviewIssues(preview), 2);
+      expect(countPreviewIssues(null), 0);
+    });
   });
 }
+

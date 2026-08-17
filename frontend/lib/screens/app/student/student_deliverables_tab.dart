@@ -287,33 +287,44 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                 )
               else ...[
-                _buildRequiredProgressBlock(pre),
-                const SizedBox(height: 16),
-                _sectionTitle('Pre-Defense Requirements'),
-                const SizedBox(height: 8),
-                if (pre.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      'No pre-defense requirements configured.',
-                      style: TextStyle(
-                        color: Colors.grey,
-                        fontStyle: FontStyle.italic,
-                        fontSize: 12,
-                      ),
-                    ),
-                  )
-                else
-                  ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
-                const SizedBox(height: 20),
-                if (vault.isNotEmpty) ...[
-                  _sectionTitle('Post-Defense Submissions'),
-                  const SizedBox(height: 8),
-                  if (selectedStage['vault_unlocked'] != true && selectedStage['archive_unlocked'] != true)
-                    _lockedVaultNotice(state.selectedStage)
-                  else
-                    ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
-                ],
+                Builder(
+                  builder: (context) {
+                    final hasPendingPre = StudentTaskBadgeHelper.hasPendingPreDeliverables(selectedStage);
+                    final hasPendingPost = StudentTaskBadgeHelper.hasPendingPostDeliverables(selectedStage);
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildRequiredProgressBlock(pre),
+                        const SizedBox(height: 16),
+                        _sectionTitle('Pre-Defense Requirements', showRedDot: hasPendingPre),
+                        const SizedBox(height: 8),
+                        if (pre.isEmpty)
+                          const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 8),
+                            child: Text(
+                              'No pre-defense requirements configured.',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontStyle: FontStyle.italic,
+                                fontSize: 12,
+                              ),
+                            ),
+                          )
+                        else
+                          ...pre.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
+                        const SizedBox(height: 20),
+                        if (vault.isNotEmpty) ...[
+                          _sectionTitle('Post-Defense Submissions', showRedDot: hasPendingPost),
+                          const SizedBox(height: 8),
+                          if (selectedStage['vault_unlocked'] != true && selectedStage['archive_unlocked'] != true)
+                            _lockedVaultNotice(state.selectedStage)
+                          else
+                            ...vault.map((item) => _deliverableRow(team, state.selectedStage, item, endorsed)),
+                        ],
+                      ],
+                    );
+                  },
+                ),
               ],
             ],
           );
@@ -336,16 +347,32 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     );
   }
 
-  Widget _sectionTitle(String title) {
+  Widget _sectionTitle(String title, {bool showRedDot = false}) {
     return Padding(
       padding: const EdgeInsets.only(top: 8, bottom: 4),
-      child: Text(
-        title,
-        style: const TextStyle(
-          fontSize: 16,
-          fontWeight: FontWeight.bold,
-          color: DefensysTokens.maroon,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: DefensysTokens.maroon,
+            ),
+          ),
+          if (showRedDot) ...[
+            const SizedBox(width: 6),
+            Container(
+              width: 7,
+              height: 7,
+              decoration: const BoxDecoration(
+                color: Colors.redAccent,
+                shape: BoxShape.circle,
+              ),
+            ),
+          ],
+        ],
       ),
     );
   }
@@ -536,7 +563,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
               ],
             ),
-            if (uploaded && isRejected && feedback != null && feedback.isNotEmpty) ...[
+            if (uploaded && isRejected && feedback.isNotEmpty) ...[
               const SizedBox(height: 10),
               Container(
                 width: double.infinity,

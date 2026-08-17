@@ -244,6 +244,10 @@ class StudentTeamListCreateView(APIView):
         if year_level:
             queryset = queryset.filter(year_level=year_level)
 
+        section = request.query_params.get('section', '').strip()
+        if section:
+            queryset = queryset.filter(section=section)
+
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
         full_dir = user_can_see_full_team_directory(request.user)

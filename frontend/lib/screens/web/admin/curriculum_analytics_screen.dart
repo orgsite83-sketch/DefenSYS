@@ -318,7 +318,7 @@ class _CurriculumAnalyticsScreenState
               height: 115,
               child: Center(
                 child: Text(
-                  'No repository data for this period.',
+                  'No project archive data for this period.',
                   style: TextStyle(color: AppColors.textSecondary),
                 ),
               ),
@@ -532,9 +532,9 @@ class _CurriculumAnalyticsScreenState
           const SizedBox(height: 16),
           if (suggestions.isEmpty)
             _suggestionBox(
-              title: 'No Repository Data Yet',
+              title: 'No Project Archive Data Yet',
               body:
-                  'Upload PIT or Capstone files through Repository Vault to generate curriculum insights.',
+                  'Upload PIT or Capstone files through Project Archive to generate curriculum insights.',
               type: 'info',
             )
           else
@@ -850,7 +850,7 @@ class _CurriculumAnalyticsScreenState
             _suggestionBox(
               title: 'No Curriculum Insights Yet',
               body:
-                  'Repository uploads are required before DSS insights can be generated.',
+                  'Project archive uploads are required before DSS insights can be generated.',
               type: 'info',
             )
           else

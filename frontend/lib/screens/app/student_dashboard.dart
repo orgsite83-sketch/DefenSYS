@@ -9,6 +9,7 @@ import 'student/section_integration_tab.dart';
 import 'student/profile_edit_screen.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../config/api_config.dart';
+import '../../services/capstone_deliverables_provider.dart';
 import '../../services/dashboard_provider.dart';
 import '../../services/auth_provider.dart';
 import '../../theme/defensys_tokens.dart';
@@ -57,6 +58,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('student'));
+    final delivState = ref.watch(capstoneDeliverablesProvider);
 
     final dataToPass = Map<String, dynamic>.from(
       dashState.data ?? <String, dynamic>{},
@@ -67,6 +69,11 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
 
     final isPM = widget.userData?['is_project_manager'] == true ||
         dataToPass['student']?['is_project_manager'] == true;
+
+    final hasPendingEvents = StudentTaskBadgeHelper.hasPendingEvents(
+      selectedStage: delivState.currentTeamSelectedStage,
+      studentData: dataToPass,
+    );
 
     final tabChildren = <Widget>[
       TeamTab(
@@ -86,7 +93,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final destinations = <NavigationDestination>[
       NavigationDestination(icon: const Icon(Icons.group), label: l10n.navTeam),
       NavigationDestination(
-        icon: Icon(isCapstone ? Icons.alt_route_rounded : Icons.event_note_rounded),
+        icon: Badge(
+          isLabelVisible: hasPendingEvents,
+          smallSize: 8,
+          backgroundColor: Colors.redAccent,
+          child: Icon(isCapstone ? Icons.alt_route_rounded : Icons.event_note_rounded),
+        ),
         label: isCapstone ? 'Stages' : 'Events',
       ),
       NavigationDestination(

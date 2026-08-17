@@ -30,7 +30,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
       case 'pit_lead':
         return 'Archive passed PIT projects for $year after the event is officially complete in Evaluation & Grades.';
       default:
-        return 'Browse pre-defense uploads and repository items by team or deliverable (e.g. D1 across all teams).';
+        return 'Browse pre-defense uploads and archive items by team or deliverable (e.g. D1 across all teams).';
     }
   }
 

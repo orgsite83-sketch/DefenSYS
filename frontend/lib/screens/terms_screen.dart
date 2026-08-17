@@ -37,7 +37,7 @@ class TermsScreen extends StatelessWidget {
           'You agree to use DefenSYS only for its intended academic purposes. You must not:\n\n'
           '• Attempt to bypass security controls or access restrictions\n'
           '• Submit false, misleading, or fraudulent evaluation scores\n'
-          '• Reproduce, distribute, or publish documents from the Project Repository\n'
+          '• Reproduce, distribute, or publish documents from the Project Archive\n'
           '• Interfere with the system\'s operation or other users\' access\n'
           '• Use the system for any commercial or non-academic purpose',
     ),
@@ -55,7 +55,7 @@ class TermsScreen extends StatelessWidget {
       title: '6. Intellectual Property',
       content:
           'All project documents, manuscripts, source code, and presentations uploaded to the '
-          'Project Repository remain the intellectual property of the respective student teams and '
+          'Project Archive remain the intellectual property of the respective student teams and '
           'the institution.\n\n'
           'Unauthorized reproduction, distribution, or use of archived materials is strictly '
           'prohibited. The watermarking and read-only protections in place must not be circumvented.',

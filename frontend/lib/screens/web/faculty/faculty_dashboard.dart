@@ -40,8 +40,9 @@ enum FacultyWorkspace { pitLead, adviser, pitInstructor, documenter }
 class WorkspaceOption {
   final FacultyWorkspace type;
   final String? yearLevel;
+  final String? section;
 
-  const WorkspaceOption({required this.type, this.yearLevel});
+  const WorkspaceOption({required this.type, this.yearLevel, this.section});
 
   @override
   bool operator ==(Object other) =>
@@ -49,10 +50,11 @@ class WorkspaceOption {
       other is WorkspaceOption &&
           runtimeType == other.runtimeType &&
           type == other.type &&
-          yearLevel == other.yearLevel;
+          yearLevel == other.yearLevel &&
+          section == other.section;
 
   @override
-  int get hashCode => type.hashCode ^ yearLevel.hashCode;
+  int get hashCode => type.hashCode ^ yearLevel.hashCode ^ section.hashCode;
 }
 
 class FacultyDashboard extends ConsumerStatefulWidget {
@@ -69,6 +71,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   String _activeSection = 'dashboard';
   WorkspaceOption? _activeWorkspaceOption;
   int? _selectedMinutesScheduleId;
+  int _navigationEpoch = 0;
 
   @override
   void initState() {
@@ -185,18 +188,31 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       workspaces.add(const WorkspaceOption(type: FacultyWorkspace.adviser));
     }
     if (roles['pit_instructor'] == true) {
-      final years = List<String>.from(roles['pit_instructor_years'] ?? []);
-      if (years.isEmpty) {
-        workspaces.add(const WorkspaceOption(
-          type: FacultyWorkspace.pitInstructor,
-          yearLevel: '1st Year',
-        ));
+      final sections = roles['pit_instructor_sections'] as List<dynamic>?;
+      if (sections != null && sections.isNotEmpty) {
+        for (final item in sections) {
+          if (item is Map) {
+            workspaces.add(WorkspaceOption(
+              type: FacultyWorkspace.pitInstructor,
+              yearLevel: item['year_level']?.toString(),
+              section: item['section']?.toString(),
+            ));
+          }
+        }
       } else {
-        for (final yr in years) {
-          workspaces.add(WorkspaceOption(
+        final years = List<String>.from(roles['pit_instructor_years'] ?? []);
+        if (years.isEmpty) {
+          workspaces.add(const WorkspaceOption(
             type: FacultyWorkspace.pitInstructor,
-            yearLevel: yr,
+            yearLevel: '1st Year',
           ));
+        } else {
+          for (final yr in years) {
+            workspaces.add(WorkspaceOption(
+              type: FacultyWorkspace.pitInstructor,
+              yearLevel: yr,
+            ));
+          }
         }
       }
     }
@@ -220,6 +236,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           'defense_scheduler',
           'defense_board',
           'grade_center',
+          'project_archive',
           'repository_audit',
           'audit_compliance',
           'uploader',
@@ -285,6 +302,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         return 'Project Adviser';
       case FacultyWorkspace.pitInstructor:
         final year = ws.yearLevel ?? 'Unscoped';
+        final sec = ws.section;
+        if (sec != null && sec.isNotEmpty) {
+          return 'PIT Instructor · $year ($sec)';
+        }
         return 'PIT Instructor · $year';
       case FacultyWorkspace.documenter:
         return 'Minutes Documenter';
@@ -302,10 +323,12 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         if (!ok || !mounted) return;
       }
     }
+    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
     setState(() {
       _activeWorkspaceOption = workspaceOption;
       _activeSection = 'dashboard';
+      _navigationEpoch++;
     });
     context.go(FacultyRoutes.dashboard);
   }
@@ -321,7 +344,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         if (!ok || !mounted) return;
       }
     }
+    ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    setState(() {
+      _navigationEpoch++;
+    });
     final path = FacultyRoutes.pathForSection(section);
     if (queryParameters != null && queryParameters.isNotEmpty) {
       final uri = Uri(path: path, queryParameters: queryParameters);
@@ -744,12 +771,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           _buildSectionHeader('Archives & Audit'),
           _buildSidebarItem(
             icon: Icons.manage_search,
-            label: 'Repository Vault',
+            label: 'Project Archive',
             onTap: () => _afterSidebarAction(
               isWide,
-              () => _goToSection('repository_audit'),
+              () => _goToSection('project_archive'),
             ),
-            isActive: _activeSection == 'repository_audit',
+            isActive: _activeSection == 'project_archive' ||
+                _activeSection == 'repository_audit',
           ),
           _buildSidebarItem(
             icon: Icons.verified_user_outlined,
@@ -962,6 +990,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           initialScope: initialScope,
           isAdviser: ws.type == FacultyWorkspace.adviser,
           pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
+          pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
           initialTeamId: initialTeamId,
           initialTab: initialTab,
         );
@@ -1004,6 +1033,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           child: StudentTeamsScreen(
             mode: mode,
             pitYearLevel: (ws.type == FacultyWorkspace.pitLead || ws.type == FacultyWorkspace.pitInstructor) ? ws.yearLevel : null,
+            pitSection: ws.type == FacultyWorkspace.pitInstructor ? ws.section : null,
           ),
         );
       case 'pit_events':
@@ -1043,6 +1073,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               dashState: dashState,
               facultyName: facultyName,
               yearLevel: workspaceOption.yearLevel,
+              section: workspaceOption.section,
             ),
           );
         }
@@ -1061,7 +1092,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'rubric_engine':
         return Container(
           color: Colors.white,
-          child: const RubricEngineScreen(),
+          child: RubricEngineScreen(key: ValueKey('rubric_engine_$_navigationEpoch')),
         );
       case 'dashboard':
       default:
@@ -1077,6 +1108,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
                 dashState: dashState,
                 facultyName: facultyName,
                 yearLevel: workspaceOption.yearLevel,
+                section: workspaceOption.section,
               ),
               if (hasCapstoneInfo)
                 CapstoneInstructorInfoSection(
@@ -1094,6 +1126,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required DashboardState dashState,
     required String facultyName,
     String? yearLevel,
+    String? section,
   }) {
     switch (workspace) {
       case FacultyWorkspace.pitLead:
@@ -1101,10 +1134,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           data: dashState.data,
           facultyName: facultyName,
           onOpenStudentTeams: () => _goToSection('student_teams'),
-          onOpenCohort: () => _goToSection('cohort'),
           onOpenScheduler: () => _goToSection('defense_scheduler'),
           onOpenGradeCenter: () => _goToSection('grade_center'),
           onOpenRubrics: () => _goToSection('rubrics'),
+          onOpenCohort: () => _goToSection('cohort'),
         );
       case FacultyWorkspace.adviser:
         return AdviserDashboardContent(
@@ -1128,6 +1161,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           data: dashState.data,
           facultyName: facultyName,
           yearLevel: yearLevel,
+          section: section,
           onOpenDeliverables: () => _goToSection('deliverables'),
           onOpenGrading: () => _goToSection('deliverables'),
         );

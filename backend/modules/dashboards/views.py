@@ -114,9 +114,12 @@ def _faculty_roles(user):
     from student_teams.team_levels import normalize_year_level
     pit_instructor_years = []
     capstone_instructor_years = []
+    pit_instructor_sections = []
+    capstone_instructor_sections = []
 
     for assign in assignments:
         norm_year = normalize_year_level(assign.year_level)
+        sec = (assign.section or '').strip()
         has_pit = StudentTeam.objects.filter(
             Q(semester=assign.semester, section=assign.section) &
             Q(level__icontains=norm_year) &
@@ -134,10 +137,19 @@ def _faculty_roles(user):
             if norm_year in ('3rd Year', '4th Year'):
                 has_capstone = True
 
-        if has_pit and norm_year not in pit_instructor_years:
-            pit_instructor_years.append(norm_year)
-        if has_capstone and norm_year not in capstone_instructor_years:
-            capstone_instructor_years.append(norm_year)
+        if has_pit:
+            if norm_year not in pit_instructor_years:
+                pit_instructor_years.append(norm_year)
+            sec_item = {'year_level': norm_year, 'section': sec}
+            if sec_item not in pit_instructor_sections:
+                pit_instructor_sections.append(sec_item)
+
+        if has_capstone:
+            if norm_year not in capstone_instructor_years:
+                capstone_instructor_years.append(norm_year)
+            sec_item = {'year_level': norm_year, 'section': sec}
+            if sec_item not in capstone_instructor_sections:
+                capstone_instructor_sections.append(sec_item)
 
     pit_instructor_years.sort()
     capstone_instructor_years.sort()
@@ -151,8 +163,10 @@ def _faculty_roles(user):
         'pit_lead_year': user.pit_lead_year,
         'pit_instructor': is_pit_instructor,
         'pit_instructor_years': pit_instructor_years,
+        'pit_instructor_sections': pit_instructor_sections,
         'capstone_instructor': is_capstone_instructor,
         'capstone_instructor_years': capstone_instructor_years,
+        'capstone_instructor_sections': capstone_instructor_sections,
         'adviser': user.is_adviser,
         'documenter': user.is_documenter,
         'uploader': user.is_uploader,
@@ -984,12 +998,13 @@ class StudentDashboardView(APIView):
             'team': team_payload,
             'schedule': _schedule_payload(schedule),
             'grades': {
-                'panelist': {'total': grade.panel_score, 'max': 100} if grade and grade.panel_score is not None else None,
-                'adviser': {'total': grade.adviser_score, 'max': 100} if grade and grade.adviser_score is not None else None,
-                'peer': {'total': grade.peer_score, 'max': 100} if grade and grade.peer_score is not None else None,
-                'finalGrade': grade.final_grade,
                 'status': grade.status,
                 'stage': grade.stage_label,
+                'result': grade.result if grade else None,
+                'is_published': grade.status == TeamGrade.STATUS_PUBLISHED if grade else False,
+                'has_panel_evaluated': grade.panel_score is not None if grade else False,
+                'has_adviser_graded': grade.adviser_score is not None if grade else False,
+                'has_peer_completed': peer_eval_complete,
             } if grade else None,
             'members': team_payload['members'] if team_payload else [],
             'weights': weights,
@@ -1003,7 +1018,7 @@ class StudentDashboardView(APIView):
             'team_name': team_payload['name'] if team_payload else None,
             'project_title': team_payload['projectTitle'] if team_payload else None,
             'status': team_payload['status'] if team_payload else 'No team assigned',
-            'final_grade': grade.final_grade if grade else None,
+            'final_grade': None,
         })
 
 

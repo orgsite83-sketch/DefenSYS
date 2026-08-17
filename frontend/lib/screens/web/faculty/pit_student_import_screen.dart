@@ -25,11 +25,14 @@ class _PitStudentImportScreenState
   List<Map<String, dynamic>> _rows = [];
   Map<String, dynamic> _parsedMetadata = {};
   bool _isOfficialClassList = false;
+  int _loadedFilesCount = 0;
+  dynamic _dropSubscription;
 
   @override
   void initState() {
     super.initState();
     _sectionController.addListener(_onSectionChanged);
+    _dropSubscription = setupDropzoneListener(_handleFiles);
   }
 
   void _onSectionChanged() {
@@ -40,6 +43,7 @@ class _PitStudentImportScreenState
 
   @override
   void dispose() {
+    _dropSubscription?.cancel();
     _sectionController.removeListener(_onSectionChanged);
     _sectionController.dispose();
     super.dispose();
@@ -92,7 +96,20 @@ class _PitStudentImportScreenState
     );
   }
 
+  Map<String, int> _getSectionCounts() {
+    final counts = <String, int>{};
+    for (final r in _rows) {
+      final s = (r['section']?.toString() ?? '').trim();
+      final key = s.isEmpty ? 'Unassigned' : s;
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    return counts;
+  }
+
   Widget _importPanel(UserManagementState state, String year) {
+    final sectionCounts = _getSectionCounts();
+    final hasMultipleSections = sectionCounts.length > 1 || (sectionCounts.isNotEmpty && !sectionCounts.containsKey('Unassigned'));
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -120,11 +137,14 @@ class _PitStudentImportScreenState
               );
               final sectionField = TextField(
                 controller: _sectionController,
-                enabled: !state.isSaving && !_isOfficialClassList,
-                decoration: const InputDecoration(
-                  labelText: 'Section',
-                  hintText: 'BSIT 3A',
-                  border: OutlineInputBorder(),
+                enabled: !state.isSaving,
+                decoration: InputDecoration(
+                  labelText: hasMultipleSections ? 'Default / Override Section' : 'Section',
+                  hintText: 'e.g. BSIT 1A',
+                  helperText: hasMultipleSections
+                      ? 'Editing student section directly in the table below overrides this default.'
+                      : null,
+                  border: const OutlineInputBorder(),
                 ),
               );
               if (constraints.maxWidth < 720) {
@@ -142,6 +162,52 @@ class _PitStudentImportScreenState
               );
             },
           ),
+          if (sectionCounts.isNotEmpty) ...[
+            const SizedBox(height: 14),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              children: [
+                const Text(
+                  'Sections in Batch:',
+                  style: TextStyle(fontWeight: FontWeight.w700, fontSize: 13, color: Color(0xFF4B5563)),
+                ),
+                ...sectionCounts.entries.map((e) {
+                  final isUnassigned = e.key == 'Unassigned';
+                  return Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: isUnassigned ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isUnassigned ? const Color(0xFFFCA5A5) : const Color(0xFF86EFAC),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          isUnassigned ? Icons.warning_amber_rounded : Icons.class_outlined,
+                          size: 14,
+                          color: isUnassigned ? const Color(0xFFDC2626) : const Color(0xFF16A34A),
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          '${e.key} (${e.value} student${e.value == 1 ? '' : 's'})',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                            color: isUnassigned ? const Color(0xFFDC2626) : const Color(0xFF15803D),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ),
+          ],
           if (_isOfficialClassList) ...[
             const SizedBox(height: 12),
             Container(
@@ -157,8 +223,7 @@ class _PitStudentImportScreenState
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Official Class List detected for section: ${_parsedMetadata['section'] ?? '-'} '
-                      '· Instructor: ${_parsedMetadata['faculty'] ?? '-'}',
+                      'Official USTP Class List template(s) loaded. Sections and instructors detected automatically per file.',
                       style: TextStyle(
                         color: DefensysUi.infoText,
                         fontWeight: FontWeight.w700,
@@ -193,22 +258,24 @@ class _PitStudentImportScreenState
                   const SizedBox(height: 10),
                   Text(
                     _rows.isEmpty
-                        ? 'Click to choose a student CSV / Excel file'
-                        : '${_rows.length} student row${_rows.length == 1 ? '' : 's'} ready',
+                        ? 'Click to choose student CSV / Excel file(s)'
+                        : '${_rows.length} student row${_rows.length == 1 ? '' : 's'} ready (${_loadedFilesCount > 1 ? "$_loadedFilesCount files" : "1 file"})',
                     style: const TextStyle(fontWeight: FontWeight.w900),
                   ),
                   const SizedBox(height: 5),
                   Text(
-                    _isOfficialClassList
-                        ? 'Official USTP Class List template loaded'
-                        : 'Student rows only',
+                    _rows.isEmpty
+                        ? 'Supports selecting multiple section class list files at once'
+                        : _isOfficialClassList
+                            ? 'Official USTP Class List template(s) loaded'
+                            : 'Student rows only',
                     style: const TextStyle(color: Color(0xFF667085), fontSize: 12.5),
                   ),
                 ],
               ),
             ),
           ),
-          _previewTable(),
+          _previewTable(state),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -248,139 +315,293 @@ class _PitStudentImportScreenState
   }
 
   Future<void> _pickCsv() async {
+    final files = await pickMultipleTabularDataFiles();
+    await _handleFiles(files);
+  }
+
+  Future<void> _handleFiles(List<PickedTabularFile> files) async {
+    if (!mounted || files.isEmpty) return;
+
     try {
-      final file = await pickTabularDataFile();
-      if (!mounted || file == null) return;
+      final allRows = <Map<String, dynamic>>[];
+      final sectionsSet = <String>{};
+      var officialCount = 0;
+      Map<String, dynamic> firstOfficialMetadata = {};
 
-      if (file.isXlsx) {
-        final official = _parseOfficialClassListXlsx(file.bytes);
-        if (official.students.isEmpty) {
-          throw 'The selected Excel file is empty or could not be parsed as an official class list.';
+      for (final file in files) {
+        if (file.isXlsx) {
+          final official = _parseOfficialClassListXlsx(file.bytes);
+          if (official.students.isNotEmpty) {
+            officialCount++;
+            if (firstOfficialMetadata.isEmpty) {
+              firstOfficialMetadata = official.metadata;
+            }
+            final section = official.metadata['section']?.toString().trim() ?? '';
+            final yearLevel = official.metadata['year_level']?.toString().trim() ?? '';
+            if (section.isNotEmpty) sectionsSet.add(section);
+            for (final s in official.students) {
+              allRows.add({
+                ...s,
+                'section': (s['section']?.toString().trim().isNotEmpty == true)
+                    ? s['section'].toString().trim()
+                    : section,
+                if (s['year_level'] == null || s['year_level'].toString().trim().isEmpty)
+                  if (yearLevel.isNotEmpty) 'year_level': yearLevel,
+                '_fileMetadata': Map<String, dynamic>.from(official.metadata),
+              });
+            }
+          }
+          continue;
         }
-        setState(() {
-          _isOfficialClassList = true;
-          _parsedMetadata = official.metadata;
-          _rows = official.students;
 
-          final section = official.metadata['section']?.toString() ?? '';
-          if (section.isNotEmpty) {
-            _sectionController.text = section;
+        final csvText = file.text ?? '';
+        final official = _parseOfficialClassListCsv(csvText);
+        if (official.students.isNotEmpty) {
+          officialCount++;
+          if (firstOfficialMetadata.isEmpty) {
+            firstOfficialMetadata = official.metadata;
           }
-        });
-        return;
-      }
-
-      final csvText = file.text ?? '';
-      // Try to parse as official class list first
-      final official = _parseOfficialClassListCsv(csvText);
-      if (official.students.isNotEmpty) {
-        setState(() {
-          _isOfficialClassList = true;
-          _parsedMetadata = official.metadata;
-          _rows = official.students;
-
-          final section = official.metadata['section']?.toString() ?? '';
-          if (section.isNotEmpty) {
-            _sectionController.text = section;
+          final section = official.metadata['section']?.toString().trim() ?? '';
+          final yearLevel = official.metadata['year_level']?.toString().trim() ?? '';
+          if (section.isNotEmpty) sectionsSet.add(section);
+          for (final s in official.students) {
+            allRows.add({
+              ...s,
+              'section': (s['section']?.toString().trim().isNotEmpty == true)
+                  ? s['section'].toString().trim()
+                  : section,
+              if (s['year_level'] == null || s['year_level'].toString().trim().isEmpty)
+                if (yearLevel.isNotEmpty) 'year_level': yearLevel,
+              '_fileMetadata': Map<String, dynamic>.from(official.metadata),
+            });
           }
-        });
-        return;
+          continue;
+        }
+
+        final standardRows = _parseStandardCsv(csvText);
+        if (standardRows.isNotEmpty) {
+          allRows.addAll(standardRows);
+        }
       }
 
-      // Otherwise, parse as standard CSV
-      final standardRows = _parseStandardCsv(csvText);
-      if (standardRows.isEmpty) {
-        throw 'The selected file does not match the official class list format or standard CSV template (requiring headers: id_number, first_name, last_name, email).';
+      if (allRows.isEmpty) {
+        throw 'The selected file(s) do not match the official class list format or standard CSV template.';
       }
+
       setState(() {
-        _isOfficialClassList = false;
-        _parsedMetadata = {};
-        _rows = standardRows;
+        _isOfficialClassList = officialCount > 0;
+        _parsedMetadata = firstOfficialMetadata;
+        _rows = allRows;
+        _loadedFilesCount = files.length;
+
+        if (sectionsSet.length == 1) {
+          _sectionController.text = sectionsSet.first;
+        } else if (sectionsSet.length > 1) {
+          _sectionController.text = '';
+        }
       });
     } catch (e) {
       if (!mounted) return;
-      showErrorToast(context, 'Error reading file: $e');
+      showErrorToast(context, 'Error reading file(s): $e');
     }
   }
 
   Future<void> _importRows() async {
     final notifier = ref.read(userManagementProvider.notifier);
+    final defaultSection = _sectionController.text.trim();
 
     if (_isOfficialClassList) {
-      final responsePayload = await notifier.pitLeadOfficialClassListImport(
-        metadata: _parsedMetadata,
-        students: _rows,
-      );
-      if (!mounted) return;
-      if (responsePayload == null) return;
+      final groupRows = <String, List<Map<String, dynamic>>>{};
+      final groupMetaMap = <String, Map<String, dynamic>>{};
 
-      final warnings = responsePayload['warnings'] as List? ?? const [];
-      final errors = responsePayload['errors'] as List? ?? const [];
-      if (warnings.isNotEmpty || errors.isNotEmpty) {
-        _showImportSummaryDialog(warnings, errors);
-      } else {
+      for (final row in _rows) {
+        final rowSection = (row['section']?.toString().trim().isNotEmpty == true)
+            ? row['section'].toString().trim()
+            : '';
+        final fileMeta = row['_fileMetadata'] as Map<String, dynamic>? ?? {};
+        final fileSection = (fileMeta['section']?.toString().trim().isNotEmpty == true)
+            ? fileMeta['section'].toString().trim()
+            : '';
+        final sec = rowSection.isNotEmpty
+            ? rowSection
+            : (fileSection.isNotEmpty ? fileSection : defaultSection);
+
+        final facultyName = (fileMeta['instructor'] ?? fileMeta['faculty'] ?? fileMeta['instructor_name'] ?? '').toString().trim();
+        final groupKey = '${facultyName}_$sec';
+
+        groupRows.putIfAbsent(groupKey, () {
+          final meta = Map<String, dynamic>.from(fileMeta.isNotEmpty ? fileMeta : _parsedMetadata);
+          if (sec.isNotEmpty) {
+            meta['section'] = sec;
+          }
+          groupMetaMap[groupKey] = meta;
+          return [];
+        }).add(row);
+      }
+
+      final combinedWarnings = <dynamic>[];
+      final combinedErrors = <dynamic>[];
+      var successCount = 0;
+
+      for (final entry in groupRows.entries) {
+        final groupKey = entry.key;
+        final secRows = entry.value;
+        final meta = groupMetaMap[groupKey] ?? Map<String, dynamic>.from(_parsedMetadata);
+
+        final responsePayload = await notifier.pitLeadOfficialClassListImport(
+          metadata: meta,
+          students: secRows,
+        );
+        if (!mounted) return;
+        if (responsePayload == null) continue;
+
+        successCount++;
+        final warnings = responsePayload['warnings'] as List? ?? const [];
+        final errors = responsePayload['errors'] as List? ?? const [];
+        combinedWarnings.addAll(warnings);
+        combinedErrors.addAll(errors);
+      }
+
+      if (combinedWarnings.isNotEmpty || combinedErrors.isNotEmpty) {
+        _showImportSummaryDialog(combinedWarnings, combinedErrors);
+      } else if (successCount > 0) {
         setState(() {
           _rows = [];
           _isOfficialClassList = false;
           _parsedMetadata = {};
+          _loadedFilesCount = 0;
         });
       }
     } else {
-      final saved = await notifier.pitLeadStudentImport(
-        _rows,
-        studentContext: {
-          if (_sectionController.text.trim().isNotEmpty)
-            'section': _sectionController.text.trim(),
-        },
-      );
-      if (!mounted || !saved) return;
-      setState(() {
-        _rows = [];
-      });
+      // Group standard CSV rows by section if individual rows specify section
+      final sectionGroups = <String, List<Map<String, dynamic>>>{};
+      for (final row in _rows) {
+        final sec = (row['section']?.toString().trim().isNotEmpty == true)
+            ? row['section'].toString().trim()
+            : defaultSection;
+        sectionGroups.putIfAbsent(sec, () => []).add(row);
+      }
+
+      var importedAny = false;
+      for (final entry in sectionGroups.entries) {
+        final secName = entry.key;
+        final secRows = entry.value;
+
+        final saved = await notifier.pitLeadStudentImport(
+          secRows,
+          studentContext: {
+            if (secName.isNotEmpty) 'section': secName,
+          },
+        );
+        if (!mounted) return;
+        if (saved) importedAny = true;
+      }
+
+      if (importedAny) {
+        setState(() {
+          _rows = [];
+          _loadedFilesCount = 0;
+        });
+      }
     }
   }
 
   List<Map<String, dynamic>> _parseStandardCsv(String csv) {
-    final lines = csv
+    final rawLines = csv
         .split(RegExp(r'\r?\n'))
         .map((line) => line.trim())
         .where((line) => line.isNotEmpty)
         .toList();
-    if (lines.length < 2) return [];
+    if (rawLines.length < 2) return [];
 
-    final headers = lines.first
-        .split(',')
-        .map((header) => header.trim().toLowerCase().replaceFirst('\ufeff', ''))
-        .toList();
-    final idIndex = headers.indexOf('id_number');
-    final firstIndex = headers.indexOf('first_name');
-    final lastIndex = headers.indexOf('last_name');
-    final emailIndex = headers.indexOf('email');
-    final roleIndex = headers.indexOf('role');
-    
-    // role is optional, but id_number, first_name, last_name, and email are required
-    if ([idIndex, firstIndex, lastIndex, emailIndex].contains(-1)) {
+    int headerLineIndex = -1;
+    List<String> headers = [];
+
+    for (var i = 0; i < rawLines.length && i < 15; i++) {
+      final lineHeaders = _splitCsvLine(rawLines[i])
+          .map((h) => _normalizeHeader(h))
+          .toList();
+      final hasId = lineHeaders.any((h) =>
+          h.contains('student') ||
+          h.contains('id') ||
+          h == 'number' ||
+          h == 'no');
+      final hasName = lineHeaders.any((h) =>
+          h.contains('name') || h.contains('first') || h.contains('last'));
+      if (hasId && hasName) {
+        headerLineIndex = i;
+        headers = lineHeaders;
+        break;
+      }
+    }
+
+    if (headerLineIndex == -1) {
+      headerLineIndex = 0;
+      headers = _splitCsvLine(rawLines[0]).map((h) => _normalizeHeader(h)).toList();
+    }
+
+    int findCol(List<String> keywords) {
+      return headers.indexWhere((h) => keywords.any((k) => h == k || h.contains(k)));
+    }
+
+    final idIndex = findCol(['student number', 'student no', 'student id', 'id number', 'id_number', 'id']);
+    final fullNameIndex = findCol(['full name', 'full_name', 'student name', 'name']);
+    final firstIndex = findCol(['first name', 'first_name', 'given name', 'firstname']);
+    final lastIndex = findCol(['last name', 'last_name', 'surname', 'family name', 'lastname']);
+    final emailIndex = findCol(['email', 'email address', 'mail']);
+    final sectionIndex = findCol(['section', 'class section', 'class_section']);
+
+    if (idIndex == -1 && fullNameIndex == -1 && firstIndex == -1) {
       return [];
     }
 
-    return lines
-        .skip(1)
-        .map((line) {
-          final columns = line.split(',').map((cell) => cell.trim()).toList();
-          String read(int index) =>
-              index >= 0 && index < columns.length ? columns[index] : '';
-          return {
-            'id_number': read(idIndex),
-            'first_name': read(firstIndex),
-            'last_name': read(lastIndex),
-            'email': read(emailIndex),
-            'role': (roleIndex >= 0 && roleIndex < columns.length)
-                ? (columns[roleIndex].trim().isEmpty ? 'student' : columns[roleIndex].trim())
-                : 'student',
-          };
-        })
-        .where((row) => row['id_number']!.isNotEmpty)
-        .toList();
+    final result = <Map<String, dynamic>>[];
+    for (final line in rawLines.skip(headerLineIndex + 1)) {
+      final cols = _splitCsvLine(line);
+      String read(int idx) => (idx >= 0 && idx < cols.length) ? cols[idx].trim() : '';
+
+      final id = read(idIndex);
+      final fullName = read(fullNameIndex);
+      final firstName = read(firstIndex);
+      final lastName = read(lastIndex);
+      final email = read(emailIndex);
+      final section = read(sectionIndex);
+
+      if (id.isEmpty && fullName.isEmpty && firstName.isEmpty) continue;
+
+      String finalFirstName = firstName;
+      String finalLastName = lastName;
+      if (fullName.isNotEmpty && (firstName.isEmpty && lastName.isEmpty)) {
+        if (fullName.contains(',')) {
+          final parts = fullName.split(',');
+          finalLastName = parts[0].trim();
+          finalFirstName = parts.skip(1).join(',').trim();
+        } else {
+          final parts = fullName.split(RegExp(r'\s+'));
+          if (parts.length > 1) {
+            finalLastName = parts.last;
+            finalFirstName = parts.take(parts.length - 1).join(' ');
+          } else {
+            finalFirstName = fullName;
+          }
+        }
+      }
+
+      final studentId = id.isNotEmpty ? id : 'STU-${result.length + 1}';
+      final studentEmail = email.isNotEmpty ? email : '$studentId@ustp.edu.ph';
+
+      result.add({
+        'id_number': studentId,
+        'first_name': finalFirstName,
+        'last_name': finalLastName,
+        'full_name': fullName.isNotEmpty ? fullName : '$finalFirstName $finalLastName'.trim(),
+        'email': studentEmail,
+        'role': 'student',
+        if (section.isNotEmpty) 'section': section,
+      });
+    }
+
+    return result;
   }
 
   _OfficialClassListParseResult _parseOfficialClassListCsv(String csv) {
@@ -470,6 +691,51 @@ class _PitStudentImportScreenState
   _OfficialClassListParseResult _parseOfficialClassListRows(
     List<List<String>> rows,
   ) {
+    if (rows.isEmpty) {
+      return const _OfficialClassListParseResult(
+        metadata: {},
+        students: [],
+      );
+    }
+
+    final blocks = <List<List<String>>>[];
+    var currentBlock = <List<String>>[];
+
+    for (final row in rows) {
+      final lineText = row.join(' ').toLowerCase();
+      final isNewHeader = lineText.contains('official list of enrolled students') ||
+          (lineText.contains('subject code') && currentBlock.isNotEmpty);
+
+      if (isNewHeader && currentBlock.isNotEmpty) {
+        blocks.add(currentBlock);
+        currentBlock = <List<String>>[];
+      }
+      currentBlock.add(row);
+    }
+    if (currentBlock.isNotEmpty) {
+      blocks.add(currentBlock);
+    }
+
+    final allStudents = <Map<String, dynamic>>[];
+    Map<String, dynamic> firstMetadata = {};
+
+    for (final blockRows in blocks) {
+      final parsed = _parseSingleOfficialClassListBlock(blockRows);
+      if (firstMetadata.isEmpty && parsed.metadata.isNotEmpty) {
+        firstMetadata = parsed.metadata;
+      }
+      allStudents.addAll(parsed.students);
+    }
+
+    return _OfficialClassListParseResult(
+      metadata: firstMetadata,
+      students: allStudents,
+    );
+  }
+
+  _OfficialClassListParseResult _parseSingleOfficialClassListBlock(
+    List<List<String>> rows,
+  ) {
     final metadata = <String, dynamic>{};
     var headerIndex = -1;
 
@@ -532,6 +798,8 @@ class _PitStudentImportScreenState
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');
     final sectionColumnIndex = findHeader((value) => value == 'section' || value == 'class section');
+    final blockSection = metadata['section']?.toString() ?? '';
+    final blockYearLevel = metadata['year_level']?.toString() ?? '';
     final students = <Map<String, dynamic>>[];
 
     for (final row in rows.skip(headerIndex + 1)) {
@@ -540,14 +808,18 @@ class _PitStudentImportScreenState
       final id = read(idIndex);
       final name = read(nameIndex);
       if (id.isEmpty || name.isEmpty) continue;
+      final rowSection = sectionColumnIndex != -1 ? read(sectionColumnIndex) : '';
+      final sec = rowSection.isNotEmpty ? rowSection : blockSection;
+      final rowLevel = levelIndex != -1 ? _normalizeYearLevel(read(levelIndex)) : blockYearLevel;
+
       students.add({
         'id_number': id,
         'full_name': name,
         if (programIndex != -1) 'program': read(programIndex),
-        if (levelIndex != -1)
-          'year_level': _normalizeYearLevel(read(levelIndex)),
+        if (rowLevel.isNotEmpty) 'year_level': rowLevel,
         if (emailIndex != -1) 'email': read(emailIndex),
-        if (sectionColumnIndex != -1) 'section': read(sectionColumnIndex),
+        if (sec.isNotEmpty) 'section': sec,
+        '_fileMetadata': metadata,
       });
     }
 
@@ -665,7 +937,7 @@ class _PitStudentImportScreenState
     }
   }
 
-  Widget _previewTable() {
+  Widget _previewTable(UserManagementState state) {
     if (_rows.isEmpty) return const SizedBox.shrink();
 
     final columns = const [
@@ -823,8 +1095,12 @@ class _PitStudentImportScreenState
                           _reviewCellWidget(
                             EditableCell(
                               value: sectionName,
-                              enabled: !_isOfficialClassList, // Locked if official template
-                              onChanged: (val) => row['section'] = val.trim(),
+                              enabled: !state.isSaving,
+                              onChanged: (val) {
+                                setState(() {
+                                  row['section'] = val.trim();
+                                });
+                              },
                               style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF0F766E)),
                             ),
                           ),

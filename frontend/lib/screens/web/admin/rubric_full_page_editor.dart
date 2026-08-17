@@ -114,7 +114,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     await guardUnsavedExit(
       context,
       isDirty: _isDirty,
-      onExit: widget.onBack,
+      onExit: () {
+        ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+        ref.read(unsavedChangesProvider.notifier).setDirty(false);
+        widget.onBack();
+      },
       onSaveDraft: () => _save('draft', showConfirmation: false),
     );
   }
@@ -857,6 +861,11 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
     if (!mounted) return ok;
     if (ok) {
+      if (mounted) {
+        setState(() => _isDirty = false);
+      }
+      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
+      ref.read(unsavedChangesProvider.notifier).setDirty(false);
       await notifier.fetchRubrics();
       if (!mounted) return ok;
       showSuccessToast(

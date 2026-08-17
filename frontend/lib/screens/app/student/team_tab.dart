@@ -77,22 +77,15 @@ class TeamTab extends StatelessWidget {
         : 'Not yet scheduled';
     final roomStr = schedule?['room'] ?? '—';
 
-    final panelGrade = grades?['panelist'] as Map<String, dynamic>?;
-    final peerGrade = grades?['peer'] as Map<String, dynamic>?;
-    final finalGrade = grades?['finalGrade'];
-    final adviserGrade = grades?['adviser'];
     final gradeStatus = grades?['status'] ?? 'pending';
-    final peerEvalComplete = studentData?['peerEvalComplete'] == true;
+    final isPublished = grades?['is_published'] == true || gradeStatus == 'published';
+    final hasPanel = grades?['has_panel_evaluated'] == true || grades?['panelist'] != null;
+    final hasAdviser = grades?['has_adviser_graded'] == true || grades?['adviser'] != null;
+    final peerEvalComplete = studentData?['peerEvalComplete'] == true || grades?['has_peer_completed'] == true;
     final myPeerEvalComplete = studentData?['myPeerEvalComplete'] == true;
     final peerEvalEnabled = studentData?['peerEvalEnabled'] == true;
-
-    final weights = (studentData?['weights'] as Map<String, dynamic>?) ??
-        {'panel': 80, 'peer': 20};
-    final panelW = (weights['panel'] as num?)?.toInt() ?? 80;
-    final peerW = (weights['peer'] as num?)?.toInt() ?? 20;
-    final isPublished = gradeStatus == 'published';
-    final peerPending =
-        peerEvalEnabled && !peerEvalComplete && panelGrade != null;
+    final stageName = grades?['stage'] ?? (schedule?['stage'] ?? (team['readyForStage'] ?? team['ready_for_stage'] ?? 'Defense Stage'));
+    final result = grades?['result']?.toString().toUpperCase();
 
     final Color badgeBg;
     final Color badgeText;
@@ -114,16 +107,16 @@ class TeamTab extends StatelessWidget {
     final steps = [
       {'label': 'Team Registered', 'done': true},
       {'label': 'Defense Scheduled', 'done': schedule != null},
-      {'label': 'Panel Evaluation', 'done': panelGrade != null},
+      {'label': 'Panel Evaluation', 'done': hasPanel},
       if (isCapstone)
-        {'label': 'Adviser Grading', 'done': adviserGrade != null},
+        {'label': 'Adviser Grading', 'done': hasAdviser},
       {
         'label': peerEvalEnabled && !peerEvalComplete && myPeerEvalComplete
             ? 'Peer Evaluation (your part done)'
             : 'Peer Evaluation',
         'done': peerEvalComplete,
       },
-      {'label': 'Grades Published', 'done': gradeStatus == 'published'},
+      {'label': 'Evaluation Deliberation', 'done': isPublished},
     ];
 
     int activeIndex = steps.indexWhere((step) => !(step['done'] as bool));
@@ -365,43 +358,21 @@ class TeamTab extends StatelessWidget {
             ),
           ),
         ),
-        if (!isCapstone) ...[
-          const SizedBox(height: 16),
-          _sectionHeader('My Grades'),
-          const SizedBox(height: 12),
-          _scoreCard(
-            title: 'Panel Score',
-            subtitle: '$panelW% of final grade',
-            value: panelGrade,
-            accent: DefensysTokens.maroon,
-          ),
-          const SizedBox(height: 12),
-          _scoreCard(
-            title: 'Peer Score',
-            subtitle: peerPending
-                ? 'Pending — all teammates must finish peer evaluation'
-                : '$peerW% of final grade',
-            value: peerPending ? null : peerGrade,
-            accent: DefensysTokens.gold,
-            pendingLabel: peerPending ? 'Pending' : null,
-          ),
-          const SizedBox(height: 12),
-          _finalCard(
-            finalGrade: finalGrade,
-            isPublished: isPublished,
-            panelW: panelW,
-            peerW: peerW,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            peerPending
-                ? 'Your team is still completing peer evaluation. Final grades '
-                    'will appear after everyone has submitted.'
-                : 'Grades appear after panel evaluation and peer evaluation are '
-                    'complete. Contact your PIT Lead if something looks wrong.',
-            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-          ),
-        ],
+        const SizedBox(height: 16),
+        _sectionHeader('Defense Evaluation Status'),
+        const SizedBox(height: 12),
+        _defenseStatusCard(
+          stageName: stageName.toString(),
+          isPublished: isPublished,
+          result: result,
+          hasPanel: hasPanel,
+          hasAdviser: hasAdviser,
+          peerEvalComplete: peerEvalComplete,
+          peerEvalEnabled: peerEvalEnabled,
+          isCapstone: isCapstone,
+        ),
+        const SizedBox(height: 14),
+        _officialGradeNotice(),
         const SizedBox(height: 24),
       ],
     );
@@ -697,191 +668,223 @@ class TeamTab extends StatelessWidget {
     );
   }
 
-  Widget _scoreCard({
-    required String title,
-    required String subtitle,
-    required Map<String, dynamic>? value,
-    required Color accent,
-    String? pendingLabel,
+  Widget _defenseStatusCard({
+    required String stageName,
+    required bool isPublished,
+    required String? result,
+    required bool hasPanel,
+    required bool hasAdviser,
+    required bool peerEvalComplete,
+    required bool peerEvalEnabled,
+    required bool isCapstone,
   }) {
-    if (pendingLabel != null) {
-      return Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-        elevation: 2,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Row(
-            children: [
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  color: accent.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(Icons.hourglass_empty, color: accent),
-              ),
-              const SizedBox(width: 14),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      title,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                    ),
-                    Text(
-                      subtitle,
-                      style: const TextStyle(fontSize: 11, color: Colors.grey),
-                    ),
-                  ],
-                ),
-              ),
-              Text(
-                pendingLabel,
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 14,
-                  color: accent,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+    final bool isPassed = result == 'PASSED';
+    final bool isFailed = result == 'FAILED' || result == 'RE-DEFENSE';
+
+    final Color statusColor;
+    final String statusLabel;
+    final IconData statusIcon;
+
+    if (isPublished) {
+      if (isPassed) {
+        statusColor = Colors.green;
+        statusLabel = 'Stage Cleared · Passed';
+        statusIcon = Icons.check_circle_outline;
+      } else if (isFailed) {
+        statusColor = const Color(0xFFD97706);
+        statusLabel = 'Re-Defense Required';
+        statusIcon = Icons.replay_circle_filled_outlined;
+      } else {
+        statusColor = DefensysTokens.maroon;
+        statusLabel = 'Deliberation Complete';
+        statusIcon = Icons.task_alt;
+      }
+    } else if (hasPanel) {
+      statusColor = const Color(0xFF2563EB);
+      statusLabel = 'Panel Evaluation Completed';
+      statusIcon = Icons.rate_review_outlined;
+    } else {
+      statusColor = DefensysTokens.textSecondary;
+      statusLabel = 'Pending Defense Schedule';
+      statusIcon = Icons.hourglass_top_outlined;
     }
 
-    final hasScore = value != null && value['total'] != null;
-    final total = (value?['total'] as num?)?.toDouble();
-    final max = (value?['max'] as num?)?.toDouble() ?? 100;
-    final pct = hasScore && max > 0 ? (total! / max * 100) : null;
-
     return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
       elevation: 2,
       child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Row(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Container(
-              width: 48,
-              height: 48,
-              decoration: BoxDecoration(
-                color: accent.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(Icons.grade, color: accent),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            // Stage & Status Row
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: statusColor.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  Text(
-                    subtitle,
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  child: Icon(statusIcon, color: statusColor, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        stageName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: DefensysTokens.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: statusColor.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(color: statusColor.withValues(alpha: 0.35)),
+                        ),
+                        child: Text(
+                          statusLabel,
+                          style: TextStyle(
+                            color: statusColor,
+                            fontWeight: FontWeight.w700,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
-            if (pct != null)
-              Text(
-                '${pct.toStringAsFixed(1)}%',
-                style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 20,
-                  color: accent,
-                ),
-              )
-            else
-              const Text(
-                '—',
-                style: TextStyle(
-                  fontSize: 18,
-                  color: Colors.grey,
-                  fontStyle: FontStyle.italic,
-                ),
+            const SizedBox(height: 16),
+            const Divider(height: 1),
+            const SizedBox(height: 14),
+            // Evaluation Milestones
+            _milestoneRow(
+              title: 'Panel Defense Evaluation',
+              isDone: hasPanel,
+              accent: DefensysTokens.maroon,
+            ),
+            const SizedBox(height: 10),
+            _milestoneRow(
+              title: 'Team Peer Evaluation',
+              isDone: peerEvalComplete,
+              inProgress: peerEvalEnabled && !peerEvalComplete,
+              accent: DefensysTokens.gold,
+            ),
+            if (isCapstone) ...[
+              const SizedBox(height: 10),
+              _milestoneRow(
+                title: 'Project Adviser Evaluation',
+                isDone: hasAdviser,
+                accent: DefensysTokens.maroon,
               ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _finalCard({
-    required dynamic finalGrade,
-    required bool isPublished,
-    required int panelW,
-    required int peerW,
+  Widget _milestoneRow({
+    required String title,
+    required bool isDone,
+    bool inProgress = false,
+    required Color accent,
   }) {
-    final hasFinal = finalGrade != null;
-    final fg = hasFinal ? (finalGrade as num).toDouble() : null;
-    final passed = fg != null && fg >= 75;
-    final statusColor = !hasFinal
-        ? Colors.grey
-        : passed
-            ? Colors.green
-            : Colors.red;
-
-    return Card(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
-      color: DefensysTokens.maroon.withValues(alpha: 0.04),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Final Grade',
-              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+    return Row(
+      children: [
+        Icon(
+          isDone
+              ? Icons.check_circle
+              : inProgress
+                  ? Icons.hourglass_top
+                  : Icons.radio_button_unchecked,
+          size: 18,
+          color: isDone
+              ? Colors.green
+              : inProgress
+                  ? DefensysTokens.gold
+                  : Colors.grey.shade400,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            title,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: isDone ? FontWeight.w600 : FontWeight.normal,
+              color: isDone ? DefensysTokens.textPrimary : DefensysTokens.textSecondary,
             ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
+          ),
+        ),
+        Text(
+          isDone
+              ? 'Completed'
+              : inProgress
+                  ? 'In Progress'
+                  : 'Pending',
+          style: TextStyle(
+            fontSize: 11.5,
+            fontWeight: FontWeight.w600,
+            color: isDone
+                ? Colors.green
+                : inProgress
+                    ? DefensysTokens.gold
+                    : Colors.grey.shade500,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _officialGradeNotice() {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: DefensysTokens.maroon.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.verified_user_outlined, size: 20, color: DefensysTokens.maroon),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  hasFinal ? fg!.toStringAsFixed(1) : '—',
+                const Text(
+                  'Official Grade Inquiries & Audit',
                   style: TextStyle(
-                    fontSize: 32,
-                    fontWeight: FontWeight.bold,
-                    color: statusColor,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.maroon,
                   ),
                 ),
-                const SizedBox(width: 12),
-                if (hasFinal)
-                  Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: statusColor.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: statusColor.withValues(alpha: 0.4)),
-                    ),
-                    child: Text(
-                      passed ? 'Passed' : 'Failed',
-                      style: TextStyle(
-                        color: statusColor,
-                        fontWeight: FontWeight.w700,
-                        fontSize: 12,
-                      ),
-                    ),
+                const SizedBox(height: 4),
+                Text(
+                  'To preserve academic confidentiality, detailed numeric scores and peer contributions are archived in the official registry. Students may request an official Grade & Evaluation Audit Card through their PIT Coordinator or Adviser.',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    color: DefensysTokens.textSecondary,
+                    height: 1.35,
                   ),
+                ),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              isPublished
-                  ? 'Published · Panel ($panelW%) + Peer ($peerW%)'
-                  : 'Not published yet · Panel ($panelW%) + Peer ($peerW%)',
-              style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
-            ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

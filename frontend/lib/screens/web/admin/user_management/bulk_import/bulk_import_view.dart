@@ -21,7 +21,8 @@ class BulkImportView extends StatefulWidget {
   final VoidCallback onBack;
   final VoidCallback onPickFile;
   final VoidCallback onDownloadSample;
-  final ValueChanged<List<Map<String, dynamic>>> onConfirmUpload;
+  final ValueChanged<List<Map<String, dynamic>>>? _legacyOnConfirmUpload = null;
+  final void Function(List<Map<String, dynamic>> students, Map<String, dynamic>? studentContext) onConfirmUpload;
 
   @override
   State<BulkImportView> createState() => _BulkImportViewState();
@@ -148,7 +149,23 @@ class _BulkImportViewState extends State<BulkImportView> {
                   child: ElevatedButton.icon(
                     onPressed: (parsed == null || parsed.students.isEmpty || widget.state.isSaving)
                         ? null
-                        : () => widget.onConfirmUpload(parsed.students),
+                        : () {
+                            final meta = parsed?.metadata ?? {};
+                            final facultyName = meta['faculty']?.toString().trim() ?? '';
+                            final section = meta['section']?.toString().trim() ?? '';
+                            final yearLevel = meta['year_level']?.toString().trim() ?? '';
+
+                            final studentContext = <String, dynamic>{
+                              'use_active_semester': true,
+                              if (yearLevel.isNotEmpty) 'year_level': yearLevel,
+                              if (section.isNotEmpty) 'section': section,
+                              if (facultyName.isNotEmpty) 'instructor_name': facultyName,
+                              if (parsed != null && parsed.students.isNotEmpty && facultyName.isNotEmpty)
+                                'require_faculty_match': true,
+                            };
+
+                            widget.onConfirmUpload(parsed.students, studentContext);
+                          },
                     icon: const Icon(Icons.file_upload_rounded, size: 18),
                     label: Text('Confirm & Import ${parsed?.students.length ?? 0} Users'),
                     style: ElevatedButton.styleFrom(

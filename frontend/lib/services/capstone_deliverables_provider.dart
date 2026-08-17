@@ -23,6 +23,7 @@ class CapstoneDeliverablesState {
   final String status;
   final String scope;
   final String? yearLevel;
+  final String? section;
   final String? error;
   final String? message;
 
@@ -39,6 +40,7 @@ class CapstoneDeliverablesState {
     this.status = '',
     this.scope = 'capstone',
     this.yearLevel,
+    this.section,
     this.error,
     this.message,
   });
@@ -56,6 +58,7 @@ class CapstoneDeliverablesState {
     String? status,
     String? scope,
     String? yearLevel,
+    String? section,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -77,9 +80,126 @@ class CapstoneDeliverablesState {
       status: status ?? this.status,
       scope: scope ?? this.scope,
       yearLevel: yearLevel ?? this.yearLevel,
+      section: section ?? this.section,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
+  }
+
+  Map<String, dynamic>? get currentTeamSelectedStage {
+    final team = teams.firstOrNull;
+    if (team == null) return null;
+    final stage = team['selected_stage'];
+    if (stage is Map) {
+      return Map<String, dynamic>.from(stage);
+    }
+    return null;
+  }
+
+  bool get hasPendingPreDeliverables =>
+      StudentTaskBadgeHelper.hasPendingPreDeliverables(currentTeamSelectedStage);
+
+  bool get hasPendingPostDeliverables =>
+      StudentTaskBadgeHelper.hasPendingPostDeliverables(currentTeamSelectedStage);
+
+  bool get hasPendingDeliverables =>
+      hasPendingPreDeliverables || hasPendingPostDeliverables;
+}
+
+class StudentTaskBadgeHelper {
+  /// Checks if a deliverable item is pending required action (missing or needs revision).
+  static bool isDeliverablePending(Map<String, dynamic> item) {
+    if (item['required'] != true) return false;
+    final uploaded = item['uploaded'] == true;
+    final submission = item['submission'] as Map<String, dynamic>? ??
+        (item['submission'] is Map ? Map<String, dynamic>.from(item['submission'] as Map) : null);
+    final status = submission?['status']?.toString();
+    final isRejected = status == 'rejected' || status == 'Needs Revision';
+
+    if (!uploaded || submission == null || submission.isEmpty || isRejected) {
+      return true;
+    }
+    return false;
+  }
+
+  /// Checks if there are pending required pre-defense deliverables.
+  static bool hasPendingPreDeliverables(Map<String, dynamic>? stage) {
+    if (stage == null) return false;
+    final deliverables = stage['deliverables'] as List?;
+    if (deliverables == null || deliverables.isEmpty) return false;
+
+    return deliverables.any((d) {
+      if (d is! Map) return false;
+      final map = Map<String, dynamic>.from(d);
+      if (map['type']?.toString() != 'pre') return false;
+      return isDeliverablePending(map);
+    });
+  }
+
+  /// Checks if there are pending required post-defense deliverables (only when unlocked).
+  static bool hasPendingPostDeliverables(Map<String, dynamic>? stage) {
+    if (stage == null) return false;
+    final isUnlocked = stage['vault_unlocked'] == true || stage['archive_unlocked'] == true;
+    if (!isUnlocked) return false;
+
+    final deliverables = stage['deliverables'] as List?;
+    if (deliverables == null || deliverables.isEmpty) return false;
+
+    return deliverables.any((d) {
+      if (d is! Map) return false;
+      final map = Map<String, dynamic>.from(d);
+      final itemType = map['type']?.toString();
+      if (itemType != 'post' && itemType != 'vault') return false;
+      return isDeliverablePending(map);
+    });
+  }
+
+  /// Checks if peer evaluations are enabled and there are pending evaluations for teammates.
+  static bool hasPendingPeerEval(Map<String, dynamic>? studentData) {
+    if (studentData == null) return false;
+    final peerEvalAllowed = studentData['peerEvalEnabled'] == true ||
+        studentData['peer_eval_enabled'] == true;
+    if (!peerEvalAllowed) return false;
+
+    final studentId = studentData['student']?['id']?.toString();
+    final members = (studentData['members'] as List? ?? [])
+        .cast<Map<String, dynamic>>()
+        .where((m) => m['id']?.toString() != studentId)
+        .toList();
+    if (members.isEmpty) return false;
+
+    final mySubmissions = (studentData['myPeerSubmissions'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
+
+    final evaluatedKeys = <String>{};
+    for (final sub in mySubmissions) {
+      final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+      if (id != null && id.isNotEmpty) {
+        evaluatedKeys.add(id);
+      } else {
+        final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
+        if (name != null && name.isNotEmpty) {
+          evaluatedKeys.add(name);
+        }
+      }
+    }
+
+    return members.any((m) {
+      final mId = m['id']?.toString() ?? '';
+      final mName = m['name']?.toString() ?? '';
+      return !evaluatedKeys.contains(mId) && !evaluatedKeys.contains(mName);
+    });
+  }
+
+  /// Aggregates whether the student has any pending event action items.
+  static bool hasPendingEvents({
+    Map<String, dynamic>? selectedStage,
+    Map<String, dynamic>? studentData,
+  }) {
+    final hasDeliverables = hasPendingPreDeliverables(selectedStage) ||
+        hasPendingPostDeliverables(selectedStage);
+    final hasPeer = hasPendingPeerEval(studentData);
+    return hasDeliverables || hasPeer;
   }
 }
 
@@ -97,6 +217,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     String? status,
     String? scope,
     String? yearLevel,
+    String? section,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
@@ -104,6 +225,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
     final nextYearLevel = yearLevel ?? state.yearLevel;
+    final nextSection = section ?? state.section;
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -113,6 +235,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
       status: nextStatus,
       scope: nextScope,
       yearLevel: nextYearLevel,
+      section: nextSection,
       clearError: true,
       clearMessage: true,
     );
@@ -125,6 +248,7 @@ class CapstoneDeliverablesNotifier extends Notifier<CapstoneDeliverablesState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextScope.isNotEmpty) 'scope': nextScope,
           if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
+          if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
         },
       );
       final response = await _client.get(uri);

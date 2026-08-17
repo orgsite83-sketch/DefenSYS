@@ -60,6 +60,7 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
   final String? initialScope;
   final bool isAdviser;
   final String? pitYearLevel;
+  final String? pitSection;
   final int? initialTeamId;
   final int? initialTab;
 
@@ -68,6 +69,7 @@ class TeamDeliverablesScreen extends ConsumerStatefulWidget {
     this.initialScope,
     this.isAdviser = false,
     this.pitYearLevel,
+    this.pitSection,
     this.initialTeamId,
     this.initialTab,
   });
@@ -88,6 +90,7 @@ class _TeamDeliverablesScreenState
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
         scope: widget.initialScope,
         yearLevel: widget.pitYearLevel,
+        section: widget.pitSection,
       );
       ref.read(adviserGradingProvider.notifier).fetchAll();
       ref.read(weeklyProgressProvider.notifier).fetchReports();

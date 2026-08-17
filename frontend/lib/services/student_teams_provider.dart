@@ -29,6 +29,7 @@ class StudentTeamsState {
   final String level;
   final String status;
   final String? yearLevel;
+  final String? section;
   final String? error;
   final String? message;
 
@@ -51,6 +52,7 @@ class StudentTeamsState {
     this.level = '',
     this.status = '',
     this.yearLevel,
+    this.section,
     this.error,
     this.message,
   });
@@ -74,6 +76,7 @@ class StudentTeamsState {
     String? level,
     String? status,
     String? yearLevel,
+    String? section,
     String? error,
     String? message,
     bool clearError = false,
@@ -102,6 +105,7 @@ class StudentTeamsState {
       level: level ?? this.level,
       status: status ?? this.status,
       yearLevel: yearLevel ?? this.yearLevel,
+      section: section ?? this.section,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -122,12 +126,14 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? status,
     String? scope,
     String? yearLevel,
+    String? section,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextLevel = level ?? state.level;
     final nextStatus = status ?? state.status;
     final nextYearLevel = yearLevel ?? state.yearLevel;
+    final nextSection = section ?? state.section;
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -136,6 +142,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       level: nextLevel,
       status: nextStatus,
       yearLevel: nextYearLevel,
+      section: nextSection,
       clearError: true,
       clearMessage: true,
     );
@@ -148,6 +155,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
+          if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
         },
       );
       final response = await _client.get(uri);

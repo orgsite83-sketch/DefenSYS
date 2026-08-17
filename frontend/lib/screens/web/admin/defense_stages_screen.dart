@@ -144,7 +144,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Define sequential defense milestones, evaluation rubrics, and deliverable vault templates for Capstone.',
+                'Define sequential defense milestones, evaluation rubrics, and deliverable archive templates for Capstone.',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 14,

@@ -39,8 +39,8 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
     _Section(
       '4. Acceptable Use',
       'You agree to use DefenSYS only for its intended academic purposes. You must not attempt to '
-          'bypass security controls, submit false evaluation scores, reproduce documents from the Digital '
-          'Vault, or use the system for any commercial or non-academic purpose.',
+          'bypass security controls, submit false evaluation scores, reproduce documents from the Project '
+          'Archive, or use the system for any commercial or non-academic purpose.',
     ),
     _Section(
       '5. Evaluation Integrity',
@@ -50,8 +50,8 @@ class _TermsAgreementScreenState extends State<TermsAgreementScreen> {
     ),
     _Section(
       '6. Intellectual Property',
-      'All project documents, manuscripts, source code, and presentations uploaded to the Digital '
-          'Vault remain the intellectual property of the respective student teams and the institution. '
+      'All project documents, manuscripts, source code, and presentations uploaded to the Project '
+          'Archive remain the intellectual property of the respective student teams and the institution. '
           'Unauthorized reproduction or distribution of archived materials is strictly prohibited.',
     ),
     _Section(

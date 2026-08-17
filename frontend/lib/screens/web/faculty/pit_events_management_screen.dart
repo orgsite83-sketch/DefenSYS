@@ -309,7 +309,7 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
             badgeTextColor: const Color(0xFF047857),
           ),
           _statTile(
-            title: 'Vault & Archive Templates',
+            title: 'Archive Templates',
             value: '$totalDeliverables',
             subtitle: 'Deliverable checklist templates',
             icon: Icons.folder_copy_outlined,
