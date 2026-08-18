@@ -226,7 +226,14 @@ class DefensysPageHeader extends StatelessWidget {
                     Icon(icon, color: DefensysUi.primaryMaroon, size: 20),
                     const SizedBox(width: 8),
                   ],
-                  Text(title, style: DefensysUi.pageTitle),
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: DefensysUi.pageTitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
                 ],
               ),
               const SizedBox(height: 4),

@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
-import 'package:defensys/services/notifications_provider.dart';
+import 'package:defensys/notifications/notifications_provider.dart';
 
 import '../helpers/pump_app.dart';
 

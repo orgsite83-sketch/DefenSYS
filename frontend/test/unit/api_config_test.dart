@@ -22,7 +22,7 @@ void main() {
 
     test('serverIps defaults to localhost only', () {
       expect(ApiConfig.serverIps, ['127.0.0.1']);
-      expect(ApiConfig.fallbackLanIp, '127.0.0.1');
+      expect(ApiConfig.fallbackLanIp, '192.168.1.236');
     });
   });
 }

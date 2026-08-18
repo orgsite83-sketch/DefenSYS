@@ -6,12 +6,26 @@ import 'package:flutter/material.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/csv_file_io.dart';
 
+/// Result containing staged files and user-confirmed import mode.
+class StagedImportResult {
+  final List<PickedTabularFile> files;
+  final String importMode; // 'student' or 'general'
+
+  const StagedImportResult({
+    required this.files,
+    required this.importMode,
+  });
+}
+
 /// Represents parsed inspection metadata for a staged tabular file.
 class StagedFileInfo {
   final PickedTabularFile file;
   final String formatLabel;
   final bool isValid;
   final int rowCount;
+  final String detectedImportMode; // 'student' or 'general'
+  final String recordEntityLabel; // 'students', 'faculty', 'users', etc.
+  final String? primaryRole;
   final String? section;
   final String? subjectCode;
   final String? subjectTitle;
@@ -24,6 +38,9 @@ class StagedFileInfo {
     required this.formatLabel,
     required this.isValid,
     required this.rowCount,
+    this.detectedImportMode = 'student',
+    this.recordEntityLabel = 'students',
+    this.primaryRole,
     this.section,
     this.subjectCode,
     this.subjectTitle,
@@ -46,12 +63,12 @@ class StagedFileInfo {
 }
 
 /// Helper method to open the File Import Staging Modal dialog.
-Future<List<PickedTabularFile>?> showFileImportStagingModal(
+Future<StagedImportResult?> showFileImportStagingModal(
   BuildContext context, {
   required List<PickedTabularFile> initialFiles,
   String importMode = 'student',
 }) async {
-  return showDialog<List<PickedTabularFile>>(
+  return showDialog<StagedImportResult>(
     context: context,
     barrierDismissible: false,
     builder: (ctx) => FileImportStagingModal(
@@ -80,6 +97,8 @@ class FileImportStagingModal extends StatefulWidget {
 class _FileImportStagingModalState extends State<FileImportStagingModal> {
   final List<PickedTabularFile> _stagedFiles = [];
   final List<StagedFileInfo> _inspectedFiles = [];
+  late String _activeImportMode;
+  String? _autoSwitchedModeNotice;
   bool _isProcessing = false;
   int _totalValidRows = 0;
 
@@ -87,6 +106,23 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   void initState() {
     super.initState();
     _stagedFiles.addAll(widget.initialFiles);
+    _activeImportMode = widget.importMode;
+
+    // Check initial files to see if mode should be auto-detected
+    if (_stagedFiles.isNotEmpty) {
+      final initialInspected = _stagedFiles.map((f) => _inspectFile(f, widget.importMode)).toList();
+      final allGeneral = initialInspected.every((f) => f.detectedImportMode == 'general' && f.isValid);
+      final allStudent = initialInspected.every((f) => f.detectedImportMode == 'student' && f.isValid);
+
+      if (allGeneral && widget.importMode == 'student') {
+        _activeImportMode = 'general';
+        _autoSwitchedModeNotice = 'Detected Faculty / General User CSV — Import Mode set to Faculty / General Users.';
+      } else if (allStudent && widget.importMode == 'general') {
+        _activeImportMode = 'student';
+        _autoSwitchedModeNotice = 'Detected Student Class List / CSV — Import Mode set to Student Batch.';
+      }
+    }
+
     _reinspectAllFiles();
   }
 
@@ -95,7 +131,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     int totalRows = 0;
 
     for (final file in _stagedFiles) {
-      final info = _inspectFile(file, widget.importMode);
+      final info = _inspectFile(file, _activeImportMode);
       _inspectedFiles.add(info);
       if (info.isValid) {
         totalRows += info.rowCount;
@@ -118,6 +154,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         formatLabel: 'Unrecognized File',
         isValid: false,
         rowCount: 0,
+        detectedImportMode: importMode,
         warning: 'Could not parse file structure: $e',
       );
     }
@@ -132,6 +169,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           formatLabel: 'Empty Spreadsheet',
           isValid: false,
           rowCount: 0,
+          detectedImportMode: importMode,
           warning: 'No sheets found in Excel file.',
         );
       }
@@ -149,6 +187,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         formatLabel: 'Excel (XLSX)',
         isValid: false,
         rowCount: 0,
+        detectedImportMode: importMode,
         warning: 'Failed to read Excel workbook: $e',
       );
     }
@@ -177,6 +216,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         formatLabel: isXlsx ? 'Excel Spreadsheet' : 'CSV Document',
         isValid: false,
         rowCount: 0,
+        detectedImportMode: importMode,
         warning: 'File is empty.',
       );
     }
@@ -249,6 +289,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         formatLabel: 'Official Class List',
         isValid: studentCount > 0,
         rowCount: studentCount,
+        detectedImportMode: 'student',
+        recordEntityLabel: 'students',
+        primaryRole: 'Student',
         section: section?.isNotEmpty == true ? section : 'Auto-detected Section',
         subjectCode: subjectCode,
         subjectTitle: subjectTitle,
@@ -266,14 +309,82 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     final hasId = headers.contains('id_number') || headers.contains('student_number') || headers.contains('id');
     final hasEmail = headers.contains('email');
     final hasName = headers.contains('first_name') || headers.contains('name') || headers.contains('full_name');
+    final roleIndex = headers.indexWhere((h) => h == 'role' || h == 'roles' || h == 'user_role' || h == 'type');
+    final hasStudentHeaders = headers.contains('student_number') || headers.contains('year_level') || headers.contains('section');
 
     if (hasId || hasEmail || hasName) {
       final rowCount = (rows.length - 1).clamp(0, 999999);
+      final roleCounts = <String, int>{};
+
+      if (roleIndex != -1) {
+        for (var i = 1; i < rows.length; i++) {
+          if (roleIndex < rows[i].length) {
+            final role = rows[i][roleIndex].trim().toLowerCase();
+            if (role.isNotEmpty) {
+              roleCounts[role] = (roleCounts[role] ?? 0) + 1;
+            }
+          }
+        }
+      }
+
+      final facultyCount = (roleCounts['faculty'] ?? 0) +
+          (roleCounts['instructor'] ?? 0) +
+          (roleCounts['teacher'] ?? 0) +
+          (roleCounts['professor'] ?? 0) +
+          (roleCounts['chairperson'] ?? 0) +
+          (roleCounts['panelist'] ?? 0) +
+          (roleCounts['coordinator'] ?? 0) +
+          (roleCounts['dean'] ?? 0);
+      final adminCount = (roleCounts['admin'] ?? 0) + (roleCounts['staff'] ?? 0) + (roleCounts['user'] ?? 0);
+      final studentCount = roleCounts['student'] ?? 0;
+
+      final lowerName = file.name.toLowerCase();
+      final hasFacultyInName = lowerName.contains('faculty') || lowerName.contains('instructor') || lowerName.contains('teacher') || lowerName.contains('prof');
+      final hasAdminInName = lowerName.contains('admin') || lowerName.contains('staff') || lowerName.contains('user');
+      final hasStudentInName = lowerName.contains('student') || lowerName.contains('section') || lowerName.contains('class');
+
+      String detectedMode;
+      String formatLabel;
+      String entityLabel;
+      String primaryRole;
+
+      if ((facultyCount > 0 && studentCount == 0 && adminCount == 0) || (hasFacultyInName && studentCount == 0)) {
+        detectedMode = 'general';
+        formatLabel = 'Faculty Accounts CSV';
+        entityLabel = 'faculty';
+        primaryRole = 'Faculty';
+      } else if (((facultyCount + adminCount) > 0 && studentCount == 0) || (hasAdminInName && studentCount == 0)) {
+        detectedMode = 'general';
+        formatLabel = 'User Accounts CSV';
+        entityLabel = 'users';
+        primaryRole = adminCount > 0 ? 'Admin / Staff' : 'User';
+      } else if ((facultyCount + adminCount) > 0 && studentCount > 0) {
+        detectedMode = 'general';
+        formatLabel = 'Multi-Role User CSV';
+        entityLabel = 'users';
+        primaryRole = 'Multi-Role';
+      } else if (studentCount > 0 || hasStudentHeaders || hasStudentInName) {
+        detectedMode = 'student';
+        formatLabel = 'Standard Student CSV';
+        entityLabel = 'students';
+        primaryRole = 'Student';
+      } else {
+        // Fallback according to active modal mode
+        final isModeStudent = importMode == 'student';
+        detectedMode = isModeStudent ? 'student' : 'general';
+        formatLabel = isModeStudent ? 'Standard Student CSV' : 'User Account CSV';
+        entityLabel = isModeStudent ? 'students' : 'users';
+        primaryRole = isModeStudent ? 'Student' : 'General User';
+      }
+
       return StagedFileInfo(
         file: file,
-        formatLabel: importMode == 'student' ? 'Standard Student CSV' : 'User Account CSV',
+        formatLabel: formatLabel,
         isValid: rowCount > 0,
         rowCount: rowCount,
+        detectedImportMode: detectedMode,
+        recordEntityLabel: entityLabel,
+        primaryRole: primaryRole,
         warning: rowCount == 0 ? 'File has header columns but no data rows.' : null,
       );
     }
@@ -283,6 +394,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       formatLabel: isXlsx ? 'Spreadsheet (.xlsx)' : 'Delimited File (.csv)',
       isValid: rows.length > 1,
       rowCount: (rows.length - 1).clamp(0, 999999),
+      detectedImportMode: importMode,
+      recordEntityLabel: 'records',
       warning: 'Template columns not recognized. May need column mapping.',
     );
   }
@@ -400,16 +513,16 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   @override
   Widget build(BuildContext context) {
     final hasValidFiles = _stagedFiles.isNotEmpty && _inspectedFiles.any((f) => f.isValid);
-    final isStudent = widget.importMode == 'student';
+    final isStudent = _activeImportMode == 'student';
 
     return Dialog(
       backgroundColor: Colors.transparent,
       insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
       child: Center(
         child: Container(
-          width: 660,
+          width: 680,
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.of(context).size.height * 0.88,
+            maxHeight: MediaQuery.of(context).size.height * 0.90,
           ),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -437,10 +550,16 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
               const Divider(height: 1, color: DefensysTokens.border),
 
-              // 2. Summary Info Bar
+              // 2. Import Mode Selector Tab
+              _buildModeSelector(),
+
+              // 3. Auto-switch notification banner (if triggered)
+              if (_autoSwitchedModeNotice != null) _buildAutoSwitchNotice(),
+
+              // 4. Summary Info Bar
               if (_stagedFiles.isNotEmpty) _buildSummaryBar(),
 
-              // 3. Staged Files List
+              // 5. Staged Files List
               Flexible(
                 child: _stagedFiles.isEmpty
                     ? _buildEmptyState()
@@ -455,7 +574,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                       ),
               ),
 
-              // 4. Add more file area
+              // 6. Add more file area
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: _buildAddMoreButton(),
@@ -464,7 +583,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               const SizedBox(height: 16),
               const Divider(height: 1, color: DefensysTokens.border),
 
-              // 5. Footer Actions
+              // 7. Footer Actions
               _buildFooter(context, hasValidFiles, isStudent),
             ],
           ),
@@ -528,10 +647,143 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     );
   }
 
+  Widget _buildModeSelector() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 14, 20, 4),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: _buildModeTab(
+              mode: 'student',
+              label: 'Student Batch',
+              icon: Icons.school_rounded,
+              isSelected: _activeImportMode == 'student',
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: _buildModeTab(
+              mode: 'general',
+              label: 'Faculty / General Users',
+              icon: Icons.badge_rounded,
+              isSelected: _activeImportMode == 'general',
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildModeTab({
+    required String mode,
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+  }) {
+    return InkWell(
+      onTap: () {
+        if (_activeImportMode != mode) {
+          setState(() {
+            _activeImportMode = mode;
+            _autoSwitchedModeNotice = null;
+            _reinspectAllFiles();
+          });
+        }
+      },
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamily,
+                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.textSecondary,
+                  fontSize: 12.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAutoSwitchNotice() {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.auto_awesome_rounded, size: 16, color: Color(0xFF2563EB)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              _autoSwitchedModeNotice!,
+              style: const TextStyle(
+                fontFamily: DefensysTokens.fontFamily,
+                color: Color(0xFF1E40AF),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          IconButton(
+            onPressed: () => setState(() => _autoSwitchedModeNotice = null),
+            icon: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF6B7280)),
+            splashRadius: 14,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            tooltip: 'Dismiss',
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildSummaryBar() {
     final fileCount = _stagedFiles.length;
     final fileWord = fileCount == 1 ? 'file' : 'files';
     final rowWord = _totalValidRows == 1 ? 'record' : 'records';
+    final modeLabel = _activeImportMode == 'student' ? 'Student Batch' : 'Faculty / General';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
@@ -546,7 +798,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '$fileCount $fileWord staged  •  $_totalValidRows total $rowWord ready to preview',
+              '$fileCount $fileWord staged  •  $_totalValidRows total $rowWord ready ($modeLabel)',
               style: const TextStyle(
                 fontFamily: DefensysTokens.fontFamily,
                 color: DefensysTokens.textPrimary,
@@ -579,6 +831,44 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
   Widget _buildFileCard(BuildContext context, int index, StagedFileInfo info) {
     final isCsv = info.file.isCsv;
+
+    // Determine badge theme based on entity type
+    final isFaculty = info.recordEntityLabel == 'faculty';
+    final isUsers = info.recordEntityLabel == 'users';
+    final isStudents = info.recordEntityLabel == 'students';
+
+    final Color entityBg;
+    final Color entityFg;
+    final Color entityBorder;
+    final IconData entityIcon;
+
+    if (isFaculty) {
+      entityBg = const Color(0xFFFDF2F4);
+      entityFg = DefensysTokens.maroon;
+      entityBorder = const Color(0xFFFECDD3);
+      entityIcon = Icons.badge_outlined;
+    } else if (isUsers) {
+      entityBg = DefensysTokens.infoBg;
+      entityFg = DefensysTokens.infoText;
+      entityBorder = DefensysTokens.infoBorder;
+      entityIcon = Icons.manage_accounts_outlined;
+    } else {
+      entityBg = info.isValid ? DefensysTokens.successBg : DefensysTokens.warningBg;
+      entityFg = info.isValid ? DefensysTokens.successText : DefensysTokens.warningText;
+      entityBorder = info.isValid ? DefensysTokens.successBorder : DefensysTokens.warningBorder;
+      entityIcon = Icons.school_outlined;
+    }
+
+    String entityCountText;
+    if (isFaculty) {
+      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'faculty' : 'faculty'}';
+    } else if (isUsers) {
+      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'user' : 'users'}';
+    } else if (isStudents) {
+      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'student' : 'students'}';
+    } else {
+      entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'record' : 'records'}';
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -730,12 +1020,20 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                   fgColor: DefensysTokens.textSecondary,
                 ),
               _buildMetadataChip(
-                icon: Icons.person_rounded,
-                label: '${info.rowCount} ${info.rowCount == 1 ? 'student' : 'students'}',
-                bgColor: info.isValid ? DefensysTokens.successBg : DefensysTokens.warningBg,
-                fgColor: info.isValid ? DefensysTokens.successText : DefensysTokens.warningText,
-                borderColor: info.isValid ? DefensysTokens.successBorder : DefensysTokens.warningBorder,
+                icon: entityIcon,
+                label: entityCountText,
+                bgColor: entityBg,
+                fgColor: entityFg,
+                borderColor: entityBorder,
               ),
+              if (info.primaryRole != null && info.formatLabel != 'Official Class List')
+                _buildMetadataChip(
+                  icon: Icons.person_pin_circle_outlined,
+                  label: 'Role: ${info.primaryRole}',
+                  bgColor: const Color(0xFFF8FAFC),
+                  fgColor: DefensysTokens.textSecondary,
+                  borderColor: const Color(0xFFE2E8F0),
+                ),
             ],
           ),
 
@@ -830,9 +1128,11 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
             ),
           ),
           const SizedBox(height: 4),
-          const Text(
-            'Click below to add a class list (.csv / .xlsx) to stage for import.',
-            style: TextStyle(
+          Text(
+            _activeImportMode == 'student'
+                ? 'Click below to add a class list (.csv / .xlsx) to stage for import.'
+                : 'Click below to add a user accounts file (.csv / .xlsx) to stage for import.',
+            style: const TextStyle(
               fontFamily: DefensysTokens.fontFamily,
               color: DefensysTokens.textSecondary,
               fontSize: 12,
@@ -844,6 +1144,12 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildAddMoreButton() {
+    final addLabel = _stagedFiles.isEmpty
+        ? 'Select file(s) to import'
+        : (_activeImportMode == 'student'
+            ? 'Add another class section or file'
+            : 'Add another user file');
+
     return InkWell(
       onTap: _isProcessing ? null : _handleAddMoreFiles,
       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
@@ -867,7 +1173,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
             ),
             const SizedBox(width: 8),
             Text(
-              _stagedFiles.isEmpty ? 'Select file(s) to import' : 'Add another class section or file',
+              addLabel,
               style: const TextStyle(
                 fontFamily: DefensysTokens.fontFamily,
                 color: DefensysTokens.maroon,
@@ -919,7 +1225,12 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               ),
             ),
             onPressed: hasValidFiles && !_isProcessing
-                ? () => Navigator.of(context).pop(_stagedFiles)
+                ? () => Navigator.of(context).pop(
+                    StagedImportResult(
+                      files: _stagedFiles,
+                      importMode: _activeImportMode,
+                    ),
+                  )
                 : null,
             icon: const Icon(Icons.arrow_forward_rounded, size: 16),
             label: Text(

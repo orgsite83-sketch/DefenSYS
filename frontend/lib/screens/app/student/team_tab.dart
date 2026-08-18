@@ -372,7 +372,7 @@ class TeamTab extends StatelessWidget {
           isCapstone: isCapstone,
         ),
         const SizedBox(height: 14),
-        _officialGradeNotice(),
+        _officialGradeNotice(isCapstone: isCapstone),
         const SizedBox(height: 24),
       ],
     );
@@ -847,7 +847,7 @@ class TeamTab extends StatelessWidget {
     );
   }
 
-  Widget _officialGradeNotice() {
+  Widget _officialGradeNotice({required bool isCapstone}) {
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -874,8 +874,10 @@ class TeamTab extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'To preserve academic confidentiality, detailed numeric scores and peer contributions are archived in the official registry. Students may request an official Grade & Evaluation Audit Card through their PIT Coordinator or Adviser.',
-                  style: TextStyle(
+                  isCapstone
+                      ? 'To preserve academic confidentiality, detailed score breakdowns and peer evaluations are restricted. You may request an official Grade & Evaluation Audit Card through your Capstone Adviser or the Department Chairman.'
+                      : 'To preserve academic confidentiality, detailed score breakdowns and peer evaluations are restricted. You may request an official Grade & Evaluation Audit Card through your Course Instructor, PIT Lead, or the Department Chairman.',
+                  style: const TextStyle(
                     fontSize: 11.5,
                     color: DefensysTokens.textSecondary,
                     height: 1.35,

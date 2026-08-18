@@ -7,6 +7,7 @@ import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
+import 'package:defensys/utils/string_matching_utils.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 
@@ -42,6 +43,8 @@ class ScheduleImportDialog {
     String? fileName;
     int? importStageId = isPit ? null : initialStageId;
     String importEventName = isPit ? initialEventName.trim() : '';
+    MatchResult<dynamic>? headerMatch;
+    String? mismatchWarning;
     int? panelRubricId = initialRubricId;
     int? adviserRubricId = initialAdviserRubricId;
     int? peerRubricId = isPit ? initialPeerRubricId : initialCapstonePeerRubricId;
@@ -147,23 +150,66 @@ class ScheduleImportDialog {
 
               try {
                 final parsedResult = parseScheduleImportFile(bytes: bytes, filename: file.name);
+                final rawStage = parsedResult.stage?.trim() ?? '';
+                MatchResult<dynamic>? resolvedMatch;
+                String? warning;
+
+                if (isPit) {
+                  resolvedMatch = findBestMatch<Map<String, dynamic>>(
+                    source: rawStage,
+                    items: state.pitEvents,
+                    labelGetter: (e) => e['event_name']?.toString() ?? '',
+                  );
+                  if (resolvedMatch.isMatched) {
+                    final matchedName = resolvedMatch.label;
+                    if (importEventName.isNotEmpty &&
+                        importEventName != matchedName &&
+                        initialEventName.trim().isNotEmpty &&
+                        initialEventName.trim() == importEventName) {
+                      warning =
+                          'File header specifies "$rawStage" (matched to "$matchedName"), while scheduler was previously set to "$importEventName".';
+                    }
+                    importEventName = matchedName;
+                  } else if (rawStage.isNotEmpty) {
+                    warning =
+                        'File header "$rawStage" could not be matched to any registered PIT event for this semester.';
+                  }
+                } else {
+                  resolvedMatch = findBestMatch<Map<String, dynamic>>(
+                    source: rawStage,
+                    items: state.defenseStages,
+                    labelGetter: (s) => s['label']?.toString() ?? '',
+                  );
+                  if (resolvedMatch.isMatched) {
+                    final matchedStageId = asInt(resolvedMatch.item?['id']);
+                    if (importStageId != null &&
+                        importStageId != matchedStageId &&
+                        initialStageId != null &&
+                        initialStageId == importStageId) {
+                      final prevLabel = state.defenseStages.firstWhere(
+                        (s) => asInt(s['id']) == importStageId,
+                        orElse: () => <String, dynamic>{},
+                      )['label'] ?? '';
+                      warning =
+                          'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while scheduler was previously set to "$prevLabel".';
+                    }
+                    importStageId = matchedStageId;
+                  } else if (rawStage.isNotEmpty) {
+                    warning =
+                        'File header "$rawStage" could not be matched to any Capstone defense stage.';
+                  }
+                }
+
                 setDialogState(() {
                   parsed = parsedResult;
                   fileName = file.name;
+                  headerMatch = resolvedMatch;
+                  mismatchWarning = warning;
                   if (parsedResult.date != null && parsedResult.date!.isNotEmpty) {
                     dateController.text = normalizeImportDate(parsedResult.date!);
                   }
                   if (parsedResult.room != null && parsedResult.room!.isNotEmpty) {
                     roomController.text = parsedResult.room!;
-                  }
-                  if (!isPit && parsedResult.stage != null && parsedResult.stage!.isNotEmpty) {
-                    for (final item in state.defenseStages) {
-                      if (normalizeName(item['label']?.toString() ?? '') ==
-                          normalizeName(parsedResult.stage!)) {
-                        importStageId = asInt(item['id']);
-                        break;
-                      }
-                    }
                   }
                 });
 
@@ -204,6 +250,13 @@ class ScheduleImportDialog {
                       onPickFile: pickFile,
                       isPit: isPit,
                     ),
+                    if (mismatchWarning != null) ...[
+                      const SizedBox(height: 10),
+                      _buildMismatchBanner(
+                        message: mismatchWarning!,
+                        onDismiss: () => setDialogState(() => mismatchWarning = null),
+                      ),
+                    ],
                     const SizedBox(height: 14),
                     _buildImportContextPanel(
                       context,
@@ -211,6 +264,7 @@ class ScheduleImportDialog {
                       scope: importScope,
                       stageId: importStageId,
                       eventName: importEventName,
+                      headerMatch: headerMatch,
                       dateController: dateController,
                       roomController: roomController,
                       durationController: durationController,
@@ -221,11 +275,17 @@ class ScheduleImportDialog {
                       readyRows: readyRows.length,
                       issueRows: issueRows,
                       onStageChanged: (val) async {
-                        setDialogState(() => importStageId = val);
+                        setDialogState(() {
+                          importStageId = val;
+                          headerMatch = null;
+                        });
                         await loadStageRubrics(val, setDialogState);
                       },
                       onEventChanged: (val) async {
-                        setDialogState(() => importEventName = val ?? '');
+                        setDialogState(() {
+                          importEventName = val ?? '';
+                          headerMatch = null;
+                        });
                         if (val != null) {
                           await loadPitEventConfig(val, setDialogState);
                         }
@@ -408,12 +468,167 @@ class ScheduleImportDialog {
     );
   }
 
+  static Widget _buildMismatchBanner({
+    required String message,
+    required VoidCallback onDismiss,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.info_outline_rounded, color: Color(0xFFB45309), size: 20),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              message,
+              style: const TextStyle(
+                color: Color(0xFF92400E),
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          IconButton(
+            icon: const Icon(Icons.close_rounded, size: 18, color: Color(0xFFB45309)),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            onPressed: onDismiss,
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildHeaderMatchIndicator(MatchResult<dynamic>? match) {
+    if (match == null || match.sourceText.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (match.isExact) {
+      return Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFECFDF3),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFA6F4C5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.check_circle_outline, size: 13, color: Color(0xFF027A48)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                'Detected from file: "${match.sourceText}"',
+                style: const TextStyle(
+                  color: Color(0xFF027A48),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (match.isCanonical) {
+      return Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFEFF8FF),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFB2DDFF)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.auto_awesome, size: 13, color: Color(0xFF175CD3)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                'Auto-matched from "${match.sourceText}" in file',
+                style: const TextStyle(
+                  color: Color(0xFF175CD3),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    if (match.isFuzzy) {
+      return Container(
+        margin: const EdgeInsets.only(top: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBEB),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.lightbulb_outline, size: 13, color: Color(0xFFB45309)),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                'Typo resolved: "${match.sourceText}" ➔ "${match.label}" (${(match.similarity * 100).toInt()}% match)',
+                style: const TextStyle(
+                  color: Color(0xFFB45309),
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return Container(
+      margin: const EdgeInsets.only(top: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3F2),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFFECDCA)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const Icon(Icons.warning_amber_rounded, size: 13, color: Color(0xFFB42318)),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              'Unrecognized header in file: "${match.sourceText}"',
+              style: const TextStyle(
+                color: Color(0xFFB42318),
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   static Widget _buildImportContextPanel(
     BuildContext context,
     DefenseSchedulerState state, {
     required String scope,
     required int? stageId,
     required String eventName,
+    required MatchResult<dynamic>? headerMatch,
     required TextEditingController dateController,
     required TextEditingController roomController,
     required TextEditingController durationController,
@@ -480,6 +695,7 @@ class ScheduleImportDialog {
                           }).toList(),
                           onChanged: onEventChanged,
                         ),
+                        extra: _buildHeaderMatchIndicator(headerMatch),
                       )
                     : _labeledField(
                         'Stage',
@@ -489,6 +705,7 @@ class ScheduleImportDialog {
                           items: stageItems,
                           onChanged: onStageChanged,
                         ),
+                        extra: _buildHeaderMatchIndicator(headerMatch),
                       ),
               ),
               const SizedBox(width: 12),
@@ -566,8 +783,8 @@ class ScheduleImportDialog {
                 _importMetric(
                   'Peer rubric',
                   rubricLoading
-                      ? 'Loading...'
-                      : (peerRubricName.isEmpty ? 'Missing' : peerRubricName),
+                    ? 'Loading...'
+                    : (peerRubricName.isEmpty ? 'Missing' : peerRubricName),
                   warning: peerRubricName.isEmpty && !rubricLoading,
                 ),
             ],
@@ -577,7 +794,7 @@ class ScheduleImportDialog {
     );
   }
 
-  static Widget _labeledField(String label, Widget field) {
+  static Widget _labeledField(String label, Widget field, {Widget? extra}) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -591,6 +808,7 @@ class ScheduleImportDialog {
         ),
         const SizedBox(height: 6),
         field,
+        if (extra != null) extra,
       ],
     );
   }

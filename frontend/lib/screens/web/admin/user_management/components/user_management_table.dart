@@ -20,8 +20,8 @@ class UserManagementTable extends StatelessWidget {
     required this.onRowsPerPageChanged,
     required this.onEditUser,
     required this.onOpenAccessControl,
-    required this.onResetPassword,
-    required this.onDeleteUser,
+    this.onResetPassword,
+    this.onDeleteUser,
   });
 
   final UserManagementState state;
@@ -37,15 +37,16 @@ class UserManagementTable extends StatelessWidget {
   final ValueChanged<int> onRowsPerPageChanged;
   final ValueChanged<Map<String, dynamic>> onEditUser;
   final ValueChanged<Map<String, dynamic>> onOpenAccessControl;
-  final ValueChanged<Map<String, dynamic>> onResetPassword;
-  final ValueChanged<Map<String, dynamic>> onDeleteUser;
+  final ValueChanged<Map<String, dynamic>>? onResetPassword;
+  final ValueChanged<Map<String, dynamic>>? onDeleteUser;
 
   static const List<_ColumnSpec> _columns = [
-    _ColumnSpec('User Info', 2.8),
-    _ColumnSpec('Base Role', 1.4),
-    _ColumnSpec('System Scope Roles', 3.8),
-    _ColumnSpec('Status', 1.2),
-    _ColumnSpec('Actions', 1.6),
+    _ColumnSpec('User ID', 1.25),
+    _ColumnSpec('Full Name', 2.45),
+    _ColumnSpec('Email Address', 2.35),
+    _ColumnSpec('System Role', 2.35),
+    _ColumnSpec('Status', 1.55),
+    _ColumnSpec('Action', 1.1),
   ];
 
   @override
@@ -138,8 +139,10 @@ class UserManagementTable extends StatelessWidget {
   Widget _roleFilter() {
     return SizedBox(
       height: 40,
+      width: 160,
       child: DropdownButtonFormField<String>(
-        value: state.role,
+        initialValue: state.role,
+        isExpanded: true,
         decoration: InputDecoration(
           contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
           border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
@@ -174,13 +177,10 @@ class UserManagementTable extends StatelessWidget {
 
   Widget _tableHeader(List<_ColumnSpec> columns) {
     return Container(
-      height: 40,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF9FAFB),
-        border: Border(
-          top: BorderSide(color: Color(0xFFE5E7EB)),
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
+      height: 51,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F1F4),
+        borderRadius: BorderRadius.circular(5),
       ),
       child: Row(
         children: columns.map((col) => _tableHeaderCell(col)).toList(),
@@ -190,17 +190,16 @@ class UserManagementTable extends StatelessWidget {
 
   Widget _tableHeaderCell(_ColumnSpec column) {
     return Expanded(
-      flex: (column.flex * 10).toInt(),
+      flex: (column.flex * 100).round(),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 15),
         alignment: Alignment.centerLeft,
         child: Text(
-          column.title.toUpperCase(),
+          column.title,
           style: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 11,
+            color: Color(0xFF5D6678),
+            fontSize: 12,
             fontWeight: FontWeight.w800,
-            letterSpacing: 0.5,
           ),
         ),
       ),
@@ -208,13 +207,14 @@ class UserManagementTable extends StatelessWidget {
   }
 
   Widget _userRow(Map<String, dynamic> user) {
-    final name =
-        '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}'.trim();
+    final name = (user['name']?.toString() ??
+            '${user['first_name'] ?? ''} ${user['last_name'] ?? ''}')
+        .trim();
     final displayName = name.isEmpty ? (user['username']?.toString() ?? '') : name;
     final isActive = user['is_active'] != false;
 
     return Container(
-      height: 58,
+      height: 57,
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
@@ -222,121 +222,211 @@ class UserManagementTable extends StatelessWidget {
       child: Row(
         children: [
           _tableCell(
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  displayName,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysUi.textDark,
-                  ),
-                ),
-                Text(
-                  user['email']?.toString() ?? '',
-                  style: const TextStyle(fontSize: 12, color: DefensysUi.steelGrey),
-                ),
-              ],
+            Text(
+              user['username']?.toString() ?? '',
+              style: const TextStyle(
+                color: DefensysUi.textDark,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
             ),
-            flex: 2.8,
+            flex: 1.25,
           ),
-          _tableCell(_roleBadge(user), flex: 1.4),
-          _tableCell(_systemScopeRolesBadges(user), flex: 3.8),
+          _tableCell(_bodyText(displayName), flex: 2.45),
+          _tableCell(_bodyText(user['email']?.toString() ?? ''), flex: 2.35),
+          _tableCell(_roleBadge(user), flex: 2.35),
           _tableCell(
-            isActive
-                ? const DefensysStatusBadge.success(label: 'Active')
-                : const DefensysStatusBadge.inactive(label: 'Inactive'),
-            flex: 1.2,
+            DefensysStatusBadge.success(
+              label: isActive ? 'Active' : 'Inactive',
+              showDot: isActive,
+            ),
+            flex: 1.55,
           ),
-          _tableCell(_rowActions(user), flex: 1.6),
+          _tableCell(_rowActions(user), flex: 1.1),
         ],
       ),
     );
   }
 
-  Widget _roleBadge(Map<String, dynamic> user) {
-    final role = user['role']?.toString().toLowerCase() ?? 'student';
-    Color bg = const Color(0xFFEFF6FF);
-    Color fg = const Color(0xFF1D4ED8);
-    String label = 'Student';
+  List<Map<String, String>> _getIndividualRoles(Map<String, dynamic> user) {
+    final role = user['role']?.toString() ?? 'student';
+    final List<Map<String, String>> individualRoles = [];
 
     if (role == 'admin') {
-      bg = const Color(0xFFFEF2F2);
-      fg = const Color(0xFFB91C1C);
-      label = 'Admin';
-    } else if (role == 'faculty') {
-      bg = const Color(0xFFF0FDF4);
-      fg = const Color(0xFF15803D);
-      label = 'Faculty';
+      individualRoles.add({'tone': 'admin', 'label': 'Administrator'});
+    } else if (role == 'student') {
+      final displayRole = user['displayRole'];
+      final label = displayRole is Map && displayRole['label'] != null
+          ? displayRole['label'].toString()
+          : (user['year_level']?.toString().isNotEmpty == true
+              ? user['year_level'].toString()
+              : 'Student');
+      individualRoles.add({'tone': 'student', 'label': label});
+    } else {
+      // Faculty/General
+      if (user['is_pit_lead'] == true) {
+        final year = user['pit_lead_year'];
+        final label = year != null && year.toString().isNotEmpty
+            ? 'PIT Lead: $year'
+            : 'PIT Lead';
+        individualRoles.add({'tone': 'pit_lead', 'label': label});
+      }
+      if (user['is_adviser'] == true) {
+        individualRoles.add({'tone': 'adviser', 'label': 'Adviser'});
+      }
+      if (user['is_panelist'] == true) {
+        individualRoles.add({'tone': 'panelist', 'label': 'Panelist'});
+      }
+      if (user['is_documenter'] == true) {
+        individualRoles.add({'tone': 'documenter', 'label': 'Documenter'});
+      }
+
+      final assignments = user['instructor_assignments'] as List?;
+      if (assignments != null && assignments.isNotEmpty) {
+        final years = assignments
+            .map((a) => (a as Map)['year_level']?.toString())
+            .whereType<String>()
+            .toSet()
+            .toList();
+        years.sort();
+        if (years.isNotEmpty) {
+          individualRoles.add({
+            'tone': 'pit_instructor',
+            'label': 'Instructor: ${years.join(', ')}',
+          });
+        }
+      }
+
+      if (individualRoles.isEmpty) {
+        individualRoles.add({'tone': 'faculty', 'label': 'Faculty Member'});
+      }
     }
+    return individualRoles;
+  }
+
+  Widget _buildSingleBadge(String label, String tone) {
+    final background = switch (tone) {
+      'admin' => const Color(0xFFFDE8E8),
+      'adviser' => const Color(0xFFECFDF5),
+      'panelist' => const Color(0xFFF3E8FF),
+      'pit_lead' => const Color(0xFFEFF6FF),
+      'documenter' => const Color(0xFFCCFBF1),
+      'faculty' => const Color(0xFFFFEDD5),
+      'pit_instructor' => const Color(0xFFF0FDF4),
+      _ => const Color(0xFFEFF6FF),
+    };
+    final textColor = switch (tone) {
+      'admin' => const Color(0xFF9B1C1C),
+      'adviser' => const Color(0xFF047857),
+      'panelist' => const Color(0xFF7E22CE),
+      'pit_lead' => const Color(0xFF1D4ED8),
+      'documenter' => const Color(0xFF0F766E),
+      'faculty' => const Color(0xFFEA580C),
+      'pit_instructor' => const Color(0xFF15803D),
+      _ => const Color(0xFF1E40AF),
+    };
+    final icon = switch (tone) {
+      'admin' => Icons.admin_panel_settings_rounded,
+      'adviser' => Icons.school_outlined,
+      'panelist' => Icons.groups_2_outlined,
+      'pit_lead' => Icons.flag_outlined,
+      'documenter' => Icons.assignment_outlined,
+      'faculty' => Icons.co_present_rounded,
+      'pit_instructor' => Icons.co_present_rounded,
+      _ => Icons.school_rounded,
+    };
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
       decoration: BoxDecoration(
-        color: bg,
+        color: background,
         borderRadius: BorderRadius.circular(999),
       ),
-      child: Text(
-        label,
-        style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w700),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: textColor, size: 13),
+          const SizedBox(width: 5),
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 1,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _systemScopeRolesBadges(Map<String, dynamic> user) {
-    final badges = <Widget>[];
-    if (user['is_panelist'] == true) {
-      badges.add(_singleBadge('Panelist', 'purple'));
-    }
-    if (user['is_pit_lead'] == true) {
-      final year = user['pit_lead_year']?.toString();
-      final label = (year != null && year.isNotEmpty) ? 'PIT Lead ($year)' : 'PIT Lead';
-      badges.add(_singleBadge(label, 'gold'));
-    }
-    if (user['is_adviser'] == true) {
-      badges.add(_singleBadge('Adviser', 'blue'));
-    }
-    if (user['is_documenter'] == true) {
-      badges.add(_singleBadge('Documenter', 'teal'));
-    }
-
-    if (badges.isEmpty) {
-      return const Text('—', style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13));
-    }
-
-    return Wrap(spacing: 6, runSpacing: 4, children: badges);
-  }
-
-  Widget _singleBadge(String label, String tone) {
-    Color bg = const Color(0xFFF3F4F6);
-    Color fg = const Color(0xFF374151);
-
-    if (tone == 'purple') {
-      bg = const Color(0xFFF3E8FF);
-      fg = const Color(0xFF7E22CE);
-    } else if (tone == 'gold') {
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFFB45309);
-    } else if (tone == 'blue') {
-      bg = const Color(0xFFE0F2FE);
-      fg = const Color(0xFF0369A1);
-    } else if (tone == 'teal') {
-      bg = const Color(0xFFCCFBF1);
-      fg = const Color(0xFF0F766E);
-    }
-
+  Widget _buildCountBadge(int count) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
       decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(6),
+        color: const Color(0xFFF3F4F6),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: Text(
-        label,
-        style: TextStyle(color: fg, fontSize: 11.5, fontWeight: FontWeight.w700),
+        '+$count',
+        style: const TextStyle(
+          color: Color(0xFF4B5563),
+          fontSize: 11,
+          fontWeight: FontWeight.w800,
+        ),
       ),
+    );
+  }
+
+  Widget _roleBadge(Map<String, dynamic> user) {
+    final individualRoles = _getIndividualRoles(user);
+    if (individualRoles.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    final tooltipMessage =
+        individualRoles.map((r) => '• ${r['label']}').join('\n');
+    final primaryRole = individualRoles[0];
+    final hasMore = individualRoles.length > 1;
+
+    Widget badgeContent;
+    if (!hasMore) {
+      badgeContent =
+          _buildSingleBadge(primaryRole['label']!, primaryRole['tone']!);
+    } else {
+      badgeContent = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: _buildSingleBadge(
+              primaryRole['label']!,
+              primaryRole['tone']!,
+            ),
+          ),
+          const SizedBox(width: 6),
+          _buildCountBadge(individualRoles.length - 1),
+        ],
+      );
+    }
+
+    return Tooltip(
+      message: 'Active Roles:\n$tooltipMessage',
+      textStyle: const TextStyle(
+        color: Colors.white,
+        fontSize: 12,
+        fontWeight: FontWeight.w500,
+      ),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1F2937),
+        borderRadius: BorderRadius.circular(6),
+      ),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: badgeContent,
     );
   }
 
@@ -344,25 +434,22 @@ class UserManagementTable extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          tooltip: 'Edit details & roles',
-          icon: const Icon(Icons.edit_outlined, size: 18, color: Color(0xFF4B5563)),
-          onPressed: () => onEditUser(user),
+        InkWell(
+          onTap: state.isSaving ? null : () => onEditUser(user),
+          borderRadius: BorderRadius.circular(6),
+          child: const Padding(
+            padding: EdgeInsets.all(4),
+            child: Icon(Icons.edit_square, color: DefensysUi.techBlue, size: 18),
+          ),
         ),
-        IconButton(
-          tooltip: 'Access Control & History',
-          icon: const Icon(Icons.shield_outlined, size: 18, color: DefensysUi.primaryMaroon),
-          onPressed: () => onOpenAccessControl(user),
-        ),
-        IconButton(
-          tooltip: 'Reset Password',
-          icon: const Icon(Icons.lock_reset_rounded, size: 18, color: Color(0xFFD97706)),
-          onPressed: () => onResetPassword(user),
-        ),
-        IconButton(
-          tooltip: 'Delete User',
-          icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFDC2626)),
-          onPressed: () => onDeleteUser(user),
+        const SizedBox(width: 3),
+        InkWell(
+          onTap: state.isSaving ? null : () => onOpenAccessControl(user),
+          borderRadius: BorderRadius.circular(6),
+          child: const Padding(
+            padding: EdgeInsets.all(4),
+            child: Icon(Icons.shield_rounded, color: DefensysUi.techBlue, size: 18),
+          ),
         ),
       ],
     );
@@ -381,11 +468,23 @@ class UserManagementTable extends StatelessWidget {
 
   Widget _tableCell(Widget child, {required double flex}) {
     return Expanded(
-      flex: (flex * 10).toInt(),
+      flex: (flex * 100).round(),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 15),
         alignment: Alignment.centerLeft,
         child: child,
+      ),
+    );
+  }
+
+  Widget _bodyText(String value) {
+    return Text(
+      value,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: DefensysUi.textDark,
+        fontSize: 13,
+        fontWeight: FontWeight.w500,
       ),
     );
   }

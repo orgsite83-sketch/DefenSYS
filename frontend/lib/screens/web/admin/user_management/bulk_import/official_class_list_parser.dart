@@ -1,3 +1,4 @@
+import 'package:excel/excel.dart' as xl;
 import 'package:flutter/material.dart';
 
 class AdminOfficialClassListParseResult {
@@ -30,6 +31,42 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
       .toList();
 
   final rows = lines.map(splitCsvLine).toList();
+  return parseOfficialClassListRows(rows);
+}
+
+/// Official Class List XLSX Parser logic for bulk student imports.
+AdminOfficialClassListParseResult parseOfficialClassListXlsx(List<int> bytes) {
+  try {
+    final workbook = xl.Excel.decodeBytes(bytes);
+    if (workbook.tables.isEmpty) {
+      return const AdminOfficialClassListParseResult(metadata: {}, students: []);
+    }
+    final sheet = workbook.tables.values.first;
+    final rows = sheet.rows
+        .map((row) => row.map((cell) => _excelCellText(cell?.value)).toList())
+        .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+        .toList();
+    return parseOfficialClassListRows(rows);
+  } catch (_) {
+    return const AdminOfficialClassListParseResult(metadata: {}, students: []);
+  }
+}
+
+String _excelCellText(xl.CellValue? value) {
+  if (value == null) return '';
+  if (value is xl.TextCellValue) return value.value.toString().trim();
+  if (value is xl.IntCellValue) return value.value.toString();
+  if (value is xl.DoubleCellValue) {
+    final number = value.value;
+    if (number == number.roundToDouble()) {
+      return number.round().toString();
+    }
+    return number.toString();
+  }
+  return value.toString().trim();
+}
+
+AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> rows) {
   String? csvSchoolYear;
   String? csvSemester;
 
@@ -74,21 +111,7 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
   for (var i = 0; i < rows.length; i++) {
     final normalized = rows[i].map(normalizeHeader).toList();
 
-    void readMeta(String key, List<String> labels) {
-      if (metadata[key]?.toString().trim().isNotEmpty == true) return;
-      for (final label in labels) {
-        final index = normalized.indexWhere((cell) => cell == label);
-        if (index == -1) continue;
-        final value = nextCell(rows[i], index);
-        if (value.isNotEmpty) metadata[key] = value;
-        return;
-      }
-    }
-
-    readMeta('faculty', ['faculty', 'instructor']);
-    readMeta('section', ['class section', 'section']);
-    readMeta('year_level', ['year level', 'level']);
-
+    // Check if this row is the student table header
     final hasStudentNumber = normalized.any(
       (cell) =>
           cell.contains('student') &&
@@ -101,6 +124,30 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
       headerIndex = i;
       break;
     }
+
+    // Only read key-value preamble metadata from lines before table headers,
+    // and ignore rows that look like standard tabular headers (with id/name/email/role columns)
+    final isTabularHeader = normalized.contains('id number') ||
+        normalized.contains('first name') ||
+        normalized.contains('last name') ||
+        (normalized.contains('email') && normalized.contains('role'));
+
+    if (!isTabularHeader) {
+      void readMeta(String key, List<String> labels) {
+        if (metadata[key]?.toString().trim().isNotEmpty == true) return;
+        for (final label in labels) {
+          final index = normalized.indexWhere((cell) => cell == label);
+          if (index == -1) continue;
+          final value = nextCell(rows[i], index);
+          if (value.isNotEmpty) metadata[key] = value;
+          return;
+        }
+      }
+
+      readMeta('faculty', ['faculty', 'instructor']);
+      readMeta('section', ['class section', 'section']);
+      readMeta('year_level', ['year level', 'level']);
+    }
   }
 
   if (metadata['year_level'] != null) {
@@ -109,9 +156,9 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
     );
   }
   if (headerIndex == -1) {
-    return AdminOfficialClassListParseResult(
-      metadata: metadata,
-      students: const [],
+    return const AdminOfficialClassListParseResult(
+      metadata: {},
+      students: [],
     );
   }
 
@@ -150,6 +197,8 @@ AdminOfficialClassListParseResult parseOfficialClassListCsv(String rawCsv) {
       'role': 'student',
       if (rowYear.isNotEmpty) 'year_level': rowYear,
       if (section.isNotEmpty) 'section': section,
+      if (metadata['faculty'] != null) 'faculty': metadata['faculty'],
+      '_fileMetadata': metadata,
     });
   }
 

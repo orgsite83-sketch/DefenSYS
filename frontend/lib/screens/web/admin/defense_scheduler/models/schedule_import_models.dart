@@ -1,5 +1,6 @@
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/utils/defense_schedule_import_parser.dart';
+import 'package:defensys/utils/string_matching_utils.dart';
 
 int? asInt(dynamic value) {
   if (value is int) return value;
@@ -242,9 +243,12 @@ ImportNameMatch matchTeam(
   DefenseSchedulerState state, {
   String scope = 'capstone',
 }) {
-  final name = normalizeName(row.teamName);
+  final rawTeamName = row.teamName.trim();
+  final name = normalizeName(rawTeamName);
   final project = normalizeName(row.projectTitle);
   final teams = teamsForScope(state, scope);
+
+  // 1. Exact Name Match
   final byName = teams.where((team) {
     return normalizeName(team['name']?.toString() ?? '') == name;
   }).toList();
@@ -261,10 +265,11 @@ ImportNameMatch matchTeam(
   if (byName.length > 1) {
     return const ImportNameMatch(message: 'Multiple teams match this name.');
   }
+
+  // 2. Project Title Match
   if (project.isNotEmpty) {
     final byProject = teams.where((team) {
-      return normalizeName(team['project_title']?.toString() ?? '') ==
-          project;
+      return normalizeName(team['project_title']?.toString() ?? '') == project;
     }).toList();
     if (byProject.length == 1) {
       return ImportNameMatch(
@@ -273,6 +278,43 @@ ImportNameMatch matchTeam(
       );
     }
   }
+
+  // 3. Compact / Whitespace-stripped match (e.g. "Nova Path" <-> "NovaPath", "Byte-Force" <-> "ByteForce")
+  String compact(String s) => s.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  final compactName = compact(rawTeamName);
+  if (compactName.isNotEmpty) {
+    final byCompact = teams.where((team) {
+      return compact(team['name']?.toString() ?? '') == compactName;
+    }).toList();
+    if (byCompact.length == 1) {
+      final matchedName = byCompact.first['name']?.toString() ?? '';
+      return ImportNameMatch(
+        id: asInt(byCompact.first['id']),
+        message: 'Matched to "$matchedName" (spacing/punctuation difference).',
+      );
+    }
+  }
+
+  // 4. Fuzzy Typo Match (e.g. "DigiSlove" <-> "DigiSolve")
+  if (rawTeamName.isNotEmpty) {
+    final fuzzyMatches = <Map<String, dynamic>>[];
+    for (final team in teams) {
+      final teamName = team['name']?.toString() ?? '';
+      final sim = stringSimilarity(rawTeamName, teamName);
+      if (sim >= 0.82) {
+        fuzzyMatches.add(team);
+      }
+    }
+    if (fuzzyMatches.length == 1) {
+      final matched = fuzzyMatches.first;
+      final matchedName = matched['name']?.toString() ?? '';
+      return ImportNameMatch(
+        id: asInt(matched['id']),
+        message: 'Matched to "$matchedName" (typo in file: "$rawTeamName").',
+      );
+    }
+  }
+
   return ImportNameMatch(message: 'Team "${row.teamName}" was not found.');
 }
 
@@ -281,6 +323,8 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
   if (name.isEmpty) {
     return const ImportNameMatch(message: 'Panelist name is missing.');
   }
+
+  // 1. Exact full name / username
   final exact = state.panelists.where((panelist) {
     return normalizeName(panelist['name']?.toString() ?? '') == name ||
         normalizeName(panelist['username']?.toString() ?? '') == name;
@@ -292,6 +336,7 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
     return ImportNameMatch(message: 'Panelist "$rawName" is ambiguous.');
   }
 
+  // 2. Exact Last Name
   final lastNameMatches = state.panelists.where((panelist) {
     final display = panelist['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
@@ -306,6 +351,28 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
       message: 'Panelist "$rawName" matches multiple faculty.',
     );
   }
+
+  // 3. Fuzzy Typo Match on Full Name or Last Name
+  final fuzzyMatches = <Map<String, dynamic>>[];
+  for (final panelist in state.panelists) {
+    final display = panelist['name']?.toString() ?? '';
+    final parts = display.trim().split(RegExp(r'\s+'));
+    final last = parts.isEmpty ? '' : parts.last;
+    final simFull = stringSimilarity(rawName, display);
+    final simLast = stringSimilarity(rawName, last);
+    if (simFull >= 0.85 || simLast >= 0.85) {
+      fuzzyMatches.add(panelist);
+    }
+  }
+  if (fuzzyMatches.length == 1) {
+    final matched = fuzzyMatches.first;
+    final matchedName = matched['name']?.toString() ?? '';
+    return ImportNameMatch(
+      id: asInt(matched['id']),
+      message: 'Matched to "$matchedName" (typo in file: "$rawName").',
+    );
+  }
+
   return ImportNameMatch(message: 'Panelist "$rawName" was not found.');
 }
 
@@ -314,6 +381,8 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
   if (name.isEmpty) {
     return const ImportNameMatch();
   }
+
+  // 1. Exact full name / username
   final exact = state.documenters.where((doc) {
     return normalizeName(doc['name']?.toString() ?? '') == name ||
         normalizeName(doc['username']?.toString() ?? '') == name;
@@ -325,6 +394,7 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
     return ImportNameMatch(message: 'Documenter "$rawName" is ambiguous.');
   }
 
+  // 2. Exact Last Name
   final lastNameMatches = state.documenters.where((doc) {
     final display = doc['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
@@ -339,6 +409,28 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
       message: 'Documenter "$rawName" matches multiple documenters.',
     );
   }
+
+  // 3. Fuzzy Typo Match on Full Name or Last Name
+  final fuzzyMatches = <Map<String, dynamic>>[];
+  for (final doc in state.documenters) {
+    final display = doc['name']?.toString() ?? '';
+    final parts = display.trim().split(RegExp(r'\s+'));
+    final last = parts.isEmpty ? '' : parts.last;
+    final simFull = stringSimilarity(rawName, display);
+    final simLast = stringSimilarity(rawName, last);
+    if (simFull >= 0.85 || simLast >= 0.85) {
+      fuzzyMatches.add(doc);
+    }
+  }
+  if (fuzzyMatches.length == 1) {
+    final matched = fuzzyMatches.first;
+    final matchedName = matched['name']?.toString() ?? '';
+    return ImportNameMatch(
+      id: asInt(matched['id']),
+      message: 'Matched to "$matchedName" (typo in file: "$rawName").',
+    );
+  }
+
   return ImportNameMatch(message: 'Documenter "$rawName" was not found.');
 }
 

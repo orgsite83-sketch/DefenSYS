@@ -164,13 +164,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
         onBack: _closeTab,
         onPickFile: () {},
         onDownloadSample: () => DownloadSampleCsvDialog.show(context),
-        onConfirmUpload: (students, studentContext) async {
+        onConfirmUpload: (users, studentContext) async {
           final success = await ref.read(userManagementProvider.notifier).bulkImport(
-                students,
+                users,
                 studentContext: studentContext,
               );
           if (success && context.mounted) {
-            showSuccessToast(context, '${students.length} students imported successfully!');
+            final isStudent = studentContext != null;
+            final label = isStudent ? 'students' : 'users';
+            showSuccessToast(context, '${users.length} $label imported successfully!');
             _closeTab();
           }
         },
