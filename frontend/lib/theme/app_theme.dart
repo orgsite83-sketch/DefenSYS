@@ -87,6 +87,23 @@ class AppTheme {
             ),
           ),
         ),
+        outlinedButtonTheme: OutlinedButtonThemeData(
+          style: OutlinedButton.styleFrom(
+            foregroundColor: DefensysTokens.maroon,
+            elevation: 0,
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+            ),
+            side: const BorderSide(color: DefensysTokens.border, width: 1.0),
+            textStyle: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontWeight: FontWeight.w600,
+              fontSize: 14,
+              letterSpacing: -0.1,
+            ),
+          ),
+        ),
         inputDecorationTheme: InputDecorationTheme(
           filled: true,
           fillColor: const Color(0xFFF8FAFC),

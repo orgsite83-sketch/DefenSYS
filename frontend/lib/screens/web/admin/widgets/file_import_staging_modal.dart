@@ -98,7 +98,6 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   final List<PickedTabularFile> _stagedFiles = [];
   final List<StagedFileInfo> _inspectedFiles = [];
   late String _activeImportMode;
-  String? _autoSwitchedModeNotice;
   bool _isProcessing = false;
   int _totalValidRows = 0;
 
@@ -107,29 +106,33 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     super.initState();
     _stagedFiles.addAll(widget.initialFiles);
     _activeImportMode = widget.importMode;
-
-    // Check initial files to see if mode should be auto-detected
-    if (_stagedFiles.isNotEmpty) {
-      final initialInspected = _stagedFiles.map((f) => _inspectFile(f, widget.importMode)).toList();
-      final allGeneral = initialInspected.every((f) => f.detectedImportMode == 'general' && f.isValid);
-      final allStudent = initialInspected.every((f) => f.detectedImportMode == 'student' && f.isValid);
-
-      if (allGeneral && widget.importMode == 'student') {
-        _activeImportMode = 'general';
-        _autoSwitchedModeNotice = 'Detected Faculty / General User CSV — Import Mode set to Faculty / General Users.';
-      } else if (allStudent && widget.importMode == 'general') {
-        _activeImportMode = 'student';
-        _autoSwitchedModeNotice = 'Detected Student Class List / CSV — Import Mode set to Student Batch.';
-      }
-    }
-
     _reinspectAllFiles();
   }
 
   void _reinspectAllFiles() {
     _inspectedFiles.clear();
-    int totalRows = 0;
 
+    // 1. Initial pass: inspect with current or default mode
+    final initialInspected = <StagedFileInfo>[];
+    for (final file in _stagedFiles) {
+      initialInspected.add(_inspectFile(file, _activeImportMode));
+    }
+
+    // 2. Auto-detect active import mode from valid staged files
+    final validFiles = initialInspected.where((f) => f.isValid).toList();
+    if (validFiles.isNotEmpty) {
+      final allGeneral = validFiles.every((f) => f.detectedImportMode == 'general');
+      final allStudent = validFiles.every((f) => f.detectedImportMode == 'student');
+
+      if (allGeneral) {
+        _activeImportMode = 'general';
+      } else if (allStudent) {
+        _activeImportMode = 'student';
+      }
+    }
+
+    // 3. Finalize inspected metadata and sum valid row count
+    int totalRows = 0;
     for (final file in _stagedFiles) {
       final info = _inspectFile(file, _activeImportMode);
       _inspectedFiles.add(info);
@@ -550,16 +553,10 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
               const Divider(height: 1, color: DefensysTokens.border),
 
-              // 2. Import Mode Selector Tab
-              _buildModeSelector(),
-
-              // 3. Auto-switch notification banner (if triggered)
-              if (_autoSwitchedModeNotice != null) _buildAutoSwitchNotice(),
-
-              // 4. Summary Info Bar
+              // 2. Summary Info Bar
               if (_stagedFiles.isNotEmpty) _buildSummaryBar(),
 
-              // 5. Staged Files List
+              // 3. Staged Files List
               Flexible(
                 child: _stagedFiles.isEmpty
                     ? _buildEmptyState()
@@ -574,7 +571,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                       ),
               ),
 
-              // 6. Add more file area
+              // 4. Add more file area
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: _buildAddMoreButton(),
@@ -583,7 +580,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               const SizedBox(height: 16),
               const Divider(height: 1, color: DefensysTokens.border),
 
-              // 7. Footer Actions
+              // 5. Footer Actions
               _buildFooter(context, hasValidFiles, isStudent),
             ],
           ),
@@ -647,143 +644,11 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     );
   }
 
-  Widget _buildModeSelector() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 14, 20, 4),
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Row(
-        children: [
-          Expanded(
-            child: _buildModeTab(
-              mode: 'student',
-              label: 'Student Batch',
-              icon: Icons.school_rounded,
-              isSelected: _activeImportMode == 'student',
-            ),
-          ),
-          const SizedBox(width: 6),
-          Expanded(
-            child: _buildModeTab(
-              mode: 'general',
-              label: 'Faculty / General Users',
-              icon: Icons.badge_rounded,
-              isSelected: _activeImportMode == 'general',
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildModeTab({
-    required String mode,
-    required String label,
-    required IconData icon,
-    required bool isSelected,
-  }) {
-    return InkWell(
-      onTap: () {
-        if (_activeImportMode != mode) {
-          setState(() {
-            _activeImportMode = mode;
-            _autoSwitchedModeNotice = null;
-            _reinspectAllFiles();
-          });
-        }
-      },
-      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.06),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              icon,
-              size: 15,
-              color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
-            ),
-            const SizedBox(width: 6),
-            Flexible(
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: DefensysTokens.fontFamily,
-                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.textSecondary,
-                  fontSize: 12.5,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildAutoSwitchNotice() {
-    return Container(
-      margin: const EdgeInsets.fromLTRB(20, 10, 20, 0),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: Row(
-        children: [
-          const Icon(Icons.auto_awesome_rounded, size: 16, color: Color(0xFF2563EB)),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              _autoSwitchedModeNotice!,
-              style: const TextStyle(
-                fontFamily: DefensysTokens.fontFamily,
-                color: Color(0xFF1E40AF),
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          IconButton(
-            onPressed: () => setState(() => _autoSwitchedModeNotice = null),
-            icon: const Icon(Icons.close_rounded, size: 14, color: Color(0xFF6B7280)),
-            splashRadius: 14,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            tooltip: 'Dismiss',
-          ),
-        ],
-      ),
-    );
-  }
-
   Widget _buildSummaryBar() {
     final fileCount = _stagedFiles.length;
     final fileWord = fileCount == 1 ? 'file' : 'files';
     final rowWord = _totalValidRows == 1 ? 'record' : 'records';
-    final modeLabel = _activeImportMode == 'student' ? 'Student Batch' : 'Faculty / General';
+    final modeLabel = _activeImportMode == 'student' ? 'Student Batch' : 'Faculty / General Users';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),

@@ -217,6 +217,13 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                   onPressed: state.isSaving ? null : () => setState(() => _activeTab = _Tab.bulkImport),
                   icon: const Icon(Icons.file_upload_outlined, size: 16),
                   label: const Text('Bulk Import CSV'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: DefensysUi.primaryMaroon,
+                    side: const BorderSide(color: DefensysUi.primaryMaroon),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
