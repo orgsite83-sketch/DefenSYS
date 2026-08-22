@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/curriculum_analytics_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
@@ -314,14 +315,12 @@ class _CurriculumAnalyticsScreenState
           Container(height: 1, color: const Color(0xFFE5E7EB)),
           const SizedBox(height: 18),
           if (distribution.isEmpty)
-            const SizedBox(
-              height: 115,
-              child: Center(
-                child: Text(
-                  'No project archive data for this period.',
-                  style: TextStyle(color: AppColors.textSecondary),
-                ),
-              ),
+            DefensysEmptyState(
+              icon: Icons.bar_chart_rounded,
+              title: 'No Project Archive Data',
+              description:
+                  'Project archive distribution will populate once documents are uploaded.',
+              size: DefensysEmptyStateSize.compact,
             )
           else
             ...distribution.map(_distributionBarRow),

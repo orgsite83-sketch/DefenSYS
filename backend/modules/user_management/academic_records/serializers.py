@@ -67,8 +67,11 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
 
 
 class StudentAcademicRecordWriteSerializer(serializers.Serializer):
-    student_id = serializers.IntegerField(required=False)
-    student_username = serializers.CharField(required=False, allow_blank=False)
+    student_id = serializers.IntegerField(required=False, allow_null=True)
+    student_username = serializers.CharField(required=False, allow_blank=True)
+    first_name = serializers.CharField(required=False, allow_blank=True)
+    last_name = serializers.CharField(required=False, allow_blank=True)
+    email = serializers.EmailField(required=False, allow_blank=True)
     semester_id = serializers.IntegerField()
     year_level = serializers.ChoiceField(choices=[choice[0] for choice in StudentAcademicRecord.YEAR_LEVEL_CHOICES])
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
@@ -117,12 +120,24 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
             except User.DoesNotExist as exc:
                 raise serializers.ValidationError({'student_id': 'Student does not exist.'}) from exc
 
-        username = attrs.get('student_username')
+        username = (attrs.get('student_username') or '').strip()
         if username:
-            try:
-                return User.objects.get(username=username)
-            except User.DoesNotExist as exc:
-                raise serializers.ValidationError({'student_username': 'Student does not exist.'}) from exc
+            user = User.objects.filter(username=username).first()
+            if user:
+                return user
+            first_name = (attrs.get('first_name') or '').strip()
+            last_name = (attrs.get('last_name') or '').strip()
+            email = (attrs.get('email') or '').strip()
+            if not email:
+                email = f"{username}@ustp.edu.ph"
+            return User.objects.create_user(
+                username=username,
+                password=username,
+                first_name=first_name,
+                last_name=last_name,
+                email=email,
+                role='student',
+            )
 
         raise serializers.ValidationError({'student_id': 'This field is required.'})
 

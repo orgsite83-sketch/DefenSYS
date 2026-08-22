@@ -425,7 +425,7 @@ class _NotificationsBellState extends ConsumerState<_NotificationsBell> {
   }
 }
 
-class _Sidebar extends StatefulWidget {
+class _Sidebar extends StatelessWidget {
   final DefensysAdminSection activeSection;
   final ValueChanged<DefensysAdminSection> onNavigate;
   final VoidCallback onLogout;
@@ -435,38 +435,6 @@ class _Sidebar extends StatefulWidget {
     required this.onNavigate,
     required this.onLogout,
   });
-
-  @override
-  State<_Sidebar> createState() => _SidebarState();
-}
-
-class _SidebarState extends State<_Sidebar> {
-  late bool _isUserManagementOpen;
-
-  @override
-  void initState() {
-    super.initState();
-    _isUserManagementOpen = widget.activeSection == DefensysAdminSection.userManagement ||
-        widget.activeSection == DefensysAdminSection.studentTeams ||
-        widget.activeSection == DefensysAdminSection.studentAcademicRecords;
-  }
-
-  @override
-  void didUpdateWidget(_Sidebar oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.activeSection != oldWidget.activeSection) {
-      final wasInUserMgmt = oldWidget.activeSection == DefensysAdminSection.userManagement ||
-          oldWidget.activeSection == DefensysAdminSection.studentTeams ||
-          oldWidget.activeSection == DefensysAdminSection.studentAcademicRecords;
-      final nowInUserMgmt = widget.activeSection == DefensysAdminSection.userManagement ||
-          widget.activeSection == DefensysAdminSection.studentTeams ||
-          widget.activeSection == DefensysAdminSection.studentAcademicRecords;
-
-      if (nowInUserMgmt && !wasInUserMgmt) {
-        _isUserManagementOpen = true;
-      }
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -503,120 +471,97 @@ class _SidebarState extends State<_Sidebar> {
                 const _SectionHeader(title: 'Dashboard'),
                 _NavItem(
                   section: DefensysAdminSection.overview,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.show_chart_rounded,
                   label: l10n.navOverview,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 const _SectionHeader(title: 'Setup & Configuration'),
                 _NavItem(
                   section: DefensysAdminSection.academicPeriods,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.calendar_month_rounded,
                   label: l10n.navAcademicPeriods,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.rubrics,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.checklist_rounded,
                   label: l10n.navRubricEngine,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.defenseStages,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.layers_rounded,
                   label: l10n.navDefenseStages,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 const _SectionHeader(title: 'People & Teams'),
                 _NavItem(
                   section: DefensysAdminSection.userManagement,
-                  activeSection: widget.activeSection,
-                  icon: Icons.groups_2_rounded,
+                  activeSection: activeSection,
+                  icon: Icons.manage_accounts_rounded,
                   label: l10n.navUserManagement,
-                  trailing: _isUserManagementOpen
-                      ? Icons.keyboard_arrow_up_rounded
-                      : Icons.keyboard_arrow_down_rounded,
-                  onTap: (_) {
-                    setState(() {
-                      _isUserManagementOpen = !_isUserManagementOpen;
-                    });
-                  },
+                  onTap: onNavigate,
                 ),
-                if (_isUserManagementOpen) ...[
-                  _SubNavItem(
-                    section: DefensysAdminSection.userManagement,
-                    activeSection: widget.activeSection,
-                    icon: Icons.person_rounded,
-                    label: l10n.navUsers,
-                    onTap: widget.onNavigate,
-                  ),
-                  _SubNavItem(
-                    section: DefensysAdminSection.studentTeams,
-                    activeSection: widget.activeSection,
-                    icon: Icons.groups_rounded,
-                    label: l10n.navStudentTeams,
-                    onTap: widget.onNavigate,
-                  ),
-                  _SubNavItem(
-                    section: DefensysAdminSection.studentAcademicRecords,
-                    activeSection: widget.activeSection,
-                    icon: Icons.badge_rounded,
-                    label: l10n.navStudentRecords,
-                    onTap: widget.onNavigate,
-                  ),
-                ],
+                _NavItem(
+                  section: DefensysAdminSection.studentTeams,
+                  activeSection: activeSection,
+                  icon: Icons.groups_rounded,
+                  label: l10n.navStudentTeams,
+                  onTap: onNavigate,
+                ),
                 const _SectionHeader(title: 'Defense Operations'),
                 _NavItem(
                   section: DefensysAdminSection.scheduling,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.event_note_rounded,
                   label: l10n.navDefenseScheduler,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.defenseBoard,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.view_column_rounded,
                   label: l10n.navDefenseBoard,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.gradeCenter,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.grade_rounded,
                   label: l10n.navGradeCenter,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 const _SectionHeader(title: 'Analytics & Audit'),
                 _NavItem(
                   section: DefensysAdminSection.repositoryAudit,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.folder_rounded,
                   label: l10n.navRepositoryAudit,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.curriculumAnalytics,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.manage_search_rounded,
                   label: l10n.navCurriculumAnalytics,
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
                 _NavItem(
                   section: DefensysAdminSection.auditCompliance,
-                  activeSection: widget.activeSection,
+                  activeSection: activeSection,
                   icon: Icons.verified_user_outlined,
                   label: 'Audit Trail',
-                  onTap: widget.onNavigate,
+                  onTap: onNavigate,
                 ),
               ],
             ),
           ),
           Container(height: 1, color: Colors.white.withValues(alpha: 0.09)),
-          _UserProfileCard(onLogout: widget.onLogout),
+          _UserProfileCard(onLogout: onLogout),
         ],
       ),
     );
@@ -805,12 +750,7 @@ class _NavItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final selected =
-        section == activeSection ||
-        (section == DefensysAdminSection.userManagement &&
-            (activeSection == DefensysAdminSection.studentTeams ||
-                activeSection ==
-                    DefensysAdminSection.studentAcademicRecords));
+    final selected = section == activeSection;
     final color = selected ? DefensysUi.accentGold : const Color(0xFFD1D5DB);
     final containerColor = selected
         ? Colors.white.withValues(alpha: 0.08)
@@ -856,64 +796,6 @@ class _NavItem extends StatelessWidget {
                     const SizedBox(width: 8),
                     Icon(trailing, color: color.withValues(alpha: 0.86), size: 18),
                   ],
-                ],
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SubNavItem extends StatelessWidget {
-  final DefensysAdminSection section;
-  final DefensysAdminSection activeSection;
-  final IconData icon;
-  final String label;
-  final ValueChanged<DefensysAdminSection> onTap;
-
-  const _SubNavItem({
-    required this.section,
-    required this.activeSection,
-    required this.icon,
-    required this.label,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final selected = section == activeSection;
-    final color = selected ? DefensysUi.accentGold : Colors.white.withValues(alpha: 0.7);
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 1),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(8),
-        child: Material(
-          color: selected ? Colors.white.withValues(alpha: 0.04) : Colors.transparent,
-          child: InkWell(
-            onTap: () => onTap(section),
-            hoverColor: Colors.white.withValues(alpha: 0.03),
-            child: Container(
-              height: 38,
-              padding: const EdgeInsets.only(left: 36, right: 14),
-              child: Row(
-                children: [
-                  Icon(icon, color: color, size: 14),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Text(
-                      label,
-                      style: TextStyle(
-                        fontFamily: DefensysUi.fontFamily,
-                        color: color,
-                        fontSize: 12,
-                        height: 1.25,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                      ),
-                    ),
-                  ),
                 ],
               ),
             ),

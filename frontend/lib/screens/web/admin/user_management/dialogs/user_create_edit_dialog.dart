@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/widgets/dialogs/confirm_dialog.dart';
 
 /// Modal dialog for creating a single user or editing an existing user's details.
 /// Returns a [Map<String, dynamic>] payload if saved, or `null` if cancelled.
@@ -38,6 +39,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
   late final TextEditingController _passwordController;
 
   late bool _editing;
+  late String _initialRole;
   late String _role;
   late bool _isPanelist;
   late bool _isPitLead;
@@ -65,7 +67,13 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     );
     _passwordController = TextEditingController();
 
-    _role = user?['role']?.toString() ?? 'student';
+    _initialRole = user?['role']?.toString() ?? 'student';
+    // Map initial admin role to faculty in dropdown (admin privilege is managed in Access Control)
+    _role = (_initialRole == 'admin') ? 'faculty' : _initialRole;
+    if (_role != 'faculty' && _role != 'student') {
+      _role = 'student';
+    }
+
     _isPanelist = user?['is_panelist'] == true;
     _isPitLead = user?['is_pit_lead'] == true;
     _isAdviser = user?['is_adviser'] == true;
@@ -88,8 +96,8 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     super.dispose();
   }
 
-  void _onSave() {
-    if (_isPitLead && (_pitLeadYear == null || _pitLeadYear!.trim().isEmpty)) {
+  Future<void> _onSave() async {
+    if (!_editing && _isPitLead && (_pitLeadYear == null || _pitLeadYear!.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('A PIT Lead year level (1st, 2nd, or 3rd Year) is required when assigning a user as PIT Lead.'),
@@ -98,12 +106,49 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
       );
       return;
     }
+
+    String targetRole = _role;
+    if (_editing) {
+      final wasFacultyOrAdmin = _initialRole == 'faculty' || _initialRole == 'admin';
+      final isNowStudent = _role == 'student';
+      final wasStudent = _initialRole == 'student';
+      final isNowFaculty = _role == 'faculty';
+
+      final name = '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+      final displayName = name.isNotEmpty ? name : _usernameController.text.trim();
+
+      if (wasFacultyOrAdmin && isNowStudent) {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Change User Role to Student?',
+          message: 'Are you sure you want to change $displayName\'s base role to Student? This will remove all faculty operational roles (Panelist, PIT Lead, Adviser, Documenter).',
+          confirmLabel: 'Change to Student',
+          destructive: true,
+          icon: Icons.warning_amber_rounded,
+        );
+        if (confirmed != true) return;
+        targetRole = 'student';
+      } else if (wasStudent && isNowFaculty) {
+        final confirmed = await showConfirmDialog(
+          context,
+          title: 'Change User Role to Faculty?',
+          message: 'Are you sure you want to change $displayName\'s base role to Faculty? They will gain faculty permissions and access to operational duties.',
+          confirmLabel: 'Change to Faculty',
+          icon: Icons.badge_outlined,
+        );
+        if (confirmed != true) return;
+        targetRole = 'faculty';
+      } else {
+        targetRole = _initialRole;
+      }
+    }
+
     final payload = <String, dynamic>{
       'username': _usernameController.text.trim(),
       'first_name': _firstNameController.text.trim(),
       'last_name': _lastNameController.text.trim(),
       'email': _emailController.text.trim(),
-      'role': _role,
+      'role': targetRole,
       'is_active': _isActive,
       'is_panelist': _isPanelist,
       'is_pit_lead': _isPitLead,
@@ -111,15 +156,17 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
       'is_adviser': _isAdviser,
       'is_documenter': _isDocumenter,
       'is_uploader': widget.user?['is_uploader'] == true,
-      if (_passwordController.text.trim().isNotEmpty)
+      if (!_editing && _passwordController.text.trim().isNotEmpty)
         'password': _passwordController.text.trim(),
     };
-    Navigator.of(context).pop(payload);
+    if (mounted) {
+      Navigator.of(context).pop(payload);
+    }
   }
 
   @override
   Widget build(BuildContext context) {
-    final isFaculty = _role == 'admin' || _role == 'faculty';
+    final isFaculty = _role == 'faculty';
 
     return AlertDialog(
       title: Text(_editing ? 'Edit User' : 'Add Single User'),
@@ -165,15 +212,12 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<String>(
+                key: ValueKey('role-select-$_role'),
                 initialValue: _role,
                 decoration: const InputDecoration(
                   labelText: 'Base Role',
                 ),
                 items: const [
-                  DropdownMenuItem(
-                    value: 'admin',
-                    child: Text('Admin'),
-                  ),
                   DropdownMenuItem(
                     value: 'faculty',
                     child: Text('Faculty'),
@@ -189,16 +233,17 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                   });
                 },
               ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _passwordController,
-                obscureText: true,
-                decoration: InputDecoration(
-                  labelText: _editing
-                      ? 'New Password (optional)'
-                      : 'Password (optional, defaults to ID)',
+              if (!_editing) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _passwordController,
+                  obscureText: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Password (optional, defaults to ID)',
+                  ),
                 ),
-              ),
+              ],
+              const SizedBox(height: 8),
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Active account'),
@@ -209,7 +254,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                   });
                 },
               ),
-              if (isFaculty) ...[
+              if (!_editing && isFaculty) ...[
                 const Divider(),
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
@@ -286,59 +331,6 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                     });
                   },
                 ),
-                if (_editing) ...[
-                  Builder(
-                    builder: (context) {
-                      final assignments = widget.user?['instructor_assignments'] as List?;
-                      if (assignments != null && assignments.isNotEmpty) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Divider(),
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 6),
-                              child: Text(
-                                'Active PIT Instructor Workload',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF374151),
-                                ),
-                              ),
-                            ),
-                            ...assignments.map((a) {
-                              final map = Map<String, dynamic>.from(a as Map);
-                              return Padding(
-                                padding: const EdgeInsets.symmetric(vertical: 4),
-                                child: Row(
-                                  children: [
-                                    const Icon(
-                                      Icons.co_present_rounded,
-                                      size: 16,
-                                      color: Color(0xFF15803D),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        '${map['year_level']} — ${map['section']} (${map['semester']})',
-                                        style: const TextStyle(
-                                          fontSize: 12.5,
-                                          fontWeight: FontWeight.w500,
-                                          color: Color(0xFF4B5563),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              );
-                            }),
-                          ],
-                        );
-                      }
-                      return const SizedBox.shrink();
-                    },
-                  ),
-                ],
               ],
             ],
           ),

@@ -14,6 +14,14 @@ class UserStatCards extends StatelessWidget {
   final ValueChanged<String> onSelectRoleFilter;
 
   int _count(UserManagementState state, String key) {
+    final value = state.counts[key];
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value != null) {
+      final parsed = int.tryParse(value.toString());
+      if (parsed != null) return parsed;
+    }
+
     if (key == 'all') {
       return state.users.length;
     }

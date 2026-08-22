@@ -8,6 +8,7 @@ import '../../../../services/academic_period_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import 'defense_stage_editor_screen.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -2601,30 +2602,22 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   Widget _buildEmptyState() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 48),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE6E8EF)),
       ),
-      child: const Column(
-        children: [
-          Icon(Icons.layers_outlined, size: 44, color: AppColors.textSecondary),
-          SizedBox(height: 10),
-          Text(
-            'No defense stages found',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
-            'Add a stage to build the scheduler stage chain.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
-        ],
+      child: DefensysEmptyState(
+        icon: Icons.layers_outlined,
+        title: 'No Defense Stages Found',
+        description:
+            'Add a stage to construct your capstone defense pipeline and scheduler milestone chain.',
+        size: DefensysEmptyStateSize.standard,
+        primaryAction: DefensysEmptyAction(
+          label: 'Add Stage',
+          icon: Icons.add_rounded,
+          onPressed: () => _showStageDialog(),
+        ),
       ),
     );
   }

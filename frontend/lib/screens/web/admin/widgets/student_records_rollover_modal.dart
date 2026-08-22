@@ -311,21 +311,21 @@ class _StudentRecordsRolloverModalState extends State<StudentRecordsRolloverModa
               if (isNewStudent)
                 const DropdownMenuItem(
                   value: 'create',
-                  child: Text('Create'),
+                  child: Text('Create Account & Enroll'),
                 )
               else ...[
                 const DropdownMenuItem(
                   value: 'promote',
-                  child: Text('Promote'),
+                  child: Text('Promote (Next Term)'),
                 ),
                 const DropdownMenuItem(
                   value: 'retain',
-                  child: Text('Retain'),
+                  child: Text('Retain (Same Level)'),
                 ),
               ],
               const DropdownMenuItem(
                 value: 'drop',
-                child: Text('Drop'),
+                child: Text('Exclude (LOA / Dropped)'),
               ),
             ],
             onChanged: (value) => widget.onActionChanged(recordKeyId, value),
@@ -996,8 +996,20 @@ class _StudentRecordsRolloverModalState extends State<StudentRecordsRolloverModa
               Padding(
                 padding: const EdgeInsets.fromLTRB(24, 14, 24, 18),
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
                   children: [
+                    if (widget.hasCsvUploaded) ...[
+                      const Icon(Icons.shield_outlined, size: 16, color: _muted),
+                      const SizedBox(width: 6),
+                      Text(
+                        '${widget.nonDropCount} will enroll · ${widget.totalCount - widget.nonDropCount} excluded (LOA/Dropped)',
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w600,
+                          color: _muted,
+                        ),
+                      ),
+                    ],
+                    const Spacer(),
                     TextButton(
                       onPressed: widget.onClose,
                       style: TextButton.styleFrom(
@@ -1048,7 +1060,7 @@ class _StudentRecordsRolloverModalState extends State<StudentRecordsRolloverModa
                             ),
                             const SizedBox(width: 10),
                             Text(
-                              'Create Rollover Records (${widget.nonDropCount})',
+                              'Confirm Rollover (${widget.nonDropCount})',
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.w700,

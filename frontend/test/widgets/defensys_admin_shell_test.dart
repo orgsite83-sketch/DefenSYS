@@ -74,15 +74,12 @@ void main() {
     await tester.tap(find.byIcon(Icons.menu));
     await tester.pumpAndSettle();
 
-    final gradeCenterFinder = find.text('Evaluation & Grades');
-    expect(gradeCenterFinder, findsOneWidget);
-    await tester.ensureVisible(gradeCenterFinder);
+    final userMgmtFinder = find.text('User Management');
+    expect(userMgmtFinder, findsOneWidget);
+    await tester.tap(userMgmtFinder);
     await tester.pumpAndSettle();
 
-    await tester.tap(gradeCenterFinder);
-    await tester.pumpAndSettle();
-
-    expect(navigated, DefensysAdminSection.gradeCenter);
+    expect(navigated, DefensysAdminSection.userManagement);
     expect(find.byType(Drawer), findsNothing);
   });
 

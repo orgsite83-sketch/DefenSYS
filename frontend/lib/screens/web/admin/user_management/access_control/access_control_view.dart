@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
+import 'package:defensys/widgets/dialogs/confirm_dialog.dart';
 
 /// Access Control & Dynamic Role Assignment page component matching canonical design.
 class AccessControlView extends ConsumerStatefulWidget {
@@ -35,6 +36,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
   static const Color _muted = DefensysUi.steelGrey;
 
   late String _role;
+  late bool _isAdmin;
   late bool _isPanelist;
   late bool _isPitLead;
   late bool _isAdviser;
@@ -64,6 +66,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
     super.initState();
     final u = widget.user;
     _role = u['role']?.toString() ?? 'student';
+    _isAdmin = _role == 'admin';
     _isPanelist = u['is_panelist'] == true;
     _isPitLead = u['is_pit_lead'] == true;
     _isAdviser = u['is_adviser'] == true;
@@ -97,6 +100,45 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
     });
   }
 
+  Future<void> _onToggleAdmin(bool value) async {
+    final name = (widget.user['name']?.toString().trim().isNotEmpty == true)
+        ? widget.user['name']!.toString().trim()
+        : '${widget.user['first_name'] ?? ''} ${widget.user['last_name'] ?? ''}'.trim();
+    final displayName = name.isNotEmpty ? name : 'this faculty member';
+
+    if (value) {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Grant Administrator Privileges?',
+        message:
+            'You are granting $displayName full administrator access to DefenSYS. This user will have complete access to system settings, defense rubrics, schedules, grades, and user management.',
+        confirmLabel: 'Grant Admin Access',
+        destructive: false,
+        icon: Icons.admin_panel_settings_rounded,
+      );
+      if (confirmed == true && mounted) {
+        setState(() {
+          _isAdmin = true;
+        });
+      }
+    } else {
+      final confirmed = await showConfirmDialog(
+        context,
+        title: 'Revoke Administrator Privileges?',
+        message:
+            'Are you sure you want to remove administrator privileges for $displayName? Their account will return to standard Faculty permissions.',
+        confirmLabel: 'Revoke Admin Access',
+        destructive: true,
+        icon: Icons.shield_outlined,
+      );
+      if (confirmed == true && mounted) {
+        setState(() {
+          _isAdmin = false;
+        });
+      }
+    }
+  }
+
   void _onSave() {
     if (_isPitLead && (_pitLeadYear == null || _pitLeadYear!.trim().isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -110,6 +152,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
       return;
     }
     widget.onSaveRoles({
+      'role': _isAdmin ? 'admin' : 'faculty',
       'is_panelist': _isPanelist,
       'is_pit_lead': _isPitLead,
       'pit_lead_year': _isPitLead ? _pitLeadYear : null,
@@ -347,6 +390,21 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                                   crossAxisAlignment:
                                       CrossAxisAlignment.stretch,
                                   children: [
+                                    _accessRoleCard(
+                                      accent: _maroon,
+                                      icon: Icons.admin_panel_settings_rounded,
+                                      title: 'System Administrator',
+                                      subtitle:
+                                          'Grants full administrative privileges over system configuration, user accounts, and defense rubrics.',
+                                      value: _isAdmin,
+                                      enabled: !widget.state.isSaving,
+                                      onChanged: (v) => _onToggleAdmin(v),
+                                    ),
+                                    const Divider(
+                                      height: 1,
+                                      thickness: 1,
+                                      color: _line,
+                                    ),
                                     _accessRoleCard(
                                       accent: const Color(0xFF9333EA),
                                       icon: Icons.groups_2_outlined,

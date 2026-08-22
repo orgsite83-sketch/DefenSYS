@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:defensys/widgets/feedback/empty_state.dart';
 
 int? _asInt(dynamic value) {
   if (value is int) return value;
@@ -586,14 +587,11 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
     final sortedSections = sectionsMap.keys.toList()..sort();
 
     if (sortedSections.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(48),
-          child: Text(
-            'No teams found for the active filter.',
-            style: TextStyle(color: DefensysUi.steelGrey),
-          ),
-        ),
+      return DefensysEmptyState(
+        icon: Icons.groups_outlined,
+        title: 'No Teams Found',
+        description: 'No student teams found matching the active filters or search parameters.',
+        size: DefensysEmptyStateSize.standard,
       );
     }
 
@@ -867,14 +865,11 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
                 Padding(
                   padding: const EdgeInsets.all(16),
                   child: displayedTeams.isEmpty
-                      ? const Center(
-                          child: Padding(
-                            padding: EdgeInsets.symmetric(vertical: 24),
-                            child: Text(
-                              'No teams matching the selected adviser filter.',
-                              style: TextStyle(color: DefensysUi.steelGrey, fontSize: 13),
-                            ),
-                          ),
+                      ? DefensysEmptyState(
+                          icon: Icons.person_search_outlined,
+                          title: 'No Teams for Selected Adviser',
+                          description: 'No teams are assigned to this adviser under this section.',
+                          size: DefensysEmptyStateSize.compact,
                         )
                       : Column(
                           children: [

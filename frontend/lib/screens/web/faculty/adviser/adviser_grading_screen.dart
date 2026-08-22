@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/adviser_grading_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -240,20 +241,11 @@ class _AdviserGradingScreenState extends ConsumerState<AdviserGradingScreen> {
   }
 
   Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.groups_outlined, size: 72, color: Colors.grey.shade300),
-          const SizedBox(height: 16),
-          const Text('No teams to grade', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: _textDark)),
-          const SizedBox(height: 8),
-          const Text(
-            'There are no capstone teams assigned to you yet.',
-            style: TextStyle(color: _steelGrey),
-          ),
-        ],
-      ),
+    return const DefensysEmptyState(
+      icon: Icons.groups_outlined,
+      title: 'No Teams to Grade',
+      description: 'There are no capstone teams assigned to you for grading yet.',
+      size: DefensysEmptyStateSize.standard,
     );
   }
 

@@ -126,5 +126,58 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult!.importMode, 'student');
       expect(capturedResult!.files.length, 1);
     });
+
+    testWidgets('marks non-student CSVs as incompatible, excludes them from valid counts and skips them on proceed', (tester) async {
+      StagedImportResult? capturedResult;
+
+      const scheduleCsv = '''defense_date,room,panelist,time_slot
+2026-09-01,Lab 1,Dr. Garcia,09:00 AM
+2026-09-01,Lab 2,Dr. Ramos,10:30 AM
+''';
+
+      final scheduleFile = PickedTabularFile(
+        name: 'defense_schedule_import.csv',
+        extension: 'csv',
+        bytes: Uint8List.fromList(scheduleCsv.codeUnits),
+        text: scheduleCsv,
+      );
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [studentFile, scheduleFile],
+                    importMode: 'student',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('1 valid file staged'), findsOneWidget);
+      expect(find.textContaining('1 incompatible file will be skipped'), findsOneWidget);
+      expect(find.textContaining('Incompatible Format'), findsOneWidget);
+      expect(find.textContaining('defense schedule file'), findsOneWidget);
+
+      // Confirm generate preview button only proceeds with the 1 valid file
+      await tester.tap(find.text('Generate Preview Table (2 rows)'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(capturedResult!.files.length, 1);
+      expect(capturedResult!.files.first.name, 'bsit_3a_enrolled.csv');
+    });
   });
 }
+

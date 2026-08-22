@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/widgets/feedback/empty_state.dart';
 import '../models/schedule_import_models.dart';
 
 class TeamReadinessTracker extends StatefulWidget {
@@ -206,15 +207,15 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
           ),
           const SizedBox(height: 18),
           if (teams.isEmpty)
-            Container(
-              padding: const EdgeInsets.all(24),
-              alignment: Alignment.center,
-              child: Text(
-                _trackerSearchController.text.isEmpty
-                    ? 'No teams found for the active scope.'
-                    : 'No teams match your search query.',
-                style: const TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
-              ),
+            DefensysEmptyState.table(
+              icon: Icons.assignment_turned_in_outlined,
+              title: _trackerSearchController.text.isEmpty
+                  ? 'No Teams for Active Scope'
+                  : 'No Teams Match Query',
+              description: _trackerSearchController.text.isEmpty
+                  ? 'There are no teams enrolled or ready for evaluation in this scope.'
+                  : 'No teams found matching "${_trackerSearchController.text.trim()}".',
+              size: DefensysEmptyStateSize.compact,
             )
           else ...[
             Builder(

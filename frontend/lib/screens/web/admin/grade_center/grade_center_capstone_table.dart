@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import 'grade_center_shared.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -276,28 +277,22 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     }
 
     if (stages.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(32),
-        child: Center(
-          child: Text(
-            'No defense stages setup. Add stages under Defense Stages Setup.',
-            style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return DefensysEmptyState.table(
+        icon: Icons.layers_outlined,
+        title: 'No Defense Stages Setup',
+        description:
+            'Configure defense stages under Defense Stages Setup to enable evaluation tracking.',
+        size: DefensysEmptyStateSize.compact,
       );
     }
 
     if (rows.isEmpty) {
-      return const Padding(
-        padding: EdgeInsets.all(32),
-        child: Center(
-          child: Text(
-            'No active stages to display. Activate stages under Defense Stages Setup.',
-            style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
-            textAlign: TextAlign.center,
-          ),
-        ),
+      return DefensysEmptyState.table(
+        icon: Icons.filter_alt_off_outlined,
+        title: 'No Active Stages to Display',
+        description:
+            'Activate stages under Defense Stages Setup to track student team grades.',
+        size: DefensysEmptyStateSize.compact,
       );
     }
 

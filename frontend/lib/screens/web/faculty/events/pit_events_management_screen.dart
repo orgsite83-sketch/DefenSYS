@@ -7,6 +7,7 @@ import '../../../../widgets/confirm_dialog.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
@@ -704,64 +705,23 @@ class _PitEventsManagementScreenState extends ConsumerState<PitEventsManagementS
 
   Widget _buildEmptyState() {
     return Container(
-      padding: const EdgeInsets.all(48),
+      width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Column(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFFEF2F2),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(Icons.event_busy_outlined, size: 36, color: AppColors.maroon),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No PIT Events Configured',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w800,
-              color: DefensysTokens.textPrimary,
-              fontFamily: DefensysTokens.fontFamily,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
+      child: DefensysEmptyState(
+        icon: Icons.event_busy_outlined,
+        title: 'No PIT Events Configured',
+        description:
             'Configure evaluation weight splits, rubrics, and deliverable checklists for this academic semester.',
-            style: TextStyle(
-              color: DefensysTokens.textSecondary,
-              fontSize: 13,
-              fontFamily: DefensysTokens.fontFamily,
-            ),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 20),
-          SizedBox(
-            height: 40,
-            child: ElevatedButton.icon(
-              onPressed: () => _showEventDialog(),
-              icon: const Icon(Icons.add, size: 18, color: Colors.white),
-              label: const Text('Add Event Configuration'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.maroon,
-                foregroundColor: Colors.white,
-                elevation: 0,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                padding: const EdgeInsets.symmetric(horizontal: 18),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                  fontFamily: DefensysTokens.fontFamily,
-                ),
-              ),
-            ),
-          ),
-        ],
+        size: DefensysEmptyStateSize.standard,
+        primaryAction: DefensysEmptyAction(
+          label: 'Add Event Configuration',
+          icon: Icons.add_rounded,
+          onPressed: _showEventDialog,
+        ),
       ),
     );
   }

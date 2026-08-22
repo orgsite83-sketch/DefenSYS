@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/csv_file_io.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 
 /// Result containing staged files and user-confirmed import mode.
 class StagedImportResult {
@@ -392,14 +393,25 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       );
     }
 
+    final lowerFileName = file.name.toLowerCase();
+    String detectedHint = '';
+    if (lowerFileName.contains('defense') || lowerFileName.contains('schedule')) {
+      detectedHint = ' (appears to be a defense schedule file)';
+    } else if (lowerFileName.contains('team') || lowerFileName.contains('group')) {
+      detectedHint = ' (appears to be a student team file)';
+    } else if (lowerFileName.contains('grade') || lowerFileName.contains('score')) {
+      detectedHint = ' (appears to be a grading/score file)';
+    }
+
     return StagedFileInfo(
       file: file,
-      formatLabel: isXlsx ? 'Spreadsheet (.xlsx)' : 'Delimited File (.csv)',
-      isValid: rows.length > 1,
-      rowCount: (rows.length - 1).clamp(0, 999999),
+      formatLabel: isXlsx ? 'Incompatible Spreadsheet' : 'Incompatible File',
+      isValid: false,
+      rowCount: 0,
       detectedImportMode: importMode,
-      recordEntityLabel: 'records',
-      warning: 'Template columns not recognized. May need column mapping.',
+      recordEntityLabel: 'incompatible',
+      warning:
+          'Columns not recognized for ${importMode == 'student' ? 'Student Intake' : 'User Import'}$detectedHint. This file will be skipped unless replaced.',
     );
   }
 
@@ -645,39 +657,64 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildSummaryBar() {
-    final fileCount = _stagedFiles.length;
-    final fileWord = fileCount == 1 ? 'file' : 'files';
-    final rowWord = _totalValidRows == 1 ? 'record' : 'records';
+    final validFilesCount = _inspectedFiles.where((f) => f.isValid).length;
+    final invalidFilesCount = _inspectedFiles.where((f) => !f.isValid).length;
+    final totalCount = _stagedFiles.length;
     final modeLabel = _activeImportMode == 'student' ? 'Student Batch' : 'Faculty / General Users';
+
+    final Color barBg;
+    final Color iconColor;
+    final IconData barIcon;
+    final String summaryText;
+
+    if (invalidFilesCount == 0 && validFilesCount > 0) {
+      barBg = DefensysTokens.background;
+      iconColor = DefensysTokens.success;
+      barIcon = Icons.check_circle_outline_rounded;
+      final fileWord = validFilesCount == 1 ? 'file' : 'files';
+      final rowWord = _totalValidRows == 1 ? 'record' : 'records';
+      summaryText = '$validFilesCount $fileWord staged  •  $_totalValidRows total $rowWord ready ($modeLabel)';
+    } else if (validFilesCount > 0 && invalidFilesCount > 0) {
+      barBg = const Color(0xFFFFFBEB);
+      iconColor = const Color(0xFFD97706);
+      barIcon = Icons.warning_amber_rounded;
+      final fileWord = validFilesCount == 1 ? 'file' : 'files';
+      final rowWord = _totalValidRows == 1 ? 'record' : 'records';
+      final invWord = invalidFilesCount == 1 ? 'file' : 'files';
+      summaryText = '$validFilesCount valid $fileWord staged  •  $_totalValidRows $rowWord ready ($invalidFilesCount incompatible $invWord will be skipped)';
+    } else {
+      barBg = const Color(0xFFFEF2F2);
+      iconColor = const Color(0xFFDC2626);
+      barIcon = Icons.error_outline_rounded;
+      summaryText = 'No valid class list files detected  •  Please replace or remove incompatible files';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-      color: DefensysTokens.background,
+      color: barBg,
       child: Row(
         children: [
-          const Icon(
-            Icons.check_circle_outline_rounded,
-            size: 16,
-            color: DefensysTokens.success,
-          ),
+          Icon(barIcon, size: 16, color: iconColor),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
-              '$fileCount $fileWord staged  •  $_totalValidRows total $rowWord ready ($modeLabel)',
-              style: const TextStyle(
+              summaryText,
+              style: TextStyle(
                 fontFamily: DefensysTokens.fontFamily,
-                color: DefensysTokens.textPrimary,
+                color: invalidFilesCount > 0 && validFilesCount == 0
+                    ? const Color(0xFF991B1B)
+                    : DefensysTokens.textPrimary,
                 fontSize: 12.5,
                 fontWeight: FontWeight.w600,
               ),
             ),
           ),
-          if (fileCount > 1)
+          if (totalCount > 1)
             InkWell(
               onTap: _handleClearAll,
               borderRadius: BorderRadius.circular(4),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              child: const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                 child: Text(
                   'Clear All',
                   style: TextStyle(
@@ -695,6 +732,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildFileCard(BuildContext context, int index, StagedFileInfo info) {
+    final isInvalid = !info.isValid;
     final isCsv = info.file.isCsv;
 
     // Determine badge theme based on entity type
@@ -707,7 +745,12 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     final Color entityBorder;
     final IconData entityIcon;
 
-    if (isFaculty) {
+    if (isInvalid) {
+      entityBg = const Color(0xFFFEF2F2);
+      entityFg = const Color(0xFFDC2626);
+      entityBorder = const Color(0xFFFECACA);
+      entityIcon = Icons.error_outline_rounded;
+    } else if (isFaculty) {
       entityBg = const Color(0xFFFDF2F4);
       entityFg = DefensysTokens.maroon;
       entityBorder = const Color(0xFFFECDD3);
@@ -718,14 +761,16 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       entityBorder = DefensysTokens.infoBorder;
       entityIcon = Icons.manage_accounts_outlined;
     } else {
-      entityBg = info.isValid ? DefensysTokens.successBg : DefensysTokens.warningBg;
-      entityFg = info.isValid ? DefensysTokens.successText : DefensysTokens.warningText;
-      entityBorder = info.isValid ? DefensysTokens.successBorder : DefensysTokens.warningBorder;
+      entityBg = DefensysTokens.successBg;
+      entityFg = DefensysTokens.successText;
+      entityBorder = DefensysTokens.successBorder;
       entityIcon = Icons.school_outlined;
     }
 
     String entityCountText;
-    if (isFaculty) {
+    if (isInvalid) {
+      entityCountText = 'Incompatible Format (0 $_activeImportMode records)';
+    } else if (isFaculty) {
       entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'faculty' : 'faculty'}';
     } else if (isUsers) {
       entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'user' : 'users'}';
@@ -737,10 +782,15 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: isInvalid ? const Color(0xFFFFFDFD) : Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
         border: Border.all(
-          color: info.warning != null ? DefensysTokens.warningBorder : DefensysTokens.border,
+          color: isInvalid
+              ? const Color(0xFFFCA5A5)
+              : (info.warning != null
+                  ? DefensysTokens.warningBorder
+                  : DefensysTokens.border),
+          width: isInvalid ? 1.2 : 1.0,
         ),
         boxShadow: [
           BoxShadow(
@@ -762,17 +812,23 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: isCsv ? DefensysTokens.successBg : DefensysTokens.infoBg,
+                  color: isInvalid
+                      ? const Color(0xFFFEF2F2)
+                      : (isCsv ? DefensysTokens.successBg : DefensysTokens.infoBg),
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                   border: Border.all(
-                    color: isCsv ? DefensysTokens.successBorder : DefensysTokens.infoBorder,
+                    color: isInvalid
+                        ? const Color(0xFFFECACA)
+                        : (isCsv ? DefensysTokens.successBorder : DefensysTokens.infoBorder),
                   ),
                 ),
                 child: Text(
                   info.extension,
                   style: TextStyle(
                     fontFamily: DefensysTokens.fontFamily,
-                    color: isCsv ? DefensysTokens.successText : DefensysTokens.infoText,
+                    color: isInvalid
+                        ? const Color(0xFFDC2626)
+                        : (isCsv ? DefensysTokens.successText : DefensysTokens.infoText),
                     fontSize: 11,
                     fontWeight: FontWeight.w800,
                     letterSpacing: 0.5,
@@ -790,9 +846,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                       info.fileName,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: DefensysTokens.fontFamily,
-                        color: DefensysTokens.textPrimary,
+                        color: isInvalid ? const Color(0xFF991B1B) : DefensysTokens.textPrimary,
                         fontSize: 13.5,
                         fontWeight: FontWeight.w700,
                       ),
@@ -800,9 +856,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                     const SizedBox(height: 2),
                     Text(
                       '${info.formattedFileSize}  •  ${info.formatLabel}',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: DefensysTokens.fontFamily,
-                        color: DefensysTokens.steelGrey,
+                        color: isInvalid ? const Color(0xFFB91C1C) : DefensysTokens.steelGrey,
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
                       ),
@@ -891,7 +947,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                 fgColor: entityFg,
                 borderColor: entityBorder,
               ),
-              if (info.primaryRole != null && info.formatLabel != 'Official Class List')
+              if (info.primaryRole != null && info.formatLabel != 'Official Class List' && !isInvalid)
                 _buildMetadataChip(
                   icon: Icons.person_pin_circle_outlined,
                   label: 'Role: ${info.primaryRole}',
@@ -907,24 +963,30 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
             const SizedBox(height: 8),
             Container(
               width: double.infinity,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               decoration: BoxDecoration(
-                color: DefensysTokens.warningBg,
+                color: isInvalid ? const Color(0xFFFEF2F2) : DefensysTokens.warningBg,
                 borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                border: Border.all(color: DefensysTokens.warningBorder),
+                border: Border.all(
+                  color: isInvalid ? const Color(0xFFFECACA) : DefensysTokens.warningBorder,
+                ),
               ),
               child: Row(
                 children: [
-                  const Icon(Icons.info_outline_rounded, size: 14, color: DefensysTokens.warningText),
+                  Icon(
+                    isInvalid ? Icons.error_outline_rounded : Icons.info_outline_rounded,
+                    size: 14,
+                    color: isInvalid ? const Color(0xFFDC2626) : DefensysTokens.warningText,
+                  ),
                   const SizedBox(width: 6),
                   Expanded(
                     child: Text(
                       info.warning!,
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontFamily: DefensysTokens.fontFamily,
-                        color: DefensysTokens.warningText,
+                        color: isInvalid ? const Color(0xFF991B1B) : DefensysTokens.warningText,
                         fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ),
@@ -971,40 +1033,13 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildEmptyState() {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 36, horizontal: 20),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const Icon(
-            Icons.folder_open_rounded,
-            size: 40,
-            color: DefensysTokens.steelGrey,
-          ),
-          const SizedBox(height: 10),
-          const Text(
-            'No files currently staged',
-            style: TextStyle(
-              fontFamily: DefensysTokens.fontFamily,
-              color: DefensysTokens.textPrimary,
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _activeImportMode == 'student'
-                ? 'Click below to add a class list (.csv / .xlsx) to stage for import.'
-                : 'Click below to add a user accounts file (.csv / .xlsx) to stage for import.',
-            style: const TextStyle(
-              fontFamily: DefensysTokens.fontFamily,
-              color: DefensysTokens.textSecondary,
-              fontSize: 12,
-            ),
-          ),
-        ],
-      ),
+    return DefensysEmptyState(
+      icon: Icons.folder_open_rounded,
+      title: 'No Files Currently Staged',
+      description: _activeImportMode == 'student'
+          ? 'Click below to add a class list (.csv / .xlsx) to stage for import.'
+          : 'Click below to add a user accounts file (.csv / .xlsx) to stage for import.',
+      size: DefensysEmptyStateSize.compact,
     );
   }
 
@@ -1090,12 +1125,18 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               ),
             ),
             onPressed: hasValidFiles && !_isProcessing
-                ? () => Navigator.of(context).pop(
-                    StagedImportResult(
-                      files: _stagedFiles,
-                      importMode: _activeImportMode,
-                    ),
-                  )
+                ? () {
+                    final validFiles = _inspectedFiles
+                        .where((f) => f.isValid)
+                        .map((f) => f.file)
+                        .toList();
+                    Navigator.of(context).pop(
+                      StagedImportResult(
+                        files: validFiles,
+                        importMode: _activeImportMode,
+                      ),
+                    );
+                  }
                 : null,
             icon: const Icon(Icons.arrow_forward_rounded, size: 16),
             label: Text(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
+import 'package:defensys/widgets/feedback/empty_state.dart';
 
 /// Card component displaying the search bar, role filters, users table, badges, and pagination controls.
 class UserManagementTable extends StatelessWidget {
@@ -52,18 +53,23 @@ class UserManagementTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefensysCard(
-      padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
+      padding: const EdgeInsets.all(24),
       child: Column(
         children: [
           Row(
             children: [
-              Expanded(child: _searchField()),
-              const SizedBox(width: 16),
+              Expanded(
+                child: SizedBox(
+                  height: 42,
+                  child: _searchField(),
+                ),
+              ),
+              const SizedBox(width: 12),
+              _roleFilter(),
+              const SizedBox(width: 12),
               _clearButton(),
             ],
           ),
-          const SizedBox(height: 16),
-          Row(children: [const Spacer(), _roleFilter()]),
           const SizedBox(height: 20),
           if (state.isLoading && state.users.isEmpty)
             DefensysSkeleton.list(count: 6, rowHeight: 52)
@@ -79,41 +85,38 @@ class UserManagementTable extends StatelessWidget {
   }
 
   Widget _searchField() {
-    return SizedBox(
-      height: 42,
-      child: TextField(
-        controller: searchController,
-        enabled: !state.isSaving,
-        style: const TextStyle(fontSize: 13),
-        decoration: InputDecoration(
-          prefixIcon: const Icon(
-            Icons.search_rounded,
-            color: DefensysUi.steelGrey,
-            size: 19,
-          ),
-          hintText: 'Search users by ID, name, email, or team...',
-          hintStyle: const TextStyle(color: DefensysUi.steelGrey, fontSize: 13),
-          filled: true,
-          fillColor: const Color(0xFFF3F4F6),
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 14,
-            vertical: 10,
-          ),
-          border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-          ),
-          enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: Color(0xFFD1D5DB)),
-          ),
-          focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(8),
-            borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
-          ),
+    return TextField(
+      controller: searchController,
+      enabled: !state.isSaving,
+      style: const TextStyle(fontSize: 13),
+      decoration: InputDecoration(
+        prefixIcon: const Icon(
+          Icons.search_rounded,
+          color: DefensysUi.steelGrey,
+          size: 18,
         ),
-        onSubmitted: onSearchSubmitted,
+        hintText: 'Search users by ID, name, email...',
+        hintStyle: const TextStyle(color: DefensysUi.steelGrey, fontSize: 13),
+        filled: true,
+        fillColor: const Color(0xFFF9FAFB),
+        contentPadding: const EdgeInsets.symmetric(
+          horizontal: 14,
+          vertical: 10,
+        ),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: DefensysUi.primaryMaroon),
+        ),
       ),
+      onSubmitted: onSearchSubmitted,
     );
   }
 
@@ -125,40 +128,48 @@ class UserManagementTable extends StatelessWidget {
       onPressed: (!hasSearch && !hasRole) || state.isSaving
           ? null
           : onClearFilters,
-      icon: const Icon(Icons.close_rounded, size: 16),
-      label: const Text('Clear Filters'),
+      icon: const Icon(Icons.clear_rounded, size: 16),
+      label: const Text('Clear'),
       style: OutlinedButton.styleFrom(
-        minimumSize: const Size(0, 42),
-        foregroundColor: const Color(0xFF374151),
-        side: const BorderSide(color: Color(0xFFD1D5DB)),
+        foregroundColor: DefensysUi.steelGrey,
+        side: const BorderSide(color: Color(0xFFE5E7EB)),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
       ),
     );
   }
 
   Widget _roleFilter() {
-    return SizedBox(
-      height: 40,
-      width: 160,
-      child: DropdownButtonFormField<String>(
-        initialValue: state.role,
-        isExpanded: true,
-        decoration: InputDecoration(
-          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 0),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
-          filled: true,
-          fillColor: Colors.white,
+    final activeRole = state.role;
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE5E7EB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: activeRole,
+          style: const TextStyle(
+            fontSize: 13,
+            color: DefensysUi.textDark,
+            fontFamily: DefensysUi.fontFamily,
+          ),
+          items: const [
+            DropdownMenuItem(value: '', child: Text('All Faculty Roles')),
+            DropdownMenuItem(value: 'faculty', child: Text('Faculty Member')),
+            DropdownMenuItem(value: 'adviser', child: Text('Adviser')),
+            DropdownMenuItem(value: 'pit_lead', child: Text('PIT Lead')),
+            DropdownMenuItem(value: 'panelist', child: Text('Panelist')),
+            DropdownMenuItem(value: 'documenter', child: Text('Documenter')),
+            DropdownMenuItem(value: 'admin', child: Text('System Admin')),
+          ],
+          onChanged: (v) {
+            if (v != null) onRoleFilterChanged(v);
+          },
         ),
-        style: const TextStyle(fontSize: 13, color: DefensysUi.textDark),
-        items: const [
-          DropdownMenuItem(value: '', child: Text('All Roles')),
-          DropdownMenuItem(value: 'admin', child: Text('Admin')),
-          DropdownMenuItem(value: 'faculty', child: Text('Faculty')),
-          DropdownMenuItem(value: 'student', child: Text('Student')),
-        ],
-        onChanged: (v) {
-          if (v != null) onRoleFilterChanged(v);
-        },
       ),
     );
   }
@@ -431,38 +442,54 @@ class UserManagementTable extends StatelessWidget {
   }
 
   Widget _rowActions(Map<String, dynamic> user) {
+    final role = user['role']?.toString().toLowerCase() ?? 'student';
+    final isFacultyOrAdmin = role == 'faculty' || role == 'admin';
+
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        InkWell(
-          onTap: state.isSaving ? null : () => onEditUser(user),
-          borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.edit_square, color: DefensysUi.techBlue, size: 18),
+        Tooltip(
+          message: 'Edit Profile',
+          waitDuration: const Duration(milliseconds: 300),
+          child: InkWell(
+            onTap: state.isSaving ? null : () => onEditUser(user),
+            borderRadius: BorderRadius.circular(6),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(Icons.edit_square, color: DefensysUi.techBlue, size: 18),
+            ),
           ),
         ),
-        const SizedBox(width: 3),
-        InkWell(
-          onTap: state.isSaving ? null : () => onOpenAccessControl(user),
-          borderRadius: BorderRadius.circular(6),
-          child: const Padding(
-            padding: EdgeInsets.all(4),
-            child: Icon(Icons.shield_rounded, color: DefensysUi.techBlue, size: 18),
+        if (isFacultyOrAdmin) ...[
+          const SizedBox(width: 4),
+          Tooltip(
+            message: 'Role & Access Control',
+            waitDuration: const Duration(milliseconds: 300),
+            child: InkWell(
+              onTap: state.isSaving ? null : () => onOpenAccessControl(user),
+              borderRadius: BorderRadius.circular(6),
+              child: const Padding(
+                padding: EdgeInsets.all(4),
+                child: Icon(Icons.shield_rounded, color: DefensysUi.techBlue, size: 18),
+              ),
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
 
   Widget _emptyRows() {
-    return Container(
-      height: 60,
-      alignment: Alignment.center,
-      child: const Text(
-        'No matching users found.',
-        style: TextStyle(color: Color(0xFF9CA3AF), fontSize: 13),
-      ),
+    final query = searchController.text.trim();
+    return DefensysEmptyState.search(
+      query: query.isNotEmpty ? query : null,
+      title: query.isNotEmpty
+          ? 'No Matching Users Found'
+          : 'No Users in this Category',
+      description: query.isNotEmpty
+          ? 'No user records matched "$query". Try adjusting your search query or role filter.'
+          : 'No user accounts found matching the active role criteria.',
+      onReset: onClearFilters,
     );
   }
 

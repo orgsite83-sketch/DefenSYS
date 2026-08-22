@@ -9,6 +9,7 @@ import '../../../../services/student_teams_provider.dart';
 import '../../../../services/reports_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../../../../widgets/searchable_entity_picker.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -3413,28 +3414,16 @@ class _AuditMessage extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: DefensysTokens.neutralBg,
+        color: Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.neutralBorder),
+        border: Border.all(color: DefensysTokens.border),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: DefensysTokens.maroon, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: DefensysUi.sectionTitle),
-                const SizedBox(height: 4),
-                Text(message, style: DefensysUi.subtitle),
-              ],
-            ),
-          ),
-        ],
+      child: DefensysEmptyState.table(
+        icon: icon,
+        title: title,
+        description: message,
+        size: DefensysEmptyStateSize.standard,
       ),
     );
   }

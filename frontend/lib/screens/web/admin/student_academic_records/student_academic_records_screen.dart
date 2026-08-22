@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/student_academic_records_provider.dart';
 import '../../../../utils/csv_file_io.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../widgets/student_records_rollover_modal.dart';
 
@@ -1611,32 +1612,17 @@ class _StudentAcademicRecordsScreenState
 
   Widget _buildEmptyState() {
     return Container(
-      height: 150,
       width: double.infinity,
-      alignment: Alignment.center,
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: _line)),
       ),
-      child: const Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.badge_outlined, size: 38, color: Color(0xFF98A2B3)),
-          SizedBox(height: 10),
-          Text(
-            'No academic records found',
-            style: TextStyle(
-              color: _ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          SizedBox(height: 4),
-          Text(
+      child: DefensysEmptyState.table(
+        icon: Icons.badge_outlined,
+        title: 'No Academic Records Found',
+        description:
             'Create records manually or import students with academic context.',
-            style: TextStyle(color: Color(0xFF98A2B3), fontSize: 12),
-          ),
-        ],
+        size: DefensysEmptyStateSize.standard,
       ),
     );
   }

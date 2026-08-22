@@ -6,6 +6,7 @@ import '../../../../services/defense_board_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../defense_scheduler/defense_scheduler_screen.dart';
 import '../widgets/defensys_admin_shell.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../../faculty/minutes_form_screen.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
@@ -1196,26 +1197,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           ),
         ],
       ),
-      child: const Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              Icons.table_chart_outlined,
-              size: 44,
-              color: AppColors.textSecondary,
-            ),
-            SizedBox(height: 10),
-            Text(
-              'No schedules found.',
-              style: TextStyle(
-                fontSize: 16,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-          ],
-        ),
+      child: DefensysEmptyState(
+        icon: Icons.table_chart_outlined,
+        title: 'No Defense Schedules Found',
+        description:
+            'There are no defense hearings matching the selected criteria or active term.',
+        size: DefensysEmptyStateSize.standard,
       ),
     );
   }

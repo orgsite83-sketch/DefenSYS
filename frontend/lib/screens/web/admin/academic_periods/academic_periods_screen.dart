@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../../services/academic_period_provider.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {
@@ -214,7 +215,18 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
 
   Widget _schoolYearsBody(AcademicPeriodState state) {
     if (state.schoolYears.isEmpty) {
-      return _emptyTableMessage('No school years yet. Add a year to continue.');
+      return DefensysEmptyState.table(
+        icon: Icons.calendar_today_outlined,
+        title: 'No School Years Configured',
+        description:
+            'Add an academic year to start configuring terms and active semesters.',
+        size: DefensysEmptyStateSize.compact,
+        primaryAction: DefensysEmptyAction(
+          label: 'Add School Year',
+          icon: Icons.add_rounded,
+          onPressed: state.isSaving ? () {} : _showAddSchoolYearDialog,
+        ),
+      );
     }
 
     final rows = state.schoolYears
@@ -259,9 +271,28 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             ],
           ),
           if (selectedYear == null)
-            _emptyTableMessage('Select a school year to manage its semesters.')
+            DefensysEmptyState.table(
+              icon: Icons.touch_app_outlined,
+              title: 'Select a School Year',
+              description:
+                  'Select an academic year on the left to view and manage its semesters.',
+              size: DefensysEmptyStateSize.compact,
+            )
           else if (semesters.isEmpty)
-            _emptyTableMessage('No semesters yet. Add a semester to continue.')
+            DefensysEmptyState.table(
+              icon: Icons.date_range_outlined,
+              title: 'No Semesters Created',
+              description:
+                  'Add a semester to activate terms for A.Y. ${selectedLabel ?? ""}.',
+              size: DefensysEmptyStateSize.compact,
+              primaryAction: DefensysEmptyAction(
+                label: 'Add Semester',
+                icon: Icons.add_rounded,
+                onPressed: state.isSaving
+                    ? () {}
+                    : () => _showAddSemesterDialog(selectedYear),
+              ),
+            )
           else
             Column(
               mainAxisSize: MainAxisSize.min,
@@ -345,21 +376,10 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
   }
 
   Widget _emptyTableMessage(String message) {
-    return SizedBox(
-      height: _emptyBodyMinHeight,
-      width: double.infinity,
-      child: Center(
-        child: Text(
-          message,
-          textAlign: TextAlign.center,
-          style: const TextStyle(
-            color: Color(0xFF6B7280),
-            fontSize: 13,
-            height: 1.45,
-            fontWeight: FontWeight.w400,
-          ),
-        ),
-      ),
+    return DefensysEmptyState.table(
+      icon: Icons.inbox_outlined,
+      title: message,
+      size: DefensysEmptyStateSize.compact,
     );
   }
 

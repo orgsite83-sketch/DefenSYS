@@ -9,6 +9,7 @@ import '../../../../services/rubric_engine_provider.dart';
 import '../../../../services/unsaved_changes_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import 'rubric_full_page_editor.dart';
 import '../widgets/defensys_admin_shell.dart';
 
@@ -922,83 +923,32 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }
 
   Widget _emptyRubricTable({required bool isPitLeadOnly}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF1F5F9),
-              shape: BoxShape.circle,
-            ),
-            child: const Icon(
-              Icons.quiz_outlined,
-              size: 36,
-              color: Color(0xFF94A3B8),
-            ),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            'No Rubrics Found',
-            style: TextStyle(
-              color: Color(0xFF0F172A),
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          const Text(
-            'No rubrics match your active filter parameters or search query.',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Color(0xFF64748B),
-              fontSize: 13,
-            ),
-          ),
-          const SizedBox(height: 20),
-          Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              OutlinedButton.icon(
-                onPressed: () {
-                  _searchController.clear();
-                  ref.read(rubricEngineProvider.notifier).fetchRubrics(
-                        scope: '',
-                        evaluationType: '',
-                        termContext: 'active',
-                        search: '',
-                      );
-                },
-                icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: const Text('Reset Filters'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: const Color(0xFF475569),
-                  side: const BorderSide(color: Color(0xFFCBD5E1)),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                ),
-              ),
-              const SizedBox(width: 12),
-              ElevatedButton.icon(
-                onPressed: () => _openRubricEditor(
-                  initialScope: isPitLeadOnly ? 'pit' : 'capstone',
-                ),
-                icon: const Icon(Icons.add_rounded, size: 16),
-                label: const Text('Create Rubric'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: DefensysUi.primaryMaroon,
-                  foregroundColor: DefensysUi.accentGold,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-                ),
-              ),
-            ],
-          ),
-        ],
+    return DefensysEmptyState.table(
+      icon: Icons.quiz_outlined,
+      title: 'No Rubrics Found',
+      description:
+          'No rubrics match your active filter parameters or search query.',
+      size: DefensysEmptyStateSize.standard,
+      secondaryAction: DefensysEmptyAction(
+        label: 'Reset Filters',
+        icon: Icons.refresh_rounded,
+        isOutlined: true,
+        onPressed: () {
+          _searchController.clear();
+          ref.read(rubricEngineProvider.notifier).fetchRubrics(
+                scope: '',
+                evaluationType: '',
+                termContext: 'active',
+                search: '',
+              );
+        },
+      ),
+      primaryAction: DefensysEmptyAction(
+        label: 'Create Standard Rubric',
+        icon: Icons.add_rounded,
+        onPressed: () => _openRubricEditor(
+          initialScope: isPitLeadOnly ? 'pit' : 'capstone',
+        ),
       ),
     );
   }

@@ -50,6 +50,8 @@ class AdminShell extends ConsumerStatefulWidget {
 }
 
 class _AdminShellState extends ConsumerState<AdminShell> {
+  final Set<DefensysAdminSection> _loadedSections = {};
+
   @override
   void initState() {
     super.initState();
@@ -69,11 +71,31 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     final activeSection =
         routeSection ?? DefensysAdminSection.overview;
 
+    _loadedSections.add(activeSection);
 
     final isDetail = _isAdminDetailRoute(routerState);
-    final shellContent = isDetail
-        ? (widget.routeChild ?? const SizedBox.shrink())
-        : _buildSectionContent(context, activeSection);
+    final activeIndex = DefensysAdminSection.values.indexOf(activeSection);
+
+    final shellContent = Stack(
+      children: [
+        IndexedStack(
+          index: activeIndex >= 0 ? activeIndex : 0,
+          children: DefensysAdminSection.values.map((section) {
+            if (_loadedSections.contains(section)) {
+              return _buildSectionWidget(section);
+            }
+            return const SizedBox.shrink();
+          }).toList(),
+        ),
+        if (isDetail && widget.routeChild != null)
+          Positioned.fill(
+            child: ColoredBox(
+              color: DefensysUi.bgLight,
+              child: widget.routeChild!,
+            ),
+          ),
+      ],
+    );
 
     return DefensysAdminShell(
       activeSection: activeSection,
@@ -116,10 +138,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         params.containsKey('rubricId');
   }
 
-  Widget _buildSectionContent(
-    BuildContext context,
-    DefensysAdminSection section,
-  ) {
+  Widget _buildSectionWidget(DefensysAdminSection section) {
     switch (section) {
       case DefensysAdminSection.overview:
         return AdminDashboardContent(
@@ -132,7 +151,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.studentTeams:
         return const StudentTeamsScreen(mode: TeamListMode.capstoneAdmin);
       case DefensysAdminSection.studentAcademicRecords:
-        return const StudentAcademicRecordsScreen();
+        return const UserManagementScreen(initialUserTab: UserManagementTab.students);
       case DefensysAdminSection.gradeCenter:
         return const GradeCenterScreen();
       case DefensysAdminSection.rubrics:

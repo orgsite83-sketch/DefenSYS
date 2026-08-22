@@ -5,6 +5,7 @@ import '../navigation/admin_route_paths.dart';
 import '../services/app_navigator.dart';
 import '../services/auth_provider.dart';
 import '../theme/defensys_tokens.dart';
+import '../widgets/feedback/empty_state.dart';
 import 'notifications_provider.dart';
 
 enum NotificationFilter { all, unread }
@@ -449,42 +450,15 @@ class _NotificationsModalState extends ConsumerState<NotificationsModal> {
   Widget _buildEmptyState() {
     final isFilteredUnread = _currentFilter == NotificationFilter.unread;
 
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-      alignment: Alignment.center,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: DefensysTokens.neutralBg,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
-              border: Border.all(color: DefensysTokens.border, width: 1.0),
-            ),
-            child: Icon(
-              isFilteredUnread ? Icons.mark_email_read_rounded : Icons.notifications_none_rounded,
-              color: DefensysTokens.steelGrey,
-              size: 26,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Text(
-            isFilteredUnread ? "No unread notifications" : "All caught up!",
-            style: DefensysTokens.sectionTitle.copyWith(
-              fontSize: 14.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            isFilteredUnread
-                ? "You've read all your notifications."
-                : "You don't have any notifications at the moment.",
-            textAlign: TextAlign.center,
-            style: DefensysTokens.subtitle.copyWith(fontSize: 12.5),
-          ),
-        ],
-      ),
+    return DefensysEmptyState(
+      icon: isFilteredUnread
+          ? Icons.mark_email_read_rounded
+          : Icons.notifications_none_rounded,
+      title: isFilteredUnread ? 'No unread notifications' : 'All caught up!',
+      description: isFilteredUnread
+          ? "You've read all your notifications."
+          : "You don't have any notifications at the moment.",
+      size: DefensysEmptyStateSize.compact,
     );
   }
 }

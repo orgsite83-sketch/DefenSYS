@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../services/dashboard_provider.dart';
 import '../../../widgets/defensys_skeleton.dart';
+import '../../../widgets/feedback/empty_state.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AdminDashboardContent extends ConsumerStatefulWidget {
@@ -226,9 +227,18 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       child: Center(
         child: dashState.isLoading
             ? const CircularProgressIndicator()
-            : const Text(
-                'No scheduled defenses yet',
-                style: TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
+            : DefensysEmptyState(
+                icon: Icons.event_busy_rounded,
+                title: 'No Scheduled Defenses',
+                description:
+                    'There are no defense sessions currently on the calendar for this period.',
+                size: DefensysEmptyStateSize.compact,
+                primaryAction: DefensysEmptyAction(
+                  label: 'Schedule a Defense',
+                  icon: Icons.calendar_month_rounded,
+                  onPressed: () =>
+                      widget.onNavigate(DefensysAdminSection.scheduling),
+                ),
               ),
       ),
     );
@@ -243,9 +253,13 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
       child: Center(
         child: dashState.isLoading
             ? const CircularProgressIndicator()
-            : const Text(
-                'Open team management to review active teams',
-                style: TextStyle(color: Color(0xFF9AA1B4), fontSize: 14),
+            : DefensysEmptyState(
+                icon: Icons.groups_outlined,
+                title: 'No Active Teams Formed',
+                description:
+                    'Review or import student teams under Team Management.',
+                size: DefensysEmptyStateSize.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
               ),
       ),
     );

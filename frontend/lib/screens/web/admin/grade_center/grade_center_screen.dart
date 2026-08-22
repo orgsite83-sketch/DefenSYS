@@ -14,6 +14,7 @@ import 'grade_center_event_teams_screen.dart';
 import '../../../../widgets/defensys_skeleton.dart';
 import 'grade_center_shared.dart';
 import 'grade_center_team_detail_screen.dart';
+import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class GradeCenterScreen extends ConsumerStatefulWidget {
@@ -732,17 +733,18 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
 
   Widget _gradeEmptyTable() {
     return Container(
-      height: 78,
       width: double.infinity,
-      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
-      child: const Text(
-        'No teams found.',
-        style: TextStyle(color: Color(0xFF98A2B3), fontSize: 13),
+      child: DefensysEmptyState.table(
+        icon: Icons.groups_outlined,
+        title: 'No Teams Found',
+        description:
+            'No student teams match the selected filter criteria in Grade Center.',
+        size: DefensysEmptyStateSize.compact,
       ),
     );
   }

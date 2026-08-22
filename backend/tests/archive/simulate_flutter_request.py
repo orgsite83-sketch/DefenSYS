@@ -14,9 +14,11 @@ sys.path.insert(0, str(BASE_DIR / 'modules'))
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'defensys_backend.settings')
 django.setup()
 
-from authentication_access_control.models import User
+from django.contrib.auth import get_user_model
 from rest_framework_simplejwt.tokens import RefreshToken
 import requests
+
+User = get_user_model()
 
 # Get student or fallback user
 student = (
