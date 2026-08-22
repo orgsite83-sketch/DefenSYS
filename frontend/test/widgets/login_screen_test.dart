@@ -18,5 +18,17 @@ void main() {
     expect(find.text('DefenSYS'), findsWidgets);
     expect(find.text('Sign In'), findsOneWidget);
     expect(find.byType(TextField), findsWidgets);
+
+    // Open Forgot Password dialog
+    final forgotPasswordBtn = find.text('Forgot password?');
+    expect(forgotPasswordBtn, findsOneWidget);
+    await tester.tap(forgotPasswordBtn);
+    await tester.pumpAndSettle();
+
+    // Verify Step 1: Verification Dialog with 6-digit OTP prompt
+    expect(find.text('Reset Password'), findsOneWidget);
+    expect(find.text('Step 1 of 3: Verification'), findsOneWidget);
+    expect(find.text('Send Code'), findsOneWidget);
   });
 }
+

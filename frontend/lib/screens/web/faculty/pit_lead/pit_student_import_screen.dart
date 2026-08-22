@@ -628,7 +628,9 @@ class _PitStudentImportScreenState
 
   String _excelCellText(xl.CellValue? value) {
     if (value == null) return '';
-    if (value is xl.TextCellValue) return value.value.toString().trim();
+    if (value is xl.TextCellValue) {
+      return (value.value.text ?? '').trim();
+    }
     if (value is xl.IntCellValue) return value.value.toString();
     if (value is xl.DoubleCellValue) {
       final number = value.value;
@@ -636,6 +638,22 @@ class _PitStudentImportScreenState
         return number.round().toString();
       }
       return number.toString();
+    }
+    if (value is xl.FormulaCellValue) return value.formula.trim();
+    if (value is xl.BoolCellValue) return value.value ? 'true' : 'false';
+    if (value is xl.DateCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.DateTimeCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.TimeCellValue) {
+      final d = value.asDuration();
+      final h = (d.inHours % 24).toString().padLeft(2, '0');
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '$h:$m';
     }
     return value.toString().trim();
   }

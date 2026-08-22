@@ -456,6 +456,57 @@ class UserManagementApiTests(APITestCase):
             ).exists()
         )
 
+    def test_bulk_import_can_enroll_existing_student_users(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        existing_student = User.objects.create_user(
+            username='2024-0099',
+            password='oldpassword',
+            first_name='Existing',
+            last_name='Student',
+            email='old@example.com',
+            role='student',
+        )
+
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.FIRST_YEAR,
+                    'section': 'BSIT-1A',
+                },
+                'users': [
+                    {
+                        'id_number': '2024-0099',
+                        'first_name': 'ExistingUpdated',
+                        'last_name': 'StudentUpdated',
+                        'email': 'updated@example.com',
+                        'role': 'student',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['records_created_count'], 1)
+        self.assertTrue(
+            StudentAcademicRecord.objects.filter(
+                student=existing_student,
+                semester=semester,
+                year_level=StudentAcademicRecord.FIRST_YEAR,
+                section='BSIT-1A',
+            ).exists()
+        )
+        existing_student.refresh_from_db()
+        self.assertEqual(existing_student.first_name, 'ExistingUpdated')
+        self.assertEqual(existing_student.email, 'updated@example.com')
+
     def test_pit_lead_student_import_is_scoped_to_assigned_year(self):
         school_year = SchoolYear.objects.create(label='2027-2028')
         semester = Semester.objects.create(
@@ -1068,3 +1119,64 @@ class UserManagementApiTests(APITestCase):
             self.assertEqual(response2.status_code, 429)
         finally:
             api_settings.DEFAULT_THROTTLE_RATES['guest_code'] = original_rate
+
+    def test_bulk_import_auto_assigns_section_instructors_from_rows(self):
+        school_year = SchoolYear.objects.create(label='2026-2027')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        instructor = User.objects.create_user(
+            username='maricel.suarez',
+            password='pass12345',
+            role='faculty',
+            first_name='Maricel',
+            last_name='Suarez',
+        )
+
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                },
+                'users': [
+                    {
+                        'id_number': '1011',
+                        'first_name': 'Jane',
+                        'last_name': 'RIVERA',
+                        'email': '1011@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                        'section': 'BSIT-1A',
+                        'faculty': 'Maricel Suarez',
+                    },
+                    {
+                        'id_number': '1012',
+                        'first_name': 'Sofia',
+                        'last_name': 'LIM',
+                        'email': '1012@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': '1st Year',
+                        'section': 'BSIT-1A',
+                        'faculty': 'Maricel Suarez',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 2)
+        self.assertIsNotNone(response.data['instructor_assignment'])
+        self.assertEqual(len(response.data['instructor_assignments']), 1)
+
+        assignment = SectionInstructorAssignment.objects.get(
+            faculty=instructor,
+            semester=semester,
+            year_level='1st Year',
+            section='BSIT-1A',
+        )
+        self.assertTrue(assignment.is_active)
+

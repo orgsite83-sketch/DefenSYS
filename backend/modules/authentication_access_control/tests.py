@@ -652,10 +652,11 @@ class PasswordManagementTests(APITestCase):
             format='json',
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertIn('link has been sent', response.data['detail'])
+        self.assertIn('verification code', response.data['detail'])
+        self.assertIn('masked_email', response.data)
 
     def test_request_password_reset_email_failure(self):
-        with patch('authentication_access_control.password_reset.send_password_reset_email', return_value=False):
+        with patch('authentication_access_control.password_reset.send_password_reset_otp_email', return_value=False):
             response = self.client.post(
                 '/api/password-reset/',
                 {'identifier': 'student-test'},
@@ -694,25 +695,54 @@ class PasswordManagementTests(APITestCase):
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
-    def test_api_confirm_password_reset_success(self):
-        from django.utils.http import urlsafe_base64_encode
-        from django.utils.encoding import force_bytes
-        from django.contrib.auth.tokens import default_token_generator
+    def test_otp_flow_end_to_end(self):
+        from django.contrib.auth.hashers import make_password
+        from authentication_access_control.models import PasswordResetOTP
+        from django.utils import timezone
+        from datetime import timedelta
 
-        uidb64 = urlsafe_base64_encode(force_bytes(self.user.pk))
-        token = default_token_generator.make_token(self.user)
+        # Request reset
+        res = self.client.post('/api/password-reset/', {'identifier': 'student-test'}, format='json')
+        self.assertEqual(res.status_code, status.HTTP_200_OK)
 
-        response = self.client.post(
+        # Set a known OTP for test
+        otp_record = PasswordResetOTP.objects.filter(user=self.user, is_used=False).first()
+        self.assertIsNotNone(otp_record)
+        otp_record.otp_code_hash = make_password('654321')
+        otp_record.save()
+
+        # Test invalid OTP
+        invalid_res = self.client.post(
+            '/api/password-reset/verify-otp/',
+            {'identifier': 'student-test', 'otp_code': '000000'},
+            format='json',
+        )
+        self.assertEqual(invalid_res.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('remaining', invalid_res.data['detail'])
+
+        # Test valid OTP
+        valid_res = self.client.post(
+            '/api/password-reset/verify-otp/',
+            {'identifier': 'student-test', 'otp_code': '654321'},
+            format='json',
+        )
+        self.assertEqual(valid_res.status_code, status.HTTP_200_OK)
+        reset_token = valid_res.data['reset_token']
+        uidb64 = valid_res.data['uidb64']
+        self.assertTrue(reset_token)
+
+        # Confirm password reset with new token
+        confirm_res = self.client.post(
             '/api/password-reset/confirm/',
             {
                 'uidb64': uidb64,
-                'token': token,
+                'reset_token': reset_token,
                 'new_password': 'newpassword123',
                 'confirm_password': 'newpassword123',
             },
             format='json',
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(confirm_res.status_code, status.HTTP_200_OK)
         self.user.refresh_from_db()
         self.assertTrue(self.user.check_password('newpassword123'))
 

@@ -24,6 +24,7 @@ from defensys_backend.views import HealthCheckView
 from authentication_access_control.password_reset import (
     ConfirmPasswordResetAPIView,
     RequestPasswordResetView,
+    VerifyPasswordResetOTPView,
 )
 
 urlpatterns = [
@@ -45,8 +46,9 @@ urlpatterns = [
         AuthenticatedMediaFileView.as_view(),
         name='media_file_serve',
     ),
-    # Password reset (email flow)
+    # Password reset (6-digit OTP verification flow)
     path('api/password-reset/', RequestPasswordResetView.as_view(), name='password_reset_request'),
+    path('api/password-reset/verify-otp/', VerifyPasswordResetOTPView.as_view(), name='password_reset_verify_otp'),
     path('api/password-reset/confirm/', ConfirmPasswordResetAPIView.as_view(), name='password_reset_confirm'),
 ]
 

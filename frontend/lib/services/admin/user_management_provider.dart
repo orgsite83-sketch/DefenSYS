@@ -242,7 +242,7 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
     try {
       final response = await _client.delete(Uri.parse('$baseUrl/$userId/'));
 
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 || response.statusCode == 204) {
         await fetchUsers(successMessage: 'User deleted.');
         return true;
       }
@@ -327,10 +327,13 @@ class UserManagementNotifier extends Notifier<UserManagementState> {
         final recordsMessage = records == 0
             ? ''
             : ' $records academic records created.';
-        final assignmentMessage = payload['instructor_assignment'] != null
-            ? ' PIT Instructor assigned.'
-            : '';
-        if (created == 0) {
+        final assignments = payload['instructor_assignments'] as List? ?? [];
+        final assignmentMessage = assignments.isNotEmpty
+            ? ' ${assignments.length} PIT Instructor${assignments.length == 1 ? '' : 's'} assigned.'
+            : (payload['instructor_assignment'] != null
+                ? ' PIT Instructor assigned.'
+                : '');
+        if (created == 0 && records == 0) {
           final reason = skipped > 0 && errors == 0
               ? '$skipped row${skipped == 1 ? '' : 's'} skipped. They likely already exist or do not match the selected import mode.'
               : errors > 0

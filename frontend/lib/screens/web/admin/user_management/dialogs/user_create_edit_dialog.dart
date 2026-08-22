@@ -7,21 +7,25 @@ class UserCreateEditDialog extends StatefulWidget {
   const UserCreateEditDialog({
     super.key,
     this.user,
+    this.defaultRole = 'faculty',
     this.pitLeadYearOptions = const ['1st Year', '2nd Year', '3rd Year'],
   });
 
   final Map<String, dynamic>? user;
+  final String defaultRole;
   final List<String> pitLeadYearOptions;
 
   static Future<Map<String, dynamic>?> show(
     BuildContext context, {
     Map<String, dynamic>? user,
+    String defaultRole = 'faculty',
     List<String> pitLeadYearOptions = const ['1st Year', '2nd Year', '3rd Year'],
   }) {
     return showDialog<Map<String, dynamic>?>(
       context: context,
       builder: (dialogContext) => UserCreateEditDialog(
         user: user,
+        defaultRole: defaultRole,
         pitLeadYearOptions: pitLeadYearOptions,
       ),
     );
@@ -67,11 +71,11 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     );
     _passwordController = TextEditingController();
 
-    _initialRole = user?['role']?.toString() ?? 'student';
+    _initialRole = user?['role']?.toString() ?? widget.defaultRole;
     // Map initial admin role to faculty in dropdown (admin privilege is managed in Access Control)
     _role = (_initialRole == 'admin') ? 'faculty' : _initialRole;
     if (_role != 'faculty' && _role != 'student') {
-      _role = 'student';
+      _role = widget.defaultRole;
     }
 
     _isPanelist = user?['is_panelist'] == true;
@@ -107,48 +111,12 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
       return;
     }
 
-    String targetRole = _role;
-    if (_editing) {
-      final wasFacultyOrAdmin = _initialRole == 'faculty' || _initialRole == 'admin';
-      final isNowStudent = _role == 'student';
-      final wasStudent = _initialRole == 'student';
-      final isNowFaculty = _role == 'faculty';
-
-      final name = '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
-      final displayName = name.isNotEmpty ? name : _usernameController.text.trim();
-
-      if (wasFacultyOrAdmin && isNowStudent) {
-        final confirmed = await showConfirmDialog(
-          context,
-          title: 'Change User Role to Student?',
-          message: 'Are you sure you want to change $displayName\'s base role to Student? This will remove all faculty operational roles (Panelist, PIT Lead, Adviser, Documenter).',
-          confirmLabel: 'Change to Student',
-          destructive: true,
-          icon: Icons.warning_amber_rounded,
-        );
-        if (confirmed != true) return;
-        targetRole = 'student';
-      } else if (wasStudent && isNowFaculty) {
-        final confirmed = await showConfirmDialog(
-          context,
-          title: 'Change User Role to Faculty?',
-          message: 'Are you sure you want to change $displayName\'s base role to Faculty? They will gain faculty permissions and access to operational duties.',
-          confirmLabel: 'Change to Faculty',
-          icon: Icons.badge_outlined,
-        );
-        if (confirmed != true) return;
-        targetRole = 'faculty';
-      } else {
-        targetRole = _initialRole;
-      }
-    }
-
     final payload = <String, dynamic>{
       'username': _usernameController.text.trim(),
       'first_name': _firstNameController.text.trim(),
       'last_name': _lastNameController.text.trim(),
       'email': _emailController.text.trim(),
-      'role': targetRole,
+      'role': _initialRole,
       'is_active': _isActive,
       'is_panelist': _isPanelist,
       'is_pit_lead': _isPitLead,
@@ -164,12 +132,62 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     }
   }
 
+  Future<void> _onResetPassword() async {
+    final user = widget.user;
+    if (user == null) return;
+
+    final username = _usernameController.text.trim();
+    final name = '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+    final displayName = name.isNotEmpty ? name : username;
+
+    final confirmed = await showConfirmDialog(
+      context,
+      title: 'Reset Password?',
+      message: 'Reset password for $displayName to their default ID number ($username)?',
+      confirmLabel: 'Reset Password',
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop({
+        '_action': 'reset_password',
+        'id': user['id'],
+        'username': username,
+      });
+    }
+  }
+
+  Future<void> _onDelete() async {
+    final user = widget.user;
+    if (user == null) return;
+
+    final username = _usernameController.text.trim();
+    final name = '${_firstNameController.text.trim()} ${_lastNameController.text.trim()}'.trim();
+    final displayName = name.isNotEmpty ? name : username;
+
+    final confirmed = await showDestructiveTypeConfirmDialog(
+      context,
+      title: 'Delete User Account?',
+      message:
+          'You are about to permanently delete the account for $displayName (Username: $username). All role assignments, permissions, and operational duties will be permanently deleted.',
+      matchTarget: username,
+      confirmLabel: 'Permanently Delete Account',
+      warningBanner:
+          'This action is irreversible. The account credentials and assigned roles will be completely removed.',
+    );
+
+    if (confirmed == true && mounted) {
+      Navigator.of(context).pop({'_action': 'delete', 'id': user['id']});
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final isFaculty = _role == 'faculty';
 
     return AlertDialog(
-      title: Text(_editing ? 'Edit User' : 'Add Single User'),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      title: Text(_editing ? 'Edit User' : 'Add Single Faculty',
+          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: Color(0xFF1F2937))),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -210,29 +228,58 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: 'Email'),
               ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: ValueKey('role-select-$_role'),
-                initialValue: _role,
-                decoration: const InputDecoration(
-                  labelText: 'Base Role',
+              if (_editing) ...[
+                const SizedBox(height: 12),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF9FAFB),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFE5E7EB)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Password & Credentials',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1F2937),
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Reset password to default ID number (${_usernameController.text.trim()}).',
+                              style: const TextStyle(fontSize: 11, color: Color(0xFF6B7280)),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      OutlinedButton.icon(
+                        onPressed: _onResetPassword,
+                        icon: const Icon(Icons.lock_reset_rounded, size: 14),
+                        label: const Text('Reset Password'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: const Color(0xFFB45309),
+                          side: const BorderSide(color: Color(0xFFFDE68A)),
+                          backgroundColor: const Color(0xFFFFFBEB),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-                items: const [
-                  DropdownMenuItem(
-                    value: 'faculty',
-                    child: Text('Faculty'),
-                  ),
-                  DropdownMenuItem(
-                    value: 'student',
-                    child: Text('Student'),
-                  ),
-                ],
-                onChanged: (value) {
-                  setState(() {
-                    _role = value ?? 'student';
-                  });
-                },
-              ),
+              ],
               if (!_editing) ...[
                 const SizedBox(height: 12),
                 TextField(
@@ -336,14 +383,65 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
           ),
         ),
       ),
+      actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(null),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: _onSave,
-          child: Text(_editing ? 'Save Changes' : 'Create User'),
+        SizedBox(
+          width: double.infinity,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              if (_editing)
+                IconButton(
+                  onPressed: _onDelete,
+                  icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                  tooltip: 'Delete Account',
+                  style: IconButton.styleFrom(
+                    foregroundColor: const Color(0xFFDC2626),
+                    backgroundColor: const Color(0xFFFEF2F2),
+                    side: const BorderSide(color: Color(0xFFFECACA)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    padding: const EdgeInsets.all(8),
+                  ),
+                )
+              else
+                const SizedBox.shrink(),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  OutlinedButton(
+                    onPressed: () => Navigator.of(context).pop(null),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: const Color(0xFF6B7280),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text('Cancel',
+                        style: TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                  const SizedBox(width: 10),
+                  FilledButton(
+                    onPressed: _onSave,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: const Color(0xFF7A1C1C),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 11),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(_editing ? 'Save Changes' : 'Create Faculty',
+                        style: const TextStyle(fontWeight: FontWeight.w700)),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ],
     );

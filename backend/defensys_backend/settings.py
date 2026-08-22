@@ -265,12 +265,14 @@ REST_FRAMEWORK = {
     ),
     'EXCEPTION_HANDLER': 'defensys_backend.exception_handlers.defensys_exception_handler',
     'DEFAULT_THROTTLE_RATES': {
-        'token_refresh': '10/min',
-        'login': '5/min',
-        'anon': '10/min',
-        'logout': '5/min',
-        'password_reset': '3/hour',
-        'guest_code': '5/min',
+        'token_refresh': '30/min' if DEBUG else '10/min',
+        'login': '30/min' if DEBUG else '10/min',
+        'anon': '60/min' if DEBUG else '20/min',
+        'logout': '30/min' if DEBUG else '10/min',
+        'password_reset': '30/min' if DEBUG else '10/min',
+        'password_reset_verify': '60/min' if DEBUG else '20/min',
+        'password_reset_confirm': '60/min' if DEBUG else '20/min',
+        'guest_code': '30/min' if DEBUG else '10/min',
     },
 }
 

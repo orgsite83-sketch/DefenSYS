@@ -178,6 +178,112 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult!.files.length, 1);
       expect(capturedResult!.files.first.name, 'bsit_3a_enrolled.csv');
     });
+
+    testWidgets('Cancel button dismisses modal and returns null', (tester) async {
+      StagedImportResult? capturedResult = const StagedImportResult(files: [], importMode: 'none');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [facultyFile],
+                    importMode: 'general',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsNothing);
+      expect(capturedResult, isNull);
+    });
+
+    testWidgets('Close (X) button dismisses modal and returns null', (tester) async {
+      StagedImportResult? capturedResult = const StagedImportResult(files: [], importMode: 'none');
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [facultyFile],
+                    importMode: 'general',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+
+      await tester.tap(find.byIcon(Icons.close_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsNothing);
+      expect(capturedResult, isNull);
+    });
+
+    testWidgets('blocks student import and disables preview button when hasActiveSemester is false', (tester) async {
+      StagedImportResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [studentFile],
+                    importMode: 'student',
+                    hasActiveSemester: false,
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('Active Semester Required'), findsWidgets);
+      expect(find.text('Active Semester Required'), findsOneWidget);
+
+      // Button is disabled, tapping should not dismiss modal or return result
+      await tester.tap(find.text('Active Semester Required'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNull);
+      expect(find.text('Staged Import Files'), findsOneWidget);
+    });
   });
 }
 

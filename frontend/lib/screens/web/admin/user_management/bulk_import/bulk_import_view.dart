@@ -63,6 +63,7 @@ class _BulkImportViewState extends State<BulkImportView> {
 
   UserBulkImportDraft? _savedDraft;
   Timer? _draftDebounce;
+  bool _draftRestoredBannerVisible = false;
 
   bool get _isDirty => _stagedFiles.isNotEmpty || _parsedFacultyRows.isNotEmpty;
 
@@ -89,17 +90,64 @@ class _BulkImportViewState extends State<BulkImportView> {
           _savedDraft = draft;
           _parsedFacultyRows.clear();
           _parsedFacultyRows.addAll(rows);
+          _draftRestoredBannerVisible = true;
         });
       }
     }
   }
 
+  Future<bool> _saveDraftNow({bool showToast = true}) async {
+    _draftDebounce?.cancel();
+    if (_parsedFacultyRows.isEmpty) {
+      await clearUserBulkImportDraft();
+      if (mounted) {
+        setState(() => _savedDraft = null);
+        if (showToast) {
+          ToastService.info(context, 'Draft cleared (no staged records).');
+        }
+      }
+      return true;
+    }
+
+    final csvBuffer = StringBuffer();
+    csvBuffer.writeln('id_number,first_name,last_name,email,role');
+    for (final r in _parsedFacultyRows) {
+      csvBuffer.writeln(
+        '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},${r['role'] ?? 'faculty'}',
+      );
+    }
+
+    final draft = UserBulkImportDraft(
+      csv: csvBuffer.toString(),
+      importType: 'faculty',
+      studentPeriodSource: 'explicit',
+      targetSemesterId: '',
+      batchYearLevel: '',
+      savedAt: DateTime.now(),
+      rowCount: _parsedFacultyRows.length,
+      warningCount: 0,
+    );
+
+    await saveUserBulkImportDraft(draft);
+    if (mounted) {
+      setState(() => _savedDraft = draft);
+      if (showToast) {
+        ToastService.success(
+          context,
+          'Draft saved (${_parsedFacultyRows.length} faculty records). You can safely leave or return anytime.',
+        );
+      }
+    }
+    return true;
+  }
+
   void _scheduleDraftSave() {
     _draftDebounce?.cancel();
-    _draftDebounce = Timer(const Duration(milliseconds: 300), () async {
+    _draftDebounce = Timer(const Duration(milliseconds: 400), () async {
       if (!mounted) return;
       if (_parsedFacultyRows.isEmpty) {
         await clearUserBulkImportDraft();
+        if (mounted) setState(() => _savedDraft = null);
         return;
       }
 
@@ -107,7 +155,7 @@ class _BulkImportViewState extends State<BulkImportView> {
       csvBuffer.writeln('id_number,first_name,last_name,email,role');
       for (final r in _parsedFacultyRows) {
         csvBuffer.writeln(
-          '${r['id_number'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},${r['role'] ?? 'faculty'}',
+          '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},${r['role'] ?? 'faculty'}',
         );
       }
 
@@ -135,36 +183,135 @@ class _BulkImportViewState extends State<BulkImportView> {
       return true;
     }
 
-    final leave = await showDialog<bool>(
+    final action = await showDialog<String>(
       context: context,
+      barrierDismissible: false,
       builder: (dialogCtx) => AlertDialog(
         surfaceTintColor: Colors.transparent,
-        title: const Text('Discard faculty import draft?'),
-        content: const Text(
-          'You have staged faculty files or unimported rows. Leaving now will discard your current draft.',
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        ),
+        titlePadding: const EdgeInsets.fromLTRB(20, 16, 12, 0),
+        contentPadding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 20, 16),
+        title: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+              ),
+              child: const Icon(
+                Icons.bookmark_border_rounded,
+                color: DefensysTokens.maroon,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            const Expanded(
+              child: Text(
+                'Unsaved Faculty Import',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                  color: _ink,
+                ),
+              ),
+            ),
+            IconButton(
+              icon: const Icon(Icons.close_rounded, size: 20),
+              color: DefensysTokens.steelGrey,
+              splashRadius: 18,
+              tooltip: 'Close & Stay',
+              onPressed: () => Navigator.of(dialogCtx).pop('stay'),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You have ${_parsedFacultyRows.length} staged faculty record${_parsedFacultyRows.length == 1 ? '' : 's'} ready for intake.',
+              style: const TextStyle(
+                fontSize: 13.5,
+                fontWeight: FontWeight.w600,
+                color: _ink,
+              ),
+            ),
+            const SizedBox(height: 6),
+            const Text(
+              'Would you like to save your draft to resume later, or discard your staged records?',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: _muted,
+                height: 1.4,
+              ),
+            ),
+          ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogCtx).pop(false),
-            child: const Text('Stay'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.of(dialogCtx).pop(true),
-            child: const Text('Discard & Leave'),
+          Row(
+            children: [
+              IconButton(
+                style: IconButton.styleFrom(
+                  foregroundColor: DefensysTokens.danger,
+                  hoverColor: DefensysTokens.dangerBg,
+                  padding: const EdgeInsets.all(8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  ),
+                ),
+                onPressed: () => Navigator.of(dialogCtx).pop('discard'),
+                icon: const Icon(Icons.delete_outline_rounded, size: 20),
+                tooltip: 'Discard & Leave',
+              ),
+              const Spacer(),
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: _maroon,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                  ),
+                ),
+                onPressed: () => Navigator.of(dialogCtx).pop('save'),
+                icon: const Icon(Icons.save_outlined, size: 16),
+                label: const Text('Save'),
+              ),
+            ],
           ),
         ],
       ),
     );
 
-    if (leave == true) {
+    if (action == 'save') {
+      await _saveDraftNow(showToast: false);
+      if (mounted) {
+        ToastService.info(
+          context,
+          'Draft saved (${_parsedFacultyRows.length} records). You can resume anytime.',
+        );
+      }
+      widget.onBack();
+      return true;
+    } else if (action == 'discard') {
+      _draftDebounce?.cancel();
       await clearUserBulkImportDraft();
+      if (mounted) {
+        setState(() {
+          _savedDraft = null;
+          _parsedFacultyRows.clear();
+          _stagedFiles.clear();
+        });
+        ToastService.info(context, 'Faculty import draft discarded.');
+      }
       widget.onBack();
       return true;
     }
+
     return false;
   }
 
@@ -179,22 +326,24 @@ class _BulkImportViewState extends State<BulkImportView> {
     }
   }
 
+  bool _isPickingFiles = false;
+
   Future<void> _openStagingModal(List<PickedTabularFile> files) async {
-    final result = await showDialog<List<PickedTabularFile>>(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => FileImportStagingModal(
-        initialFiles: files,
-        importMode: 'general',
-      ),
+    final result = await showFileImportStagingModal(
+      context,
+      initialFiles: files,
+      importMode: 'general',
+      hasActiveSemester: widget.academicState.activeSemester != null,
     );
 
-    if (result != null && result.isNotEmpty) {
-      _processPickedFiles(result);
+    if (result != null && result.files.isNotEmpty) {
+      _processPickedFiles(result.files);
     }
   }
 
   Future<void> _pickFiles() async {
+    if (_isPickingFiles) return;
+    _isPickingFiles = true;
     try {
       final files = await pickMultipleTabularDataFiles();
       if (!mounted || files.isEmpty) return;
@@ -202,6 +351,10 @@ class _BulkImportViewState extends State<BulkImportView> {
     } catch (e) {
       if (mounted) {
         ToastService.error(context, 'Failed to select files: $e');
+      }
+    } finally {
+      if (mounted) {
+        _isPickingFiles = false;
       }
     }
   }
@@ -340,11 +493,29 @@ class _BulkImportViewState extends State<BulkImportView> {
 
   String _excelCellText(xl.CellValue? value) {
     if (value == null) return '';
-    if (value is xl.TextCellValue) return value.value.toString().trim();
+    if (value is xl.TextCellValue) {
+      return (value.value.text ?? '').trim();
+    }
     if (value is xl.IntCellValue) return value.value.toString();
     if (value is xl.DoubleCellValue) {
       final n = value.value;
       return n == n.roundToDouble() ? n.round().toString() : n.toString();
+    }
+    if (value is xl.FormulaCellValue) return value.formula.trim();
+    if (value is xl.BoolCellValue) return value.value ? 'true' : 'false';
+    if (value is xl.DateCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.DateTimeCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.TimeCellValue) {
+      final d = value.asDuration();
+      final h = (d.inHours % 24).toString().padLeft(2, '0');
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '$h:$m';
     }
     return value.toString().trim();
   }
@@ -444,12 +615,14 @@ class _BulkImportViewState extends State<BulkImportView> {
     if (_parsedFacultyRows.isEmpty) return;
 
     final usersToImport = _parsedFacultyRows.map((r) {
+      final id = (r['id_number'] ?? r['username'] ?? '').toString().trim();
       return {
-        'username': r['id_number'] ?? r['username'],
-        'first_name': r['first_name'] ?? '',
-        'last_name': r['last_name'] ?? '',
-        'email': r['email'] ?? '',
-        'role': r['role'] ?? 'faculty',
+        'id_number': id,
+        'username': id,
+        'first_name': (r['first_name'] ?? '').toString().trim(),
+        'last_name': (r['last_name'] ?? '').toString().trim(),
+        'email': (r['email'] ?? '').toString().trim(),
+        'role': (r['role'] ?? 'faculty').toString().trim(),
       };
     }).toList();
 
@@ -465,21 +638,100 @@ class _BulkImportViewState extends State<BulkImportView> {
           DefensysPageHeader(
             title: 'Bulk Import Faculty & Staff',
             subtitle: 'Upload CSV or XLSX spreadsheets to create and onboard institutional faculty and staff accounts.',
-            actions: OutlinedButton.icon(
-              onPressed: widget.state.isSaving ? null : _requestClose,
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: const Text('Back to Faculty'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _ink,
-                side: const BorderSide(color: _line),
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            actions: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (_parsedFacultyRows.isNotEmpty) ...[
+                  OutlinedButton.icon(
+                    onPressed: widget.state.isSaving ? null : () => _saveDraftNow(showToast: true),
+                    icon: const Icon(Icons.bookmark_outline_rounded, size: 15),
+                    label: const Text('Save Draft'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _ink,
+                      side: const BorderSide(color: _line),
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                ],
+                OutlinedButton.icon(
+                  onPressed: widget.state.isSaving ? null : _requestClose,
+                  icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                  label: const Text('Back to Faculty'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _ink,
+                    side: const BorderSide(color: _line),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 20),
+        ],
+
+        // Draft restored notification banner
+        if (_draftRestoredBannerVisible && _savedDraft != null && _parsedFacultyRows.isNotEmpty) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF6FF),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFBFDBFE)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.history_rounded, size: 18, color: Color(0xFF1D4ED8)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Draft restored: ${_parsedFacultyRows.length} faculty records loaded from your previous session.',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF1E40AF),
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    _draftDebounce?.cancel();
+                    await clearUserBulkImportDraft();
+                    if (mounted) {
+                      setState(() {
+                        _savedDraft = null;
+                        _parsedFacultyRows.clear();
+                        _stagedFiles.clear();
+                        _draftRestoredBannerVisible = false;
+                      });
+                      ToastService.info(context, 'Draft discarded.');
+                    }
+                  },
+                  child: const Text(
+                    'Discard Draft',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.danger,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                IconButton(
+                  icon: const Icon(Icons.close_rounded, size: 16, color: Color(0xFF64748B)),
+                  splashRadius: 16,
+                  onPressed: () => setState(() => _draftRestoredBannerVisible = false),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 20),
         ],
 
         // 2-Column Top Section: Left is Format Guide, Right is File Staging & Upload
@@ -1167,6 +1419,19 @@ class _BulkImportViewState extends State<BulkImportView> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.end,
               children: [
+                if (_parsedFacultyRows.isNotEmpty) ...[
+                  OutlinedButton.icon(
+                    onPressed: widget.state.isSaving ? null : () => _saveDraftNow(showToast: true),
+                    icon: const Icon(Icons.bookmark_outline_rounded, size: 16),
+                    label: const Text('Save as Draft'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _ink,
+                      side: const BorderSide(color: _line),
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                ],
                 OutlinedButton(
                   onPressed: _requestClose,
                   style: OutlinedButton.styleFrom(

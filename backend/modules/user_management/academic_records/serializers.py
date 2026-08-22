@@ -38,6 +38,8 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
     rolled_from_id = serializers.IntegerField(source='rolled_from.id', read_only=True, allow_null=True)
     rolled_from_label = serializers.SerializerMethodField()
+    instructor_name = serializers.SerializerMethodField()
+    instructor_id = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentAcademicRecord
@@ -54,6 +56,8 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
             'display_semester',
             'year_level',
             'section',
+            'instructor_name',
+            'instructor_id',
             'action',
             'rolled_from_id',
             'rolled_from_label',
@@ -64,6 +68,32 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         if not obj.rolled_from_id:
             return None
         return f'{obj.rolled_from.school_year.label} - {obj.rolled_from.semester.label}'
+
+    def get_instructor_name(self, obj):
+        from user_management.models import SectionInstructorAssignment
+        if not obj.section or not obj.year_level or not obj.semester_id:
+            return None
+        assignment = SectionInstructorAssignment.objects.filter(
+            semester_id=obj.semester_id,
+            year_level=obj.year_level,
+            section=obj.section,
+            is_active=True,
+        ).select_related('faculty').first()
+        if assignment and assignment.faculty:
+            return assignment.faculty.get_full_name() or assignment.faculty.username
+        return None
+
+    def get_instructor_id(self, obj):
+        from user_management.models import SectionInstructorAssignment
+        if not obj.section or not obj.year_level or not obj.semester_id:
+            return None
+        assignment = SectionInstructorAssignment.objects.filter(
+            semester_id=obj.semester_id,
+            year_level=obj.year_level,
+            section=obj.section,
+            is_active=True,
+        ).first()
+        return assignment.faculty_id if assignment else None
 
 
 class StudentAcademicRecordWriteSerializer(serializers.Serializer):
@@ -138,6 +168,9 @@ class StudentAcademicRecordWriteSerializer(serializers.Serializer):
                 email=email,
                 role='student',
             )
+
+        if getattr(self, 'instance', None) and getattr(self.instance, 'student', None):
+            return self.instance.student
 
         raise serializers.ValidationError({'student_id': 'This field is required.'})
 

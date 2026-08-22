@@ -1,9 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+import 'package:defensys/services/academic/student_academic_records_provider.dart';
+import 'package:defensys/services/admin/user_management_provider.dart';
+import 'package:defensys/widgets/pickers/searchable_entity_picker.dart';
 import '../../widgets/defensys_admin_shell.dart';
 
 /// Dialog for enrolling an existing student or creating a new student account
 /// and enrolling them into a specific semester, year level, and section in 1 step.
-class AddStudentDialog extends StatefulWidget {
+class AddStudentDialog extends ConsumerStatefulWidget {
   const AddStudentDialog({
     super.key,
     this.record,
@@ -40,10 +45,10 @@ class AddStudentDialog extends StatefulWidget {
   }
 
   @override
-  State<AddStudentDialog> createState() => _AddStudentDialogState();
+  ConsumerState<AddStudentDialog> createState() => _AddStudentDialogState();
 }
 
-class _AddStudentDialogState extends State<AddStudentDialog> {
+class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
   static const _maroon = DefensysUi.primaryMaroon;
   static const _muted = DefensysUi.steelGrey;
   static const _line = Color(0xFFE5E7EB);
@@ -134,6 +139,133 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
     return _asInt(semesters.first['id']);
   }
 
+  static const String _addCustomSectionValue = '__ADD_CUSTOM_SECTION__';
+  final Set<String> _customSections = {};
+
+  List<String> _getSectionsForYearLevel(String yearLevel) {
+    final sections = <String>{};
+
+    // 1. Gather all actual sections from student academic records matching this year level
+    final records = ref.read(studentAcademicRecordsProvider).records;
+    for (final r in records) {
+      if (r['year_level']?.toString().trim() == yearLevel.trim()) {
+        final sec = r['section']?.toString().trim();
+        if (sec != null && sec.isNotEmpty && sec.toUpperCase() != 'BSIT') {
+          sections.add(sec);
+        }
+      }
+    }
+
+    // 2. Gather all actual sections from faculty instructor assignments matching this year level
+    final users = ref.read(userManagementProvider).users;
+    for (final u in users) {
+      final assignments = u['instructor_assignments'] as List?;
+      if (assignments != null) {
+        for (final a in assignments) {
+          if (a is Map) {
+            final yl = a['year_level']?.toString().trim();
+            final sec = a['section']?.toString().trim();
+            if (yl == yearLevel.trim() &&
+                sec != null &&
+                sec.isNotEmpty &&
+                sec.toUpperCase() != 'BSIT') {
+              sections.add(sec);
+            }
+          }
+        }
+      }
+    }
+
+    for (final cs in _customSections) {
+      sections.add(cs);
+    }
+
+    final current = _sectionCtrl.text.trim();
+    if (current.isNotEmpty && current.toUpperCase() != 'BSIT') {
+      sections.add(current);
+    }
+
+    final sorted = sections.toList()..sort();
+    return sorted;
+  }
+
+  Future<void> _handleAddNewSection(String yearLevel) async {
+    final yearNum = yearLevel.contains('1')
+        ? '1'
+        : yearLevel.contains('2')
+            ? '2'
+            : yearLevel.contains('3')
+                ? '3'
+                : '4';
+
+    final textCtrl = TextEditingController(text: 'BSIT-$yearNum');
+    final newSection = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+        title: const Row(
+          children: [
+            Icon(Icons.add_circle_outline_rounded, color: _maroon, size: 20),
+            SizedBox(width: 8),
+            Text(
+              'Add New Section',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Enter the section code for $yearLevel (e.g. BSIT-${yearNum}E, BSCS-${yearNum}A):',
+              style: const TextStyle(fontSize: 12, color: _muted),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: textCtrl,
+              autofocus: true,
+              style: const TextStyle(fontSize: 13),
+              decoration: InputDecoration(
+                labelText: 'Section Code',
+                hintText: 'e.g. BSIT-${yearNum}E',
+                filled: true,
+                fillColor: const Color(0xFFF9FAFB),
+                contentPadding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                border:
+                    OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final val = textCtrl.text.trim().toUpperCase();
+              if (val.isNotEmpty && val != 'BSIT') {
+                Navigator.of(ctx).pop(val);
+              }
+            },
+            style: FilledButton.styleFrom(backgroundColor: _maroon),
+            child: const Text('Add Section'),
+          ),
+        ],
+      ),
+    );
+
+    if (newSection != null && newSection.isNotEmpty) {
+      setState(() {
+        _customSections.add(newSection);
+        _sectionCtrl.text = newSection;
+      });
+    }
+  }
+
   void _onSave() {
     setState(() => _errorMessage = null);
 
@@ -206,9 +338,195 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
     );
   }
 
+  List<Map<String, dynamic>> _getUnenrolledStudents() {
+    final records = ref.read(studentAcademicRecordsProvider).records;
+    final enrolledStudentIds = <int>{};
+    for (final r in records) {
+      if (_asInt(r['semester_id']) == _selectedSemesterId) {
+        final sId = _asInt(r['student_id']);
+        if (sId != null) enrolledStudentIds.add(sId);
+      }
+    }
+
+    return widget.students.where((st) {
+      final id = _asInt(st['id']);
+      if (id == null) return false;
+      if (_editing && id == _selectedStudentId) return true;
+      return !enrolledStudentIds.contains(id);
+    }).toList();
+  }
+
+  Widget _buildExistingStudentSelector(List<Map<String, dynamic>> unenrolledStudents) {
+    if (_editing || widget.overrideStudentId != null) {
+      final currentStudent = widget.students.firstWhere(
+        (s) => _asInt(s['id']) == _selectedStudentId,
+        orElse: () => {
+          'name': widget.record?['student_name'] ?? 'Student',
+          'username': widget.record?['student_username'] ?? '',
+          'email': widget.record?['student_email'] ?? '',
+        },
+      );
+      final studentName = currentStudent['name']?.toString() ?? 'Student';
+      final studentUsername = currentStudent['username']?.toString() ?? '';
+      final studentEmail = currentStudent['email']?.toString() ?? '';
+
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF9FAFB),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _line),
+        ),
+        child: Row(
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: const Color(0xFFEFF6FF),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.person_rounded, size: 18, color: Color(0xFF2563EB)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    studentName,
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: _ink),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    'ID: $studentUsername ${studentEmail.isNotEmpty ? '• $studentEmail' : ''}',
+                    style: const TextStyle(fontSize: 11.5, color: _muted),
+                  ),
+                ],
+              ),
+            ),
+            const Tooltip(
+              message: 'Student account is locked during record editing',
+              child: Icon(Icons.lock_outline_rounded, size: 16, color: _muted),
+            ),
+          ],
+        ),
+      );
+    }
+
+    if (unenrolledStudents.isEmpty) {
+      return Container(
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEF3C7),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: const Color(0xFFFDE68A)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Row(
+              children: [
+                Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFF92400E)),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'All registered students already have an academic record for this semester.',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton.icon(
+              onPressed: () => setState(() {
+                _isNewStudent = true;
+                _errorMessage = null;
+              }),
+              icon: const Icon(Icons.person_add_rounded, size: 14),
+              label: const Text('Register New Student Intake Instead', style: TextStyle(fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF92400E),
+                side: const BorderSide(color: Color(0xFFD97706)),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final pickerItems = unenrolledStudents.map((st) {
+      final name = st['name']?.toString().trim() ?? 'Student';
+      final username = st['username']?.toString().trim() ?? '';
+      final email = st['email']?.toString().trim() ?? '';
+      return EntityPickerItem<int>(
+        value: _asInt(st['id'])!,
+        label: name.isNotEmpty ? name : username,
+        badge: username,
+        subtitle: email.isNotEmpty ? email : '$username@ustp.edu.ph',
+        avatarText: name.isNotEmpty ? name.substring(0, 1).toUpperCase() : 'S',
+        avatarColor: DefensysUi.techBlue,
+      );
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Select Student *',
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: DefensysUi.textDark,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(
+                '${unenrolledStudents.length} unenrolled student${unenrolledStudents.length == 1 ? '' : 's'} available',
+                style: const TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w500,
+                  color: Color(0xFF059669),
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        SearchableEntityPicker<int>(
+          key: ValueKey('student_picker_${_selectedSemesterId}_${unenrolledStudents.length}'),
+          items: pickerItems,
+          selectedValue: unenrolledStudents.any((s) => _asInt(s['id']) == _selectedStudentId)
+              ? _selectedStudentId
+              : null,
+          hintText: 'Search by ID (e.g. 208), name, or email...',
+          searchHintText: 'Type student ID, name, or email to search...',
+          onChanged: (val) {
+            setState(() {
+              _selectedStudentId = val;
+              _errorMessage = null;
+            });
+          },
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final semesters = _semestersForYear(_selectedSchoolYear);
+    final unenrolledStudents = _getUnenrolledStudents();
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -417,22 +735,7 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
                   ),
                   const SizedBox(height: 18),
                 ] else ...[
-                  DropdownButtonFormField<int>(
-                    initialValue: _selectedStudentId,
-                    decoration: _inputDec('Select Student *', icon: Icons.person_search_rounded),
-                    onChanged: (_editing || widget.overrideStudentId != null)
-                        ? null
-                        : (val) => setState(() => _selectedStudentId = val),
-                    items: widget.students.map((st) {
-                      return DropdownMenuItem<int>(
-                        value: _asInt(st['id']),
-                        child: Text(
-                          '${st['name']} (${st['username']})',
-                          style: const TextStyle(fontSize: 13),
-                        ),
-                      );
-                    }).toList(),
-                  ),
+                  _buildExistingStudentSelector(unenrolledStudents),
                   const SizedBox(height: 18),
                 ],
 
@@ -450,13 +753,14 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: _selectedSchoolYear,
                         decoration: _inputDec('School Year'),
                         items: widget.schoolYears.map((sy) {
                           final label = sy['label']?.toString() ?? '';
                           return DropdownMenuItem<String>(
                             value: label,
-                            child: Text(label, style: const TextStyle(fontSize: 13)),
+                            child: Text(label, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
                           );
                         }).toList(),
                         onChanged: _editing
@@ -473,6 +777,7 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: DropdownButtonFormField<int>(
+                        isExpanded: true,
                         key: ValueKey('$_selectedSchoolYear-$_selectedSemesterId'),
                         initialValue: _selectedSemesterId,
                         decoration: _inputDec('Semester'),
@@ -482,6 +787,7 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
                             child: Text(
                               sem['label']?.toString() ?? '',
                               style: const TextStyle(fontSize: 13),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           );
                         }).toList(),
@@ -497,28 +803,78 @@ class _AddStudentDialogState extends State<AddStudentDialog> {
                   children: [
                     Expanded(
                       child: DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: _selectedYearLevel,
                         decoration: _inputDec('Year Level *'),
                         items: _yearLevels.map((yl) {
                           return DropdownMenuItem<String>(
                             value: yl,
-                            child: Text(yl, style: const TextStyle(fontSize: 13)),
+                            child: Text(yl, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
                           );
                         }).toList(),
                         onChanged: (val) {
-                          if (val != null) setState(() => _selectedYearLevel = val);
+                          if (val != null) {
+                            setState(() {
+                              _selectedYearLevel = val;
+                              final newSections = _getSectionsForYearLevel(val);
+                              if (_sectionCtrl.text.isEmpty ||
+                                  !newSections.contains(_sectionCtrl.text)) {
+                                _sectionCtrl.text =
+                                    newSections.isNotEmpty ? newSections.first : '';
+                              }
+                            });
+                          }
                         },
                       ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: TextField(
-                        controller: _sectionCtrl,
-                        decoration: _inputDec(
-                          'Section',
-                          hint: 'e.g. BSIT-3A',
-                          icon: Icons.meeting_room_outlined,
-                        ),
+                      child: DropdownButtonFormField<String>(
+                        isExpanded: true,
+                        key: ValueKey('add_sec_${_selectedYearLevel}_${_getSectionsForYearLevel(_selectedYearLevel).length}_${_sectionCtrl.text}'),
+                        initialValue: _getSectionsForYearLevel(_selectedYearLevel)
+                                .contains(_sectionCtrl.text)
+                            ? _sectionCtrl.text
+                            : (_getSectionsForYearLevel(_selectedYearLevel).isNotEmpty
+                                ? _getSectionsForYearLevel(_selectedYearLevel).first
+                                : null),
+                        decoration: _inputDec('Section *'),
+                        items: [
+                          ..._getSectionsForYearLevel(_selectedYearLevel).map((sec) {
+                            return DropdownMenuItem<String>(
+                              value: sec,
+                              child: Text(sec, style: const TextStyle(fontSize: 13), overflow: TextOverflow.ellipsis),
+                            );
+                          }),
+                          DropdownMenuItem<String>(
+                            value: _addCustomSectionValue,
+                            child: const Row(
+                              children: [
+                                Icon(Icons.add_circle_outline_rounded,
+                                    size: 15, color: _maroon),
+                                SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    '+ Add New Section...',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: _maroon,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val == _addCustomSectionValue) {
+                            _handleAddNewSection(_selectedYearLevel);
+                          } else if (val != null) {
+                            setState(() => _sectionCtrl.text = val);
+                          }
+                        },
                       ),
                     ),
                   ],

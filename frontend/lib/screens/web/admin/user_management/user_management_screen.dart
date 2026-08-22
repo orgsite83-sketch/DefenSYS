@@ -10,6 +10,7 @@ import 'package:defensys/toasts/feedback_toast.dart';
 
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
+import 'package:defensys/utils/import/user_bulk_import_draft.dart';
 import 'access_control/access_control_view.dart';
 import 'bulk_import/bulk_import_view.dart';
 import 'bulk_import/official_class_list_parser.dart';
@@ -67,6 +68,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(userManagementProvider.notifier).fetchUsers();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
+      ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
     });
   }
 
@@ -102,9 +104,31 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final payload = await UserCreateEditDialog.show(
       context,
       user: user,
+      defaultRole: 'faculty',
     );
     if (payload != null && mounted) {
       final notifier = ref.read(userManagementProvider.notifier);
+      if (payload['_action'] == 'delete') {
+        final id = payload['id'] ?? user?['id'];
+        if (id != null) {
+          final userId = id is int ? id : int.parse(id.toString());
+          final success = await notifier.deleteUser(userId);
+          if (success && mounted) {
+            if (_accessControlUser != null && _accessControlUser!['id'] == userId) {
+              setState(() {
+                _accessControlUser = null;
+              });
+            }
+            showSuccessToast(context, 'User account deleted successfully.');
+          } else if (mounted) {
+            final err = ref.read(userManagementProvider).error ??
+                'Failed to delete user account.';
+            showErrorToast(context, err);
+          }
+        }
+        return;
+      }
+
       if (user != null) {
         final id = user['id'];
         final success = await notifier.updateUser(
@@ -126,7 +150,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       if (mounted) {
         showSuccessToast(
           context,
-          user != null ? 'User updated successfully.' : 'User created successfully.',
+          user != null ? 'Faculty member updated successfully.' : 'Faculty member created successfully.',
         );
       }
     }
@@ -406,7 +430,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
           ElevatedButton.icon(
             onPressed: state.isSaving ? null : () => _showUserDialog(),
             icon: const Icon(Icons.person_add_alt_1_rounded, size: 16),
-            label: const Text('Add Single User'),
+            label: const Text('Add Single Faculty'),
             style: ElevatedButton.styleFrom(
               backgroundColor: DefensysUi.primaryMaroon,
               foregroundColor: Colors.white,
@@ -480,13 +504,18 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
                 users,
                 studentContext: studentContext,
               );
-          if (success && context.mounted) {
+          if (!context.mounted) return;
+          if (success) {
+            await clearUserBulkImportDraft();
             final isStudent = studentContext != null;
-            final label = isStudent ? 'students' : 'users';
+            final label = isStudent ? 'students' : 'faculty & staff';
             showSuccessToast(context, '${users.length} $label imported successfully!');
             ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
             ref.read(userManagementProvider.notifier).fetchUsers();
             _closeSubView();
+          } else {
+            final errorMsg = ref.read(userManagementProvider).error ?? 'Failed to import users.';
+            showErrorToast(context, errorMsg);
           }
         },
       );
@@ -513,7 +542,9 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       );
     }
 
-    final studentCount = studentState.records.length;
+    final studentCount = studentState.records.isNotEmpty
+        ? studentState.records.length
+        : studentState.students.length;
     final facultyCount = state.users.where((u) {
       final r = u['role']?.toString().toLowerCase() ?? '';
       return r == 'faculty' || r == 'admin';

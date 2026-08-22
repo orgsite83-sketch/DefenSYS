@@ -68,6 +68,7 @@ Future<StagedImportResult?> showFileImportStagingModal(
   BuildContext context, {
   required List<PickedTabularFile> initialFiles,
   String importMode = 'student',
+  bool hasActiveSemester = true,
 }) async {
   return showDialog<StagedImportResult>(
     context: context,
@@ -75,6 +76,7 @@ Future<StagedImportResult?> showFileImportStagingModal(
     builder: (ctx) => FileImportStagingModal(
       initialFiles: initialFiles,
       importMode: importMode,
+      hasActiveSemester: hasActiveSemester,
     ),
   );
 }
@@ -86,10 +88,12 @@ class FileImportStagingModal extends StatefulWidget {
     super.key,
     required this.initialFiles,
     this.importMode = 'student',
+    this.hasActiveSemester = true,
   });
 
   final List<PickedTabularFile> initialFiles;
   final String importMode;
+  final bool hasActiveSemester;
 
   @override
   State<FileImportStagingModal> createState() => _FileImportStagingModalState();
@@ -272,13 +276,17 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       bool inStudentTable = false;
       for (final row in rows) {
         final line = row.join(' ').toLowerCase();
-        if (line.contains('student number') || line.contains('student no')) {
+        if (line.contains('student number') ||
+            line.contains('student no') ||
+            line.contains('student id') ||
+            line.contains('id number') ||
+            (line.contains('student') && line.contains('name'))) {
           inStudentTable = true;
           continue;
         }
         if (inStudentTable && row.isNotEmpty) {
-          final firstNonEmpty = row.firstWhere((c) => c.trim().isNotEmpty, orElse: () => '');
-          if (firstNonEmpty.isNotEmpty && RegExp(r'^\d+$').hasMatch(firstNonEmpty)) {
+          final nonEmpty = row.where((c) => c.trim().isNotEmpty).toList();
+          if (nonEmpty.length >= 2) {
             studentCount++;
           }
         }
@@ -417,7 +425,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
   String _excelCellText(xl.CellValue? value) {
     if (value == null) return '';
-    if (value is xl.TextCellValue) return value.value.toString().trim();
+    if (value is xl.TextCellValue) {
+      return (value.value.text ?? '').trim();
+    }
     if (value is xl.IntCellValue) return value.value.toString();
     if (value is xl.DoubleCellValue) {
       final number = value.value;
@@ -425,6 +435,22 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         return number.round().toString();
       }
       return number.toString();
+    }
+    if (value is xl.FormulaCellValue) return value.formula.trim();
+    if (value is xl.BoolCellValue) return value.value ? 'true' : 'false';
+    if (value is xl.DateCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.DateTimeCellValue) {
+      final dt = value.asDateTimeLocal();
+      return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+    }
+    if (value is xl.TimeCellValue) {
+      final d = value.asDuration();
+      final h = (d.inHours % 24).toString().padLeft(2, '0');
+      final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+      return '$h:$m';
     }
     return value.toString().trim();
   }
@@ -660,14 +686,21 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     final validFilesCount = _inspectedFiles.where((f) => f.isValid).length;
     final invalidFilesCount = _inspectedFiles.where((f) => !f.isValid).length;
     final totalCount = _stagedFiles.length;
-    final modeLabel = _activeImportMode == 'student' ? 'Student Batch' : 'Faculty / General Users';
+    final isStudentMode = _activeImportMode == 'student';
+    final isBlockedBySemester = isStudentMode && !widget.hasActiveSemester;
+    final modeLabel = isStudentMode ? 'Student Batch' : 'Faculty / General Users';
 
     final Color barBg;
     final Color iconColor;
     final IconData barIcon;
     final String summaryText;
 
-    if (invalidFilesCount == 0 && validFilesCount > 0) {
+    if (isBlockedBySemester) {
+      barBg = const Color(0xFFFEF2F2);
+      iconColor = const Color(0xFFDC2626);
+      barIcon = Icons.error_outline_rounded;
+      summaryText = 'Active Semester Required  •  Cannot import students without an active semester in Academic Periods';
+    } else if (invalidFilesCount == 0 && validFilesCount > 0) {
       barBg = DefensysTokens.background;
       iconColor = DefensysTokens.success;
       barIcon = Icons.check_circle_outline_rounded;
@@ -1088,9 +1121,14 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildFooter(BuildContext context, bool hasValidFiles, bool isStudent) {
-    final previewLabel = _totalValidRows > 0
-        ? 'Generate Preview Table ($_totalValidRows rows)'
-        : 'Generate Preview Table';
+    final isStudentMode = _activeImportMode == 'student';
+    final isBlockedBySemester = isStudentMode && !widget.hasActiveSemester;
+
+    final previewLabel = isBlockedBySemester
+        ? 'Active Semester Required'
+        : (_totalValidRows > 0
+            ? 'Generate Preview Table ($_totalValidRows rows)'
+            : 'Generate Preview Table');
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
@@ -1114,7 +1152,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
           ),
           ElevatedButton.icon(
             style: ElevatedButton.styleFrom(
-              backgroundColor: DefensysTokens.maroon,
+              backgroundColor: isBlockedBySemester ? Colors.grey : DefensysTokens.maroon,
               foregroundColor: Colors.white,
               disabledBackgroundColor: DefensysTokens.maroon.withValues(alpha: 0.4),
               disabledForegroundColor: Colors.white70,
@@ -1124,7 +1162,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                 borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
               ),
             ),
-            onPressed: hasValidFiles && !_isProcessing
+            onPressed: hasValidFiles && !_isProcessing && !isBlockedBySemester
                 ? () {
                     final validFiles = _inspectedFiles
                         .where((f) => f.isValid)
@@ -1138,7 +1176,10 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
                     );
                   }
                 : null,
-            icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+            icon: Icon(
+              isBlockedBySemester ? Icons.block_rounded : Icons.arrow_forward_rounded,
+              size: 16,
+            ),
             label: Text(
               previewLabel,
               style: const TextStyle(

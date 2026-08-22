@@ -5,10 +5,8 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
-import 'package:defensys/widgets/defensys_skeleton.dart';
 
 import '../components/user_management_table.dart';
-import '../dialogs/guest_code_dialog.dart';
 import '../dialogs/user_create_edit_dialog.dart';
 
 /// The Faculty & Staff management view within User Management.
@@ -62,21 +60,25 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
       if (parsed != null) return parsed;
     }
 
-    if (key == 'all') return state.users.length;
-    if (key == 'faculty') {
+    if (key == 'all' || key == 'faculty' || key == 'total_faculty') {
       return state.users.where((u) {
         final r = u['role']?.toString().toLowerCase() ?? '';
         return r == 'faculty' || r == 'admin';
       }).length;
     }
+    if (key == 'advisers') {
+      return state.users.where((u) {
+        final r = u['role']?.toString().toLowerCase() ?? '';
+        return (r == 'faculty' || r == 'admin') && (u['is_adviser'] == true);
+      }).length;
+    }
+    if (key == 'panelists') {
+      return state.users.where((u) {
+        final r = u['role']?.toString().toLowerCase() ?? '';
+        return (r == 'faculty' || r == 'admin') && (u['is_panelist'] == true);
+      }).length;
+    }
     if (key == 'admins') {
-      final v = state.counts['admins'];
-      if (v is int) return v;
-      if (v is num) return v.toInt();
-      if (v != null) {
-        final parsed = int.tryParse(v.toString());
-        if (parsed != null) return parsed;
-      }
       return state.users.where((u) {
         final r = u['role']?.toString().toLowerCase() ?? '';
         return r == 'admin';
@@ -132,37 +134,55 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
     final payload = await UserCreateEditDialog.show(
       context,
       user: user,
+      defaultRole: 'faculty',
     );
     if (payload != null && mounted) {
       final notifier = ref.read(userManagementProvider.notifier);
+      if (payload['_action'] == 'delete') {
+        final id = payload['id'] ?? user?['id'];
+        if (id != null) {
+          final userId = id is int ? id : int.parse(id.toString());
+          final success = await notifier.deleteUser(userId);
+          if (success && mounted) {
+            showSuccessToast(context, 'Faculty account deleted successfully.');
+          } else if (mounted) {
+            final err = ref.read(userManagementProvider).error ??
+                'Failed to delete faculty account.';
+            showErrorToast(context, err);
+          }
+        }
+        return;
+      }
+
+      if (payload['_action'] == 'reset_password') {
+        final id = payload['id'] ?? user?['id'];
+        final username = payload['username'] ?? '';
+        if (id != null) {
+          final userId = id is int ? id : int.parse(id.toString());
+          await notifier.resetUserPassword(userId);
+          if (mounted) {
+            showSuccessToast(
+                context, 'Password reset to default ID number ($username).');
+          }
+        }
+        return;
+      }
+
       if (user != null) {
         final id = user['id'];
         final success = await notifier.updateUser(id is int ? id : int.parse(id.toString()), payload);
         if (success && mounted) {
-          showSuccessToast(context, 'User updated successfully.');
+          showSuccessToast(context, 'Faculty member updated successfully.');
         }
       } else {
         await notifier.addUser(payload);
         if (mounted) {
-          showSuccessToast(context, 'User created successfully.');
+          showSuccessToast(context, 'Faculty member created successfully.');
         }
       }
     }
   }
 
-  Future<void> _showGuestCodeDialog() async {
-    final state = ref.read(userManagementProvider);
-    final payload = await GuestCodeGenerateDialog.show(
-      context,
-      schedules: state.defenseSchedules,
-    );
-    if (payload != null && mounted) {
-      final result = await ref.read(userManagementProvider.notifier).generateGuestCode(payload);
-      if (result != null && mounted) {
-        await GeneratedGuestCodeDialog.show(context, guestCode: result);
-      }
-    }
-  }
 
   Future<void> _confirmResetPassword(Map<String, dynamic> user) async {
     final name = user['first_name'] ?? user['username'] ?? 'User';
@@ -194,10 +214,10 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
           children: [
             Expanded(
               child: _buildMetricCard(
-                title: 'All Users',
-                value: '${_count(state, 'all')}',
-                subtitle: 'Total system accounts',
-                icon: Icons.groups_2_rounded,
+                title: 'Total Faculty & Staff',
+                value: '${_count(state, 'faculty')}',
+                subtitle: 'Registered teaching staff',
+                icon: Icons.badge_outlined,
                 iconColor: _maroon,
                 iconBg: const Color(0xFFFDF2F2),
               ),
@@ -205,10 +225,10 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
             const SizedBox(width: 14),
             Expanded(
               child: _buildMetricCard(
-                title: 'Faculty Members',
-                value: '${_count(state, 'faculty')}',
-                subtitle: 'Active faculty & advisers',
-                icon: Icons.co_present_rounded,
+                title: 'Project Advisers',
+                value: '${_count(state, 'advisers')}',
+                subtitle: 'Mentoring capstone teams',
+                icon: Icons.supervised_user_circle_outlined,
                 iconColor: _blue,
                 iconBg: const Color(0xFFEFF6FF),
               ),
@@ -216,12 +236,23 @@ class _FacultyStaffViewState extends ConsumerState<FacultyStaffView> {
             const SizedBox(width: 14),
             Expanded(
               child: _buildMetricCard(
-                title: 'System Administrators',
-                value: '${_count(state, 'admins')}',
-                subtitle: 'Full administrative access',
-                icon: Icons.admin_panel_settings_rounded,
+                title: 'Defense Panelists',
+                value: '${_count(state, 'panelists')}',
+                subtitle: 'Evaluation panel members',
+                icon: Icons.how_to_reg_outlined,
                 iconColor: const Color(0xFF059669),
                 iconBg: const Color(0xFFECFDF5),
+              ),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: _buildMetricCard(
+                title: 'System Admins',
+                value: '${_count(state, 'admins')}',
+                subtitle: 'Full administrative access',
+                icon: Icons.admin_panel_settings_outlined,
+                iconColor: const Color(0xFFD97706),
+                iconBg: const Color(0xFFFEF3C7),
               ),
             ),
           ],

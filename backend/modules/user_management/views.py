@@ -1,8 +1,9 @@
+import logging
 import re
 
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import Q
+from django.db.models import ProtectedError, Q
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import serializers, status
@@ -38,6 +39,7 @@ from .serializers import (
 )
 
 
+logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
@@ -48,6 +50,8 @@ def user_counts():
         'faculty': User.objects.filter(role__in=['faculty', 'admin']).count(),
         'students': User.objects.filter(role='student').count(),
         'active': User.objects.filter(is_active=True).count(),
+        'advisers': User.objects.filter(role__in=['faculty', 'admin'], is_adviser=True).count(),
+        'panelists': User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True).count(),
     }
 
 
@@ -183,8 +187,53 @@ class UserDetailView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user.delete()
-        return Response({'counts': user_counts()}, status=status.HTTP_200_OK)
+        username = user.username
+        full_name = user.get_full_name() or username
+
+        try:
+            with transaction.atomic():
+                log_high_impact_action(
+                    category=SystemAuditLog.CATEGORY_USER_MANAGEMENT,
+                    action='user.delete',
+                    target=user,
+                    target_type='User',
+                    target_id=str(user.pk),
+                    reason=f"Deleted user account {username} ({full_name})",
+                    old_values={'username': username, 'role': user.role, 'email': user.email},
+                    request=request,
+                )
+                user.delete()
+        except ProtectedError:
+            from student_teams.models import StudentTeam
+            led_teams = list(StudentTeam.objects.filter(leader_id=user_id).values_list('name', flat=True))
+            if led_teams:
+                teams_str = ', '.join(led_teams[:3])
+                return Response(
+                    {
+                        'detail': f'Cannot delete user "{username}" because they are currently designated as the Team Leader for: {teams_str}. Please reassign team leadership or remove the team before deleting this account.'
+                    },
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+            return Response(
+                {
+                    'detail': f'Cannot delete user "{username}" because they are linked to active protected records in the system.'
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except Exception as e:
+            logger.exception("Failed to delete user %s", user_id)
+            return Response(
+                {'detail': f'Failed to delete user: {str(e)}'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        return Response(
+            {
+                'detail': f'User account {username} deleted successfully.',
+                'counts': user_counts(),
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class UserAdviserAssignmentHistoryView(APIView):
@@ -413,6 +462,12 @@ class BulkImportUsersMixin:
         else:
             context_semester = self._resolve_context_semester(student_context)
             context_year_level = _normalize_year_level(student_context.get('year_level') or '')
+
+        if (self.force_student_only or bool(request.data.get('student_context'))) and context_semester is None:
+            return Response(
+                {'detail': 'An active academic semester is required to import and enroll students. Please configure an active semester first.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
         context_section = ' '.join((student_context.get('section') or '').strip().split())
         faculty_name = _clean_spaces(
             student_context.get('instructor_name')
@@ -447,6 +502,9 @@ class BulkImportUsersMixin:
         records_created = []
         skipped = []
         errors = []
+        section_instructors = {}
+        if faculty_name and context_year_level and context_section:
+            section_instructors[(context_year_level, context_section)] = faculty_name
 
         for index, row in enumerate(rows, start=1):
             serializer = BulkUserRowSerializer(data=row)
@@ -464,8 +522,57 @@ class BulkImportUsersMixin:
                     'errors': {'role': ['PIT Leads can import student users only.']},
                 })
                 continue
-            if User.objects.filter(username=username).exists():
-                skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
+            existing_user = User.objects.filter(username=username).first()
+            year_level = _normalize_year_level(data.get('year_level') or context_year_level or '')
+            if self.force_pit_lead_context:
+                row_year = (data.get('year_level') or '').strip()
+                if row_year and row_year != context_year_level:
+                    errors.append({
+                        'row': index,
+                        'id_number': username,
+                        'errors': {'year_level': [f'PIT Lead import is limited to {context_year_level}.']},
+                    })
+                    continue
+                year_level = context_year_level
+            section = ' '.join((data.get('section') or context_section or '').strip().split())
+
+            row_instr = _clean_spaces(
+                data.get('instructor')
+                or data.get('instructor_name')
+                or data.get('faculty')
+                or row.get('instructor')
+                or row.get('instructor_name')
+                or row.get('faculty')
+                or ''
+            )
+            if row_instr and year_level and section:
+                section_instructors[(year_level, section)] = row_instr
+
+            if existing_user:
+                if existing_user.role == 'student' and context_semester is not None and year_level:
+                    record, _ = StudentAcademicRecord.objects.update_or_create(
+                        student=existing_user,
+                        semester=context_semester,
+                        defaults={
+                            'year_level': year_level,
+                            'section': section,
+                        },
+                    )
+                    records_created.append(record)
+                    updated_fields = []
+                    if data.get('first_name') and existing_user.first_name != data['first_name']:
+                        existing_user.first_name = data['first_name']
+                        updated_fields.append('first_name')
+                    if data.get('last_name') and existing_user.last_name != data['last_name']:
+                        existing_user.last_name = data['last_name']
+                        updated_fields.append('last_name')
+                    if data.get('email') and existing_user.email != data['email']:
+                        existing_user.email = data['email']
+                        updated_fields.append('email')
+                    if updated_fields:
+                        existing_user.save(update_fields=updated_fields)
+                else:
+                    skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                 continue
 
             user = User.objects.create_user(
@@ -477,20 +584,6 @@ class BulkImportUsersMixin:
                 role='student' if self.force_student_only else role,
             )
             created.append(user)
-            year_level = _normalize_year_level(data.get('year_level') or context_year_level or '')
-            if self.force_pit_lead_context:
-                row_year = (data.get('year_level') or '').strip()
-                if row_year and row_year != context_year_level:
-                    errors.append({
-                        'row': index,
-                        'id_number': username,
-                        'errors': {'year_level': [f'PIT Lead import is limited to {context_year_level}.']},
-                    })
-                    user.delete()
-                    created.pop()
-                    continue
-                year_level = context_year_level
-            section = ' '.join((data.get('section') or context_section or '').strip().split())
             if user.role == 'student' and context_semester is not None and year_level:
                 records_created.append(StudentAcademicRecord.objects.create(
                     student=user,
@@ -499,7 +592,9 @@ class BulkImportUsersMixin:
                     section=section,
                 ))
 
-        if require_faculty_match:
+        instructor_warnings = []
+        assigned_instructors = []
+        if require_faculty_match and faculty is not None:
             instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
                 faculty=faculty,
                 semester=context_semester,
@@ -510,6 +605,29 @@ class BulkImportUsersMixin:
                     'is_active': True,
                 },
             )
+            assigned_instructors.append(instructor_assignment)
+        elif context_semester is not None and section_instructors:
+            for (sec_year, sec_name), instr_name in section_instructors.items():
+                matched_faculty, match_status = _match_faculty_by_name(instr_name)
+                if matched_faculty is not None:
+                    assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
+                        faculty=matched_faculty,
+                        semester=context_semester,
+                        year_level=sec_year,
+                        section=sec_name,
+                        defaults={
+                            'assigned_by': request.user,
+                            'is_active': True,
+                        },
+                    )
+                    assigned_instructors.append(assignment)
+                    if instructor_assignment is None:
+                        instructor_assignment = assignment
+                        faculty_match_status = match_status
+                else:
+                    instructor_warnings.append(
+                        f"Instructor '{instr_name}' for section '{sec_name}' could not be matched to an active faculty account."
+                    )
 
         return Response({
             'created': ManagedUserSerializer(created, many=True).data,
@@ -525,21 +643,23 @@ class BulkImportUsersMixin:
                 if instructor_assignment is not None
                 else None
             ),
+            'instructor_assignments': SectionInstructorAssignmentSerializer(assigned_instructors, many=True).data,
+            'instructor_warnings': instructor_warnings,
             'counts': user_counts(),
-        }, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)
+        }, status=status.HTTP_201_CREATED if (created or records_created) else status.HTTP_200_OK)
 
     def _resolve_context_semester(self, context):
         if not isinstance(context, dict):
-            return None
+            return _active_semester()
 
         semester_id = context.get('semester_id')
         if semester_id:
             return Semester.objects.filter(pk=semester_id).first()
 
-        if context.get('use_active_semester'):
+        if context.get('use_active_semester') or not context:
             return _active_semester()
 
-        return None
+        return _active_semester()
 
 
 class BulkImportUsersView(BulkImportUsersMixin, APIView):

@@ -332,6 +332,49 @@ class _StudentBatchEnrollmentHubViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        if (activeSem == null) ...[
+          Container(
+            padding: const EdgeInsets.all(16),
+            margin: const EdgeInsets.only(bottom: 20),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF2F2),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFFECACA), width: 1.2),
+            ),
+            child: const Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.block_rounded, color: Color(0xFFDC2626), size: 22),
+                SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Active Academic Semester Required for Student Enrollment',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF991B1B),
+                        ),
+                      ),
+                      SizedBox(height: 4),
+                      Text(
+                        'No active semester is currently configured in the system. Student class lists cannot be imported or enrolled until an Academic Period is created and set to Active under Setup & Configuration > Academic Periods.',
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          color: Color(0xFF7F1D1D),
+                          height: 1.35,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+
         // Top 2-Column Section: Left is Template Guide, Right is Source & Upload
         LayoutBuilder(
           builder: (context, constraints) {
@@ -507,6 +550,12 @@ class _StudentBatchEnrollmentHubViewState
                   isRollover ? 'CAP402' : 'IT111',
                   const Color(0xFFFEF3C7),
                   const Color(0xFF92400E),
+                ),
+                const SizedBox(width: 4),
+                _buildMiniSampleChip(
+                  isRollover ? 'Adviser: Prof. Santos' : 'Instructor: Maricel Suarez',
+                  const Color(0xFFF0FDF4),
+                  const Color(0xFF15803D),
                 ),
               ],
             ),
@@ -953,6 +1002,8 @@ class _StudentBatchEnrollmentHubViewState
                 final year = s['year_level']?.toString() ?? 'Unassigned';
                 final sec = s['section']?.toString() ?? 'Unassigned';
 
+                final instructor = (s['faculty'] ?? s['instructor'] ?? s['instructor_name'] ?? '').toString().trim();
+
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   color: index.isEven ? Colors.white : const Color(0xFFF9FAFB),
@@ -983,7 +1034,7 @@ class _StudentBatchEnrollmentHubViewState
 
                       // Section & Year Level Badges
                       Expanded(
-                        flex: 3,
+                        flex: 4,
                         child: Wrap(
                           spacing: 6,
                           runSpacing: 4,
@@ -1020,6 +1071,30 @@ class _StudentBatchEnrollmentHubViewState
                                 ),
                               ),
                             ),
+                            if (instructor.isNotEmpty)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF0FDF4),
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(color: const Color(0xFFBBF7D0)),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.co_present_rounded, size: 12, color: Color(0xFF16A34A)),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      'Instructor: $instructor',
+                                      style: const TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF15803D),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                           ],
                         ),
                       ),
@@ -1030,16 +1105,22 @@ class _StudentBatchEnrollmentHubViewState
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: const Color(0xFFDCFCE7),
+                            color: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                                ? const Color(0xFFFEE2E2)
+                                : const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: const Text(
-                            'Ready to Enroll',
+                          child: Text(
+                            ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                                ? 'Blocked (No Active Term)'
+                                : 'Ready to Enroll',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
-                              color: _green,
+                              color: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                                  ? const Color(0xFFDC2626)
+                                  : _green,
                             ),
                           ),
                         ),
@@ -1086,13 +1167,26 @@ class _StudentBatchEnrollmentHubViewState
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
-                  onPressed: _parsedFreshStudents.isEmpty || widget.userState.isSaving
+                  onPressed: _parsedFreshStudents.isEmpty ||
+                          widget.userState.isSaving ||
+                          ref.watch(studentAcademicRecordsProvider).activeSemester == null
                       ? null
                       : _confirmFreshIntake,
-                  icon: const Icon(Icons.check_circle_outline_rounded, size: 18),
-                  label: Text('Confirm Student Intake (${_parsedFreshStudents.length} students)'),
+                  icon: Icon(
+                    ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                        ? Icons.block_rounded
+                        : Icons.check_circle_outline_rounded,
+                    size: 18,
+                  ),
+                  label: Text(
+                    ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                        ? 'Active Semester Required (Import Blocked)'
+                        : 'Confirm Student Intake (${_parsedFreshStudents.length} students)',
+                  ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: _maroon,
+                    backgroundColor: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                        ? Colors.grey
+                        : _maroon,
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   ),
@@ -1152,10 +1246,12 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _openFreshStagingModal(List<PickedTabularFile> initialFiles) async {
     if (!mounted) return;
     try {
+      final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
       final result = await showFileImportStagingModal(
         context,
         initialFiles: initialFiles,
         importMode: 'student',
+        hasActiveSemester: activeSem != null,
       );
       if (!mounted || result == null) return;
       if (result.files.isEmpty) {
@@ -1243,11 +1339,18 @@ class _StudentBatchEnrollmentHubViewState
 
   Future<void> _confirmFreshIntake() async {
     if (_parsedFreshStudents.isEmpty) return;
-    ref.read(studentBatchDraftProvider.notifier).clearFreshDraft();
     final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
+    if (activeSem == null) {
+      showErrorToast(
+        context,
+        'Cannot enroll students: No active academic semester is configured. Please configure an active semester in Academic Periods first.',
+      );
+      return;
+    }
+    ref.read(studentBatchDraftProvider.notifier).clearFreshDraft();
     widget.onConfirmFreshImport(
       _parsedFreshStudents,
-      activeSem != null ? {'semester_id': activeSem['id']} : null,
+      {'semester_id': activeSem['id']},
     );
   }
 
@@ -2322,10 +2425,12 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _openRolloverStagingModal(List<PickedTabularFile> initialFiles) async {
     if (!mounted) return;
     try {
+      final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
       final result = await showFileImportStagingModal(
         context,
         initialFiles: initialFiles,
         importMode: 'student',
+        hasActiveSemester: activeSem != null,
       );
       if (!mounted || result == null) return;
       if (result.files.isEmpty) {

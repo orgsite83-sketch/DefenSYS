@@ -163,17 +163,23 @@ class EmailServiceTests(APITestCase):
             self.assertFalse(result)
 
     def test_send_password_reset_email_helpers(self):
+        from notifications.email_service import send_password_reset_otp_email
         with patch('notifications.email_service.send_mail'):
             self.assertTrue(send_password_reset_email(self.user, 'http://example.com/reset'))
+            self.assertTrue(send_password_reset_otp_email(self.user, '123456'))
             self.assertTrue(send_password_changed_email(self.user))
             self.assertTrue(send_admin_password_reset_email(self.user))
 
         with patch('notifications.email_service.send_mail', side_effect=Exception('SMTP error')):
             self.assertFalse(send_password_reset_email(self.user, 'http://example.com/reset'))
+            self.assertFalse(send_password_reset_otp_email(self.user, '123456'))
             self.assertFalse(send_password_changed_email(self.user))
             self.assertFalse(send_admin_password_reset_email(self.user))
 
     def test_send_password_reset_email_no_email_user(self):
+        from notifications.email_service import send_password_reset_otp_email
         self.assertFalse(send_password_reset_email(self.user_no_email, 'http://example.com/reset'))
+        self.assertFalse(send_password_reset_otp_email(self.user_no_email, '123456'))
+
 
 

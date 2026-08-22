@@ -51,6 +51,7 @@ class SystemAuditLog(models.Model):
     CATEGORY_STUDENT_TEAMS = 'student_teams'
     CATEGORY_REPOSITORY = 'repository'
     CATEGORY_GUEST_ACCESS = 'guest_access'
+    CATEGORY_USER_MANAGEMENT = 'user_management'
 
     CATEGORY_CHOICES = (
         (CATEGORY_ACADEMIC_PERIOD, 'Academic Periods'),
@@ -59,6 +60,7 @@ class SystemAuditLog(models.Model):
         (CATEGORY_STUDENT_TEAMS, 'Student Teams'),
         (CATEGORY_REPOSITORY, 'Repository'),
         (CATEGORY_GUEST_ACCESS, 'Guest Access'),
+        (CATEGORY_USER_MANAGEMENT, 'User Management'),
     )
 
     REVIEW_CAPTURED = 'captured'
@@ -107,3 +109,29 @@ class SystemAuditLog(models.Model):
 
     def __str__(self):
         return f'{self.category}:{self.action} -> {self.target_type}#{self.target_id}'
+
+
+class PasswordResetOTP(models.Model):
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='password_reset_otps',
+    )
+    otp_code_hash = models.CharField(max_length=128)
+    reset_token = models.CharField(max_length=128, blank=True, default='', db_index=True)
+    attempts = models.PositiveIntegerField(default=0)
+    is_verified = models.BooleanField(default=False)
+    is_used = models.BooleanField(default=False)
+    expires_at = models.DateTimeField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['user', 'created_at']),
+            models.Index(fields=['reset_token']),
+        ]
+
+    def __str__(self):
+        return f'PasswordResetOTP(user={self.user.username}, verified={self.is_verified}, used={self.is_used})'
+

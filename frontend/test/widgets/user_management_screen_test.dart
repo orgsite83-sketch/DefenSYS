@@ -1,6 +1,10 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:defensys/screens/web/admin/user_management/user_management_screen.dart';
+import 'package:defensys/screens/web/admin/user_management/bulk_import/bulk_import_view.dart';
+import 'package:defensys/screens/web/admin/widgets/file_import_staging_modal.dart';
+import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
@@ -217,6 +221,58 @@ void main() {
     expect(find.text('User & Team Management'), findsOneWidget);
   });
 
+  testWidgets('BulkImportView staging modal allows staging files and generating preview table', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const facultyCsv = '''id_number,first_name,last_name,email,role
+FAC-101,John,Doe,jdoe@ustp.edu.ph,faculty
+FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
+''';
+
+    final facultyFile = PickedTabularFile(
+      name: 'faculty_sample.csv',
+      extension: 'csv',
+      bytes: Uint8List.fromList(facultyCsv.codeUnits),
+      text: facultyCsv,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BulkImportView(
+            state: const UserManagementState(isLoading: false, users: [], guestCodes: []),
+            academicState: const AcademicPeriodState(),
+            onBack: () {},
+            onConfirmUpload: (users, context) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Trigger staging modal manually or via showFileImportStagingModal
+    final modalResultFuture = showFileImportStagingModal(
+      tester.element(find.byType(BulkImportView)),
+      initialFiles: [facultyFile],
+      importMode: 'general',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Staged Import Files'), findsOneWidget);
+    expect(find.text('Generate Preview Table (2 rows)'), findsOneWidget);
+
+    // Tap Generate Preview Table
+    await tester.tap(find.text('Generate Preview Table (2 rows)'));
+    await tester.pumpAndSettle();
+
+    final result = await modalResultFuture;
+    expect(result, isNotNull);
+    expect(result!.files.length, 1);
+  });
+
   testWidgets('Students tab shows Batch Enrollment and opens student details with profile card and actions', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
@@ -243,18 +299,30 @@ void main() {
     expect(find.text('Juan Dela Cruz'), findsOneWidget);
     expect(find.text('2023-0001'), findsOneWidget);
 
-    // Click on Details button
-    final detailsButton = find.text('Details');
+    // Click on Student Details icon button
+    final detailsButton = find.byTooltip('Student Details');
     expect(detailsButton, findsOneWidget);
     await tester.tap(detailsButton);
     await tester.pumpAndSettle();
 
     // Verify Student Profile & Enrollment dialog
     expect(find.text('Student Profile & Enrollment'), findsOneWidget);
-    expect(find.text('Edit User Profile'), findsOneWidget);
-    expect(find.text('Reset Password'), findsOneWidget);
-    expect(find.text('Edit Academic Record'), findsOneWidget);
+    expect(find.text('Edit Details'), findsOneWidget);
+    expect(find.text('Personal Profile'), findsOneWidget);
+    expect(find.text('Academic Standing'), findsOneWidget);
     expect(find.text('ENROLLMENT HISTORY'), findsOneWidget);
+
+    // Toggle in-place edit mode
+    await tester.tap(find.text('Edit Details'));
+    await tester.pumpAndSettle();
+    expect(find.text('Editing Student Profile & Academic Record'), findsOneWidget);
+    expect(find.text('Save Changes'), findsOneWidget);
+    expect(find.text('Cancel'), findsOneWidget);
+
+    // Cancel edit mode back to view mode
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.text('Personal Profile'), findsOneWidget);
 
     // Close modal
     await tester.tap(find.text('Close'));

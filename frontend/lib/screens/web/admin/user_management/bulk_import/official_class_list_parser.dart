@@ -54,7 +54,9 @@ AdminOfficialClassListParseResult parseOfficialClassListXlsx(List<int> bytes) {
 
 String _excelCellText(xl.CellValue? value) {
   if (value == null) return '';
-  if (value is xl.TextCellValue) return value.value.toString().trim();
+  if (value is xl.TextCellValue) {
+    return (value.value.text ?? '').trim();
+  }
   if (value is xl.IntCellValue) return value.value.toString();
   if (value is xl.DoubleCellValue) {
     final number = value.value;
@@ -63,6 +65,22 @@ String _excelCellText(xl.CellValue? value) {
     }
     return number.toString();
   }
+  if (value is xl.FormulaCellValue) return value.formula.trim();
+  if (value is xl.BoolCellValue) return value.value ? 'true' : 'false';
+  if (value is xl.DateCellValue) {
+    final dt = value.asDateTimeLocal();
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+  if (value is xl.DateTimeCellValue) {
+    final dt = value.asDateTimeLocal();
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+  if (value is xl.TimeCellValue) {
+    final d = value.asDuration();
+    final h = (d.inHours % 24).toString().padLeft(2, '0');
+    final m = (d.inMinutes % 60).toString().padLeft(2, '0');
+    return '$h:$m';
+  }
   return value.toString().trim();
 }
 
@@ -70,7 +88,7 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
   String? csvSchoolYear;
   String? csvSemester;
 
-  final schoolYearRegex = RegExp(r's\.?y\.?\s*(\d{4}\s*-\s*\d{4})', caseSensitive: false);
+  final schoolYearRegex = RegExp(r'(?:s\.?y\.?\s*)?(\d{4}\s*-\s*\d{4})', caseSensitive: false);
   final semesterRegex = RegExp(r'(\d(?:st|nd|rd)?\s*sem(?:ester)?|summer)', caseSensitive: false);
 
   for (final row in rows) {
@@ -114,12 +132,19 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
     // Check if this row is the student table header
     final hasStudentNumber = normalized.any(
       (cell) =>
-          cell.contains('student') &&
-          (cell.contains('number') ||
-              cell.contains('no') ||
-              cell == 'student n'),
+          cell == 'id' ||
+          cell == 'id number' ||
+          cell == 'student id' ||
+          (cell.contains('student') &&
+              (cell.contains('number') ||
+                  cell.contains('no') ||
+                  cell.contains('id') ||
+                  cell == 'student n')),
     );
-    final hasFullName = normalized.contains('full name') || normalized.contains('name');
+    final hasFullName = normalized.contains('full name') ||
+        normalized.contains('student name') ||
+        normalized.contains('name') ||
+        normalized.contains('students');
     if (hasStudentNumber && hasFullName) {
       headerIndex = i;
       break;
@@ -144,9 +169,11 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
         }
       }
 
-      readMeta('faculty', ['faculty', 'instructor']);
-      readMeta('section', ['class section', 'section']);
-      readMeta('year_level', ['year level', 'level']);
+      readMeta('faculty', ['faculty', 'instructor', 'teacher', 'professor', 'prof']);
+      readMeta('section', ['class section', 'section', 'class sec']);
+      readMeta('year_level', ['year level', 'level', 'year']);
+      readMeta('subject_code', ['subject code', 'course code', 'subj code']);
+      readMeta('subject_title', ['subject title', 'course title', 'description']);
     }
   }
 
@@ -167,14 +194,24 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
       headers.indexWhere(matches);
   final idIndex = findHeader(
     (value) =>
-        value.contains('student') &&
-        (value.contains('number') ||
-            value.contains('no') ||
-            value == 'student n'),
+        value == 'id' ||
+        value == 'id number' ||
+        value == 'student id' ||
+        (value.contains('student') &&
+            (value.contains('number') ||
+                value.contains('no') ||
+                value.contains('id') ||
+                value == 'student n')),
   );
-  final nameIndex = findHeader((value) => value == 'full name' || value == 'name');
-  final levelIndex = findHeader((value) => value == 'level');
-  final emailIndex = findHeader((value) => value == 'email');
+  final nameIndex = findHeader(
+    (value) =>
+        value == 'full name' ||
+        value == 'student name' ||
+        value == 'name' ||
+        value == 'students',
+  );
+  final levelIndex = findHeader((value) => value == 'level' || value == 'year level' || value == 'year');
+  final emailIndex = findHeader((value) => value == 'email' || value == 'email address' || value.contains('email'));
   final section = metadata['section']?.toString() ?? '';
   final yearLevel = metadata['year_level']?.toString() ?? '';
   final students = <Map<String, dynamic>>[];

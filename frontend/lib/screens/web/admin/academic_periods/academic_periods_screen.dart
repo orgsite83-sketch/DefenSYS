@@ -224,7 +224,7 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
         primaryAction: DefensysEmptyAction(
           label: 'Add School Year',
           icon: Icons.add_rounded,
-          onPressed: state.isSaving ? () {} : _showAddSchoolYearDialog,
+          onPressed: state.isSaving ? () {} : _showAddYearDialog,
         ),
       );
     }

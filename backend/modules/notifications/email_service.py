@@ -66,6 +66,23 @@ def send_password_reset_email(user, reset_url: str) -> bool:
     )
 
 
+def send_password_reset_otp_email(user, otp_code: str) -> bool:
+    """Send a 6-digit password reset verification code to the user."""
+    expiry_seconds = getattr(settings, 'PASSWORD_RESET_OTP_TIMEOUT', 600)
+    html = render_to_string('emails/password_reset_otp.html', {
+        'user': user,
+        'otp_code': otp_code,
+        'app_name': 'DefenSYS',
+        'expiry_minutes': max(1, expiry_seconds // 60),
+    })
+    return _send(
+        subject='DefenSYS — Password Reset Verification Code',
+        html_body=html,
+        recipient_email=user.email,
+    )
+
+
+
 def send_admin_password_reset_email(user) -> bool:
     """Notify the user that an admin reset their password."""
     html = render_to_string('emails/admin_password_reset.html', {

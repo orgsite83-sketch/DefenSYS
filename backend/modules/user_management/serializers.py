@@ -261,13 +261,24 @@ class ManagedUserSerializer(serializers.ModelSerializer):
 
 
 class BulkUserRowSerializer(serializers.Serializer):
-    id_number = serializers.CharField(max_length=150)
+    id_number = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    username = serializers.CharField(required=False, allow_blank=True, max_length=150)
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
     role = serializers.ChoiceField(choices=[choice[0] for choice in User.ROLE_CHOICES], default='student')
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    instructor = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    instructor_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    faculty = serializers.CharField(required=False, allow_blank=True, max_length=150)
+
+    def validate(self, attrs):
+        id_num = (attrs.get('id_number') or attrs.get('username') or '').strip()
+        if not id_num:
+            raise serializers.ValidationError({'id_number': 'ID number or username is required.'})
+        attrs['id_number'] = id_num
+        return attrs
 
     def validate_year_level(self, value):
         if not value:
@@ -289,6 +300,9 @@ class OfficialClassListStudentSerializer(serializers.Serializer):
     program = serializers.CharField(required=False, allow_blank=True, max_length=80)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    instructor = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    instructor_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
+    faculty = serializers.CharField(required=False, allow_blank=True, max_length=150)
 
     def validate(self, attrs):
         if not attrs.get('full_name') and not (attrs.get('first_name') or attrs.get('last_name')):

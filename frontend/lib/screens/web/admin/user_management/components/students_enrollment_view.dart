@@ -3,17 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
-import 'package:defensys/services/user_management_provider.dart';
-import 'package:defensys/toasts/feedback_toast.dart';
-import 'package:defensys/utils/csv_file_io.dart';
-import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 
-import '../dialogs/add_student_dialog.dart';
-import '../dialogs/user_create_edit_dialog.dart';
-import '../../widgets/student_records_rollover_modal.dart';
-import '../bulk_import/official_class_list_parser.dart';
+import '../dialogs/student_profile_details_dialog.dart';
 
 /// The Students & Academic Enrollment view within User Management.
 class StudentsEnrollmentView extends ConsumerStatefulWidget {
@@ -58,13 +51,6 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     super.dispose();
   }
 
-  int _asInt(dynamic v) {
-    if (v is int) return v;
-    if (v is num) return v.toInt();
-    if (v != null) return int.tryParse(v.toString()) ?? 0;
-    return 0;
-  }
-
   int _count(StudentAcademicRecordsState state, String key) {
     final value = state.counts[key];
     if (value is int) return value;
@@ -94,495 +80,13 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     return list.sublist(start, end);
   }
 
-  Future<void> _showAddOrEditStudentDialog([Map<String, dynamic>? record]) async {
+  Future<void> _showStudentHistory(Map<String, dynamic> record) async {
     final state = ref.read(studentAcademicRecordsProvider);
-    final payload = await AddStudentDialog.show(
+    await StudentProfileDetailsDialog.show(
       context,
       record: record,
-      students: state.students,
       schoolYears: state.schoolYears,
       activeSemester: state.activeSemester,
-    );
-
-    if (payload != null && mounted) {
-      final notifier = ref.read(studentAcademicRecordsProvider.notifier);
-      final bool success;
-      if (record != null && record['id'] != null) {
-        final recordId = _asInt(record['id']);
-        success = await notifier.updateRecord(recordId, payload);
-      } else {
-        success = await notifier.addRecord(payload);
-      }
-
-      if (success && mounted) {
-        showSuccessToast(
-          context,
-          record != null ? 'Academic record updated.' : 'Student enrolled successfully.',
-        );
-      }
-    }
-  }
-
-  Future<void> _showStudentHistory(Map<String, dynamic> record) async {
-    final username = record['student_username']?.toString() ?? '';
-    final studentName = record['student_name']?.toString() ?? username;
-    final studentEmail = record['student_email']?.toString() ?? '';
-    final studentId = record['student_id'];
-    if (username.isEmpty) return;
-
-    final history = await ref
-        .read(studentAcademicRecordsProvider.notifier)
-        .fetchStudentHistory(username);
-
-    if (!mounted) return;
-
-    final users = ref.read(userManagementProvider).users;
-    Map<String, dynamic> studentUser;
-    try {
-      final existing = users.firstWhere(
-        (u) => (studentId != null && u['id'] == studentId) || u['username'] == username,
-      );
-      studentUser = Map<String, dynamic>.from(existing);
-    } catch (_) {
-      studentUser = {
-        if (studentId != null) 'id': studentId,
-        'username': username,
-        'first_name': record['first_name'] ?? (studentName.contains(' ') ? studentName.split(' ').first : studentName),
-        'last_name': record['last_name'] ?? (studentName.contains(' ') ? studentName.split(' ').skip(1).join(' ') : ''),
-        'name': studentName,
-        'email': studentEmail,
-        'role': 'student',
-        'is_active': record['is_active'] != false,
-      };
-    }
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          final currentIsActive = studentUser['is_active'] != false;
-          final currentName = (studentUser['name']?.toString().trim().isNotEmpty == true)
-              ? studentUser['name']
-              : '${studentUser['first_name'] ?? ''} ${studentUser['last_name'] ?? ''}'.trim();
-          final currentEmail = studentUser['email']?.toString() ?? studentEmail;
-
-          return AlertDialog(
-            title: Row(
-              children: [
-                const Icon(Icons.school_rounded, color: _maroon),
-                const SizedBox(width: 10),
-                const Expanded(
-                  child: Text(
-                    'Student Profile & Enrollment',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800),
-                  ),
-                ),
-              ],
-            ),
-            content: SizedBox(
-              width: 580,
-              child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Student Personal Profile Header Card
-                    Container(
-                      padding: const EdgeInsets.all(16),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF9FAFB),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: _line),
-                      ),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              Container(
-                                width: 44,
-                                height: 44,
-                                decoration: BoxDecoration(
-                                  color: _maroon.withValues(alpha: 0.1),
-                                  shape: BoxShape.circle,
-                                  border: Border.all(color: _maroon.withValues(alpha: 0.3)),
-                                ),
-                                child: const Center(
-                                  child: Icon(
-                                    Icons.person_rounded,
-                                    color: _maroon,
-                                    size: 22,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 14),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      currentName.isNotEmpty ? currentName : studentName,
-                                      style: const TextStyle(
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w800,
-                                        color: _ink,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      currentEmail.isNotEmpty ? currentEmail : 'No email provided',
-                                      style: const TextStyle(
-                                        fontSize: 12.5,
-                                        color: _muted,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      'Student ID: $username',
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.w600,
-                                        color: _muted,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: currentIsActive
-                                      ? const Color(0xFFDCFCE7)
-                                      : const Color(0xFFFEE2E2),
-                                  borderRadius: BorderRadius.circular(99),
-                                ),
-                                child: Text(
-                                  currentIsActive ? 'Active' : 'Inactive',
-                                  style: TextStyle(
-                                    fontSize: 11,
-                                    fontWeight: FontWeight.w700,
-                                    color: currentIsActive
-                                        ? const Color(0xFF166534)
-                                        : const Color(0xFF991B1B),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final payload = await UserCreateEditDialog.show(
-                                      context,
-                                      user: studentUser,
-                                    );
-                                    if (payload != null && mounted) {
-                                      final id = studentUser['id'];
-                                      if (id != null) {
-                                        final success = await ref
-                                            .read(userManagementProvider.notifier)
-                                            .updateUser(
-                                              id is int ? id : int.parse(id.toString()),
-                                              payload,
-                                            );
-                                        if (success && mounted) {
-                                          showSuccessToast(context, 'Student profile updated.');
-                                          ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
-                                          ref.read(userManagementProvider.notifier).fetchUsers();
-                                          setDialogState(() {
-                                            studentUser.addAll(payload);
-                                            if (payload['first_name'] != null || payload['last_name'] != null) {
-                                              studentUser['name'] = '${payload['first_name'] ?? ''} ${payload['last_name'] ?? ''}'.trim();
-                                            }
-                                          });
-                                        }
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.person_outline_rounded, size: 15),
-                                  label: const Text('Edit User Profile'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: _maroon,
-                                    side: const BorderSide(color: _line),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: OutlinedButton.icon(
-                                  onPressed: () async {
-                                    final name = studentUser['first_name'] ?? studentUser['name'] ?? username;
-                                    final confirmed = await showConfirmDialog(
-                                      context,
-                                      title: 'Reset Password?',
-                                      message: 'Reset password for $name to their default ID number ($username)?',
-                                      confirmLabel: 'Reset Password',
-                                    );
-                                    if (confirmed == true && mounted) {
-                                      final id = studentUser['id'];
-                                      if (id != null) {
-                                        await ref
-                                            .read(userManagementProvider.notifier)
-                                            .resetUserPassword(
-                                              id is int ? id : int.parse(id.toString()),
-                                            );
-                                        if (mounted) {
-                                          showSuccessToast(context, 'Password reset to default ID number.');
-                                        }
-                                      }
-                                    }
-                                  },
-                                  icon: const Icon(Icons.lock_reset_rounded, size: 15),
-                                  label: const Text('Reset Password'),
-                                  style: OutlinedButton.styleFrom(
-                                    foregroundColor: DefensysUi.warningText,
-                                    side: const BorderSide(color: _line),
-                                    padding: const EdgeInsets.symmetric(vertical: 10),
-                                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    const Text(
-                      'ENROLLMENT HISTORY',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: 0.8,
-                        color: _muted,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    history.isEmpty
-                        ? const Padding(
-                            padding: EdgeInsets.all(16),
-                            child: Center(child: Text('No historical records found.')),
-                          )
-                        : ListView.separated(
-                            shrinkWrap: true,
-                            physics: const NeverScrollableScrollPhysics(),
-                            itemCount: history.length,
-                            separatorBuilder: (_, __) => const Divider(height: 1),
-                            itemBuilder: (_, i) {
-                              final item = history[i];
-                              final isCurrent = item['id'] == record['id'];
-                              return ListTile(
-                                dense: true,
-                                leading: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                  decoration: BoxDecoration(
-                                    color: isCurrent ? const Color(0xFFDCFCE7) : const Color(0xFFF3F4F6),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Text(
-                                    item['year_level']?.toString() ?? '-',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w700,
-                                      color: isCurrent ? const Color(0xFF166534) : _ink,
-                                    ),
-                                  ),
-                                ),
-                                title: Text(
-                                  '${item['school_year'] ?? ''} · ${item['semester'] ?? ''}',
-                                  style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13),
-                                ),
-                                subtitle: Text(
-                                  'Section: ${item['section']?.toString().isEmpty ?? true ? 'No Section' : item['section']}',
-                                  style: const TextStyle(fontSize: 12, color: _muted),
-                                ),
-                                trailing: isCurrent
-                                    ? const Chip(
-                                        label: Text('Active Term', style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700)),
-                                        backgroundColor: Color(0xFFDCFCE7),
-                                        labelStyle: TextStyle(color: Color(0xFF166534)),
-                                        padding: EdgeInsets.zero,
-                                      )
-                                    : null,
-                              );
-                            },
-                          ),
-                  ],
-                ),
-              ),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(),
-                child: const Text('Close'),
-              ),
-              FilledButton.icon(
-                onPressed: () {
-                  Navigator.of(ctx).pop();
-                  _showAddOrEditStudentDialog(record);
-                },
-                icon: const Icon(Icons.edit_note_rounded, size: 16),
-                label: const Text('Edit Academic Record'),
-                style: FilledButton.styleFrom(backgroundColor: _maroon),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  Future<void> _showRolloverDialog() async {
-    final rolloverSearchCtrl = TextEditingController();
-    final actions = <String, String>{};
-    bool hasCsv = false;
-
-    await ref
-        .read(studentAcademicRecordsProvider.notifier)
-        .fetchRolloverPreview(students: []);
-
-    if (!mounted) return;
-
-    await showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (dialogCtx) => StatefulBuilder(
-        builder: (context, setModalState) {
-          final state = ref.watch(studentAcademicRecordsProvider);
-
-          final filtered = state.rolloverRows.where((row) {
-            final q = rolloverSearchCtrl.text.trim().toLowerCase();
-            if (q.isEmpty) return true;
-            final rec = row['record'] as Map? ?? {};
-            final name = rec['student_name']?.toString().toLowerCase() ?? '';
-            final user = rec['student_username']?.toString().toLowerCase() ?? '';
-            return name.contains(q) || user.contains(q);
-          }).toList();
-
-          int nonDropCount = 0;
-          for (final row in state.rolloverRows) {
-            final rec = row['record'] as Map? ?? {};
-            final key = rec['id'] != null
-                ? rec['id'].toString()
-                : rec['student_username']?.toString() ?? '';
-            final act = actions[key] ?? row['action_default'] ?? 'promote';
-            if (act != 'drop') nonDropCount++;
-          }
-
-          return StudentRecordsRolloverModal(
-            useWarningChrome: false,
-            activeLabel: state.activeSemester?['display_name'] ??
-                '${state.activeSemester?['school_year']} ${state.activeSemester?['label']}',
-            totalCount: state.rolloverRows.length,
-            missingCount: 0,
-            searchQuery: rolloverSearchCtrl.text,
-            filtered: filtered,
-            rolloverSearchCtrl: rolloverSearchCtrl,
-            actions: actions,
-            onPromoteAll: () {
-              setModalState(() {
-                for (final row in state.rolloverRows) {
-                  final rec = row['record'] as Map? ?? {};
-                  final key = rec['id'] != null
-                      ? rec['id'].toString()
-                      : rec['student_username']?.toString() ?? '';
-                  actions[key] = 'promote';
-                }
-              });
-            },
-            onRetainAll: () {
-              setModalState(() {
-                for (final row in state.rolloverRows) {
-                  final rec = row['record'] as Map? ?? {};
-                  final key = rec['id'] != null
-                      ? rec['id'].toString()
-                      : rec['student_username']?.toString() ?? '';
-                  actions[key] = 'retain';
-                }
-              });
-            },
-            onSearchChanged: (_) => setModalState(() {}),
-            onSearchClear: () {
-              rolloverSearchCtrl.clear();
-              setModalState(() {});
-            },
-            onActionChanged: (key, val) {
-              if (val != null) setModalState(() => actions[key] = val);
-            },
-            onClose: () => Navigator.of(dialogCtx).pop(),
-            onConfirm: () async {
-              final confirmActions = <Map<String, dynamic>>[];
-              for (final row in state.rolloverRows) {
-                final rec = row['record'] as Map? ?? {};
-                final key = rec['id'] != null
-                    ? rec['id'].toString()
-                    : rec['student_username']?.toString() ?? '';
-                final act = actions[key] ?? row['action_default'] ?? 'promote';
-
-                final pr = row['promote_result'] as Map? ?? {};
-                confirmActions.add({
-                  'record_id': rec['id'],
-                  'username': rec['student_username'],
-                  'first_name': rec['first_name'],
-                  'last_name': rec['last_name'],
-                  'email': rec['student_email'],
-                  'action': act,
-                  'year_level': pr['year_level'],
-                  'section': pr['section'],
-                });
-              }
-
-              final ok = await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .confirmRollover(confirmActions);
-
-              if (ok && mounted) {
-                Navigator.of(dialogCtx).pop();
-                showSuccessToast(context, 'Rollover completed successfully.');
-              }
-            },
-            nonDropCount: nonDropCount,
-            rolloverHasTarget: (row, act) => true,
-            rolloverResult: (row, act) {
-              if (act == 'drop') return 'Excluded from new term (LOA / Dropped)';
-              if (act == 'retain') return 'Retained in same year level';
-              final pr = row['promote_result'] as Map? ?? {};
-              return 'Enrolled in ${pr['year_level'] ?? 'Next Level'} (${pr['section'] ?? 'Class Section'})';
-            },
-            asInt: _asInt,
-            hasCsvUploaded: hasCsv,
-            onUploadCsv: () async {
-              final csv = await pickCsvTextFile();
-              if (csv == null) return;
-              final parsed = parseOfficialClassListCsv(csv);
-              if (parsed.students.isEmpty) {
-                if (mounted) {
-                  showErrorToast(context, 'No valid student rows found in CSV file.');
-                }
-                return;
-              }
-
-              hasCsv = true;
-              await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .fetchRolloverPreview(students: parsed.students);
-              setModalState(() {});
-            },
-            onClearCsv: () async {
-              hasCsv = false;
-              await ref
-                  .read(studentAcademicRecordsProvider.notifier)
-                  .fetchRolloverPreview(students: []);
-              setModalState(() {});
-            },
-            hasValidationErrors: false,
-          );
-        },
-      ),
     );
   }
 
@@ -623,8 +127,10 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             Expanded(
               child: _buildMetricCard(
                 title: 'Students',
-                value: '${_count(state, 'students_with_records')}',
-                subtitle: 'Distinct student accounts',
+                value: '${state.records.isNotEmpty ? _count(state, 'students_with_records') : state.students.length}',
+                subtitle: state.records.isEmpty && state.students.isNotEmpty
+                    ? 'Unenrolled student accounts'
+                    : 'Distinct student accounts',
                 icon: Icons.school_outlined,
                 iconColor: const Color(0xFF059669),
                 iconBg: const Color(0xFFECFDF5),
@@ -634,15 +140,43 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             Expanded(
               child: _buildMetricCard(
                 title: 'Active Term',
-                value: state.activeSemester?['label']?.toString() ?? 'Active Sem',
-                subtitle: state.activeSemester?['school_year']?.toString() ?? 'A.Y. Configured',
+                value: state.activeSemester?['label']?.toString() ?? 'None Active',
+                subtitle: state.activeSemester?['school_year']?.toString() ?? 'Setup in Academic Periods',
                 icon: Icons.calendar_today_rounded,
-                iconColor: _gold,
+                iconColor: state.activeSemester != null ? _gold : const Color(0xFFD97706),
                 iconBg: const Color(0xFFFEF3C7),
               ),
             ),
           ],
         ),
+
+        if (state.activeSemester == null && state.students.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFEF3C7),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFFDE68A)),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.info_outline_rounded, color: Color(0xFF92400E), size: 20),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '${state.students.length} student account(s) have been imported into the system, but no academic semester is active. Go to Academic Periods in the sidebar to create and activate a school year and semester.',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
 
         const SizedBox(height: 22),
 
@@ -721,10 +255,19 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                 DefensysSkeleton.list(count: 6, rowHeight: 52)
               else if (visibleRows.isEmpty)
                 DefensysEmptyState.table(
-                  icon: Icons.person_off_outlined,
-                  title: 'No Student Records Found',
-                  description:
-                      'No student records match your active search criteria or filter parameters.',
+                  icon: (state.activeSemester == null && state.students.isNotEmpty)
+                      ? Icons.info_outline_rounded
+                      : Icons.person_off_outlined,
+                  title: (state.activeSemester == null && state.students.isNotEmpty)
+                      ? 'No Active Semester Configured'
+                      : (state.students.isNotEmpty && state.records.isEmpty)
+                          ? 'Unenrolled Student Accounts Found'
+                          : 'No Student Records Found',
+                  description: (state.activeSemester == null && state.students.isNotEmpty)
+                      ? '${state.students.length} student account(s) are registered in the system, but no semester is currently active. Please set up and activate an academic semester in Setup & Configuration > Academic Periods to enroll students.'
+                      : (state.students.isNotEmpty && state.records.isEmpty)
+                          ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
+                          : 'No student records match your active search criteria or filter parameters.',
                   size: DefensysEmptyStateSize.standard,
                 )
               else
@@ -903,143 +446,206 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
     );
   }
 
-  Widget _buildTable(List<Map<String, dynamic>> rows) {
-    return Table(
-      columnWidths: const {
-        0: FlexColumnWidth(2.5),
-        1: FlexColumnWidth(1.4),
-        2: FlexColumnWidth(1.4),
-        3: FlexColumnWidth(2.2),
-        4: FlexColumnWidth(1.2),
-      },
-      defaultVerticalAlignment: TableCellVerticalAlignment.middle,
-      children: [
-        // Header
-        TableRow(
-          decoration: const BoxDecoration(
-            border: Border(bottom: BorderSide(color: _line, width: 1.5)),
-          ),
-          children: [
-            _th('Student'),
-            _th('Year Level'),
-            _th('Section'),
-            _th('Academic Period'),
-            _th('Action', align: TextAlign.end),
-          ],
-        ),
-        // Rows
-        ...rows.asMap().entries.map((e) {
-          final index = e.key;
-          final r = e.value;
-          final isEven = index.isEven;
-          final yearLevel = r['year_level']?.toString() ?? 'Unassigned';
-          final section = r['section']?.toString().trim() ?? '';
-          final period = '${r['semester'] ?? ''}, ${r['school_year'] ?? ''}';
+  static const List<_StudentColumnSpec> _columns = [
+    _StudentColumnSpec('Student', 2.8),
+    _StudentColumnSpec('Year Level', 1.5),
+    _StudentColumnSpec('Section', 2.2),
+    _StudentColumnSpec('Academic Period', 2.4),
+    _StudentColumnSpec('Action', 1.1),
+  ];
 
-          return TableRow(
-            decoration: BoxDecoration(
-              color: isEven ? Colors.white : const Color(0xFFFAFAFA),
-              border: const Border(bottom: BorderSide(color: _line)),
-            ),
-            children: [
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      r['student_name']?.toString() ?? r['student_username']?.toString() ?? 'Student',
-                      style: const TextStyle(
-                        fontSize: 13.5,
-                        fontWeight: FontWeight.w700,
-                        color: _ink,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      r['student_username']?.toString() ?? '',
-                      style: const TextStyle(fontSize: 12, color: _muted),
-                    ),
-                  ],
+  Widget _buildTable(List<Map<String, dynamic>> rows) {
+    return Column(
+      children: [
+        _tableHeader(_columns),
+        ...rows.map((r) => _studentRow(r)),
+      ],
+    );
+  }
+
+  Widget _tableHeader(List<_StudentColumnSpec> columns) {
+    return Container(
+      height: 51,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0F1F4),
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Row(
+        children: columns.map((col) => _tableHeaderCell(col)).toList(),
+      ),
+    );
+  }
+
+  Widget _tableHeaderCell(_StudentColumnSpec column) {
+    return Expanded(
+      flex: (column.flex * 100).round(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        alignment: Alignment.centerLeft,
+        child: Text(
+          column.title,
+          style: const TextStyle(
+            color: Color(0xFF5D6678),
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tableCell(Widget child, {required double flex}) {
+    return Expanded(
+      flex: (flex * 100).round(),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 15),
+        alignment: Alignment.centerLeft,
+        child: child,
+      ),
+    );
+  }
+
+  Widget _studentRow(Map<String, dynamic> r) {
+    final yearLevel = r['year_level']?.toString() ?? 'Unassigned';
+    final section = r['section']?.toString().trim() ?? '';
+    final period = '${r['semester'] ?? ''}, ${r['school_year'] ?? ''}';
+
+    return Container(
+      height: 57,
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+      ),
+      child: Row(
+        children: [
+          _tableCell(
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  r['student_name']?.toString() ??
+                      r['student_username']?.toString() ??
+                      'Student',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                    color: _ink,
+                  ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFEFF6FF),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFDBEAFE)),
-                    ),
-                    child: Text(
-                      yearLevel,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w700,
-                        color: Color(0xFF1D4ED8),
-                      ),
-                    ),
+                const SizedBox(height: 2),
+                Text(
+                  r['student_username']?.toString() ?? '',
+                  style: const TextStyle(fontSize: 11.5, color: _muted),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+            flex: 2.8,
+          ),
+          _tableCell(
+            Align(
+              alignment: Alignment.centerLeft,
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFDBEAFE)),
+                ),
+                child: Text(
+                  yearLevel,
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF1D4ED8),
                   ),
                 ),
               ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
+            ),
+            flex: 1.5,
+          ),
+          _tableCell(
+            Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   section.isEmpty ? '—' : section,
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
                     color: _ink,
                   ),
+                  overflow: TextOverflow.ellipsis,
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Text(
-                  period,
-                  style: const TextStyle(fontSize: 13, color: _muted),
-                ),
-              ),
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 12),
-                child: Align(
-                  alignment: Alignment.centerRight,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showStudentHistory(r),
-                    icon: const Icon(Icons.folder_open_rounded, size: 14),
-                    label: const Text('Details'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: _maroon,
-                      side: const BorderSide(color: Color(0xFFFECDD3)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                    ),
+                if (r['instructor_name'] != null &&
+                    r['instructor_name'].toString().trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.co_present_rounded,
+                          size: 11, color: Color(0xFF16A34A)),
+                      const SizedBox(width: 3),
+                      Flexible(
+                        child: Text(
+                          '${r['instructor_name']}',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w500,
+                            color: Color(0xFF15803D),
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
                   ),
-                ),
-              ),
-            ],
-          );
-        }),
-      ],
+                ],
+              ],
+            ),
+            flex: 2.2,
+          ),
+          _tableCell(
+            Text(
+              period,
+              style: const TextStyle(fontSize: 12.5, color: _muted),
+              overflow: TextOverflow.ellipsis,
+            ),
+            flex: 2.4,
+          ),
+          _tableCell(
+            _rowActions(r),
+            flex: 1.1,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _th(String title, {TextAlign align = TextAlign.start}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
-      child: Text(
-        title.toUpperCase(),
-        textAlign: align,
-        style: const TextStyle(
-          fontSize: 11.5,
-          fontWeight: FontWeight.w700,
-          color: _muted,
-          letterSpacing: 0.5,
+  Widget _rowActions(Map<String, dynamic> r) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Tooltip(
+          message: 'Student Details',
+          waitDuration: const Duration(milliseconds: 300),
+          child: InkWell(
+            onTap: () => _showStudentHistory(r),
+            borderRadius: BorderRadius.circular(6),
+            child: const Padding(
+              padding: EdgeInsets.all(4),
+              child: Icon(
+                Icons.info_outline_rounded,
+                color: DefensysUi.techBlue,
+                size: 19,
+              ),
+            ),
+          ),
         ),
-      ),
+      ],
     );
   }
 
@@ -1096,4 +702,10 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       ],
     );
   }
+}
+
+class _StudentColumnSpec {
+  const _StudentColumnSpec(this.title, this.flex);
+  final String title;
+  final double flex;
 }
