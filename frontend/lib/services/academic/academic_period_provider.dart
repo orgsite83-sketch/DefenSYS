@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 import '../grading/grade_center_provider.dart';
+import 'student_academic_records_provider.dart';
 import 'student_teams_provider.dart';
 
 final academicPeriodProvider =
@@ -308,6 +309,14 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     } catch (e, st) {
       assert(() {
         debugPrint('gradeCenter refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('studentAcademicRecords refresh after period save failed: $e\n$st');
         return true;
       }());
     }

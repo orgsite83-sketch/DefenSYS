@@ -16,6 +16,7 @@ class UserBulkImportDraft {
     required this.savedAt,
     this.rowCount = 0,
     this.warningCount = 0,
+    this.isOpen = true,
   });
 
   final String csv;
@@ -26,6 +27,7 @@ class UserBulkImportDraft {
   final DateTime savedAt;
   final int rowCount;
   final int warningCount;
+  final bool isOpen;
 
   Map<String, dynamic> toJson() => {
     'csv': csv,
@@ -36,6 +38,7 @@ class UserBulkImportDraft {
     'saved_at': savedAt.toIso8601String(),
     'row_count': rowCount,
     'warning_count': warningCount,
+    'is_open': isOpen,
   };
 
   factory UserBulkImportDraft.fromJson(Map<String, dynamic> json) {
@@ -55,6 +58,7 @@ class UserBulkImportDraft {
       warningCount: json['warning_count'] is int
           ? json['warning_count'] as int
           : int.tryParse(json['warning_count']?.toString() ?? '') ?? 0,
+      isOpen: json['is_open'] != false,
     );
   }
 }

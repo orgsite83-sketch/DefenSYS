@@ -744,22 +744,14 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
           _buildSectionHeader('Defense Operations'),
           _buildSidebarItem(
-            icon: Icons.event_outlined,
-            label: 'Defense Scheduler',
-            onTap: () => _afterSidebarAction(
-              isWide,
-              () => _goToSection('defense_scheduler'),
-            ),
-            isActive: _activeSection == 'defense_scheduler',
-          ),
-          _buildSidebarItem(
-            icon: Icons.view_list_outlined,
-            label: 'Defense Board',
+            icon: Icons.view_agenda_outlined,
+            label: 'Defense Operations',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('defense_board'),
             ),
-            isActive: _activeSection == 'defense_board',
+            isActive: _activeSection == 'defense_board' ||
+                _activeSection == 'defense_scheduler',
           ),
           _buildSidebarItem(
             icon: Icons.grading_outlined,
@@ -810,8 +802,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             isActive: _activeSection == 'deliverables',
           ),
           _buildSidebarItem(
-            icon: Icons.view_list_outlined,
-            label: 'Defense Board',
+            icon: Icons.view_agenda_outlined,
+            label: 'Defense Operations',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('defense_board'),
@@ -872,10 +864,10 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
             ),
             isActive: _activeSection == 'dashboard',
           ),
-          _buildSectionHeader('Scheduling'),
+          _buildSectionHeader('Operations'),
           _buildSidebarItem(
-            icon: Icons.view_list_outlined,
-            label: 'Defense Board',
+            icon: Icons.view_agenda_outlined,
+            label: 'Defense Operations',
             onTap: () => _afterSidebarAction(
               isWide,
               () => _goToSection('defense_board'),

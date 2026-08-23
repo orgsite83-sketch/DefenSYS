@@ -180,7 +180,10 @@ const Map<String, String> sampleStudentCsvByYear = {
 
 const sampleFacultyCsvTemplate =
     '$studentBulkImportHeader\n'
-    'FAC-0001,Ada,Lovelace,ada@ustp.edu.ph,faculty\n';
+    'FAC-0001,Ada,Lovelace,ada@ustp.edu.ph,faculty\n'
+    'FAC-0002,Alan,Turing,a.turing@ustp.edu.ph,"Panelist, Adviser"\n'
+    'FAC-0003,Grace,Hopper,g.hopper@ustp.edu.ph,"PIT Lead 1st Year, Panelist"\n'
+    'FAC-0004,Dennis,Ritchie,d.ritchie@ustp.edu.ph,admin\n';
 
 String sampleStudentCsvForYear(String yearLevel) =>
     (sampleOfficialClassListCsvByYear[yearLevel] ??

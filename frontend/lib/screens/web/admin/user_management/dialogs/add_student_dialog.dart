@@ -156,20 +156,22 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
       }
     }
 
-    // 2. Gather all actual sections from faculty instructor assignments matching this year level
-    final users = ref.read(userManagementProvider).users;
-    for (final u in users) {
-      final assignments = u['instructor_assignments'] as List?;
-      if (assignments != null) {
-        for (final a in assignments) {
-          if (a is Map) {
-            final yl = a['year_level']?.toString().trim();
-            final sec = a['section']?.toString().trim();
-            if (yl == yearLevel.trim() &&
-                sec != null &&
-                sec.isNotEmpty &&
-                sec.toUpperCase() != 'BSIT') {
-              sections.add(sec);
+    // 2. Gather all actual sections from faculty instructor assignments matching this year level (PIT only)
+    if (!yearLevel.contains('4th')) {
+      final users = ref.read(userManagementProvider).users;
+      for (final u in users) {
+        final assignments = u['instructor_assignments'] as List?;
+        if (assignments != null) {
+          for (final a in assignments) {
+            if (a is Map) {
+              final yl = a['year_level']?.toString().trim();
+              final sec = a['section']?.toString().trim();
+              if (yl == yearLevel.trim() &&
+                  sec != null &&
+                  sec.isNotEmpty &&
+                  sec.toUpperCase() != 'BSIT') {
+                sections.add(sec);
+              }
             }
           }
         }

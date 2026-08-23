@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
@@ -65,7 +66,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       _currentTab = UserManagementTab.faculty;
       _bulkImportType = 'faculty';
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final draft = await loadUserBulkImportDraft();
+      if (mounted && draft != null && draft.isOpen && draft.rowCount > 0 && _subView == _SubView.none && !widget.initialBulkImport) {
+        if (draft.importType == 'faculty') {
+          _openBulkImport('faculty');
+        } else if (draft.importType == 'student') {
+          _openStudentBatchHub();
+        }
+      }
       ref.read(userManagementProvider.notifier).fetchUsers();
       ref.read(academicPeriodProvider.notifier).fetchPeriods();
       ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
@@ -207,11 +216,12 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
   Future<void> _showAddStudentDialog() async {
     final state = ref.read(studentAcademicRecordsProvider);
+    final activeSem = ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
     final payload = await AddStudentDialog.show(
       context,
       students: state.students,
       schoolYears: state.schoolYears,
-      activeSemester: state.activeSemester,
+      activeSemester: activeSem,
     );
 
     if (payload != null && mounted) {
@@ -241,6 +251,7 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
       builder: (dialogCtx) => StatefulBuilder(
         builder: (context, setModalState) {
           final state = ref.watch(studentAcademicRecordsProvider);
+          final activeSem = ref.watch(academicPeriodProvider).activeSemester ?? state.activeSemester;
 
           final filtered = state.rolloverRows.where((row) {
             final q = rolloverSearchCtrl.text.trim().toLowerCase();
@@ -263,8 +274,8 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
 
           return StudentRecordsRolloverModal(
             useWarningChrome: false,
-            activeLabel: state.activeSemester?['display_name'] ??
-                '${state.activeSemester?['school_year']} ${state.activeSemester?['label']}',
+            activeLabel: activeSem?['display_name'] ??
+                '${activeSem?['school_year']} ${activeSem?['label']}',
             totalCount: state.rolloverRows.length,
             missingCount: 0,
             searchQuery: rolloverSearchCtrl.text,
@@ -460,6 +471,15 @@ class _UserManagementScreenState extends ConsumerState<UserManagementScreen> {
     final state = ref.watch(userManagementProvider);
     final academicState = ref.watch(academicPeriodProvider);
     final studentState = ref.watch(studentAcademicRecordsProvider);
+
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+      if ((next == DefensysAdminSection.userManagement || next == DefensysAdminSection.studentAcademicRecords) &&
+          previous != next) {
+        ref.read(userManagementProvider.notifier).fetchUsers();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+      }
+    });
 
     if (_subView == _SubView.studentBatchHub) {
       return StudentBatchEnrollmentHubView(

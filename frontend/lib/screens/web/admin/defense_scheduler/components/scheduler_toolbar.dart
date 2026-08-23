@@ -7,15 +7,11 @@ class SchedulerToolbar extends StatelessWidget {
   const SchedulerToolbar({
     super.key,
     required this.state,
-    required this.canSchedule,
-    required this.onOpenManualDialog,
-    required this.onOpenImportDialog,
+    this.onBack,
   });
 
   final DefenseSchedulerState state;
-  final bool canSchedule;
-  final VoidCallback onOpenManualDialog;
-  final VoidCallback onOpenImportDialog;
+  final VoidCallback? onBack;
 
   @override
   Widget build(BuildContext context) {
@@ -61,63 +57,45 @@ class SchedulerToolbar extends StatelessWidget {
             ],
           ),
         ),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            SizedBox(
-              height: 42,
-              child: OutlinedButton.icon(
-                onPressed: state.isSaving || !canSchedule
-                    ? null
-                    : onOpenManualDialog,
-                icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                label: const Text('Manual Schedule Form'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.textPrimary,
-                  side: const BorderSide(color: Color(0xFFD0D5DD)),
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 0,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14,
-                  ),
+        if (onBack != null || Navigator.canPop(context)) ...[
+          const SizedBox(width: 16),
+          SizedBox(
+            height: 40,
+            child: OutlinedButton.icon(
+              onPressed: () {
+                if (onBack != null) {
+                  onBack!();
+                } else {
+                  Navigator.pop(context);
+                }
+              },
+              style: OutlinedButton.styleFrom(
+                elevation: 0,
+                foregroundColor: const Color(0xFF334155),
+                side: const BorderSide(color: Color(0xFFCBD5E1)),
+                backgroundColor: Colors.white,
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(
+                Icons.arrow_back_rounded,
+                size: 16,
+                color: Color(0xFF64748B),
+              ),
+              label: const Text(
+                'Back to Defense Operations',
+                style: TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 13,
+                  color: Color(0xFF334155),
                 ),
               ),
             ),
-            SizedBox(
-              height: 42,
-              child: ElevatedButton.icon(
-                onPressed: state.isSaving || !canSchedule
-                    ? null
-                    : onOpenImportDialog,
-                icon: const Icon(Icons.upload_file_rounded, size: 18),
-                label: const Text('Import Schedule'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.maroon,
-                  foregroundColor: AppColors.gold,
-                  elevation: 0,
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 18,
-                    vertical: 0,
-                  ),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  textStyle: const TextStyle(
-                    fontWeight: FontWeight.w900,
-                    fontSize: 14,
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
+          ),
+        ],
       ],
     );
   }

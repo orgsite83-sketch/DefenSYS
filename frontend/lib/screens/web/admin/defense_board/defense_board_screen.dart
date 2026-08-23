@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../services/defense_board_provider.dart';
+import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../defense_scheduler/defense_scheduler_screen.dart';
+import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
+import '../defense_scheduler/dialogs/venue_conflict_dialog.dart';
+import '../grade_center/grade_center_screen.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../faculty/minutes_form_screen.dart';
@@ -19,6 +25,7 @@ class DefenseBoardScreen extends ConsumerStatefulWidget {
 class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final TextEditingController _searchController = TextEditingController();
   int? _selectedMinutesScheduleId;
+  bool _showScheduler = false;
 
   @override
   void initState() {
@@ -42,6 +49,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         onBack: () {
           setState(() {
             _selectedMinutesScheduleId = null;
+          });
+          ref.read(defenseBoardProvider.notifier).fetchBoard();
+        },
+      );
+    }
+
+    if (_showScheduler) {
+      return DefenseSchedulerScreen(
+        onBack: () {
+          setState(() {
+            _showScheduler = false;
           });
           ref.read(defenseBoardProvider.notifier).fetchBoard();
         },
@@ -131,7 +149,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
                   SizedBox(width: 8),
                   Text(
-                    'Defense Board',
+                    'Defense Operations',
                     style: TextStyle(
                       fontSize: 21,
                       fontWeight: FontWeight.w800,
@@ -144,7 +162,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               const SizedBox(height: 8),
               Text(
                 state.activeSemester?['display_name']?.toString() ??
-                    'View all scheduled defense slots across stages and dates.',
+                    'Live defense schedule, room timetable, and session operations.',
                 style: const TextStyle(
                   fontSize: 15,
                   color: AppColors.textSecondary,
@@ -155,26 +173,108 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           ),
         ),
         if (canSchedule) ...[
-          const SizedBox(width: 20),
-          SizedBox(
-            height: 42,
-            child: ElevatedButton.icon(
-              onPressed: _openScheduler,
-              style: ElevatedButton.styleFrom(
-                elevation: 0,
-                backgroundColor: AppColors.maroon,
-                foregroundColor: AppColors.gold,
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 0),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
+          const SizedBox(width: 16),
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            alignment: WrapAlignment.end,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              // Tertiary / Quick Direct Action: Manual Schedule Form
+              SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  onPressed: _openManualScheduleDialog,
+                  style: OutlinedButton.styleFrom(
+                    elevation: 0,
+                    foregroundColor: const Color(0xFF334155),
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    backgroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.edit_calendar_outlined,
+                    size: 16,
+                    color: Color(0xFF64748B),
+                  ),
+                  label: const Text(
+                    'Manual Schedule',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w700,
+                      fontSize: 13,
+                      color: Color(0xFF334155),
+                    ),
+                  ),
                 ),
               ),
-              icon: const Icon(Icons.auto_fix_high, size: 18),
-              label: const Text(
-                'New Schedule Run',
-                style: TextStyle(fontWeight: FontWeight.w800),
+              // Secondary / File Ingestion Action: Import Schedule (Warm Amber Pill)
+              SizedBox(
+                height: 40,
+                child: OutlinedButton.icon(
+                  onPressed: _openImportScheduleDialog,
+                  style: OutlinedButton.styleFrom(
+                    elevation: 0,
+                    foregroundColor: const Color(0xFF92400E),
+                    side: const BorderSide(color: Color(0xFFFCD34D)),
+                    backgroundColor: const Color(0xFFFFFBEB),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.upload_file_rounded,
+                    size: 16,
+                    color: Color(0xFFB45309),
+                  ),
+                  label: const Text(
+                    'Import Schedule',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: Color(0xFF92400E),
+                    ),
+                  ),
+                ),
               ),
-            ),
+              // Primary Hero CTA: Generate Schedule (Academic Maroon + Gold Accent)
+              SizedBox(
+                height: 40,
+                child: ElevatedButton.icon(
+                  onPressed: _openScheduler,
+                  style: ElevatedButton.styleFrom(
+                    elevation: 1,
+                    shadowColor: AppColors.maroon.withValues(alpha: 0.3),
+                    backgroundColor: AppColors.maroon,
+                    foregroundColor: Colors.white,
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                  icon: const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 16,
+                    color: AppColors.gold,
+                  ),
+                  label: const Text(
+                    'Generate Schedule',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w800,
+                      fontSize: 13,
+                      color: Colors.white,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ],
@@ -903,8 +1003,9 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           child: Row(
             children: [
               const _HeaderCell('Time Slot', flex: 1),
-              _HeaderCell('Team & Project Title', flex: isPit ? 6 : 4),
+              _HeaderCell('Team & Project Title', flex: isPit ? 5 : 4),
               if (!isPit) const _HeaderCell('Minutes', flex: 2),
+              const _HeaderCell('Evaluation & Grades', flex: 2),
               const _HeaderCell('Status', flex: 2),
               const _HeaderCell('Action', flex: 1),
             ],
@@ -944,7 +1045,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     ),
                   ),
                   _BodyCell(
-                    flex: isPit ? 6 : 4,
+                    flex: isPit ? 5 : 4,
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -979,6 +1080,10 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                       flex: 2,
                       child: _minutesStatusChip(schedule),
                     ),
+                  _BodyCell(
+                    flex: 2,
+                    child: _evaluationChip(schedule),
+                  ),
                   _BodyCell(
                     flex: 2,
                     child: _statusChip(schedule['status']?.toString() ?? ''),
@@ -1064,17 +1169,18 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
                 ],
                 const SizedBox(height: 10),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     _statusChip(
                       schedule['display_status']?.toString() ??
                           schedule['status']?.toString() ??
                           '',
                     ),
-                    if (!isPit) ...[
-                      const SizedBox(width: 8),
-                      _minutesStatusChip(schedule),
-                    ],
+                    if (!isPit) _minutesStatusChip(schedule),
+                    _evaluationChip(schedule),
                   ],
                 ),
               ],
@@ -1247,19 +1353,117 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
-  Future<void> _openScheduler() async {
+  Future<void> _openManualScheduleDialog() async {
     final user = ref.read(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
 
-    await Navigator.push(
+    final schedNotifier = ref.read(defenseSchedulerProvider.notifier);
+    await schedNotifier.fetchSchedules();
+    final schedState = ref.read(defenseSchedulerProvider);
+    final scope = isAdmin ? 'capstone' : 'pit';
+
+    if (!mounted) return;
+
+    await ManualSlotEditorDialog.show(
       context,
-      MaterialPageRoute(builder: (_) => const DefenseSchedulerScreen()),
+      ref,
+      state: schedState,
+      initialScope: scope,
+      initialStageId: null,
+      initialRubricId: null,
+      initialAdviserRubricId: null,
+      initialCapstonePeerRubricId: null,
+      initialPeerRubricId: null,
+      initialSelectedPanelistIds: {},
+      initialDocumenterId: null,
+      initialEvent: '',
+      initialPitTemplate: '',
+      initialDate: '',
+      initialTime: '08:00',
+      initialDuration: '60',
+      initialRoom: '',
+      initialPanelWeight: '80',
+      initialPeerWeight: '20',
+      canScheduleScope: (s, sc) {
+        if (sc == 'capstone') return isAdmin && s.canScheduleCapstone;
+        if (sc == 'pit') return isPitLead && !isAdmin && s.canSchedulePit;
+        return false;
+      },
+      scheduleNoticeMessage: (s) {
+        if (isAdmin) {
+          return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
+        }
+        if (isPitLead) {
+          return 'PIT scheduling is strictly managed by the PIT Lead.';
+        }
+        return 'Defense scheduling is restricted.';
+      },
     );
 
     if (!mounted) return;
     ref.read(defenseBoardProvider.notifier).fetchBoard();
+  }
+
+  Future<void> _openImportScheduleDialog() async {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+    if (!isAdmin && !isPitLead) return;
+
+    final schedNotifier = ref.read(defenseSchedulerProvider.notifier);
+    await schedNotifier.fetchSchedules();
+    final schedState = ref.read(defenseSchedulerProvider);
+    final scope = isAdmin ? 'capstone' : 'pit';
+
+    if (!mounted) return;
+
+    await ScheduleImportDialog.show(
+      context,
+      ref,
+      state: schedState,
+      scope: scope,
+      initialStageId: null,
+      initialEventName: '',
+      initialRubricId: null,
+      initialAdviserRubricId: null,
+      initialPeerRubricId: null,
+      initialCapstonePeerRubricId: null,
+      initialDate: '',
+      initialRoom: '',
+      initialDuration: '60',
+      initialPanelWeight: '80',
+      initialPeerWeight: '20',
+      canScheduleScope: (s, sc) {
+        if (sc == 'capstone') return isAdmin && s.canScheduleCapstone;
+        if (sc == 'pit') return isPitLead && !isAdmin && s.canSchedulePit;
+        return false;
+      },
+      scheduleNoticeMessage: (s) {
+        if (isAdmin) {
+          return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
+        }
+        if (isPitLead) {
+          return 'PIT scheduling is strictly managed by the PIT Lead.';
+        }
+        return 'Defense scheduling is restricted.';
+      },
+    );
+
+    if (!mounted) return;
+    ref.read(defenseBoardProvider.notifier).fetchBoard();
+  }
+
+  void _openScheduler() {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+    if (!isAdmin && !isPitLead) return;
+
+    setState(() {
+      _showScheduler = true;
+    });
   }
 
   Future<void> _confirmDelete(int scheduleId, String teamName) async {
@@ -1389,6 +1593,64 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             ),
             const SizedBox(width: 4),
             Icon(Icons.open_in_new_rounded, size: 11, color: fg),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _openEvaluationAndGrades(Map<String, dynamic> schedule) {
+    final location = GoRouterState.of(context).uri.path;
+    if (location.startsWith('/admin/')) {
+      context.go(AdminRoutes.gradeCenter);
+    } else if (location.startsWith('/faculty/')) {
+      context.go(FacultyRoutes.gradeCenter);
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const GradeCenterScreen()),
+      );
+    }
+  }
+
+  Widget _evaluationChip(Map<String, dynamic> schedule) {
+    final status = (schedule['display_status']?.toString() ??
+            schedule['status']?.toString() ??
+            '')
+        .toLowerCase();
+    final isDone = ['done', 'completed'].contains(status);
+
+    final Color bg = isDone ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9);
+    final Color fg = isDone ? const Color(0xFFB45309) : const Color(0xFF475569);
+    final Color border =
+        isDone ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0);
+    final String label = isDone ? 'View Evaluation' : 'Evaluation & Grades';
+
+    return InkWell(
+      onTap: () => _openEvaluationAndGrades(schedule),
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: bg,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.star_rounded, size: 14, color: fg),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: fg,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_forward_ios_rounded, size: 10, color: fg),
           ],
         ),
       ),

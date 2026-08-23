@@ -1,15 +1,20 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:excel/excel.dart' as xl;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:defensys/l10n/l10n_ext.dart';
 import 'package:defensys/navigation/admin_route_paths.dart';
+import 'package:defensys/screens/web/admin/admin_shell.dart';
+import 'package:defensys/services/academic_period_provider.dart';
+import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/dashboard_provider.dart';
 import 'package:defensys/services/student_teams_provider.dart';
 import 'package:defensys/services/unsaved_changes_provider.dart';
+import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 import 'package:defensys/utils/team_bulk_import_csv.dart';
 import 'package:defensys/utils/team_bulk_import_draft.dart';
@@ -263,7 +268,13 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         _parsedBulkRows,
         isCapstoneAdmin: _isCapstoneAdmin,
       );
+      if (draft.isOpen && rows.isNotEmpty) {
+        _showBulkImport = true;
+      }
     });
+    if (_parsedBulkRows.isNotEmpty) {
+      await _refreshBulkPreview();
+    }
   }
 
   Future<void> _persistBulkDraft() async {
@@ -281,6 +292,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       adviserFilter: _selectedBulkAdviserFilter,
       savedAt: DateTime.now(),
       issueCount: countPreviewIssues(_bulkPreview),
+      isOpen: _showBulkImport == true,
     );
     await saveTeamBulkImportDraft(draft);
     if (mounted) {
@@ -337,13 +349,14 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       );
       if (!leave || !mounted) return;
       _draftSaveTimer?.cancel();
+      setState(() => _showBulkImport = false);
       await _persistBulkDraft();
       _bulkImportPersistedSnapshot = _bulkImportSnapshot();
     } else {
-      _scheduleDraftSave();
+      _draftSaveTimer?.cancel();
+      setState(() => _showBulkImport = false);
+      await _persistBulkDraft();
     }
-    if (!mounted) return;
-    setState(() => _showBulkImport = false);
   }
 
   Future<void> _discardBulkDraftConfirmed() async {
@@ -401,6 +414,9 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
 
     setState(() => _showBulkImport = true);
     _captureBulkImportBaseline();
+    if (_parsedBulkRows.isNotEmpty) {
+      _refreshBulkPreview();
+    }
   }
 
   void _applyParsedRows(ParsedBulkCsvResult result) {
@@ -433,14 +449,64 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
   Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
     if (!mounted || files.isEmpty) return;
     try {
-      final texts = files
-          .map((f) => f.text ?? utf8.decode(f.bytes, allowMalformed: true))
-          .where((t) => t.trim().isNotEmpty)
-          .toList();
+      final texts = <String>[];
+      for (final f in files) {
+        if (f.isXlsx) {
+          final csvFromXlsx = _convertXlsxBytesToCsv(f.bytes);
+          if (csvFromXlsx.trim().isNotEmpty) {
+            texts.add(csvFromXlsx);
+          }
+        } else {
+          final t = f.text ?? utf8.decode(f.bytes, allowMalformed: true);
+          if (t.trim().isNotEmpty) {
+            texts.add(t);
+          }
+        }
+      }
       if (texts.isEmpty) return;
       _processCsvContent(texts.join('\n\n'));
     } catch (e) {
       _snack('Could not read file(s): $e');
+    }
+  }
+
+  String _convertXlsxBytesToCsv(List<int> bytes) {
+    try {
+      final excel = xl.Excel.decodeBytes(bytes);
+      if (excel.tables.isEmpty) return '';
+      final sheet = excel.tables.values.first;
+      final buffer = StringBuffer();
+      for (final row in sheet.rows) {
+        final line = row.map((cell) {
+          final val = cell?.value;
+          if (val == null) return '';
+          String text = '';
+          if (val is xl.TextCellValue) {
+            text = (val.value.text ?? '').trim();
+          } else if (val is xl.IntCellValue) {
+            text = val.value.toString();
+          } else if (val is xl.DoubleCellValue) {
+            final n = val.value;
+            text = (n == n.roundToDouble()) ? n.round().toString() : n.toString();
+          } else if (val is xl.FormulaCellValue) {
+            text = val.formula.trim();
+          } else if (val is xl.BoolCellValue) {
+            text = val.value ? 'true' : 'false';
+          } else {
+            text = val.toString().trim();
+          }
+          if (text.contains(',') || text.contains('"') || text.contains('\n')) {
+            return '"${text.replaceAll('"', '""')}"';
+          }
+          return text;
+        }).join(',');
+        if (line.replaceAll(',', '').trim().isNotEmpty) {
+          buffer.writeln(line);
+        }
+      }
+      return buffer.toString().trim();
+    } catch (_) {
+      return '';
     }
   }
 
@@ -790,6 +856,27 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
     }
     final state = ref.watch(studentTeamsProvider);
 
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+      if (next == DefensysAdminSection.studentTeams && previous != DefensysAdminSection.studentTeams) {
+        _fetchTeamsForCurrentRole();
+        if (_isBulkImportVisible && _parsedBulkRows.isNotEmpty) {
+          _refreshBulkPreview();
+        }
+      }
+    });
+
+    ref.listen(userManagementProvider, (previous, next) {
+      if (previous != next && _isBulkImportVisible && _parsedBulkRows.isNotEmpty) {
+        _refreshBulkPreview();
+      }
+    });
+
+    ref.listen(studentAcademicRecordsProvider, (previous, next) {
+      if (previous != next && _isBulkImportVisible && _parsedBulkRows.isNotEmpty) {
+        _refreshBulkPreview();
+      }
+    });
+
     if (_isBulkImportVisible) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -799,6 +886,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         ref.read(unsavedChangesProvider.notifier).setDirty(_isBulkImportDirty);
       });
 
+      final activeSemester = ref.watch(academicPeriodProvider).activeSemester;
       return StudentTeamsBulkImportView(
         state: state,
         isCapstoneAdmin: _isCapstoneAdmin,
@@ -813,6 +901,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         section: _section,
         systemName: _systemName,
         projectManager: _projectManager,
+        activeSemester: activeSemester,
         onRequestClose: _requestCloseBulkImport,
         onDownloadTemplate: _downloadCsvTemplate,
         onPickBulkCsvFile: _pickBulkCsvFile,
@@ -822,6 +911,18 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
         onScheduleRowPreview: _scheduleRowPreview,
         onDeleteBulkRow: _deleteBulkRow,
         onAddBulkRow: _addBulkRow,
+        onClearStaged: () {
+          setState(() {
+            _parsedBulkRows = [];
+            _bulkCsv = '';
+            _bulkPreview = null;
+            _templateWarning = null;
+            _section = null;
+            _systemName = null;
+            _projectManager = null;
+          });
+          _scheduleDraftSave();
+        },
         onAdviserFilterChanged: (value) {
           if (value == null) return;
           setState(() => _bulkAdviserFilter = value);
@@ -852,7 +953,6 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
             actions: StudentTeamsHeaderActions(
               isPitInstructor: _isPitInstructor,
               canTapActions: _canTapTeamActions(state),
-              onDownloadTemplate: _downloadCsvTemplate,
               onBulkImport: () => _onBulkImportPressed(state),
               onCreateTeam: () => _onCreateTeamPressed(state),
             ),

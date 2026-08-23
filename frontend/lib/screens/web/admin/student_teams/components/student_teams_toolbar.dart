@@ -15,10 +15,10 @@ Widget buildSecondaryButton({
       label: Text(label),
       style: OutlinedButton.styleFrom(
         foregroundColor: DefensysUi.textDark,
-        side: const BorderSide(color: Color(0xFFD1D5DB)),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 18),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
       ),
     ),
   );
@@ -37,11 +37,11 @@ Widget buildPrimaryButton({
       label: Text(label),
       style: ElevatedButton.styleFrom(
         backgroundColor: DefensysUi.primaryMaroon,
-        foregroundColor: DefensysUi.accentGold,
+        foregroundColor: Colors.white,
         elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-        padding: const EdgeInsets.symmetric(horizontal: 22),
-        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w900),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
       ),
     ),
   );
@@ -52,14 +52,14 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     super.key,
     required this.isPitInstructor,
     required this.canTapActions,
-    required this.onDownloadTemplate,
+    this.onDownloadTemplate,
     required this.onBulkImport,
     required this.onCreateTeam,
   });
 
   final bool isPitInstructor;
   final bool canTapActions;
-  final VoidCallback onDownloadTemplate;
+  final VoidCallback? onDownloadTemplate;
   final VoidCallback? onBulkImport;
   final VoidCallback? onCreateTeam;
 
@@ -72,12 +72,6 @@ class StudentTeamsHeaderActions extends StatelessWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        buildSecondaryButton(
-          icon: Icons.description_rounded,
-          label: 'CSV Template',
-          onTap: onDownloadTemplate,
-        ),
-        const SizedBox(width: 14),
         buildSecondaryButton(
           icon: Icons.output_rounded,
           label: 'Bulk Import',

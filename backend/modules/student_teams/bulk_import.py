@@ -252,6 +252,24 @@ def validate_bulk_team_row(
         elif prepared:
             data = prepared
 
+    pit_row = is_pit_bulk_row(data, user)
+    if pit_row:
+        if raw_adviser and not any("PIT teams do not have advisers" in w for w in warnings):
+            column_name = 'adviser_name' if data.get('adviser_name') else 'adviser_id'
+            warnings.append(
+                f"PIT teams do not have advisers. The {column_name} column ('{raw_adviser}') will be ignored."
+            )
+        data = dict(data)
+        data['adviser_name'] = ''
+        data['adviser_id'] = ''
+        adviser, adviser_status, adviser_name = None, ADVISER_STATUS_NONE, ''
+        adviser_ref = ''
+        # Remove any adviser-related issues since PIT teams do not have advisers
+        issues = [
+            issue for issue in issues
+            if not (issue.startswith('Adviser "') or issue.endswith('is not a project adviser.'))
+        ]
+
     if member_user_ids and not issues:
         issues.extend(
             _existing_team_membership_issues(

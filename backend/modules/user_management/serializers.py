@@ -260,13 +260,123 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             attrs['pit_lead_year'] = None
 
 
+import re
+
+
+def parse_faculty_roles_dict(raw_str):
+    """
+    Parse a raw role string (e.g. 'Panelist, Adviser', 'PIT Lead 1st Year / Panelist', 'Admin')
+    into a dict of base role and capability flags.
+    """
+    input_str = (raw_str or '').strip()
+    if not input_str:
+        return {
+            'role': 'faculty',
+            'is_panelist': False,
+            'is_adviser': False,
+            'is_pit_lead': False,
+            'pit_lead_year': None,
+            'is_documenter': False,
+            'is_uploader': False,
+        }
+
+    lower = input_str.lower()
+    if 'admin' in lower:
+        return {
+            'role': 'admin',
+            'is_panelist': False,
+            'is_adviser': False,
+            'is_pit_lead': False,
+            'pit_lead_year': None,
+            'is_documenter': False,
+            'is_uploader': False,
+        }
+
+    if lower in ('student', 'std'):
+        return {
+            'role': 'student',
+            'is_panelist': False,
+            'is_adviser': False,
+            'is_pit_lead': False,
+            'pit_lead_year': None,
+            'is_documenter': False,
+            'is_uploader': False,
+        }
+
+    tokens = [t.strip().lower() for t in re.split(r'[,/|;&+\n]', input_str) if t.strip()]
+
+    is_panelist = False
+    is_adviser = False
+    is_pit_lead = False
+    pit_lead_year = None
+    is_documenter = False
+    is_uploader = False
+
+    def _extract_year(text):
+        c = text.lower()
+        if '1st' in c or 'first' in c or 'year 1' in c or 'yr 1' in c or ' 1' in c:
+            return '1st Year'
+        if '2nd' in c or 'second' in c or 'year 2' in c or 'yr 2' in c or ' 2' in c:
+            return '2nd Year'
+        if '3rd' in c or 'third' in c or 'year 3' in c or 'yr 3' in c or ' 3' in c:
+            return '3rd Year'
+        if '4th' in c or 'fourth' in c or 'year 4' in c or 'yr 4' in c or ' 4' in c:
+            return '4th Year'
+        return None
+
+    for token in (tokens if tokens else [lower]):
+        if 'panel' in token:
+            is_panelist = True
+        if 'advis' in token:
+            is_adviser = True
+        if 'lead' in token or 'pit' in token:
+            is_pit_lead = True
+            y = _extract_year(token)
+            if y:
+                pit_lead_year = y
+        if 'doc' in token or 'documenter' in token:
+            is_documenter = True
+        if 'upload' in token:
+            is_uploader = True
+
+    if 'panel' in lower:
+        is_panelist = True
+    if 'advis' in lower:
+        is_adviser = True
+    if 'pit' in lower or 'lead' in lower:
+        is_pit_lead = True
+        if not pit_lead_year:
+            pit_lead_year = _extract_year(lower)
+    if 'documenter' in lower:
+        is_documenter = True
+    if 'uploader' in lower:
+        is_uploader = True
+
+    return {
+        'role': 'faculty',
+        'is_panelist': is_panelist,
+        'is_adviser': is_adviser,
+        'is_pit_lead': is_pit_lead,
+        'pit_lead_year': pit_lead_year if is_pit_lead else ('1st Year' if is_pit_lead else None),
+        'is_documenter': is_documenter,
+        'is_uploader': is_uploader,
+    }
+
+
 class BulkUserRowSerializer(serializers.Serializer):
     id_number = serializers.CharField(required=False, allow_blank=True, max_length=150)
     username = serializers.CharField(required=False, allow_blank=True, max_length=150)
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
-    role = serializers.ChoiceField(choices=[choice[0] for choice in User.ROLE_CHOICES], default='student')
+    role = serializers.CharField(required=False, allow_blank=True, default='student')
+    raw_role = serializers.CharField(required=False, allow_blank=True, max_length=255)
+    is_panelist = serializers.BooleanField(required=False)
+    is_adviser = serializers.BooleanField(required=False)
+    is_pit_lead = serializers.BooleanField(required=False)
+    pit_lead_year = serializers.CharField(required=False, allow_blank=True, allow_null=True, max_length=50)
+    is_documenter = serializers.BooleanField(required=False)
+    is_uploader = serializers.BooleanField(required=False)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
     instructor = serializers.CharField(required=False, allow_blank=True, max_length=150)
@@ -278,6 +388,30 @@ class BulkUserRowSerializer(serializers.Serializer):
         if not id_num:
             raise serializers.ValidationError({'id_number': 'ID number or username is required.'})
         attrs['id_number'] = id_num
+
+        raw_role_str = (attrs.get('raw_role') or attrs.get('role') or '').strip()
+        parsed_role = parse_faculty_roles_dict(raw_role_str)
+
+        input_role = (attrs.get('role') or '').strip().lower()
+        if input_role in [choice[0] for choice in User.ROLE_CHOICES]:
+            base_role = input_role
+        else:
+            base_role = parsed_role['role']
+        attrs['role'] = base_role
+
+        if 'is_panelist' not in attrs:
+            attrs['is_panelist'] = parsed_role['is_panelist']
+        if 'is_adviser' not in attrs:
+            attrs['is_adviser'] = parsed_role['is_adviser']
+        if 'is_pit_lead' not in attrs:
+            attrs['is_pit_lead'] = parsed_role['is_pit_lead']
+        if 'pit_lead_year' not in attrs:
+            attrs['pit_lead_year'] = parsed_role['pit_lead_year']
+        if 'is_documenter' not in attrs:
+            attrs['is_documenter'] = parsed_role['is_documenter']
+        if 'is_uploader' not in attrs:
+            attrs['is_uploader'] = parsed_role['is_uploader']
+
         return attrs
 
     def validate_year_level(self, value):

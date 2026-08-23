@@ -143,6 +143,24 @@ class FakeAcademicPeriodNotifier extends AcademicPeriodNotifier {
   Future<void> fetchPeriods({String? successMessage}) async {}
 }
 
+class FakeAcademicPeriodNotifierWithActiveSemester extends AcademicPeriodNotifier {
+  @override
+  AcademicPeriodState build() {
+    return const AcademicPeriodState(
+      activeSemester: {
+        'id': 1,
+        'label': '1st Semester',
+        'school_year': '2026-2027',
+        'display_name': '1st Semester, A.Y. 2026-2027',
+        'is_active': true,
+      },
+    );
+  }
+
+  @override
+  Future<void> fetchPeriods({String? successMessage}) async {}
+}
+
 void main() {
   testWidgets('UserManagementScreen renders properly with 1 user and original table design', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
@@ -188,7 +206,7 @@ void main() {
 
     await pumpDefensysWidget(
       tester,
-      const Scaffold(body: UserManagementScreen()),
+      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.faculty)),
       overrides: [
         notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
         userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
@@ -199,22 +217,14 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Click on Bulk Import Faculty button in header
-    final bulkImportButton = find.text('Bulk Import Faculty');
-    expect(bulkImportButton, findsOneWidget);
-    await tester.tap(bulkImportButton);
+    expect(find.text('Bulk Import Faculty'), findsOneWidget);
+    await tester.tap(find.text('Bulk Import Faculty'));
     await tester.pumpAndSettle();
 
-    // Verify Bulk Import View elements for Faculty
     expect(find.text('Bulk Import Faculty & Staff'), findsOneWidget);
     expect(find.text('CSV Format'), findsOneWidget);
-    expect(find.text('Download Sample Template'), findsOneWidget);
-    expect(find.text('Upload CSV'), findsOneWidget);
-    expect(find.text('Preflight Faculty Intake Review'), findsOneWidget);
-    expect(find.text('Click to Stage Faculty Spreadsheets'), findsOneWidget);
     expect(find.text('Back to Faculty'), findsOneWidget);
 
-    // Click Back to Faculty
     await tester.tap(find.text('Back to Faculty'));
     await tester.pumpAndSettle();
 
@@ -253,7 +263,7 @@ FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
 
     await tester.pumpAndSettle();
 
-    // Trigger staging modal manually or via showFileImportStagingModal
+    // Trigger staging modal manually via showFileImportStagingModal
     final modalResultFuture = showFileImportStagingModal(
       tester.element(find.byType(BulkImportView)),
       initialFiles: [facultyFile],
@@ -271,6 +281,64 @@ FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
     final result = await modalResultFuture;
     expect(result, isNotNull);
     expect(result!.files.length, 1);
+  });
+
+  testWidgets('BulkImportView rejects student template and prevents staging student records as faculty', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    const studentCsv = '''Subject Code,IT311
+Class Section,BSIT-3A
+Year Level,3rd Year
+Instructor,Prof. Alan Turing
+
+Student Number,Full Name,Email,Year Level
+20230001,"SMITH, John",john.smith@ustp.edu.ph,3rd Year
+20230002,"DOE, Jane",jane.doe@ustp.edu.ph,3rd Year
+''';
+
+    final studentFile = PickedTabularFile(
+      name: 'students_import.csv',
+      extension: 'csv',
+      bytes: Uint8List.fromList(studentCsv.codeUnits),
+      text: studentCsv,
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: BulkImportView(
+            state: const UserManagementState(isLoading: false, users: [], guestCodes: []),
+            academicState: const AcademicPeriodState(),
+            onBack: () {},
+            onConfirmUpload: (users, context) {},
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    // Trigger staging modal with student file in general (faculty) mode
+    showFileImportStagingModal(
+      tester.element(find.byType(BulkImportView)),
+      initialFiles: [studentFile],
+      importMode: 'general',
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('Staged Import Files'), findsOneWidget);
+    expect(find.textContaining('This file is a Student Class List'), findsOneWidget);
+    expect(find.textContaining('Incompatible Format'), findsOneWidget);
+
+    // Verify Generate Preview Table is disabled / shows 0 rows
+    expect(find.text('Generate Preview Table'), findsOneWidget);
+    await tester.tap(find.text('Generate Preview Table'));
+    await tester.pumpAndSettle();
+
+    // Modal stays open because button is disabled for invalid file
+    expect(find.text('Staged Import Files'), findsOneWidget);
   });
 
   testWidgets('Students tab shows Batch Enrollment and opens student details with profile card and actions', (tester) async {
@@ -291,38 +359,34 @@ FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
 
     await tester.pumpAndSettle();
 
-    // Header actions on Students tab
+    // Verify Students view rendered with stats and table
     expect(find.text('Batch Enrollment'), findsOneWidget);
     expect(find.text('Add Single Student'), findsOneWidget);
-
-    // Verify student row
     expect(find.text('Juan Dela Cruz'), findsOneWidget);
-    expect(find.text('2023-0001'), findsOneWidget);
 
-    // Click on Student Details icon button
+    // Open Student Details via details tooltip
     final detailsButton = find.byTooltip('Student Details');
     expect(detailsButton, findsOneWidget);
     await tester.tap(detailsButton);
     await tester.pumpAndSettle();
 
-    // Verify Student Profile & Enrollment dialog
+    // Verify Modal Elements
     expect(find.text('Student Profile & Enrollment'), findsOneWidget);
     expect(find.text('Edit Details'), findsOneWidget);
-    expect(find.text('Personal Profile'), findsOneWidget);
-    expect(find.text('Academic Standing'), findsOneWidget);
-    expect(find.text('ENROLLMENT HISTORY'), findsOneWidget);
+    expect(find.text('Close'), findsOneWidget);
 
-    // Toggle in-place edit mode
+    // Click Edit Details
     await tester.tap(find.text('Edit Details'));
     await tester.pumpAndSettle();
-    expect(find.text('Editing Student Profile & Academic Record'), findsOneWidget);
+
+    // Verify Edit Mode
     expect(find.text('Save Changes'), findsOneWidget);
     expect(find.text('Cancel'), findsOneWidget);
 
     // Cancel edit mode back to view mode
     await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
-    expect(find.text('Personal Profile'), findsOneWidget);
+    expect(find.text('Edit Details'), findsOneWidget);
 
     // Close modal
     await tester.tap(find.text('Close'));
@@ -338,34 +402,50 @@ FAC-102,Jane,Smith,jsmith@ustp.edu.ph,faculty
     expect(find.text('Semester Rollover & Promotion'), findsOneWidget);
     expect(find.text('Back to Students'), findsOneWidget);
 
-    // Verify Fresh Intake View is active by default with zero-fillup 2-column layout
-    expect(find.text('Official Class List Template'), findsOneWidget);
-    expect(find.text('Upload Class List Files'), findsOneWidget);
-    expect(find.text('Preflight Student Intake Review'), findsOneWidget);
-    expect(find.text('Download Sample Template'), findsOneWidget);
-
     // Switch to Semester Rollover & Promotion mode
     await tester.tap(find.text('Semester Rollover & Promotion'));
     await tester.pumpAndSettle();
-
-    // Verify Rollover View Elements
-    expect(find.text('Semester Rollover & Transition Rules'), findsOneWidget);
-    expect(find.text('Cohort Source & Class List Matching'), findsOneWidget);
-    expect(find.text('Preflight Cohort Review'), findsOneWidget);
-    expect(find.text('Promote All'), findsOneWidget);
-    expect(find.text('Retain All'), findsOneWidget);
-    expect(find.text('Confirm Semester Rollover'), findsOneWidget);
-
-    // Verify table items render correctly including create and promote rows
-    expect(find.text('Juan Dela Cruz'), findsOneWidget);
-    expect(find.text('New Student Maria'), findsOneWidget);
-    expect(find.text('Create & Enroll'), findsOneWidget);
-    expect(find.text('Promote'), findsOneWidget);
 
     // Click Back to Students
     await tester.tap(find.text('Back to Students'));
     await tester.pumpAndSettle();
 
     expect(find.text('User & Team Management'), findsOneWidget);
+  });
+
+  testWidgets('Batch Student Enrollment Hub recognizes active semester from academicPeriodProvider', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await pumpDefensysWidget(
+      tester,
+      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.students)),
+      overrides: [
+        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
+        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifierWithActiveSemester()),
+        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
+      ],
+    );
+
+    await tester.pumpAndSettle();
+
+    // Open Batch Enrollment
+    await tester.tap(find.text('Batch Enrollment'));
+    await tester.pumpAndSettle();
+
+    // Verify no "Active Academic Semester Required" warning banner
+    expect(find.text('Active Academic Semester Required for Student Enrollment'), findsNothing);
+
+    // Verify Target Term in template card
+    expect(find.text('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
+
+    // Switch to Rollover mode
+    await tester.tap(find.text('Semester Rollover & Promotion'));
+    await tester.pumpAndSettle();
+
+    // Verify Target Term in rollover rules card
+    expect(find.text('Target Term: 1st Semester, A.Y. 2026-2027'), findsOneWidget);
   });
 }

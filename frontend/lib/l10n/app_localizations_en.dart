@@ -134,7 +134,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navDefenseScheduler => 'Defense Scheduler';
 
   @override
-  String get navDefenseBoard => 'Defense Board';
+  String get navDefenseBoard => 'Defense Operations';
 
   @override
   String get navDefenseStages => 'Defense Stages Setup';

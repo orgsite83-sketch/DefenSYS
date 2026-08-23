@@ -515,16 +515,9 @@ class _Sidebar extends StatelessWidget {
                 ),
                 const _SectionHeader(title: 'Defense Operations'),
                 _NavItem(
-                  section: DefensysAdminSection.scheduling,
-                  activeSection: activeSection,
-                  icon: Icons.event_note_rounded,
-                  label: l10n.navDefenseScheduler,
-                  onTap: onNavigate,
-                ),
-                _NavItem(
                   section: DefensysAdminSection.defenseBoard,
                   activeSection: activeSection,
-                  icon: Icons.view_column_rounded,
+                  icon: Icons.view_agenda_rounded,
                   label: l10n.navDefenseBoard,
                   onTap: onNavigate,
                 ),

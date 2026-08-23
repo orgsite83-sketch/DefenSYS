@@ -743,7 +743,7 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
         icon: Icons.groups_outlined,
         title: 'No Teams Found',
         description:
-            'No student teams match the selected filter criteria in Grade Center.',
+            'No student teams match the selected filter criteria in Evaluation & Grades.',
         size: DefensysEmptyStateSize.compact,
       ),
     );

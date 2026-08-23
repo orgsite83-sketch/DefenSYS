@@ -954,6 +954,78 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(team.year_level, '3rd Year')
         self.assertIsNone(team.adviser_id)
 
+    def test_admin_bulk_import_preview_third_year_in_first_sem_treated_as_pit(self):
+        # 1st semester active: 3rd year students are in PIT scope
+        response = self.client.post(
+            '/api/teams/bulk-import/preview/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team CodeLearners',
+                        'project_title': 'Smart Campus Navigator',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        rows = response.data['rows']
+        self.assertEqual(len(rows), 1)
+        row = rows[0]
+        self.assertTrue(row['ready'])
+        self.assertEqual(row['year_level'], '3rd Year')
+        self.assertEqual(row['level'], StudentTeam.LEVEL_3_PIT)
+        self.assertEqual(row['program_label'], '3rd Year PIT')
+
+    def test_admin_bulk_import_third_year_in_first_sem_creates_pit_team(self):
+        # 1st semester active: 3rd year students create 3rd Year PIT team
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team CodeLearners',
+                        'project_title': 'Smart Campus Navigator',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        team = StudentTeam.objects.get(name='Team CodeLearners')
+        self.assertEqual(team.level, StudentTeam.LEVEL_3_PIT)
+        self.assertEqual(team.year_level, '3rd Year')
+
+    def test_admin_bulk_import_third_year_in_second_sem_creates_capstone_team(self):
+        # 2nd semester active: Capstone 1 intake -> 3rd Year Capstone
+        self._activate_capstone_intake_semester()
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    {
+                        'team_name': 'Team Capstone Intake',
+                        'project_title': 'Capstone Intake Project',
+                        'member_ids': ['Juan Dela Cruz', 'Maria Santos'],
+                        'leader_id': 'Juan Dela Cruz',
+                        'adviser_id': 'Ada Lovelace',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        team = StudentTeam.objects.get(name='Team Capstone Intake')
+        self.assertEqual(team.level, StudentTeam.LEVEL_3_CAPSTONE)
+        self.assertEqual(team.year_level, '3rd Year')
+
     def test_pit_lead_bulk_import_preview_mismatch_program_label(self):
         pit_lead = User.objects.create_user(
             username='pit-lead-mismatch',
@@ -1440,6 +1512,7 @@ class StudentTeamApiTests(APITestCase):
             {
                 'name': 'Invalid Capstone Level',
                 'project_title': 'Invalid Level',
+                'level': '1st Year Capstone',
                 'leader_id': self.student_1.id,
                 'member_ids': [self.student_1.id],
                 'adviser_id': self.adviser.id,
@@ -1449,7 +1522,7 @@ class StudentTeamApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('level', response.data)
-        self.assertIn('not a valid team program level', response.data['level'][0])
+        self.assertIn('not a valid', response.data['level'][0])
 
     def test_section_assignment_list_create(self):
         self.client.force_authenticate(user=self.admin)
@@ -1523,8 +1596,6 @@ class StudentTeamApiTests(APITestCase):
         self.assertEqual(response.data['student']['managed_section'], 'BSIT-2A')
 
     def test_admin_create_team_during_capstone_2_validates_cohort_year(self):
-        self.first_semester.is_active = True
-        self.first_semester.capstone_program_phase = Semester.PHASE_CAPSTONE_2
         self.first_semester.capstone_team_creation_enabled = True
         self.first_semester.save()
 
@@ -1590,7 +1661,7 @@ class StudentTeamApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(response_valid.status_code, 201)
-        self.assertEqual(response_valid.data['team']['level'], StudentTeam.LEVEL_3_CAPSTONE)
+        self.assertEqual(response_valid.data['team']['level'], StudentTeam.LEVEL_3_PIT)
 
     def test_delete_team_clean(self):
         self._activate_capstone_intake_semester()

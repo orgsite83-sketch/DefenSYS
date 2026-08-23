@@ -105,6 +105,19 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
     }).toList();
   }
 
+  String _selectedDocumenterName(DefenseSchedulerState state) {
+    if (widget.documenterId == null) return 'None (Optional)';
+    for (final doc in state.documenters) {
+      if (asInt(doc['id']) == widget.documenterId) {
+        return doc['name']?.toString() ??
+            doc['full_name']?.toString() ??
+            doc['username']?.toString() ??
+            'Assigned';
+      }
+    }
+    return 'Assigned';
+  }
+
   int _getReadyTeamsCount(DefenseSchedulerState state) {
     final activeScopeTeams = teamsForScope(state, widget.scope);
 
@@ -882,36 +895,6 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                   ),
                 ],
               ),
-              if (widget.scope == 'capstone') ...[
-                const SizedBox(height: 18),
-                _labeledField(
-                  'Documenter (Optional)',
-                  DropdownButtonFormField<int?>(
-                    value: widget.state.documenters.any((doc) => asInt(doc['id']) == widget.documenterId && !widget.selectedPanelistIds.contains(asInt(doc['id'])))
-                        ? widget.documenterId
-                        : null,
-                    decoration: _schedulerInputDecoration(
-                      hintText: 'Select Documenter (Optional)',
-                    ),
-                    dropdownColor: Colors.white,
-                    items: [
-                      const DropdownMenuItem<int?>(
-                        value: null,
-                        child: Text('— Select Documenter (Optional) —'),
-                      ),
-                      ...widget.state.documenters
-                          .where((doc) => !widget.selectedPanelistIds.contains(asInt(doc['id'])))
-                          .map(
-                            (doc) => DropdownMenuItem<int?>(
-                              value: asInt(doc['id']),
-                              child: Text(doc['name']?.toString() ?? ''),
-                            ),
-                          ),
-                    ],
-                    onChanged: (val) => widget.onDocumenterChanged?.call(val),
-                  ),
-                ),
-              ],
               const SizedBox(height: 24),
               SizedBox(
                 width: double.infinity,
@@ -1068,6 +1051,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                                     );
                                     if (val) {
                                       copy.add(id);
+                                      if (widget.documenterId == id) {
+                                        widget.onDocumenterChanged?.call(null);
+                                      }
                                     } else {
                                       copy.remove(id);
                                     }
@@ -1092,6 +1078,157 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                 ],
               ),
             ),
+            if (widget.scope == 'capstone') ...[
+              const SizedBox(height: 16),
+              _schedulerCard(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              const Text(
+                                'Available Documenters (Optional)',
+                                style: TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w800,
+                                  color: AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Select a documenter to record minutes for this batch.',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.grey.shade600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (widget.documenterId != null)
+                          _softBadge(
+                            '1 selected',
+                            const Color(0xFFFEF3C7),
+                            const Color(0xFF92400E),
+                          )
+                        else
+                          _softBadge(
+                            'None',
+                            const Color(0xFFF2F4F7),
+                            const Color(0xFF667085),
+                          ),
+                      ],
+                    ),
+                    if (widget.documenterId != null) ...[
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: TextButton(
+                          onPressed: () =>
+                              widget.onDocumenterChanged?.call(null),
+                          style: TextButton.styleFrom(
+                            padding: EdgeInsets.zero,
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                          child: const Text(
+                            'Clear Documenter',
+                            style: TextStyle(
+                              color: Color(0xFF667085),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 10),
+                    if (state.documenters.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 8),
+                        child: Text(
+                          'No documenters available.',
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: AppColors.textSecondary,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: state.documenters.map((doc) {
+                          final id = asInt(doc['id']);
+                          final name = doc['name']?.toString() ??
+                              doc['full_name']?.toString() ??
+                              doc['username']?.toString() ??
+                              'Documenter';
+                          final isPanelist = id != null &&
+                              widget.selectedPanelistIds.contains(id);
+                          final selected =
+                              id != null && widget.documenterId == id;
+
+                          return FilterChip(
+                            avatar: Icon(
+                              selected
+                                  ? Icons.assignment_turned_in_rounded
+                                  : Icons.edit_note_rounded,
+                              size: 16,
+                              color: selected
+                                  ? AppColors.maroon
+                                  : (isPanelist
+                                      ? const Color(0xFF94A3B8)
+                                      : const Color(0xFF64748B)),
+                            ),
+                            label: Text(
+                              isPanelist ? '$name (Panelist)' : name,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: selected
+                                    ? FontWeight.w700
+                                    : FontWeight.w500,
+                                color: selected
+                                    ? AppColors.maroon
+                                    : (isPanelist
+                                        ? const Color(0xFF94A3B8)
+                                        : const Color(0xFF344054)),
+                                decoration: isPanelist
+                                    ? TextDecoration.lineThrough
+                                    : null,
+                              ),
+                            ),
+                            selected: selected,
+                            onSelected: (id == null || isPanelist)
+                                ? null
+                                : (val) {
+                                    widget.onDocumenterChanged
+                                        ?.call(val ? id : null);
+                                  },
+                            backgroundColor: const Color(0xFFF8FAFC),
+                            selectedColor: const Color(0xFFFEECEC),
+                            checkmarkColor: AppColors.maroon,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                              side: BorderSide(
+                                color: selected
+                                    ? AppColors.maroon
+                                    : const Color(0xFFE2E8F0),
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             _schedulerCard(
               child: Column(
@@ -1117,6 +1254,14 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                     '${selectedPanelists.length} assigned',
                     Icons.people_outline,
                   ),
+                  if (widget.scope == 'capstone') ...[
+                    const SizedBox(height: 10),
+                    _summaryInfoCard(
+                      'Documenter',
+                      _selectedDocumenterName(state),
+                      Icons.edit_note_rounded,
+                    ),
+                  ],
                   const SizedBox(height: 10),
                   _summaryInfoCard(
                     'Ready Teams',

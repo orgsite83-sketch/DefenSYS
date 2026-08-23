@@ -150,7 +150,7 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
         return display_name(obj.adviser)
 
     def get_instructor_name(self, obj):
-        if not obj.section:
+        if getattr(obj, 'is_capstone', False) or not obj.section:
             return None
         from user_management.models import SectionInstructorAssignment
         from student_teams.team_levels import normalize_year_level

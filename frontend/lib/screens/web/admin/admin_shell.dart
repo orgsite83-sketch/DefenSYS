@@ -72,6 +72,11 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         routeSection ?? DefensysAdminSection.overview;
 
     _loadedSections.add(activeSection);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
+        ref.read(activeAdminSectionProvider.notifier).setSection(activeSection);
+      }
+    });
 
     final isDetail = _isAdminDetailRoute(routerState);
     final activeIndex = DefensysAdminSection.values.indexOf(activeSection);
@@ -123,6 +128,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     }
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    ref.read(activeAdminSectionProvider.notifier).setSection(section);
     ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
   }
 

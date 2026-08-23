@@ -171,18 +171,30 @@ class TermScopeTests(APITestCase):
         )
 
     def test_admin_can_manage_active_pit_team(self):
+        student_2nd = User.objects.create_user(
+            username='2081',
+            password='pass12345',
+            role='student',
+            first_name='Darren',
+            last_name='Kim',
+        )
+        StudentAcademicRecord.objects.create(
+            student=student_2nd,
+            semester=self.second_sem,
+            year_level='2nd Year',
+        )
         # 1. Setup active PIT team
         pit_team = StudentTeam.objects.create(
             name='Team PIT Active',
             project_title='Active PIT',
-            level='3rd Year PIT',
-            year_level='3rd Year',
+            level='2nd Year PIT',
+            year_level='2nd Year',
             semester=self.second_sem,
-            leader=self.student,
+            leader=student_2nd,
         )
         TeamMembership.objects.create(
             team=pit_team,
-            student=self.student,
+            student=student_2nd,
             is_leader=True,
             order=0,
         )
@@ -196,10 +208,10 @@ class TermScopeTests(APITestCase):
             {
                 'name': 'Updated Team PIT Active',
                 'project_title': 'Updated Active PIT',
-                'level': '3rd Year PIT',
-                'year_level': '3rd Year',
-                'leader_id': self.student.id,
-                'member_ids': [self.student.id],
+                'level': '2nd Year PIT',
+                'year_level': '2nd Year',
+                'leader_id': student_2nd.id,
+                'member_ids': [student_2nd.id],
             },
             format='json',
         )
@@ -218,10 +230,10 @@ class TermScopeTests(APITestCase):
             {
                 'name': 'New Admin PIT Team',
                 'project_title': 'New Admin PIT Project',
-                'level': '3rd Year PIT',
-                'year_level': '3rd Year',
-                'leader_id': self.student.id,
-                'member_ids': [self.student.id],
+                'level': '2nd Year PIT',
+                'year_level': '2nd Year',
+                'leader_id': student_2nd.id,
+                'member_ids': [student_2nd.id],
             },
             format='json',
         )

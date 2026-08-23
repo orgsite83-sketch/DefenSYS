@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 
@@ -62,15 +63,16 @@ class ManualSlotEditorDialog {
                 ? teamId
                 : null;
 
-            final validDocumenter = state.documenters.any((item) => asInt(item['id']) == documenterId && !panelIds.contains(asInt(item['id'])))
-                ? documenterId
-                : null;
-
             final scopes = <String>[
-              if (state.canScheduleCapstone) 'capstone',
-              if (state.canSchedulePit) 'pit',
+              if (canScheduleScope(state, 'capstone')) 'capstone',
+              if (canScheduleScope(state, 'pit')) 'pit',
             ];
-            final scopeValues = scopes.isNotEmpty ? scopes : state.allowedScopes;
+            final scopeValues = scopes.isNotEmpty
+                ? scopes
+                : [if (initialScope.isNotEmpty) initialScope else 'capstone'];
+            if (!scopeValues.contains(scope) && scopeValues.isNotEmpty) {
+              scope = scopeValues.first;
+            }
             final allowedScopeItems = scopeValues
                 .where((s) => s == 'capstone' || s == 'pit')
                 .map(
@@ -92,21 +94,39 @@ class ManualSlotEditorDialog {
                       Row(
                         children: [
                           Expanded(
-                            child: DropdownButtonFormField<String>(
-                              initialValue: scope,
-                              decoration: const InputDecoration(labelText: 'Scope'),
-                              items: allowedScopeItems,
-                              onChanged: (value) {
-                                setDialogState(() {
-                                  scope = value ?? scope;
-                                  stageId = null;
-                                  teamId = null;
-                                  rubricId = null;
-                                  peerRubricId = null;
-                                  documenterId = null;
-                                });
-                              },
-                            ),
+                            child: scopeValues.length > 1
+                                ? DropdownButtonFormField<String>(
+                                    initialValue: scope,
+                                    decoration:
+                                        const InputDecoration(labelText: 'Scope'),
+                                    items: allowedScopeItems,
+                                    onChanged: (value) {
+                                      setDialogState(() {
+                                        scope = value ?? scope;
+                                        stageId = null;
+                                        teamId = null;
+                                        rubricId = null;
+                                        peerRubricId = null;
+                                        documenterId = null;
+                                      });
+                                    },
+                                  )
+                                : TextFormField(
+                                    key: ValueKey('scope_$scope'),
+                                    initialValue:
+                                        scope == 'pit' ? 'PIT' : 'Capstone',
+                                    readOnly: true,
+                                    decoration: const InputDecoration(
+                                      labelText: 'Scope',
+                                      filled: true,
+                                      fillColor: Color(0xFFF8FAFC),
+                                      suffixIcon: Icon(
+                                        Icons.lock_outline_rounded,
+                                        size: 18,
+                                        color: AppColors.textSecondary,
+                                      ),
+                                    ),
+                                  ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
@@ -150,40 +170,14 @@ class ManualSlotEditorDialog {
                             });
                           },
                         ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int?>(
-                          initialValue: validDocumenter,
-                          decoration: const InputDecoration(
-                            labelText: 'Documenter',
-                            hintText: 'Select Documenter (Optional)',
-                          ),
-                          dropdownColor: Colors.white,
-                          items: [
-                            const DropdownMenuItem<int?>(
-                              value: null,
-                              child: Text('— Select Documenter (Optional) —'),
-                            ),
-                            ...state.documenters
-                                .where((doc) => !panelIds.contains(asInt(doc['id'])))
-                                .map(
-                                  (doc) => DropdownMenuItem<int?>(
-                                    value: asInt(doc['id']),
-                                    child: Text(doc['name']?.toString() ?? ''),
-                                  ),
-                                ),
-                          ],
-                          onChanged: (value) {
-                            setDialogState(() {
-                              documenterId = value;
-                            });
-                          },
-                        ),
                       ] else ...[
                         DropdownButtonFormField<String>(
-                          value: state.pitEvents.any((e) => e['event_name'] == event.text)
+                          initialValue: state.pitEvents
+                                  .any((e) => e['event_name'] == event.text)
                               ? event.text
                               : null,
-                          decoration: const InputDecoration(labelText: 'PIT Event Name'),
+                          decoration:
+                              const InputDecoration(labelText: 'PIT Event Name'),
                           items: state.pitEvents.map((e) {
                             final name = e['event_name']?.toString() ?? '';
                             return DropdownMenuItem<String>(
@@ -331,6 +325,104 @@ class ManualSlotEditorDialog {
                           );
                         }).toList(),
                       ),
+                      if (scope == 'capstone') ...[
+                        const SizedBox(height: 16),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Text(
+                              'Documenter (Optional)${documenterId != null ? ' (1 selected)' : ''}',
+                              style:
+                                  const TextStyle(fontWeight: FontWeight.w800),
+                            ),
+                            if (documenterId != null)
+                              TextButton(
+                                onPressed: () {
+                                  setDialogState(() {
+                                    documenterId = null;
+                                  });
+                                },
+                                style: TextButton.styleFrom(
+                                  padding: EdgeInsets.zero,
+                                  minimumSize: Size.zero,
+                                  tapTargetSize:
+                                      MaterialTapTargetSize.shrinkWrap,
+                                ),
+                                child: const Text(
+                                  'Clear',
+                                  style: TextStyle(
+                                    color: Color(0xFF667085),
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: state.documenters.map((doc) {
+                            final id = asInt(doc['id']);
+                            final name =
+                                doc['name']?.toString() ?? 'Documenter';
+                            final isPanelist =
+                                id != null && panelIds.contains(id);
+                            final selected = id != null && documenterId == id;
+
+                            return FilterChip(
+                              avatar: Icon(
+                                selected
+                                    ? Icons.assignment_turned_in_rounded
+                                    : Icons.edit_note_rounded,
+                                size: 16,
+                                color: selected
+                                    ? AppColors.maroon
+                                    : (isPanelist
+                                        ? const Color(0xFF94A3B8)
+                                        : const Color(0xFF64748B)),
+                              ),
+                              label: Text(
+                                isPanelist ? '$name (Panelist)' : name,
+                                style: TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: selected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: selected
+                                      ? AppColors.maroon
+                                      : (isPanelist
+                                          ? const Color(0xFF94A3B8)
+                                          : const Color(0xFF344054)),
+                                  decoration: isPanelist
+                                      ? TextDecoration.lineThrough
+                                      : null,
+                                ),
+                              ),
+                              selected: selected,
+                              onSelected: (id == null || isPanelist)
+                                  ? null
+                                  : (value) {
+                                      setDialogState(() {
+                                        documenterId = value ? id : null;
+                                      });
+                                    },
+                              backgroundColor: const Color(0xFFF8FAFC),
+                              selectedColor: const Color(0xFFFEECEC),
+                              checkmarkColor: AppColors.maroon,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                                side: BorderSide(
+                                  color: selected
+                                      ? AppColors.maroon
+                                      : const Color(0xFFE2E8F0),
+                                ),
+                              ),
+                            );
+                          }).toList(),
+                        ),
+                      ],
                     ],
                   ),
                 ),

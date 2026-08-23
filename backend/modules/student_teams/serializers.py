@@ -158,7 +158,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
         return display_name(obj.adviser)
 
     def get_instructor_name(self, obj):
-        if not obj.section:
+        if obj.is_capstone or not obj.section:
             return None
         from user_management.models import SectionInstructorAssignment
         from student_teams.team_levels import normalize_year_level
@@ -540,7 +540,7 @@ class BulkTeamRowSerializer(serializers.Serializer):
         if user:
             if self.context.get('section_import') and attrs.get('level'):
                 attrs['year_level'] = attrs.get('year_level') or team_level_year(attrs['level'])
-            else:
+            elif attrs.get('level') or attrs.get('year_level'):
                 try:
                     attrs['level'] = resolve_team_level(
                         user=user,
@@ -550,8 +550,6 @@ class BulkTeamRowSerializer(serializers.Serializer):
                 except ValueError as exc:
                     raise serializers.ValidationError({'level': str(exc)}) from exc
                 attrs['year_level'] = team_level_year(attrs['level'])
-        elif not (attrs.get('level') or '').strip():
-            raise serializers.ValidationError({'level': 'This field is required.'})
         return attrs
 
 

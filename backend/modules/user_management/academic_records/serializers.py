@@ -70,9 +70,12 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         return f'{obj.rolled_from.school_year.label} - {obj.rolled_from.semester.label}'
 
     def get_instructor_name(self, obj):
-        from user_management.models import SectionInstructorAssignment
         if not obj.section or not obj.year_level or not obj.semester_id:
             return None
+        from student_teams.team_levels import is_capstone_scope
+        if is_capstone_scope(obj.year_level, obj.semester):
+            return None
+        from user_management.models import SectionInstructorAssignment
         assignment = SectionInstructorAssignment.objects.filter(
             semester_id=obj.semester_id,
             year_level=obj.year_level,
@@ -84,9 +87,12 @@ class StudentAcademicRecordSerializer(serializers.ModelSerializer):
         return None
 
     def get_instructor_id(self, obj):
-        from user_management.models import SectionInstructorAssignment
         if not obj.section or not obj.year_level or not obj.semester_id:
             return None
+        from student_teams.team_levels import is_capstone_scope
+        if is_capstone_scope(obj.year_level, obj.semester):
+            return None
+        from user_management.models import SectionInstructorAssignment
         assignment = SectionInstructorAssignment.objects.filter(
             semester_id=obj.semester_id,
             year_level=obj.year_level,

@@ -403,6 +403,13 @@ class SectionInstructorAssignmentView(APIView):
         if not section:
             return Response({'section': ['Section is required.']}, status=status.HTTP_400_BAD_REQUEST)
 
+        from student_teams.team_levels import is_capstone_scope
+        if is_capstone_scope(year_level, active):
+            return Response(
+                {'year_level': ['Section Instructors are only assigned for PIT scope (1st Year, 2nd Year, 3rd Year 1st Sem). Capstone scope assigns Project Advisers to teams directly.']},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         faculty = User.objects.filter(pk=faculty_id, role__in=['faculty', 'admin'], is_active=True).first()
         if faculty is None:
             return Response({'faculty_id': ['Select an active faculty user.']}, status=status.HTTP_400_BAD_REQUEST)
@@ -475,7 +482,11 @@ class BulkImportUsersMixin:
             or student_context.get('faculty_name')
             or student_context.get('faculty')
         )
-        require_faculty_match = student_context.get('require_faculty_match') is True
+        from student_teams.team_levels import is_capstone_scope
+        if is_capstone_scope(context_year_level, context_semester):
+            require_faculty_match = False
+        else:
+            require_faculty_match = student_context.get('require_faculty_match') is True
 
         instructor_assignment = None
         faculty_match_status = None
@@ -503,7 +514,7 @@ class BulkImportUsersMixin:
         skipped = []
         errors = []
         section_instructors = {}
-        if faculty_name and context_year_level and context_section:
+        if faculty_name and context_year_level and context_section and not is_capstone_scope(context_year_level, context_semester):
             section_instructors[(context_year_level, context_section)] = faculty_name
 
         for index, row in enumerate(rows, start=1):
@@ -545,7 +556,7 @@ class BulkImportUsersMixin:
                 or row.get('faculty')
                 or ''
             )
-            if row_instr and year_level and section:
+            if row_instr and year_level and section and not is_capstone_scope(year_level, context_semester):
                 section_instructors[(year_level, section)] = row_instr
 
             if existing_user:
@@ -571,6 +582,40 @@ class BulkImportUsersMixin:
                         updated_fields.append('email')
                     if updated_fields:
                         existing_user.save(update_fields=updated_fields)
+                elif existing_user.role == 'faculty' and not self.force_student_only:
+                    updated_fields = []
+                    if data.get('first_name') and existing_user.first_name != data['first_name']:
+                        existing_user.first_name = data['first_name']
+                        updated_fields.append('first_name')
+                    if data.get('last_name') and existing_user.last_name != data['last_name']:
+                        existing_user.last_name = data['last_name']
+                        updated_fields.append('last_name')
+                    if data.get('email') and existing_user.email != data['email']:
+                        existing_user.email = data['email']
+                        updated_fields.append('email')
+                    if 'is_panelist' in data and existing_user.is_panelist != data['is_panelist']:
+                        existing_user.is_panelist = data['is_panelist']
+                        updated_fields.append('is_panelist')
+                    if 'is_adviser' in data and existing_user.is_adviser != data['is_adviser']:
+                        existing_user.is_adviser = data['is_adviser']
+                        updated_fields.append('is_adviser')
+                    if 'is_pit_lead' in data and existing_user.is_pit_lead != data['is_pit_lead']:
+                        existing_user.is_pit_lead = data['is_pit_lead']
+                        updated_fields.append('is_pit_lead')
+                    if 'pit_lead_year' in data and existing_user.pit_lead_year != data['pit_lead_year']:
+                        existing_user.pit_lead_year = data['pit_lead_year']
+                        updated_fields.append('pit_lead_year')
+                    if 'is_documenter' in data and existing_user.is_documenter != data['is_documenter']:
+                        existing_user.is_documenter = data['is_documenter']
+                        updated_fields.append('is_documenter')
+                    if 'is_uploader' in data and existing_user.is_uploader != data['is_uploader']:
+                        existing_user.is_uploader = data['is_uploader']
+                        updated_fields.append('is_uploader')
+                    if updated_fields:
+                        existing_user.save(update_fields=updated_fields)
+                        created.append(existing_user)
+                    else:
+                        skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                 else:
                     skipped.append({'row': index, 'id_number': username, 'reason': 'duplicate'})
                 continue
@@ -582,6 +627,12 @@ class BulkImportUsersMixin:
                 last_name=data.get('last_name', ''),
                 email=data.get('email', ''),
                 role='student' if self.force_student_only else role,
+                is_panelist=False if self.force_student_only else data.get('is_panelist', False),
+                is_adviser=False if self.force_student_only else data.get('is_adviser', False),
+                is_pit_lead=False if self.force_student_only else data.get('is_pit_lead', False),
+                pit_lead_year=None if self.force_student_only else data.get('pit_lead_year'),
+                is_documenter=False if self.force_student_only else data.get('is_documenter', False),
+                is_uploader=False if self.force_student_only else data.get('is_uploader', False),
             )
             created.append(user)
             if user.role == 'student' and context_semester is not None and year_level:
@@ -594,7 +645,7 @@ class BulkImportUsersMixin:
 
         instructor_warnings = []
         assigned_instructors = []
-        if require_faculty_match and faculty is not None:
+        if require_faculty_match and faculty is not None and not is_capstone_scope(context_year_level, context_semester):
             instructor_assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
                 faculty=faculty,
                 semester=context_semester,
@@ -608,6 +659,8 @@ class BulkImportUsersMixin:
             assigned_instructors.append(instructor_assignment)
         elif context_semester is not None and section_instructors:
             for (sec_year, sec_name), instr_name in section_instructors.items():
+                if is_capstone_scope(sec_year, context_semester):
+                    continue
                 matched_faculty, match_status = _match_faculty_by_name(instr_name)
                 if matched_faculty is not None:
                     assignment, _assignment_created = SectionInstructorAssignment.objects.update_or_create(
@@ -683,6 +736,13 @@ class PitLeadOfficialClassListImportView(APIView):
         pit_year = _normalize_year_level(getattr(request.user, 'pit_lead_year', None))
         if not pit_year:
             return Response({'detail': 'Your PIT Lead account has no assigned year level.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        from student_teams.team_levels import is_capstone_scope
+        if is_capstone_scope(pit_year, active):
+            return Response(
+                {'detail': 'Student import for this term is handled under Capstone.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         metadata = request.data.get('metadata') or {}
         if not isinstance(metadata, dict):

@@ -14,13 +14,13 @@ import 'package:defensys/toasts/feedback_toast.dart';
 import 'components/schedule_run_container.dart';
 import 'components/scheduler_toolbar.dart';
 import 'components/team_readiness_tracker.dart';
-import 'dialogs/manual_slot_editor_dialog.dart';
 import 'dialogs/team_deliverables_review_dialog.dart';
-import 'dialogs/venue_conflict_dialog.dart';
 import 'models/schedule_import_models.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
-  const DefenseSchedulerScreen({super.key});
+  final VoidCallback? onBack;
+
+  const DefenseSchedulerScreen({super.key, this.onBack});
 
   @override
   ConsumerState<DefenseSchedulerScreen> createState() =>
@@ -88,7 +88,7 @@ class _DefenseSchedulerScreenState
       return isAdmin && state.canScheduleCapstone;
     }
     if (scope == 'pit') {
-      return (isAdmin || isPitLead) && state.canSchedulePit;
+      return isPitLead && !isAdmin && state.canSchedulePit;
     }
     return false;
   }
@@ -103,11 +103,14 @@ class _DefenseSchedulerScreenState
     final isPitLead = user?['is_pit_lead'] == true;
 
     if (!isAdmin && !isPitLead) {
-      return 'Defense scheduling is strictly restricted to Administrators (Capstone & PIT) and PIT Leads (PIT only).';
+      return 'Defense scheduling is restricted to Administrators (Capstone) and PIT Leads (PIT).';
     }
 
     final message = state.operatingMessage?.trim() ?? '';
     if (message.isNotEmpty) return message;
+    if (_scope == 'pit' && isAdmin) {
+      return 'PIT scheduling is strictly managed by the PIT Lead.';
+    }
     if (!_canScheduleCurrentScope(state) &&
         (state.schedulerMode == 'pit' || _scope == 'pit')) {
       return 'PIT scheduling is closed for this term.';
@@ -211,14 +214,13 @@ class _DefenseSchedulerScreenState
     final isPitLead = user?['is_pit_lead'] == true;
 
     String targetScope = '';
-    if (isPitLead && !isAdmin) {
-      targetScope = 'pit';
-    } else if (state.schedulerMode == 'pit' || state.schedulerMode == 'capstone') {
-      targetScope = state.schedulerMode;
-    } else if (isAdmin && state.canScheduleCapstone) {
+    if (isAdmin) {
       targetScope = 'capstone';
-    } else if ((isAdmin || isPitLead) && state.canSchedulePit) {
+    } else if (isPitLead) {
       targetScope = 'pit';
+    } else if (state.schedulerMode == 'pit' ||
+        state.schedulerMode == 'capstone') {
+      targetScope = state.schedulerMode;
     }
 
     if (targetScope.isEmpty) return;
@@ -322,49 +324,7 @@ class _DefenseSchedulerScreenState
             children: [
               SchedulerToolbar(
                 state: state,
-                canSchedule: _canScheduleCurrentScope(state),
-                onOpenManualDialog: () => ManualSlotEditorDialog.show(
-                  context,
-                  ref,
-                  state: state,
-                  initialScope: _scope,
-                  initialStageId: _stageId,
-                  initialRubricId: _rubricId,
-                  initialAdviserRubricId: _adviserRubricId,
-                  initialCapstonePeerRubricId: _capstonePeerRubricId,
-                  initialPeerRubricId: _peerRubricId,
-                  initialSelectedPanelistIds: _selectedPanelistIds,
-                  initialDocumenterId: _documenterId,
-                  initialEvent: _eventController.text,
-                  initialPitTemplate: _pitTemplateController.text,
-                  initialDate: _dateController.text,
-                  initialTime: _timeController.text,
-                  initialDuration: _durationController.text,
-                  initialRoom: _roomController.text,
-                  initialPanelWeight: _panelWeightController.text,
-                  initialPeerWeight: _peerWeightController.text,
-                  canScheduleScope: _canScheduleScope,
-                  scheduleNoticeMessage: _scheduleNoticeMessage,
-                ),
-                onOpenImportDialog: () => ScheduleImportDialog.show(
-                  context,
-                  ref,
-                  state: state,
-                  scope: _scope,
-                  initialStageId: _stageId,
-                  initialEventName: _eventController.text,
-                  initialRubricId: _rubricId,
-                  initialAdviserRubricId: _adviserRubricId,
-                  initialPeerRubricId: _peerRubricId,
-                  initialCapstonePeerRubricId: _capstonePeerRubricId,
-                  initialDate: _dateController.text,
-                  initialRoom: _roomController.text,
-                  initialDuration: _durationController.text,
-                  initialPanelWeight: _panelWeightController.text,
-                  initialPeerWeight: _peerWeightController.text,
-                  canScheduleScope: _canScheduleScope,
-                  scheduleNoticeMessage: _scheduleNoticeMessage,
-                ),
+                onBack: widget.onBack,
               ),
               const SizedBox(height: 26),
               SchedulerStepProgress(currentStep: currentStep),

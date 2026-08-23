@@ -12,7 +12,6 @@ import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/csv_file_io.dart';
 
-import 'bulk_import_view.dart';
 import 'official_class_list_parser.dart';
 
 enum StudentHubMode {
@@ -59,7 +58,6 @@ class _StudentBatchEnrollmentHubViewState
   static const Color _line = Color(0xFFE5E7EB);
   static const Color _maroon = DefensysUi.primaryMaroon;
   static const Color _muted = DefensysUi.steelGrey;
-  static const Color _gold = Color(0xFFF59E0B);
   static const Color _green = Color(0xFF15803D);
 
   late StudentHubMode _currentMode;
@@ -301,7 +299,9 @@ class _StudentBatchEnrollmentHubViewState
   // Mode 1: Fresh Student Intake View (Zero-Fillup 2-Column + Preflight)
   // -------------------------------------------------------------
   Widget _buildFreshIntakeView() {
-    final activeSem = ref.watch(studentAcademicRecordsProvider).activeSemester;
+    final activeSem = ref.watch(academicPeriodProvider).activeSemester ??
+        widget.academicState.activeSemester ??
+        ref.watch(studentAcademicRecordsProvider).activeSemester;
     final activeSemLabel = activeSem?['display_name'] ??
         '${activeSem?['school_year'] ?? 'Current Year'} - ${activeSem?['label'] ?? 'Active Term'}';
 
@@ -375,15 +375,15 @@ class _StudentBatchEnrollmentHubViewState
           ),
         ],
 
-        // Top 2-Column Section: Left is Template Guide, Right is Source & Upload
+        // Top 2-Column Section: Left is Smart Format Guide, Right is Primary Upload Action
         LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
+            final isWide = constraints.maxWidth >= 960;
             if (!isWide) {
               return Column(
                 children: [
                   _buildFreshFormatCard(activeSemLabel),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   _buildFreshUploadCard(),
                 ],
               );
@@ -398,7 +398,7 @@ class _StudentBatchEnrollmentHubViewState
                 ),
                 const SizedBox(width: 20),
                 Expanded(
-                  flex: 5,
+                  flex: 6,
                   child: _buildFreshUploadCard(),
                 ),
               ],
@@ -412,16 +412,36 @@ class _StudentBatchEnrollmentHubViewState
           filtered: filtered,
           sectionCounts: sectionCounts,
           totalStudents: _parsedFreshStudents.length,
+          activeSem: activeSem,
         ),
       ],
+    );
+  }
+
+  Widget _buildSpecChip(String label, Color bg, Color fg, {bool isBold = false}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: fg.withValues(alpha: 0.15)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: isBold ? FontWeight.w800 : FontWeight.w700,
+          color: fg,
+        ),
+      ),
     );
   }
 
   Widget _buildFreshFormatCard(String activeSemLabel) {
     return DefensysCard(
       child: Container(
-        constraints: const BoxConstraints(minHeight: 235),
-        padding: const EdgeInsets.all(22),
+        constraints: const BoxConstraints(minHeight: 240),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -434,7 +454,7 @@ class _StudentBatchEnrollmentHubViewState
                     color: _maroon.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.description_outlined, color: _maroon, size: 20),
+                  child: const Icon(Icons.fact_check_outlined, color: _maroon, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -464,35 +484,154 @@ class _StudentBatchEnrollmentHubViewState
               ],
             ),
             const SizedBox(height: 14),
-            _buildSampleClassListPreview(),
-            const SizedBox(height: 12),
+
+            // Smart Spec Badges Group
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Row 1: Detected Preamble Headers
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(Icons.auto_awesome_rounded, size: 14, color: _maroon),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Auto-Detected Preamble Headers (Rows 2, 9, 10, 11):',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                _buildSpecChip('Instructor (PIT Only)', const Color(0xFFFEE2E2), _maroon),
+                                _buildSpecChip('Academic Term', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+                                _buildSpecChip('Class Section', const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+                                _buildSpecChip('Year Level', const Color(0xFFFEF3C7), const Color(0xFF92400E)),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 10),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 10),
+
+                  // Row 2: Required Student Columns
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(Icons.table_chart_outlined, size: 14, color: Color(0xFF475569)),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Required Student Table Columns (Row 14+):',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [
+                                _buildSpecChip('Student Number *', const Color(0xFFF1F5F9), _ink, isBold: true),
+                                _buildSpecChip('Full Name *', const Color(0xFFF1F5F9), _ink, isBold: true),
+                                _buildSpecChip('Email *', const Color(0xFFF1F5F9), _ink, isBold: true),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            // Tip note
             const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.auto_awesome_rounded, size: 14, color: _maroon),
+                Icon(Icons.info_outline_rounded, size: 13, color: _muted),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Best for incoming 1st Year students and new cohorts. Upload your official class lists to automatically register and enroll students with zero manual setup.',
-                    style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w500, height: 1.3),
+                    'Extra university preamble headers & table columns are safely ignored.',
+                    style: TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w500),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 14),
-            OutlinedButton.icon(
-              onPressed: widget.onDownloadSample,
-              icon: const Icon(Icons.download_rounded, size: 14),
-              label: const Text('Download Sample Template'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _ink,
-                side: const BorderSide(color: _line),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+
+            // Action Buttons Row: View Blueprint Modal & Download Template
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _showClassListFormatGuideModal(
+                    context,
+                    isRollover: false,
+                    activeSemLabel: activeSemLabel,
+                  ),
+                  icon: const Icon(Icons.visibility_outlined, size: 14),
+                  label: const Text('View Sheet Layout Blueprint'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _maroon,
+                    side: BorderSide(color: _maroon.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
                 ),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
+                OutlinedButton.icon(
+                  onPressed: widget.onDownloadSample,
+                  icon: const Icon(Icons.download_rounded, size: 14),
+                  label: const Text('Download Sample Template'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _ink,
+                    side: const BorderSide(color: _line),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -500,146 +639,523 @@ class _StudentBatchEnrollmentHubViewState
     );
   }
 
+  void _showClassListFormatGuideModal(
+    BuildContext context, {
+    required bool isRollover,
+    required String activeSemLabel,
+  }) {
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return Dialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 880, maxHeight: 720),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Modal Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 20, 16, 16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: _maroon.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.grid_on_rounded, color: _maroon, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isRollover
+                                  ? 'Official University Class List Blueprint (Rollover / Continuing)'
+                                  : 'Official University Class List Blueprint (Fresh Intake)',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w800,
+                                color: _ink,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Target Term: $activeSemLabel • Visual guide for required preamble metadata and student columns',
+                              style: const TextStyle(fontSize: 12, color: _muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      IconButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        icon: const Icon(Icons.close_rounded, size: 20, color: _muted),
+                        splashRadius: 18,
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: _line),
+
+                // Scrollable Content
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Preamble Info Box
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFFBEB),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: const Color(0xFFFDE68A)),
+                          ),
+                          child: const Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFB45309)),
+                              SizedBox(width: 10),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    style: TextStyle(fontSize: 12, color: Color(0xFF92400E), height: 1.4),
+                                    children: [
+                                      TextSpan(
+                                        text: 'Preamble Metadata Needed: ',
+                                        style: TextStyle(fontWeight: FontWeight.w800),
+                                      ),
+                                      TextSpan(
+                                        text: 'DefenSYS automatically reads ',
+                                      ),
+                                      TextSpan(
+                                        text: 'Instructor (PIT), Term (S.Y. & Semester), Section, and Year Level ',
+                                        style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF78350F)),
+                                      ),
+                                      TextSpan(
+                                        text: 'from Rows 2, 9, 10, 11, and imports ',
+                                      ),
+                                      TextSpan(
+                                        text: 'Student Number, Full Name, and Email ',
+                                        style: TextStyle(fontWeight: FontWeight.w800, color: Color(0xFF78350F)),
+                                      ),
+                                      TextSpan(
+                                        text: 'from the table. Extra university headers and columns are safely ignored.',
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+
+                        // Spreadsheet Preview
+                        _buildSampleClassListPreview(isRollover: isRollover),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const Divider(height: 1, color: _line),
+                // Modal Footer
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      OutlinedButton.icon(
+                        onPressed: () {
+                          Navigator.of(ctx).pop();
+                          widget.onDownloadSample?.call();
+                        },
+                        icon: const Icon(Icons.download_rounded, size: 15),
+                        label: const Text('Download Sample Template (.csv)'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: _ink,
+                          side: const BorderSide(color: _line),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        ),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: _maroon,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                        ),
+                        child: const Text('Close'),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildSampleClassListPreview({bool isRollover = false}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _line),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Banner with detected header tags
+          // Spreadsheet Window Titlebar & Sheet Tab
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
-              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+              color: Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
+              border: Border(bottom: BorderSide(color: Color(0xFFCBD5E1))),
             ),
+            child: Wrap(
+              alignment: WrapAlignment.spaceBetween,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(5),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.insert_drive_file_outlined, size: 12, color: Color(0xFF16A34A)),
+                      const SizedBox(width: 5),
+                      Text(
+                        isRollover ? 'official_class_list_rollover.csv' : 'official_class_list_fresh.csv',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                _buildMiniBadge('⭐ 4 Required Headers Highlighted', const Color(0xFFFEF3C7), const Color(0xFF92400E)),
+              ],
+            ),
+          ),
+
+          // Row 1: Document Title (Standard)
+          _buildOfficialHeaderRow(
+            rowNumber: '1',
+            keyName: 'OFFICIAL LIST OF ENROLLED STUDENTS',
+            valueText: '',
+            isRequired: false,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 2: Term (HIGHLIGHTED - REQUIRED)
+          _buildOfficialHeaderRow(
+            rowNumber: '2',
+            keyName: 'Academic Term',
+            valueText: '2026-2027 1st Semester',
+            badgeText: 'Term (Required)',
+            badgeBg: const Color(0xFFEFF6FF),
+            badgeFg: const Color(0xFF1D4ED8),
+            isRequired: true,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 4 & 5: Subject Code & Title (Standard Metadata)
+          _buildOfficialHeaderRow(
+            rowNumber: '4',
+            keyName: 'Subject Code',
+            valueText: isRollover ? 'CAP402' : 'IT111',
+            secondaryKey: 'Subject Title',
+            secondaryValue: isRollover ? 'Capstone Project 2' : 'Introduction to Computing',
+            isRequired: false,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 6 & 8: Units & Mode (Standard Metadata)
+          _buildOfficialHeaderRow(
+            rowNumber: '6',
+            keyName: 'Academic Units',
+            valueText: '3 (Lab Units: 1)',
+            secondaryKey: 'Mode',
+            secondaryValue: 'Lecture and Laboratory',
+            isRequired: false,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 9: Instructor / Faculty (PIT Required, Capstone Assigns Advisers to Teams)
+          _buildOfficialHeaderRow(
+            rowNumber: '9',
+            keyName: isRollover ? 'Adviser / Faculty' : 'Instructor',
+            valueText: isRollover ? 'Prof. Ricardo Fontanilla' : 'Maricel Suarez',
+            badgeText: isRollover
+                ? 'Optional for Capstone (Advisers Assigned to Teams)'
+                : 'Instructor (Required for PIT)',
+            badgeBg: isRollover ? const Color(0xFFF1F5F9) : const Color(0xFFFEE2E2),
+            badgeFg: isRollover ? const Color(0xFF475569) : _maroon,
+            isRequired: !isRollover,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 10: Class Section (HIGHLIGHTED - REQUIRED)
+          _buildOfficialHeaderRow(
+            rowNumber: '10',
+            keyName: 'Class Section',
+            valueText: isRollover ? 'BSIT-4A' : 'BSIT-1A',
+            badgeText: 'Section (Required)',
+            badgeBg: const Color(0xFFDCFCE7),
+            badgeFg: const Color(0xFF15803D),
+            isRequired: true,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 11: Year Level (HIGHLIGHTED - REQUIRED)
+          _buildOfficialHeaderRow(
+            rowNumber: '11',
+            keyName: 'Year Level',
+            valueText: isRollover ? '4th Year' : '1st Year',
+            badgeText: 'Year Level (Required)',
+            badgeBg: const Color(0xFFFEF3C7),
+            badgeFg: const Color(0xFF92400E),
+            isRequired: true,
+          ),
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Row 12: Schedule (Standard Metadata)
+          _buildOfficialHeaderRow(
+            rowNumber: '12',
+            keyName: 'Schedule(s)',
+            valueText: 'M 1:00 PM - 3:00 PM',
+            isRequired: false,
+          ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+          // Row 14: Column Headers (with Required column highlights)
+          Container(
+            color: const Color(0xFFE2E8F0),
             child: Row(
               children: [
-                const Icon(Icons.table_chart_outlined, size: 14, color: _maroon),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    isRollover ? 'Sample Rollover Class List' : 'Sample Fresh Class List (1st Year)',
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w800,
-                      color: _ink,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                _buildMiniSampleChip(
-                  isRollover ? 'BSIT-4A' : 'BSIT-1A',
-                  const Color(0xFFEFF6FF),
-                  const Color(0xFF1D4ED8),
-                ),
-                const SizedBox(width: 4),
-                _buildMiniSampleChip(
-                  isRollover ? '4th Year' : '1st Year',
-                  const Color(0xFFF3F4F6),
-                  const Color(0xFF374151),
-                ),
-                const SizedBox(width: 4),
-                _buildMiniSampleChip(
-                  isRollover ? 'CAP402' : 'IT111',
-                  const Color(0xFFFEF3C7),
-                  const Color(0xFF92400E),
-                ),
-                const SizedBox(width: 4),
-                _buildMiniSampleChip(
-                  isRollover ? 'Adviser: Prof. Santos' : 'Instructor: Maricel Suarez',
-                  const Color(0xFFF0FDF4),
-                  const Color(0xFF15803D),
-                ),
+                _buildGutterCell('14', isHeader: true),
+                _buildColumnHeaderCell('#', flex: 1),
+                _buildColumnHeaderCell('Student Number', flex: 3, isRequired: true),
+                _buildColumnHeaderCell('Full Name', flex: 4, isRequired: true),
+                _buildColumnHeaderCell('Program', flex: 2),
+                _buildColumnHeaderCell('Gender', flex: 2),
+                _buildColumnHeaderCell('Level', flex: 2),
+                _buildColumnHeaderCell('Email', flex: 4, isRequired: true),
+                _buildColumnHeaderCell('Contact', flex: 3),
               ],
             ),
           ),
+          const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
-          // Mini Table Header
-          Container(
-            color: const Color(0xFFF1F5F9),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            child: const Row(
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Text(
-                    'id_number',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    'student_name',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 4,
-                  child: Text(
-                    'email',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                ),
-                Expanded(
-                  flex: 2,
-                  child: Text(
-                    'section',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+          // Rows 15 & 16: Sample Student Records
+          _buildOfficialStudentRow(
+            rowNumber: '15',
+            index: '1',
+            id: isRollover ? '2023-00101' : '1011',
+            name: 'RIVERA, James',
+            prog: 'BSIT',
+            gen: 'M',
+            level: isRollover ? '4th Yr.' : '1st Yr.',
+            email: isRollover ? 'j.rivera@ustp.edu.ph' : '1011@ustp.edu.ph',
+            contact: '09170001011',
+            isAlt: false,
           ),
           const Divider(height: 1, color: Color(0xFFE2E8F0)),
-
-          // Mini Table Sample Rows
-          _buildSampleRow(
-            isRollover ? '2023-00101' : '2026-00101',
-            'DELA CRUZ, Juan',
-            'j.delacruz@ustp.edu.ph',
-            isRollover ? 'BSIT-4A' : 'BSIT-1A',
-            false,
-          ),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          _buildSampleRow(
-            isRollover ? '2023-00102' : '2026-00102',
-            'SANTOS, Maria',
-            'm.santos@ustp.edu.ph',
-            isRollover ? 'BSIT-4A' : 'BSIT-1A',
-            true,
+          _buildOfficialStudentRow(
+            rowNumber: '16',
+            index: '2',
+            id: isRollover ? '2023-00102' : '1012',
+            name: 'LIM, Sofia',
+            prog: 'BSIT',
+            gen: 'F',
+            level: isRollover ? '4th Yr.' : '1st Yr.',
+            email: isRollover ? 's.lim@ustp.edu.ph' : '1012@ustp.edu.ph',
+            contact: '09170001012',
+            isAlt: true,
           ),
         ],
       ),
     );
   }
 
-  Widget _buildMiniSampleChip(String label, Color bg, Color fg) {
+  Widget _buildOfficialHeaderRow({
+    required String rowNumber,
+    required String keyName,
+    required String valueText,
+    String? secondaryKey,
+    String? secondaryValue,
+    String? badgeText,
+    Color? badgeBg,
+    Color? badgeFg,
+    required bool isRequired,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      color: isRequired ? const Color(0xFFFFFBEB).withValues(alpha: 0.6) : Colors.white,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Wrap(
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Text(
+                    valueText.isEmpty ? keyName : '$keyName: ',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: isRequired ? FontWeight.w800 : FontWeight.w600,
+                      color: isRequired ? _maroon : const Color(0xFF64748B),
+                    ),
+                  ),
+                  if (valueText.isNotEmpty)
+                    Text(
+                      valueText,
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: isRequired ? FontWeight.w800 : FontWeight.w600,
+                        color: isRequired ? const Color(0xFF1E293B) : const Color(0xFF475569),
+                      ),
+                    ),
+                  if (secondaryKey != null && secondaryValue != null) ...[
+                    const Text('   |   ', style: TextStyle(fontSize: 10, color: Color(0xFFCBD5E1))),
+                    Text(
+                      '$secondaryKey: ',
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B)),
+                    ),
+                    Text(
+                      secondaryValue,
+                      style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF475569)),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (badgeText != null && badgeBg != null && badgeFg != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _buildMiniBadge(badgeText, badgeBg, badgeFg),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildColumnHeaderCell(String title, {required int flex, bool isRequired = false}) {
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Flexible(
+              child: Text(
+                title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: isRequired ? FontWeight.w900 : FontWeight.w700,
+                  color: isRequired ? _maroon : const Color(0xFF475569),
+                ),
+              ),
+            ),
+            if (isRequired) ...[
+              const SizedBox(width: 2),
+              const Text(
+                '*',
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w900, color: _maroon),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildOfficialStudentRow({
+    required String rowNumber,
+    required String index,
+    required String id,
+    required String name,
+    required String prog,
+    required String gen,
+    required String level,
+    required String email,
+    required String contact,
+    bool isAlt = false,
+  }) {
+    return Container(
+      color: isAlt ? const Color(0xFFF8FAFC) : Colors.white,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          Expanded(flex: 1, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(index, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(name, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(prog, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(gen, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(level, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: _muted)))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 5), child: Text(contact, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))))),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGutterCell(String rowNum, {bool isHeader = false}) {
+    return Container(
+      width: 26,
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isHeader ? const Color(0xFFCBD5E1) : const Color(0xFFF8FAFC),
+        border: const Border(right: BorderSide(color: Color(0xFFCBD5E1))),
+      ),
+      child: Text(
+        rowNum,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: isHeader ? FontWeight.w900 : FontWeight.w600,
+          color: isHeader ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildMiniBadge(String label, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(4),
@@ -647,50 +1163,10 @@ class _StudentBatchEnrollmentHubViewState
       child: Text(
         label,
         style: TextStyle(
-          fontSize: 9.5,
+          fontSize: 9,
           fontWeight: FontWeight.w700,
           color: fg,
         ),
-      ),
-    );
-  }
-
-  Widget _buildSampleRow(String id, String name, String email, String sec, bool isEven) {
-    return Container(
-      color: isEven ? const Color(0xFFF9FAFB) : Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-      child: Row(
-        children: [
-          Expanded(
-            flex: 3,
-            child: Text(
-              id,
-              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _ink),
-            ),
-          ),
-          Expanded(
-            flex: 4,
-            child: Text(
-              name,
-              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _ink),
-            ),
-          ),
-          Expanded(
-            flex: 4,
-            child: Text(
-              email,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(fontSize: 10.5, color: _muted),
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: Text(
-              sec,
-              style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _maroon),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -699,8 +1175,8 @@ class _StudentBatchEnrollmentHubViewState
     final hasFiles = _stagedFreshFiles.isNotEmpty;
     return DefensysCard(
       child: Container(
-        constraints: const BoxConstraints(minHeight: 235),
-        padding: const EdgeInsets.all(22),
+        constraints: const BoxConstraints(minHeight: 240),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -778,7 +1254,7 @@ class _StudentBatchEnrollmentHubViewState
               borderRadius: BorderRadius.circular(10),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
                 decoration: BoxDecoration(
                   color: hasFiles ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(10),
@@ -794,17 +1270,17 @@ class _StudentBatchEnrollmentHubViewState
                       hasFiles
                           ? Icons.inventory_2_outlined
                           : Icons.cloud_upload_outlined,
-                      size: 28,
-                      color: hasFiles ? _green : _muted,
+                      size: 30,
+                      color: hasFiles ? _green : _maroon,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       hasFiles
                           ? '${_stagedFreshFiles.length} Class List File(s) Staged (Click to View / Add)'
                           : 'Click to choose official class list (.csv / .xlsx)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: hasFiles ? const Color(0xFF15803D) : _ink,
                       ),
@@ -820,6 +1296,17 @@ class _StudentBatchEnrollmentHubViewState
                         color: hasFiles ? const Color(0xFF166534) : _muted,
                       ),
                     ),
+                    if (!hasFiles) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildSpecChip('CSV', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          const SizedBox(width: 6),
+                          _buildSpecChip('XLSX', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -855,6 +1342,7 @@ class _StudentBatchEnrollmentHubViewState
     required List<Map<String, dynamic>> filtered,
     required Map<String, int> sectionCounts,
     required int totalStudents,
+    required Map<String, dynamic>? activeSem,
   }) {
     final totalCount = filtered.length;
     final totalPages = (totalCount / _freshRowsPerPage).ceil();
@@ -1003,6 +1491,9 @@ class _StudentBatchEnrollmentHubViewState
                 final sec = s['section']?.toString() ?? 'Unassigned';
 
                 final instructor = (s['faculty'] ?? s['instructor'] ?? s['instructor_name'] ?? '').toString().trim();
+                final isCapstoneStudent = year.contains('4th') ||
+                    (year.contains('3rd') &&
+                        (activeSem?['label']?.toString().contains('2nd') ?? false));
 
                 return Container(
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -1071,7 +1562,7 @@ class _StudentBatchEnrollmentHubViewState
                                 ),
                               ),
                             ),
-                            if (instructor.isNotEmpty)
+                            if (!isCapstoneStudent && instructor.isNotEmpty)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                 decoration: BoxDecoration(
@@ -1105,20 +1596,20 @@ class _StudentBatchEnrollmentHubViewState
                         child: Container(
                           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                           decoration: BoxDecoration(
-                            color: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                            color: activeSem == null
                                 ? const Color(0xFFFEE2E2)
                                 : const Color(0xFFDCFCE7),
                             borderRadius: BorderRadius.circular(6),
                           ),
                           child: Text(
-                            ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                            activeSem == null
                                 ? 'Blocked (No Active Term)'
                                 : 'Ready to Enroll',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
-                              color: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                              color: activeSem == null
                                   ? const Color(0xFFDC2626)
                                   : _green,
                             ),
@@ -1169,22 +1660,22 @@ class _StudentBatchEnrollmentHubViewState
                 ElevatedButton.icon(
                   onPressed: _parsedFreshStudents.isEmpty ||
                           widget.userState.isSaving ||
-                          ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                          activeSem == null
                       ? null
                       : _confirmFreshIntake,
                   icon: Icon(
-                    ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                    activeSem == null
                         ? Icons.block_rounded
                         : Icons.check_circle_outline_rounded,
                     size: 18,
                   ),
                   label: Text(
-                    ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                    activeSem == null
                         ? 'Active Semester Required (Import Blocked)'
                         : 'Confirm Student Intake (${_parsedFreshStudents.length} students)',
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: ref.watch(studentAcademicRecordsProvider).activeSemester == null
+                    backgroundColor: activeSem == null
                         ? Colors.grey
                         : _maroon,
                     foregroundColor: Colors.white,
@@ -1246,7 +1737,9 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _openFreshStagingModal(List<PickedTabularFile> initialFiles) async {
     if (!mounted) return;
     try {
-      final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = ref.read(academicPeriodProvider).activeSemester ??
+          widget.academicState.activeSemester ??
+          ref.read(studentAcademicRecordsProvider).activeSemester;
       final result = await showFileImportStagingModal(
         context,
         initialFiles: initialFiles,
@@ -1339,7 +1832,9 @@ class _StudentBatchEnrollmentHubViewState
 
   Future<void> _confirmFreshIntake() async {
     if (_parsedFreshStudents.isEmpty) return;
-    final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
+    final activeSem = ref.read(academicPeriodProvider).activeSemester ??
+        widget.academicState.activeSemester ??
+        ref.read(studentAcademicRecordsProvider).activeSemester;
     if (activeSem == null) {
       showErrorToast(
         context,
@@ -1359,7 +1854,9 @@ class _StudentBatchEnrollmentHubViewState
   // -------------------------------------------------------------
   Widget _buildSemesterRolloverView() {
     final state = ref.watch(studentAcademicRecordsProvider);
-    final activeSem = state.activeSemester;
+    final activeSem = ref.watch(academicPeriodProvider).activeSemester ??
+        widget.academicState.activeSemester ??
+        state.activeSemester;
     final activeSemLabel = activeSem?['display_name'] ??
         '${activeSem?['school_year'] ?? 'Current Year'} - ${activeSem?['label'] ?? 'Active Term'}';
 
@@ -1407,15 +1904,15 @@ class _StudentBatchEnrollmentHubViewState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Top 2-Column Section: Left is Rules Guide, Right is Source & Upload
+        // Top 2-Column Section: Left is Rules Guide, Right is Primary Source & Upload
         LayoutBuilder(
           builder: (context, constraints) {
-            final isWide = constraints.maxWidth >= 900;
+            final isWide = constraints.maxWidth >= 960;
             if (!isWide) {
               return Column(
                 children: [
                   _buildRolloverRulesCard(activeSemLabel),
-                  const SizedBox(height: 20),
+                  const SizedBox(height: 18),
                   _buildRolloverSourceCard(state),
                 ],
               );
@@ -1430,7 +1927,7 @@ class _StudentBatchEnrollmentHubViewState
                 ),
                 const SizedBox(width: 20),
                 Expanded(
-                  flex: 5,
+                  flex: 6,
                   child: _buildRolloverSourceCard(state),
                 ),
               ],
@@ -1455,8 +1952,8 @@ class _StudentBatchEnrollmentHubViewState
   Widget _buildRolloverRulesCard(String activeSemLabel) {
     return DefensysCard(
       child: Container(
-        constraints: const BoxConstraints(minHeight: 235),
-        padding: const EdgeInsets.all(22),
+        constraints: const BoxConstraints(minHeight: 240),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -1469,7 +1966,7 @@ class _StudentBatchEnrollmentHubViewState
                     color: _maroon.withValues(alpha: 0.08),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.description_outlined, color: _maroon, size: 20),
+                  child: const Icon(Icons.swap_horiz_rounded, color: _maroon, size: 20),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -1516,7 +2013,10 @@ class _StudentBatchEnrollmentHubViewState
                   Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Icon(Icons.trending_up_rounded, size: 15, color: _maroon),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(Icons.trending_up_rounded, size: 14, color: _maroon),
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Column(
@@ -1525,16 +2025,16 @@ class _StudentBatchEnrollmentHubViewState
                             const Text(
                               'Standard Year Level Progression:',
                               style: TextStyle(
-                                fontSize: 11.5,
+                                fontSize: 11,
                                 fontWeight: FontWeight.w700,
                                 color: _ink,
                               ),
                             ),
                             const SizedBox(height: 3),
-                            Text(
+                            const Text(
                               '• 1st Sem advances to 2nd Sem (Same Year Level)\n• 2nd Sem advances to next Year Level (1st Yr → 2nd Yr → 3rd Yr → 4th Yr)',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: 10.5,
                                 color: _muted,
                                 height: 1.35,
                                 fontWeight: FontWeight.w500,
@@ -1558,12 +2058,12 @@ class _StudentBatchEnrollmentHubViewState
                       Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          const Icon(Icons.school_rounded, size: 15, color: _green),
-                          const SizedBox(width: 8),
+                          const Icon(Icons.school_rounded, size: 14, color: _green),
+                          const SizedBox(width: 6),
                           const Text(
                             'Capstone Stages:',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              fontSize: 11,
                               fontWeight: FontWeight.w700,
                               color: _ink,
                             ),
@@ -1578,40 +2078,60 @@ class _StudentBatchEnrollmentHubViewState
                 ],
               ),
             ),
-            const SizedBox(height: 14),
-
-            // Sample Class List Structure Preview
-            _buildSampleClassListPreview(isRollover: true),
-            const SizedBox(height: 12),
+            const SizedBox(height: 10),
 
             const Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(Icons.auto_awesome_rounded, size: 14, color: _maroon),
+                Icon(Icons.auto_awesome_rounded, size: 13, color: _maroon),
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Best for continuing cohorts (2nd, 3rd, and 4th Year). Upload your official class lists to automatically advance students, detect repeaters, and handle dropouts.',
-                    style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w500, height: 1.3),
+                    'Best for continuing cohorts. Auto-advances students, detects repeaters, and manages dropouts.',
+                    style: TextStyle(fontSize: 11, color: _muted, fontWeight: FontWeight.w500),
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 14),
 
-            OutlinedButton.icon(
-              onPressed: widget.onDownloadSample,
-              icon: const Icon(Icons.download_rounded, size: 14),
-              label: const Text('Download Sample Template'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: _ink,
-                side: const BorderSide(color: _line),
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
+            // Action Buttons Row: View Blueprint Modal & Download Template
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _showClassListFormatGuideModal(
+                    context,
+                    isRollover: true,
+                    activeSemLabel: activeSemLabel,
+                  ),
+                  icon: const Icon(Icons.visibility_outlined, size: 14),
+                  label: const Text('View Sheet Layout Blueprint'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _maroon,
+                    side: BorderSide(color: _maroon.withValues(alpha: 0.35)),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
                 ),
-                textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              ),
+                OutlinedButton.icon(
+                  onPressed: widget.onDownloadSample,
+                  icon: const Icon(Icons.download_rounded, size: 14),
+                  label: const Text('Download Sample Template'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: _ink,
+                    side: const BorderSide(color: _line),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                  ),
+                ),
+              ],
             ),
           ],
         ),
@@ -1619,59 +2139,6 @@ class _StudentBatchEnrollmentHubViewState
     );
   }
 
-  Widget _buildRuleRow({
-    required IconData icon,
-    required Color iconColor,
-    required String title,
-    String? description,
-    Widget? customChild,
-  }) {
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Container(
-          margin: const EdgeInsets.only(top: 2),
-          padding: const EdgeInsets.all(4),
-          decoration: BoxDecoration(
-            color: iconColor.withValues(alpha: 0.1),
-            shape: BoxShape.circle,
-          ),
-          child: Icon(icon, size: 14, color: iconColor),
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 12.5,
-                  fontWeight: FontWeight.w700,
-                  color: _ink,
-                ),
-              ),
-              if (description != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  description,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    color: _muted,
-                    height: 1.3,
-                  ),
-                ),
-              ],
-              if (customChild != null) ...[
-                const SizedBox(height: 4),
-                customChild,
-              ],
-            ],
-          ),
-        ),
-      ],
-    );
-  }
 
   Widget _buildMilestoneTag(String term, String stage, Color bg, Color fg) {
     return Container(
@@ -1716,8 +2183,8 @@ class _StudentBatchEnrollmentHubViewState
   Widget _buildRolloverSourceCard(StudentAcademicRecordsState state) {
     return DefensysCard(
       child: Container(
-        constraints: const BoxConstraints(minHeight: 235),
-        padding: const EdgeInsets.all(22),
+        constraints: const BoxConstraints(minHeight: 240),
+        padding: const EdgeInsets.all(20),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
@@ -1799,7 +2266,7 @@ class _StudentBatchEnrollmentHubViewState
               borderRadius: BorderRadius.circular(10),
               child: Container(
                 width: double.infinity,
-                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
+                padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
                 decoration: BoxDecoration(
                   color: _hasCsvUploaded
                       ? const Color(0xFFF0FDF4)
@@ -1819,17 +2286,17 @@ class _StudentBatchEnrollmentHubViewState
                       _hasCsvUploaded
                           ? Icons.inventory_2_outlined
                           : Icons.cloud_upload_outlined,
-                      size: 28,
-                      color: _hasCsvUploaded ? _green : _muted,
+                      size: 30,
+                      color: _hasCsvUploaded ? _green : _maroon,
                     ),
-                    const SizedBox(height: 6),
+                    const SizedBox(height: 8),
                     Text(
                       _hasCsvUploaded
                           ? '${_stagedRolloverFiles.length} Class List File(s) Staged (Click to View / Add)'
                           : 'Click to choose official class list (.csv / .xlsx)',
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: 13,
                         fontWeight: FontWeight.w700,
                         color: _hasCsvUploaded ? const Color(0xFF15803D) : _ink,
                       ),
@@ -1847,6 +2314,17 @@ class _StudentBatchEnrollmentHubViewState
                             : _muted,
                       ),
                     ),
+                    if (!_hasCsvUploaded) ...[
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          _buildSpecChip('CSV', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          const SizedBox(width: 6),
+                          _buildSpecChip('XLSX', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                        ],
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -2425,7 +2903,9 @@ class _StudentBatchEnrollmentHubViewState
   Future<void> _openRolloverStagingModal(List<PickedTabularFile> initialFiles) async {
     if (!mounted) return;
     try {
-      final activeSem = ref.read(studentAcademicRecordsProvider).activeSemester;
+      final activeSem = ref.read(academicPeriodProvider).activeSemester ??
+          widget.academicState.activeSemester ??
+          ref.read(studentAcademicRecordsProvider).activeSemester;
       final result = await showFileImportStagingModal(
         context,
         initialFiles: initialFiles,

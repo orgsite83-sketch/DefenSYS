@@ -418,6 +418,87 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.data['skipped_count'], 1)
         self.assertTrue(User.objects.get(username='FAC-0001').check_password('FAC-0001'))
 
+    def test_bulk_import_faculty_with_multi_roles(self):
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'users': [
+                    {
+                        'id_number': 'FAC-201',
+                        'first_name': 'Alan',
+                        'last_name': 'Turing',
+                        'email': 'alan@example.com',
+                        'role': 'Panelist, Adviser',
+                    },
+                    {
+                        'id_number': 'FAC-202',
+                        'first_name': 'Grace',
+                        'last_name': 'Hopper',
+                        'email': 'grace@example.com',
+                        'role': 'PIT Lead 1st Year / Panelist',
+                    },
+                    {
+                        'id_number': 'FAC-203',
+                        'first_name': 'Dennis',
+                        'last_name': 'Ritchie',
+                        'email': 'dennis@example.com',
+                        'role': 'Admin',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 3)
+
+        alan = User.objects.get(username='FAC-201')
+        self.assertEqual(alan.role, 'faculty')
+        self.assertTrue(alan.is_panelist)
+        self.assertTrue(alan.is_adviser)
+        self.assertFalse(alan.is_pit_lead)
+
+        grace = User.objects.get(username='FAC-202')
+        self.assertEqual(grace.role, 'faculty')
+        self.assertTrue(grace.is_pit_lead)
+        self.assertEqual(grace.pit_lead_year, '1st Year')
+        self.assertTrue(grace.is_panelist)
+
+        dennis = User.objects.get(username='FAC-203')
+        self.assertEqual(dennis.role, 'admin')
+
+    def test_bulk_import_faculty_updates_existing_capabilities(self):
+        User.objects.create_user(
+            username='FAC-301',
+            first_name='Barbara',
+            last_name='Liskov',
+            email='barbara@example.com',
+            role='faculty',
+            is_panelist=False,
+            is_adviser=False,
+        )
+
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'users': [
+                    {
+                        'id_number': 'FAC-301',
+                        'first_name': 'Barbara',
+                        'last_name': 'Liskov',
+                        'email': 'barbara@example.com',
+                        'role': 'Panelist, Adviser',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        barbara = User.objects.get(username='FAC-301')
+        self.assertTrue(barbara.is_panelist)
+        self.assertTrue(barbara.is_adviser)
+
     def test_bulk_import_can_create_student_academic_records(self):
         school_year = SchoolYear.objects.create(label='2026-2027')
         semester = Semester.objects.create(
@@ -1179,4 +1260,91 @@ class UserManagementApiTests(APITestCase):
             section='BSIT-1A',
         )
         self.assertTrue(assignment.is_active)
+
+    def test_admin_student_batch_capstone_does_not_create_instructor_assignment(self):
+        school_year = SchoolYear.objects.create(label='2035-2036')
+        semester = Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        User.objects.create_user(
+            username='ricardo-fontanilla',
+            password='pass12345',
+            role='faculty',
+            first_name='Ricardo',
+            last_name='Fontanilla',
+        )
+
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'student_context': {
+                    'semester_id': semester.id,
+                    'year_level': StudentAcademicRecord.FOURTH_YEAR,
+                    'section': 'BSIT-4A',
+                    'instructor_name': 'Ricardo Fontanilla',
+                    'require_faculty_match': True,
+                },
+                'users': [
+                    {
+                        'id_number': '4011',
+                        'first_name': 'Marcus',
+                        'last_name': 'VILLAR',
+                        'email': '4011@ustp.edu.ph',
+                        'role': 'student',
+                        'year_level': StudentAcademicRecord.FOURTH_YEAR,
+                        'section': 'BSIT-4A',
+                        'instructor_name': 'Ricardo Fontanilla',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        # Capstone does NOT create SectionInstructorAssignment
+        self.assertIsNone(response.data['instructor_assignment'])
+        self.assertEqual(len(response.data['instructor_assignments']), 0)
+        self.assertFalse(
+            SectionInstructorAssignment.objects.filter(
+                semester=semester,
+                year_level=StudentAcademicRecord.FOURTH_YEAR,
+            ).exists()
+        )
+
+        # Academic records endpoint returns null instructor_name for Capstone
+        rec_res = self.client.get('/api/users/academic-records/')
+        self.assertEqual(rec_res.status_code, 200)
+        records = rec_res.data if isinstance(rec_res.data, list) else rec_res.data.get('records', [])
+        rec_4011 = next((r for r in records if r.get('student_username') == '4011'), None)
+        self.assertIsNotNone(rec_4011)
+        self.assertIsNone(rec_4011.get('instructor_name'))
+
+    def test_section_instructor_assignment_rejects_capstone_scope(self):
+        school_year = SchoolYear.objects.create(label='2036-2037')
+        Semester.objects.create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        faculty = User.objects.create_user(
+            username='test-faculty-capstone',
+            password='pass12345',
+            role='faculty',
+        )
+
+        response = self.client.post(
+            '/api/users/pit-instructors/',
+            {
+                'year_level': StudentAcademicRecord.FOURTH_YEAR,
+                'section': 'BSIT-4B',
+                'faculty_id': faculty.id,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('year_level', response.data)
+
 

@@ -116,27 +116,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
   void _reinspectAllFiles() {
     _inspectedFiles.clear();
+    _activeImportMode = widget.importMode;
 
-    // 1. Initial pass: inspect with current or default mode
-    final initialInspected = <StagedFileInfo>[];
-    for (final file in _stagedFiles) {
-      initialInspected.add(_inspectFile(file, _activeImportMode));
-    }
-
-    // 2. Auto-detect active import mode from valid staged files
-    final validFiles = initialInspected.where((f) => f.isValid).toList();
-    if (validFiles.isNotEmpty) {
-      final allGeneral = validFiles.every((f) => f.detectedImportMode == 'general');
-      final allStudent = validFiles.every((f) => f.detectedImportMode == 'student');
-
-      if (allGeneral) {
-        _activeImportMode = 'general';
-      } else if (allStudent) {
-        _activeImportMode = 'student';
-      }
-    }
-
-    // 3. Finalize inspected metadata and sum valid row count
     int totalRows = 0;
     for (final file in _stagedFiles) {
       final info = _inspectFile(file, _activeImportMode);
@@ -296,6 +277,25 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         studentCount = rows.length > 12 ? rows.length - 12 : 0;
       }
 
+      final isGeneralMode = importMode == 'general';
+      if (isGeneralMode) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Official Class List (Student)',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'student',
+          recordEntityLabel: 'students',
+          primaryRole: 'Student',
+          section: section?.isNotEmpty == true ? section : 'Auto-detected Section',
+          subjectCode: subjectCode,
+          subjectTitle: subjectTitle,
+          yearLevel: yearLevel,
+          instructor: instructor,
+          warning: 'This file is a Student Class List. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+        );
+      }
+
       return StagedFileInfo(
         file: file,
         formatLabel: 'Official Class List',
@@ -354,6 +354,41 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       final hasFacultyInName = lowerName.contains('faculty') || lowerName.contains('instructor') || lowerName.contains('teacher') || lowerName.contains('prof');
       final hasAdminInName = lowerName.contains('admin') || lowerName.contains('staff') || lowerName.contains('user');
       final hasStudentInName = lowerName.contains('student') || lowerName.contains('section') || lowerName.contains('class');
+
+      final isFacultyTarget = importMode == 'general';
+      final isStudentTarget = importMode == 'student';
+
+      final isPurelyStudent = (studentCount > 0 && facultyCount == 0 && adminCount == 0) ||
+          (hasStudentHeaders && facultyCount == 0 && adminCount == 0) ||
+          (hasStudentInName && studentCount > 0);
+      final isPurelyFacultyOrAdmin = ((facultyCount + adminCount) > 0 && studentCount == 0) ||
+          (hasFacultyInName && studentCount == 0);
+
+      if (isFacultyTarget && isPurelyStudent) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Student Accounts CSV',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'student',
+          recordEntityLabel: 'students',
+          primaryRole: 'Student',
+          warning: 'This file contains student records. It cannot be imported into Faculty & Staff. Please use the Batch Student Enrollment Hub instead.',
+        );
+      }
+
+      if (isStudentTarget && isPurelyFacultyOrAdmin) {
+        return StagedFileInfo(
+          file: file,
+          formatLabel: 'Faculty Accounts CSV',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: 'general',
+          recordEntityLabel: 'faculty',
+          primaryRole: 'Faculty',
+          warning: 'This file is a Faculty & Staff template. It cannot be imported into Student Intake.',
+        );
+      }
 
       String detectedMode;
       String formatLabel;
@@ -419,7 +454,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       detectedImportMode: importMode,
       recordEntityLabel: 'incompatible',
       warning:
-          'Columns not recognized for ${importMode == 'student' ? 'Student Intake' : 'User Import'}$detectedHint. This file will be skipped unless replaced.',
+          'Columns not recognized for ${importMode == 'student' ? 'Student Intake' : 'Faculty & Staff Import'}$detectedHint. This file will be skipped unless replaced.',
     );
   }
 
@@ -719,7 +754,9 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       barBg = const Color(0xFFFEF2F2);
       iconColor = const Color(0xFFDC2626);
       barIcon = Icons.error_outline_rounded;
-      summaryText = 'No valid class list files detected  •  Please replace or remove incompatible files';
+      summaryText = isStudentMode
+          ? 'No valid class list files detected  •  Please replace or remove incompatible files'
+          : 'No valid faculty & staff files detected  •  Please replace or remove incompatible files';
     }
 
     return Container(
@@ -802,7 +839,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
     String entityCountText;
     if (isInvalid) {
-      entityCountText = 'Incompatible Format (0 $_activeImportMode records)';
+      entityCountText = 'Incompatible Format (0 ${_activeImportMode == 'student' ? 'student' : 'faculty'} records)';
     } else if (isFaculty) {
       entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'faculty' : 'faculty'}';
     } else if (isUsers) {
@@ -1070,8 +1107,8 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
       icon: Icons.folder_open_rounded,
       title: 'No Files Currently Staged',
       description: _activeImportMode == 'student'
-          ? 'Click below to add a class list (.csv / .xlsx) to stage for import.'
-          : 'Click below to add a user accounts file (.csv / .xlsx) to stage for import.',
+          ? 'Click below to add a student class list (.csv / .xlsx) to stage for import.'
+          : 'Click below to add a faculty & staff spreadsheet (.csv / .xlsx) to stage for import.',
       size: DefensysEmptyStateSize.compact,
     );
   }
@@ -1081,7 +1118,7 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
         ? 'Select file(s) to import'
         : (_activeImportMode == 'student'
             ? 'Add another class section or file'
-            : 'Add another user file');
+            : 'Add another faculty/staff file');
 
     return InkWell(
       onTap: _isProcessing ? null : _handleAddMoreFiles,

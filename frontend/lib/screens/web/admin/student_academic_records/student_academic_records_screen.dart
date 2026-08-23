@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../../services/academic_period_provider.dart';
 import '../../../../services/student_academic_records_provider.dart';
 import '../../../../utils/csv_file_io.dart';
 import '../../../../toasts/feedback_toast.dart';
@@ -254,7 +255,7 @@ class _StudentAcademicRecordsScreenState
   }
 
   Widget _buildActiveSemesterCard(StudentAcademicRecordsState state) {
-    final active = state.activeSemester;
+    final active = ref.watch(academicPeriodProvider).activeSemester ?? state.activeSemester;
 
     return Container(
       height: 101,
@@ -874,13 +875,14 @@ class _StudentAcademicRecordsScreenState
   }) async {
     final editing = record != null;
     final state = ref.read(studentAcademicRecordsProvider);
+    final activeSem = ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
     int? selectedStudentId =
         overrideStudentId ?? _asInt(record?['student_id']) ?? _firstStudentId(state);
     String? selectedSchoolYear =
         record?['school_year']?.toString() ??
-        state.activeSemester?['school_year']?.toString();
+        activeSem?['school_year']?.toString();
     int? selectedSemesterId =
-        _asInt(record?['semester_id']) ?? _asInt(state.activeSemester?['id']);
+        _asInt(record?['semester_id']) ?? _asInt(activeSem?['id']);
     String selectedYearLevel =
         record?['year_level']?.toString() ?? _yearLevels.first;
     String selectedSection =

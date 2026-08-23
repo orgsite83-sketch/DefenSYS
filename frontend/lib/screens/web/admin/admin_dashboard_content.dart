@@ -36,82 +36,84 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
     final initialLoad = dashState.isLoading && dashState.data == null;
     final stats = _statsFrom(dashState.data?['stats']);
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const DefensysPageHeader(
-            icon: Icons.show_chart_rounded,
-            title: 'Welcome back, Admin!',
-            subtitle: 'Here is what is happening in the IT Department today.',
-          ),
-          const SizedBox(height: 20),
-          if (initialLoad)
-            DefensysSkeleton.metricRow()
-          else
+    return SingleChildScrollView(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 20, 24, 36),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const DefensysPageHeader(
+              icon: Icons.show_chart_rounded,
+              title: 'Welcome back, Admin!',
+              subtitle: 'Here is what is happening in the IT Department today.',
+            ),
+            const SizedBox(height: 20),
+            if (initialLoad)
+              DefensysSkeleton.metricRow()
+            else
+              Row(
+                children: [
+                  Expanded(
+                    child: _metricCard(
+                      value: _statValue(stats, 'total_students'),
+                      label: 'Active Students',
+                      icon: Icons.groups_rounded,
+                      iconColor: const Color(0xFF7C3AED),
+                      iconBackground: const Color(0xFFEDE3FF),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _metricCard(
+                      value: _statValue(stats, 'total_faculty'),
+                      label: 'Faculty Members',
+                      icon: Icons.co_present_rounded,
+                      iconColor: const Color(0xFF2563EB),
+                      iconBackground: const Color(0xFFDCEBFF),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _metricCard(
+                      value: _statValue(stats, 'total_teams'),
+                      label: 'Active Teams',
+                      icon: Icons.groups_3_rounded,
+                      iconColor: const Color(0xFF047857),
+                      iconBackground: const Color(0xFFCFFAE7),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: _metricCard(
+                      value: _statValue(stats, 'upcoming_defenses'),
+                      label: 'Scheduled Defenses',
+                      icon: Icons.event_available_rounded,
+                      iconColor: const Color(0xFF92400E),
+                      iconBackground: const Color(0xFFFFEDB8),
+                    ),
+                  ),
+                ],
+              ),
+            const SizedBox(height: 24),
             Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'total_students'),
-                    label: 'Active Students',
-                    icon: Icons.groups_rounded,
-                    iconColor: const Color(0xFF7C3AED),
-                    iconBackground: const Color(0xFFEDE3FF),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'total_faculty'),
-                    label: 'Faculty Members',
-                    icon: Icons.co_present_rounded,
-                    iconColor: const Color(0xFF2563EB),
-                    iconBackground: const Color(0xFFDCEBFF),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'total_teams'),
-                    label: 'Active Teams',
-                    icon: Icons.groups_3_rounded,
-                    iconColor: const Color(0xFF047857),
-                    iconBackground: const Color(0xFFCFFAE7),
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: _metricCard(
-                    value: _statValue(stats, 'upcoming_defenses'),
-                    label: 'Scheduled Defenses',
-                    icon: Icons.event_available_rounded,
-                    iconColor: const Color(0xFF92400E),
-                    iconBackground: const Color(0xFFFFEDB8),
-                  ),
-                ),
+                Expanded(child: _quickActionsCard()),
+                const SizedBox(width: 20),
+                Expanded(child: _upcomingDefensesCard(dashState)),
               ],
             ),
-          const SizedBox(height: 24),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _quickActionsCard()),
-              const SizedBox(width: 20),
-              Expanded(child: _upcomingDefensesCard(dashState)),
-            ],
-          ),
-          const SizedBox(height: 20),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(child: _teamOverviewCard(dashState)),
-              const SizedBox(width: 20),
-              Expanded(child: _systemAlertsCard(dashState)),
-            ],
-          ),
-        ],
+            const SizedBox(height: 20),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _teamOverviewCard(dashState)),
+                const SizedBox(width: 20),
+                Expanded(child: _systemAlertsCard(dashState)),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -245,23 +247,74 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
   }
 
   Widget _teamOverviewCard(DashboardState dashState) {
+    final stats = _statsFrom(dashState.data?['stats']);
+    final totalTeamsStr = stats['total_teams']?.toString() ?? '0';
+    final totalTeams = int.tryParse(totalTeamsStr) ?? 0;
+    final readyCapstone = int.tryParse(stats['ready_capstone_teams']?.toString() ?? '0') ?? 0;
+
     return _dashboardCard(
-      height: 148,
+      height: 210,
       title: 'Team Overview',
       actionLabel: 'Manage',
       onActionTap: () => widget.onNavigate(DefensysAdminSection.studentTeams),
       child: Center(
         child: dashState.isLoading
             ? const CircularProgressIndicator()
-            : DefensysEmptyState(
-                icon: Icons.groups_outlined,
-                title: 'No Active Teams Formed',
-                description:
-                    'Review or import student teams under Team Management.',
-                size: DefensysEmptyStateSize.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-              ),
+            : totalTeams == 0
+                ? const DefensysEmptyState(
+                    icon: Icons.groups_outlined,
+                    title: 'No Active Teams Formed',
+                    description:
+                        'Review or import student teams under Team Management.',
+                    size: DefensysEmptyStateSize.compact,
+                    padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  )
+                : Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceAround,
+                          children: [
+                            _teamStatCol('Total Active Teams', totalTeamsStr, const Color(0xFF047857)),
+                            _teamStatCol('Stage Ready', '$readyCapstone', const Color(0xFF2563EB)),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        const Text(
+                          'Manage team compositions, assign advisers, and review stages in Student Teams.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: _muted, fontSize: 12.5),
+                        ),
+                      ],
+                    ),
+                  ),
       ),
+    );
+  }
+
+  Widget _teamStatCol(String label, String count, Color color) {
+    return Column(
+      children: [
+        Text(
+          count,
+          style: TextStyle(
+            fontSize: 22,
+            fontWeight: FontWeight.w900,
+            color: color,
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: DefensysUi.textDark,
+          ),
+        ),
+      ],
     );
   }
 
@@ -269,10 +322,15 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
     final alerts = _alertsFrom(dashState);
 
     return _dashboardCard(
-      height: 148,
+      height: 210,
       title: 'System Status & Alerts',
       child: alerts.isEmpty
-          ? const SizedBox.shrink()
+          ? const Center(
+              child: Text(
+                'All systems operational. No active alerts.',
+                style: TextStyle(color: Color(0xFF9AA1B4), fontSize: 13.5),
+              ),
+            )
           : ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               itemBuilder: (context, index) {

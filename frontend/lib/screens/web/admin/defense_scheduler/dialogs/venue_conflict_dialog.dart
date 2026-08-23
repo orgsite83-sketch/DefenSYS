@@ -226,86 +226,147 @@ class ScheduleImportDialog {
             }
 
             return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+              ),
+              titlePadding: const EdgeInsets.fromLTRB(24, 20, 24, 12),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 24),
+              actionsPadding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
               title: Row(
                 children: [
-                  const Icon(
-                    Icons.upload_file_rounded,
-                    color: AppColors.maroon,
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.maroon.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.upload_file_rounded,
+                      color: AppColors.maroon,
+                      size: 20,
+                    ),
                   ),
-                  const SizedBox(width: 10),
-                  Text(
-                    isPit
-                        ? 'Import PIT Defense Schedule'
-                        : 'Import Capstone Defense Schedule',
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isPit
+                              ? 'Import PIT Defense Schedule'
+                              : 'Import Capstone Defense Schedule',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Upload and parse institutional defense timetable spreadsheets (.xlsx, .csv)',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.textSecondary,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20),
+                    splashRadius: 18,
+                    onPressed: () => Navigator.pop(dialogContext),
                   ),
                 ],
               ),
               content: SizedBox(
-                width: 1080,
-                height: 680,
-                child: Column(
-                  children: [
-                    _buildImportUploadPanel(
-                      fileName: fileName,
-                      onPickFile: pickFile,
-                      isPit: isPit,
-                    ),
-                    if (mismatchWarning != null) ...[
-                      const SizedBox(height: 10),
-                      _buildMismatchBanner(
-                        message: mismatchWarning!,
-                        onDismiss: () => setDialogState(() => mismatchWarning = null),
+                width: 1140,
+                height: 720,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // 2-Column Top Section: Left is Format Guide, Right is File Staging & Upload
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 6,
+                            child: _buildFormatGuideCard(isPit: isPit),
+                          ),
+                          const SizedBox(width: 16),
+                          Expanded(
+                            flex: 5,
+                            child: _buildUploadCard(
+                              fileName: fileName,
+                              onPickFile: pickFile,
+                              isPit: isPit,
+                            ),
+                          ),
+                        ],
+                      ),
+                      if (mismatchWarning != null) ...[
+                        const SizedBox(height: 14),
+                        _buildMismatchBanner(
+                          message: mismatchWarning!,
+                          onDismiss: () =>
+                              setDialogState(() => mismatchWarning = null),
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      _buildImportContextPanel(
+                        context,
+                        state,
+                        scope: importScope,
+                        stageId: importStageId,
+                        eventName: importEventName,
+                        headerMatch: headerMatch,
+                        dateController: dateController,
+                        roomController: roomController,
+                        durationController: durationController,
+                        panelRubricId: panelRubricId,
+                        peerRubricId: peerRubricId,
+                        rubricLoading: rubricLoading,
+                        rowsDetected: previewRows.length,
+                        readyRows: readyRows.length,
+                        issueRows: issueRows,
+                        onStageChanged: (val) async {
+                          setDialogState(() {
+                            importStageId = val;
+                            headerMatch = null;
+                          });
+                          await loadStageRubrics(val, setDialogState);
+                        },
+                        onEventChanged: (val) async {
+                          setDialogState(() {
+                            importEventName = val ?? '';
+                            headerMatch = null;
+                          });
+                          if (val != null) {
+                            await loadPitEventConfig(val, setDialogState);
+                          }
+                        },
+                        onContextChanged: () => setDialogState(() {}),
+                      ),
+                      const SizedBox(height: 16),
+                      if (importErrors.isNotEmpty) ...[
+                        _buildImportErrorBox(importErrors),
+                        const SizedBox(height: 14),
+                      ],
+                      SizedBox(
+                        height: 320,
+                        child:
+                            _buildImportPreviewTable(previewRows, isPit: isPit),
                       ),
                     ],
-                    const SizedBox(height: 14),
-                    _buildImportContextPanel(
-                      context,
-                      state,
-                      scope: importScope,
-                      stageId: importStageId,
-                      eventName: importEventName,
-                      headerMatch: headerMatch,
-                      dateController: dateController,
-                      roomController: roomController,
-                      durationController: durationController,
-                      panelRubricId: panelRubricId,
-                      peerRubricId: peerRubricId,
-                      rubricLoading: rubricLoading,
-                      rowsDetected: previewRows.length,
-                      readyRows: readyRows.length,
-                      issueRows: issueRows,
-                      onStageChanged: (val) async {
-                        setDialogState(() {
-                          importStageId = val;
-                          headerMatch = null;
-                        });
-                        await loadStageRubrics(val, setDialogState);
-                      },
-                      onEventChanged: (val) async {
-                        setDialogState(() {
-                          importEventName = val ?? '';
-                          headerMatch = null;
-                        });
-                        if (val != null) {
-                          await loadPitEventConfig(val, setDialogState);
-                        }
-                      },
-                      onContextChanged: () => setDialogState(() {}),
-                    ),
-                    const SizedBox(height: 14),
-                    if (importErrors.isNotEmpty) ...[
-                      _buildImportErrorBox(importErrors),
-                      const SizedBox(height: 14),
-                    ],
-                    Expanded(
-                      child: _buildImportPreviewTable(previewRows, isPit: isPit),
-                    ),
-                  ],
+                  ),
                 ),
               ),
               actions: [
                 TextButton(
-                  onPressed: importBusy ? null : () => Navigator.pop(dialogContext),
+                  onPressed:
+                      importBusy ? null : () => Navigator.pop(dialogContext),
                   child: const Text('Cancel'),
                 ),
                 ElevatedButton.icon(
@@ -324,7 +385,10 @@ class ScheduleImportDialog {
                           setDialogState(() => importBusy = false);
 
                           final createdCount = result['created'] as int? ?? 0;
-                          final errors = (result['errors'] as List?)?.map((e) => e.toString()).toList() ?? [];
+                          final errors = (result['errors'] as List?)
+                                  ?.map((e) => e.toString())
+                                  .toList() ??
+                              [];
 
                           if (errors.isEmpty) {
                             if (dialogContext.mounted) {
@@ -364,7 +428,397 @@ class ScheduleImportDialog {
     );
   }
 
-  static Widget _buildImportUploadPanel({
+  static Widget _buildFormatGuideCard({required bool isPit}) {
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.table_chart_outlined,
+                  color: AppColors.maroon,
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isPit ? 'PIT Schedule Format Guide' : 'Capstone Schedule Format Guide',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isPit
+                          ? 'Official PIT Timetable & Evaluation Spreadsheet'
+                          : 'Official Capstone Timetable & Panel Assignment Spreadsheet',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // Authentic Spreadsheet Blueprint Window
+          Container(
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(color: const Color(0xFFCBD5E1)),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.03),
+                  blurRadius: 6,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Spreadsheet Window Titlebar & Sheet Tab
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
+                    border: Border(bottom: BorderSide(color: Color(0xFFCBD5E1))),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(5),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.insert_drive_file_outlined, size: 12, color: Color(0xFF16A34A)),
+                            const SizedBox(width: 5),
+                            Text(
+                              isPit ? 'pit_defense_schedule.csv' : 'capstone_defense_schedule.csv',
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E293B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Spacer(),
+                      _buildMiniBadge('Auto-Detected Headers', const Color(0xFFFEF3C7), const Color(0xFF92400E)),
+                    ],
+                  ),
+                ),
+
+                // Spreadsheet Rows with Left Gutter Numbers
+                _buildSpreadsheetRow(
+                  rowNumber: '1',
+                  label: isPit ? '3rd Year Expo' : 'REDEFENSE - Capstone Project and Research 1',
+                  badge: 'Stage Header',
+                  badgeBg: const Color(0xFFFEE2E2),
+                  badgeFg: AppColors.maroon,
+                  isBold: true,
+                  isAlt: true,
+                ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                _buildSpreadsheetRow(
+                  rowNumber: '2',
+                  label: 'May 18, 2026',
+                  badge: 'Date Header',
+                  badgeBg: const Color(0xFFEFF6FF),
+                  badgeFg: const Color(0xFF1D4ED8),
+                  isAlt: false,
+                ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                _buildSpreadsheetRow(
+                  rowNumber: '3',
+                  label: 'SMART ROOM',
+                  badge: 'Room Header',
+                  badgeBg: const Color(0xFFF1F5F9),
+                  badgeFg: const Color(0xFF475569),
+                  isAlt: true,
+                ),
+                const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+                // Row 4: Column Headers
+                Container(
+                  color: const Color(0xFFE2E8F0),
+                  child: Row(
+                    children: [
+                      _buildGutterCell('4', isHeader: true),
+                      Expanded(flex: 3, child: _buildHeaderCell('Time')),
+                      Expanded(flex: 3, child: _buildHeaderCell('Team Name')),
+                      Expanded(flex: 4, child: _buildHeaderCell('Project Title')),
+                      Expanded(flex: 3, child: _buildHeaderCell('Adviser')),
+                      Expanded(flex: 4, child: _buildHeaderCell('Panelists')),
+                      if (!isPit)
+                        Expanded(flex: 3, child: _buildHeaderCell('Documenter')),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFCBD5E1)),
+
+                // Row 5 & 6: Sample Data Rows
+                _buildSpreadsheetDataRow(
+                  rowNumber: '5',
+                  time: '9:00-9:30 AM',
+                  team: 'SkyLedger',
+                  project: 'Alumni Tracker',
+                  adviser: 'R. Fontanilla',
+                  panel: 'Suarez, Beltran, Corpuz',
+                  documenter: isPit ? null : 'Magbanua',
+                  isAlt: false,
+                ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                _buildSpreadsheetDataRow(
+                  rowNumber: '6',
+                  time: '9:30-10:00 AM',
+                  team: 'Team Nexus',
+                  project: 'Smart Campus IoT',
+                  adviser: 'M. Santos',
+                  panel: 'Tan, Reyes, Cruz',
+                  documenter: isPit ? null : 'Alonzo',
+                  isAlt: true,
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.auto_awesome_rounded, size: 14, color: AppColors.maroon),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  isPit
+                      ? 'PIT event name, date, room, adviser, and panel members are auto-matched from spreadsheet headers and rows.'
+                      : 'Stage name, date, room, adviser, panelists, and documenter are auto-detected from spreadsheet headers and columns.',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    color: Color(0xFF64748B),
+                    fontWeight: FontWeight.w500,
+                    height: 1.3,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          OutlinedButton.icon(
+            onPressed: () async {
+              if (isPit) {
+                await downloadTextFile(
+                  filename: 'defensys-pit-defense-schedule-template.csv',
+                  content: '3rd Year Expo,,,,,,,,\n'
+                      'May 18, 2026,,,,,,,,\n'
+                      'SMART ROOM,,,,,,,,\n'
+                      'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3\n'
+                      '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva\n'
+                      ',,,,"ONG, Patricia",,,,\n'
+                      ',,,,"SALAZAR, Ethan",,,,\n'
+                      ',,,,"CASTILLO, Zoe",,,,\n',
+                );
+              } else {
+                await downloadTextFile(
+                  filename: 'defensys-capstone-defense-schedule-template.csv',
+                  content: 'REDEFENSE - Capstone Project and Research 1,,,,,,,,,\n'
+                      'May 18, 2026,,,,,,,,,\n'
+                      'SMART ROOM,,,,,,,,,\n'
+                      'Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
+                      '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua\n'
+                      ',,,,"ONG, Patricia",,,,,\n'
+                      ',,,,"SALAZAR, Ethan",,,,,\n'
+                      ',,,,"CASTILLO, Zoe",,,,,\n',
+                );
+              }
+            },
+            icon: const Icon(Icons.download_rounded, size: 15),
+            label: const Text('Download Sample Template (.csv)'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.textPrimary,
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildGutterCell(String rowNum, {bool isHeader = false}) {
+    return Container(
+      width: 26,
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isHeader ? const Color(0xFFCBD5E1) : const Color(0xFFF8FAFC),
+        border: const Border(right: BorderSide(color: Color(0xFFCBD5E1))),
+      ),
+      child: Text(
+        rowNum,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: isHeader ? FontWeight.w900 : FontWeight.w600,
+          color: isHeader ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildHeaderCell(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF334155),
+        ),
+      ),
+    );
+  }
+
+  static Widget _buildSpreadsheetRow({
+    required String rowNumber,
+    required String label,
+    required String badge,
+    required Color badgeBg,
+    required Color badgeFg,
+    bool isBold = false,
+    bool isAlt = false,
+  }) {
+    return Container(
+      color: isAlt ? const Color(0xFFFFFBEB).withValues(alpha: 0.5) : Colors.white,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          const SizedBox(width: 8),
+          _buildMiniBadge(badge, badgeBg, badgeFg),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: isBold ? FontWeight.w800 : FontWeight.w600,
+                  color: isBold ? AppColors.maroon : const Color(0xFF334155),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildSpreadsheetDataRow({
+    required String rowNumber,
+    required String time,
+    required String team,
+    required String project,
+    required String adviser,
+    required String panel,
+    required String? documenter,
+    bool isAlt = false,
+  }) {
+    return Container(
+      color: isAlt ? const Color(0xFFF8FAFC) : Colors.white,
+      child: Row(
+        children: [
+          _buildGutterCell(rowNumber),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Text(time, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF334155))),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Text(team, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: Color(0xFF1E293B))),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Text(project, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+            ),
+          ),
+          Expanded(
+            flex: 3,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Text(adviser, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, color: Color(0xFF64748B))),
+            ),
+          ),
+          Expanded(
+            flex: 4,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+              child: Text(panel, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: AppColors.maroon)),
+            ),
+          ),
+          if (documenter != null)
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                child: Text(documenter, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Color(0xFFB45309))),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _buildUploadCard({
     required String? fileName,
     required Future<void> Function() onPickFile,
     required bool isPit,
@@ -372,98 +826,218 @@ class ScheduleImportDialog {
     return Container(
       padding: const EdgeInsets.all(18),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB),
+        color: Colors.white,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFFDE68A)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: const Color(0xFFFDE68A)),
-            ),
-            child: const Icon(
-              Icons.table_chart_outlined,
-              color: AppColors.maroon,
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  fileName ?? (isPit ? 'Upload the PIT schedule template' : 'Upload the admin schedule template'),
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: AppColors.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                const SizedBox(height: 4),
-                const Text(
-                  'Supported files: .xlsx and .csv. Merged-cell-style team blocks are grouped automatically.',
-                  style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w600,
-                  ),
+                child: const Icon(
+                  Icons.cloud_upload_outlined,
+                  color: AppColors.maroon,
+                  size: 18,
                 ),
-                const SizedBox(height: 6),
-                MouseRegion(
-                  cursor: SystemMouseCursors.click,
-                  child: GestureDetector(
-                    onTap: () async {
-                      if (isPit) {
-                        await downloadTextFile(
-                          filename: 'defensys-pit-defense-schedule-template.csv',
-                          content: '3rd Year Expo,,,,,,,,\n'
-                              'May 18, 2026,,,,,,,,\n'
-                              'SMART ROOM,,,,,,,,\n'
-                              'Time,Team Name,Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3\n'
-                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva\n'
-                              ',,,,"ONG, Patricia",,,,\n'
-                              ',,,,"SALAZAR, Ethan",,,,\n'
-                              ',,,,"CASTILLO, Zoe",,,,\n',
-                        );
-                      } else {
-                        await downloadTextFile(
-                          filename: 'defensys-capstone-defense-schedule-template.csv',
-                          content: 'REDEFENSE - Capstone Project and Research 1,,,,,,,,,\n'
-                              'May 18, 2026,,,,,,,,,\n'
-                              'SMART ROOM,,,,,,,,,\n'
-                              'Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel Member 2,Panel Member 3,Documenter\n'
-                              '9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,"Ricardo Fontanilla","VILLAR, Marcus",Suarez,Beltran,Corpuz,Villanueva,Magbanua\n'
-                              ',,,,"ONG, Patricia",,,,,\n'
-                              ',,,,"SALAZAR, Ethan",,,,,\n'
-                              ',,,,"CASTILLO, Zoe",,,,,\n',
-                        );
-                      }
-                    },
-                    child: const Text(
-                      'Download sample CSV template',
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Upload & Stage Spreadsheet',
                       style: TextStyle(
-                        color: AppColors.maroon,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w800,
-                        decoration: TextDecoration.underline,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isPit
+                          ? 'Stage and parse PIT timetable spreadsheets'
+                          : 'Stage and parse Capstone timetable spreadsheets',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          if (fileName == null)
+            InkWell(
+              onTap: onPickFile,
+              borderRadius: BorderRadius.circular(10),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFFCBD5E1),
+                    style: BorderStyle.solid,
+                  ),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: AppColors.maroon.withValues(alpha: 0.08),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.upload_file_rounded,
+                        color: AppColors.maroon,
+                        size: 26,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    const Text(
+                      'Click to browse or drag & drop schedule',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Supports Microsoft Excel (.xlsx) and CSV (.csv)',
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        _buildMiniBadge('.XLSX Excel', const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+                        const SizedBox(width: 6),
+                        _buildMiniBadge('.CSV Delimited', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.insert_drive_file_rounded,
+                          color: Color(0xFF16A34A),
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              fileName,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF15803D),
+                              ),
+                            ),
+                            const SizedBox(height: 3),
+                            const Row(
+                              children: [
+                                Icon(Icons.check_circle_rounded, size: 13, color: Color(0xFF16A34A)),
+                                SizedBox(width: 4),
+                                Text(
+                                  'Spreadsheet loaded & parsed successfully',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    color: Color(0xFF16A34A),
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: OutlinedButton.icon(
+                      onPressed: onPickFile,
+                      icon: const Icon(Icons.swap_horiz_rounded, size: 15),
+                      label: const Text('Change Spreadsheet'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        foregroundColor: const Color(0xFF15803D),
+                        side: const BorderSide(color: Color(0xFF86EFAC)),
+                        backgroundColor: Colors.white,
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          OutlinedButton.icon(
-            onPressed: onPickFile,
-            icon: const Icon(Icons.upload_file_rounded, size: 18),
-            label: Text(fileName == null ? 'Upload File' : 'Replace File'),
-          ),
         ],
+      ),
+    );
+  }
+
+  static Widget _buildMiniBadge(String label, Color bg, Color fg) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: fg,
+        ),
       ),
     );
   }
@@ -880,16 +1454,48 @@ class ScheduleImportDialog {
     if (rows.isEmpty) {
       return Container(
         width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 48, horizontal: 24),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: const Color(0xFFF8FAFC),
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE5E7EB)),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
         ),
-        child: const Center(
-          child: Text(
-            'Upload a schedule file (.xlsx or .csv) to preview slots.',
-            style: TextStyle(color: AppColors.textSecondary),
-          ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+              ),
+              child: const Icon(
+                Icons.table_rows_rounded,
+                size: 28,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'No Schedule Slots Staged Yet',
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Text(
+              'Upload an Excel (.xlsx) or CSV (.csv) file above to parse and review defense slots.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFF64748B),
+              ),
+            ),
+          ],
         ),
       );
     }
@@ -904,16 +1510,20 @@ class ScheduleImportDialog {
         scrollDirection: Axis.horizontal,
         child: DataTable(
           headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+          headingTextStyle: const TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF334155),
+          ),
           columns: [
             const DataColumn(label: Text('Status')),
-            const DataColumn(label: Text('Time')),
-            const DataColumn(label: Text('Team')),
-            const DataColumn(label: Text('Project')),
-            const DataColumn(label: Text('Chair')),
+            const DataColumn(label: Text('Time Slot')),
+            const DataColumn(label: Text('Team & Project')),
+            const DataColumn(label: Text('Adviser')),
             const DataColumn(label: Text('Panel Members')),
             if (!isPit) const DataColumn(label: Text('Documenter')),
             const DataColumn(label: Text('Room')),
-            const DataColumn(label: Text('Issues')),
+            const DataColumn(label: Text('Validation Issues')),
           ],
           rows: rows.map((row) {
             final issueText = row.issues.isNotEmpty
@@ -925,18 +1535,122 @@ class ScheduleImportDialog {
               ),
               cells: [
                 DataCell(_importStatusChip(row.ready ? 'Ready' : 'Needs attention')),
-                DataCell(Text(row.timeLabel)),
-                DataCell(Text(row.teamLabel)),
-                DataCell(Text(row.projectLabel)),
-                DataCell(Text(row.chairLabel)),
-                DataCell(Text(row.panelLabel)),
-                if (!isPit) DataCell(Text(row.documenterLabel)),
-                DataCell(Text(row.room)),
+                DataCell(
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF64748B)),
+                      const SizedBox(width: 6),
+                      Text(
+                        row.timeLabel,
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                DataCell(
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        row.teamLabel,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1E293B),
+                        ),
+                      ),
+                      if (row.projectLabel.isNotEmpty && row.projectLabel != '-')
+                        Text(
+                          row.projectLabel,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: Color(0xFF64748B),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    row.source.adviser.isNotEmpty ? row.source.adviser : '-',
+                    style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                  ),
+                ),
+                DataCell(
+                  Text(
+                    row.panelLabel,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.maroon,
+                    ),
+                  ),
+                ),
+                if (!isPit)
+                  DataCell(
+                    row.documenterLabel != '-'
+                        ? Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFEF3C7),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.edit_note_rounded, size: 13, color: Color(0xFF92400E)),
+                                const SizedBox(width: 4),
+                                Text(
+                                  row.documenterLabel,
+                                  style: const TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF92400E),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : const Text('-', style: TextStyle(color: Color(0xFF94A3B8))),
+                  ),
+                DataCell(
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.meeting_room_outlined, size: 13, color: Color(0xFF475569)),
+                        const SizedBox(width: 4),
+                        Text(
+                          row.room.isNotEmpty ? row.room : 'Unassigned',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w700,
+                            color: Color(0xFF334155),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 DataCell(
                   SizedBox(
                     width: 320,
                     child: Text(
-                      issueText.isEmpty ? 'No issues' : issueText,
+                      issueText.isEmpty ? 'All fields verified' : issueText,
                       maxLines: 3,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
@@ -945,7 +1659,7 @@ class ScheduleImportDialog {
                             : row.warnings.isNotEmpty
                                 ? const Color(0xFFB45309)
                                 : const Color(0xFF027A48),
-                        fontSize: 12,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
@@ -962,18 +1676,32 @@ class ScheduleImportDialog {
   static Widget _importStatusChip(String label) {
     final ready = label == 'Ready';
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
       decoration: BoxDecoration(
         color: ready ? const Color(0xFFECFDF3) : const Color(0xFFFFF7ED),
         borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: ready ? const Color(0xFF027A48) : const Color(0xFFB45309),
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
+        border: Border.all(
+          color: ready ? const Color(0xFFA6F4C5) : const Color(0xFFFEDF89),
         ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            ready ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+            size: 13,
+            color: ready ? const Color(0xFF027A48) : const Color(0xFFB45309),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: ready ? const Color(0xFF027A48) : const Color(0xFFB45309),
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }

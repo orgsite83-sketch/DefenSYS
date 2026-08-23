@@ -217,20 +217,22 @@ class _StudentProfileDetailsDialogState
       }
     }
 
-    // 2. Gather all actual sections from faculty instructor assignments matching this year level
-    final users = ref.read(userManagementProvider).users;
-    for (final u in users) {
-      final assignments = u['instructor_assignments'] as List?;
-      if (assignments != null) {
-        for (final a in assignments) {
-          if (a is Map) {
-            final yl = a['year_level']?.toString().trim();
-            final sec = a['section']?.toString().trim();
-            if (yl == yearLevel.trim() &&
-                sec != null &&
-                sec.isNotEmpty &&
-                sec.toUpperCase() != 'BSIT') {
-              sections.add(sec);
+    // 2. Gather all actual sections from faculty instructor assignments matching this year level (PIT only)
+    if (!yearLevel.contains('4th')) {
+      final users = ref.read(userManagementProvider).users;
+      for (final u in users) {
+        final assignments = u['instructor_assignments'] as List?;
+        if (assignments != null) {
+          for (final a in assignments) {
+            if (a is Map) {
+              final yl = a['year_level']?.toString().trim();
+              final sec = a['section']?.toString().trim();
+              if (yl == yearLevel.trim() &&
+                  sec != null &&
+                  sec.isNotEmpty &&
+                  sec.toUpperCase() != 'BSIT') {
+                sections.add(sec);
+              }
             }
           }
         }
@@ -964,6 +966,9 @@ class _StudentProfileDetailsDialogState
     String section,
     String? instructor,
   ) {
+    final isCapstone = yearLevel.contains('4th') ||
+        (yearLevel.contains('3rd') && semester.contains('2nd'));
+
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
@@ -1020,7 +1025,7 @@ class _StudentProfileDetailsDialogState
           ),
           const SizedBox(height: 8),
           _buildInfoRow('Section', section),
-          if (instructor != null && instructor.isNotEmpty) ...[
+          if (!isCapstone && instructor != null && instructor.isNotEmpty) ...[
             const SizedBox(height: 8),
             _buildInfoRow('Instructor', instructor),
           ],
@@ -1124,6 +1129,11 @@ class _StudentProfileDetailsDialogState
               ? item['section']
               : 'No Section';
           final termInstructor = item['instructor_name']?.toString();
+          final termIsCapstone = termYearLevel.contains('4th') ||
+              (termYearLevel.contains('3rd') && termSem.contains('2nd'));
+          final showInstructor = !termIsCapstone &&
+              termInstructor != null &&
+              termInstructor.isNotEmpty;
 
           return ListTile(
             dense: true,
@@ -1150,7 +1160,7 @@ class _StudentProfileDetailsDialogState
               style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12.5),
             ),
             subtitle: Text(
-              'Section: $termSec${termInstructor != null ? ' • Instructor: $termInstructor' : ''}',
+              'Section: $termSec${showInstructor ? ' • Instructor: $termInstructor' : ''}',
               style: const TextStyle(fontSize: 11.5, color: _muted),
             ),
             trailing: isCurrent

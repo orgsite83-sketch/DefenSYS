@@ -13,6 +13,7 @@ class TeamBulkImportDraft {
     required this.savedAt,
     this.preview,
     this.issueCount = 0,
+    this.isOpen = true,
   });
 
   final List<Map<String, dynamic>> rows;
@@ -20,6 +21,7 @@ class TeamBulkImportDraft {
   final String adviserFilter;
   final DateTime savedAt;
   final int issueCount;
+  final bool isOpen;
 
   Map<String, dynamic> toJson() => {
         'rows': rows,
@@ -27,6 +29,7 @@ class TeamBulkImportDraft {
         'adviser_filter': adviserFilter,
         'saved_at': savedAt.toIso8601String(),
         'issue_count': issueCount,
+        'is_open': isOpen,
       };
 
   factory TeamBulkImportDraft.fromJson(Map<String, dynamic> json) {
@@ -44,6 +47,7 @@ class TeamBulkImportDraft {
       issueCount: json['issue_count'] is int
           ? json['issue_count'] as int
           : int.tryParse(json['issue_count']?.toString() ?? '') ?? 0,
+      isOpen: json['is_open'] != false,
     );
   }
 }

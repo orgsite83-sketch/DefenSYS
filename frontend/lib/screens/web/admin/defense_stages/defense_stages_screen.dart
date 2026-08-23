@@ -96,11 +96,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _buildHeader(state),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             _buildExecutiveStatCards(state),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
             _buildLifecycleLegend(state),
-            const SizedBox(height: 24),
+            const SizedBox(height: 16),
             if (state.isLoading)
               _buildLoadingState()
             else
@@ -251,7 +251,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           return Column(
             children: cards
                 .map((c) => Padding(
-                      padding: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.only(bottom: 8),
                       child: c,
                     ))
                 .toList(),
@@ -261,9 +261,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         return Row(
           children: [
             Expanded(child: cards[0]),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(child: cards[1]),
-            const SizedBox(width: 16),
+            const SizedBox(width: 12),
             Expanded(child: cards[2]),
           ],
         );
@@ -282,77 +282,99 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     Color? badgeTextColor,
   }) {
     return Container(
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 8,
+            color: Color(0x04000000),
+            blurRadius: 6,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: accentColor, size: 20),
-              ),
-              if (badgeText != null)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: badgeColor ?? const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(999),
-                    border: Border.all(color: accentColor.withValues(alpha: 0.2)),
-                  ),
-                  child: Text(
-                    badgeText,
-                    style: TextStyle(
-                      color: badgeTextColor ?? AppColors.textSecondary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
+          Container(
+            width: 38,
+            height: 38,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: accentColor.withValues(alpha: 0.1),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: accentColor, size: 19),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 20,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.4,
+                        height: 1.1,
+                      ),
                     ),
+                    if (badgeText != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: badgeColor ?? const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: accentColor.withValues(alpha: 0.2),
+                          ),
+                        ),
+                        child: Text(
+                          badgeText,
+                          style: TextStyle(
+                            color: badgeTextColor ?? AppColors.textSecondary,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.15,
                   ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(
-            value,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            title,
-            style: const TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: const TextStyle(
-              color: AppColors.textSecondary,
-              fontSize: 12,
+                const SizedBox(height: 1),
+                Text(
+                  subtitle,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 11,
+                    height: 1.15,
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -363,16 +385,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   Widget _buildLifecycleLegend(DefenseStagesState state) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x04000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+            color: Color(0x03000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
           ),
         ],
       ),
@@ -381,19 +403,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         children: [
           Row(
             children: const [
-              Icon(Icons.alt_route_rounded, size: 18, color: AppColors.maroon),
-              SizedBox(width: 8),
+              Icon(Icons.alt_route_rounded, size: 15, color: AppColors.maroon),
+              SizedBox(width: 6),
               Text(
                 'Stage Lifecycle & Governance Rules',
                 style: TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 14,
+                  fontSize: 12.5,
                   fontWeight: FontWeight.w800,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 8),
           LayoutBuilder(
             builder: (context, constraints) {
               final isMobile = constraints.maxWidth < 650;
@@ -429,7 +451,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 return Column(
                   children: steps
                       .map((s) => Padding(
-                            padding: const EdgeInsets.only(bottom: 8),
+                            padding: const EdgeInsets.only(bottom: 6),
                             child: s,
                           ))
                       .toList(),
@@ -440,15 +462,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 children: [
                   Expanded(child: steps[0]),
                   const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
                     child: Icon(Icons.arrow_forward_rounded,
-                        size: 16, color: Color(0xFF94A3B8)),
+                        size: 14, color: Color(0xFF94A3B8)),
                   ),
                   Expanded(child: steps[1]),
                   const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8),
+                    padding: EdgeInsets.symmetric(horizontal: 6),
                     child: Icon(Icons.arrow_forward_rounded,
-                        size: 16, color: Color(0xFF94A3B8)),
+                        size: 14, color: Color(0xFF94A3B8)),
                   ),
                   Expanded(child: steps[2]),
                 ],
@@ -469,17 +491,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required Color borderColor,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: borderColor),
       ),
       child: Row(
         children: [
           Container(
-            width: 22,
-            height: 22,
+            width: 18,
+            height: 18,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: color,
@@ -489,15 +511,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               step,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 11,
+                fontSize: 10,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          const SizedBox(width: 10),
+          const SizedBox(width: 8),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
                   label,
@@ -505,16 +528,18 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                     color: color == const Color(0xFF64748B)
                         ? AppColors.textPrimary
                         : color,
-                    fontSize: 12.5,
+                    fontSize: 11.5,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
                 Text(
                   description,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 11,
-                    height: 1.2,
+                    fontSize: 10.5,
+                    height: 1.15,
                   ),
                 ),
               ],
@@ -534,20 +559,20 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 10,
-            offset: Offset(0, 4),
+            color: Color(0x04000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
             child: Row(
               children: [
                 const Expanded(
@@ -558,7 +583,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         'Academic Stage Chain',
                         style: TextStyle(
                           color: AppColors.textPrimary,
-                          fontSize: 17,
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.2,
                         ),
@@ -568,7 +593,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         'Sequential progression of defense milestones',
                         style: TextStyle(
                           color: AppColors.textSecondary,
-                          fontSize: 13,
+                          fontSize: 12,
                         ),
                       ),
                     ],
@@ -578,7 +603,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   padding: const EdgeInsets.all(3),
                   decoration: BoxDecoration(
                     color: const Color(0xFFF1F5F9),
-                    borderRadius: BorderRadius.circular(10),
+                    borderRadius: BorderRadius.circular(8),
                     border: Border.all(color: const Color(0xFFE2E8F0)),
                   ),
                   child: Row(
@@ -631,13 +656,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(7),
+      borderRadius: BorderRadius.circular(6),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
         decoration: BoxDecoration(
           color: selected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
+          borderRadius: BorderRadius.circular(6),
           boxShadow: selected
               ? const [
                   BoxShadow(
@@ -653,15 +678,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           children: [
             Icon(
               icon,
-              size: 15,
+              size: 14,
               color: selected ? AppColors.maroon : AppColors.textSecondary,
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
                 color: selected ? AppColors.maroon : AppColors.textSecondary,
-                fontSize: 12.5,
+                fontSize: 11.5,
                 fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
               ),
             ),
@@ -673,7 +698,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   Widget _buildStagePipelineView(DefenseStagesState state) {
     return Padding(
-      padding: const EdgeInsets.all(20),
+      padding: const EdgeInsets.all(14),
       child: Column(
         children: [
           for (var i = 0; i < state.stages.length; i++) ...[
@@ -688,25 +713,25 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   Widget _pipelineConnectorLine([String nextLabel = '']) {
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      height: 30,
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      height: 24,
       child: Row(
         children: [
-          const SizedBox(width: 44),
+          const SizedBox(width: 38),
           Container(
             width: 2,
             color: const Color(0xFFCBD5E1),
           ),
-          const SizedBox(width: 12),
-          const Icon(Icons.arrow_downward_rounded, size: 14, color: AppColors.maroon),
-          const SizedBox(width: 6),
+          const SizedBox(width: 10),
+          const Icon(Icons.arrow_downward_rounded, size: 13, color: AppColors.maroon),
+          const SizedBox(width: 5),
           Text(
             nextLabel.isNotEmpty
                 ? 'Unlocks Next Academic Milestone: $nextLabel'
                 : 'Unlocks Next Academic Milestone',
             style: const TextStyle(
               color: AppColors.maroon,
-              fontSize: 11.5,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.1,
             ),
@@ -752,29 +777,29 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 10,
-            offset: Offset(0, 3),
+            color: Color(0x04000000),
+            blurRadius: 8,
+            offset: Offset(0, 2),
           ),
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         child: IntrinsicHeight(
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Container(
-                width: 6,
+                width: 5,
                 color: sideAccentColor,
               ),
               Expanded(
                 child: Padding(
-                  padding: const EdgeInsets.all(18),
+                  padding: const EdgeInsets.all(14),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -783,24 +808,24 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Container(
-                            width: 36,
-                            height: 36,
+                            width: 32,
+                            height: 32,
                             alignment: Alignment.center,
                             decoration: BoxDecoration(
                               color: sideAccentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(10),
+                              borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: sideAccentColor.withValues(alpha: 0.3)),
                             ),
                             child: Text(
                               order.padLeft(2, '0'),
                               style: TextStyle(
                                 color: sideAccentColor,
-                                fontSize: 13,
+                                fontSize: 12,
                                 fontWeight: FontWeight.w900,
                               ),
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -811,58 +836,58 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       stage['label']?.toString() ?? 'Stage',
                                       style: const TextStyle(
                                         color: AppColors.textPrimary,
-                                        fontSize: 16,
+                                        fontSize: 15,
                                         fontWeight: FontWeight.w900,
                                         letterSpacing: -0.2,
                                       ),
                                     ),
-                                    const SizedBox(width: 10),
+                                    const SizedBox(width: 8),
                                     _codeTag(stage['code']?.toString() ?? ''),
                                   ],
                                 ),
-                                const SizedBox(height: 4),
+                                const SizedBox(height: 2),
                                 Text(
                                   stage['description']?.toString() ??
                                       'Academic defense milestone configuration.',
                                   style: const TextStyle(
                                     color: AppColors.textSecondary,
-                                    fontSize: 13,
-                                    height: 1.3,
+                                    fontSize: 12,
+                                    height: 1.25,
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          const SizedBox(width: 14),
+                          const SizedBox(width: 12),
                           _statusChip(stage),
                         ],
                       ),
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       // Rubric Micro-card
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                         decoration: BoxDecoration(
                           color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(8),
+                          borderRadius: BorderRadius.circular(6),
                           border: Border.all(color: const Color(0xFFE2E8F0)),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Icon(Icons.assignment_outlined, size: 14, color: AppColors.maroon),
-                            const SizedBox(width: 8),
+                            const Icon(Icons.assignment_outlined, size: 13, color: AppColors.maroon),
+                            const SizedBox(width: 6),
                             const Text(
                               'Stage Rubric: ',
-                              style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
+                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
                             ),
                             Text(
                               rubricName,
-                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
+                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 8),
                       // Deliverables Accordion Expander
                       InkWell(
                         onTap: () {
@@ -874,12 +899,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             }
                           });
                         },
-                        borderRadius: BorderRadius.circular(8),
+                        borderRadius: BorderRadius.circular(6),
                         child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                           decoration: BoxDecoration(
                             color: delivCount > 0 ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                             border: Border.all(
                               color: delivCount > 0 ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
                             ),
@@ -891,14 +916,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                 children: [
                                   Icon(
                                     Icons.folder_outlined,
-                                    size: 16,
+                                    size: 15,
                                     color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textSecondary,
                                   ),
-                                  const SizedBox(width: 8),
+                                  const SizedBox(width: 6),
                                   Text(
                                     '$delivCount Deliverables Configured ($preCount Pre, $postCount Post)',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: 11.5,
                                       fontWeight: FontWeight.w700,
                                       color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textPrimary,
                                     ),
@@ -907,7 +932,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               ),
                               Icon(
                                 isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                size: 18,
+                                size: 16,
                                 color: delivCount > 0 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
                               ),
                             ],
@@ -915,17 +940,17 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         ),
                       ),
                       if (isExpanded) ...[
-                        const SizedBox(height: 8),
+                        const SizedBox(height: 6),
                         Container(
-                          padding: const EdgeInsets.all(10),
+                          padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
                             color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           child: delivs.isEmpty
                               ? const Text(
                                   'No deliverables configured for this stage.',
-                                  style: TextStyle(fontSize: 11.5, color: AppColors.textSecondary),
+                                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
                                 )
                               : Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -937,20 +962,20 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     final isRestricted = d['is_restricted'] == true;
 
                                     return Padding(
-                                      padding: const EdgeInsets.only(bottom: 6),
+                                      padding: const EdgeInsets.only(bottom: 4),
                                       child: Row(
                                         children: [
                                           Icon(
                                             isPost ? Icons.archive_outlined : Icons.description_outlined,
-                                            size: 13,
+                                            size: 12,
                                             color: isPost ? const Color(0xFF6366F1) : AppColors.maroon,
                                           ),
-                                          const SizedBox(width: 6),
+                                          const SizedBox(width: 5),
                                           Expanded(
                                             child: Text(
                                               label,
                                               style: const TextStyle(
-                                                fontSize: 11.5,
+                                                fontSize: 11,
                                                 fontWeight: FontWeight.w700,
                                                 color: AppColors.textPrimary,
                                               ),
@@ -961,27 +986,27 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                           if (isReq)
                                             Container(
                                               margin: const EdgeInsets.only(left: 4),
-                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFFFEE2E2),
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius: BorderRadius.circular(3),
                                               ),
                                               child: const Text(
                                                 'Req',
-                                                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: AppColors.maroon),
+                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.maroon),
                                               ),
                                             ),
                                           if (isRestricted)
                                             Container(
                                               margin: const EdgeInsets.only(left: 4),
-                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                                               decoration: BoxDecoration(
                                                 color: const Color(0xFFFEF3C7),
-                                                borderRadius: BorderRadius.circular(4),
+                                                borderRadius: BorderRadius.circular(3),
                                               ),
                                               child: const Text(
                                                 'Private Archive',
-                                                style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
+                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
                                               ),
                                             ),
                                         ],
@@ -991,30 +1016,30 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                 ),
                         ),
                       ],
-                      const SizedBox(height: 14),
+                      const SizedBox(height: 10),
                       const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             decoration: BoxDecoration(
                               color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(8),
+                              borderRadius: BorderRadius.circular(6),
                               border: Border.all(color: const Color(0xFFE2E8F0)),
                             ),
                             child: Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
-                                const Icon(Icons.turn_right_rounded, size: 14, color: AppColors.textSecondary),
-                                const SizedBox(width: 6),
+                                const Icon(Icons.turn_right_rounded, size: 13, color: AppColors.textSecondary),
+                                const SizedBox(width: 4),
                                 Text(
                                   previousLabel == null || previousLabel.isEmpty
                                       ? 'Sequence Start'
                                       : 'Prerequisite: $previousLabel',
                                   style: const TextStyle(
                                     color: AppColors.textSecondary,
-                                    fontSize: 12,
+                                    fontSize: 11.5,
                                     fontWeight: FontWeight.w600,
                                   ),
                                 ),
@@ -2604,7 +2629,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       width: double.infinity,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE6E8EF)),
       ),
       child: DefensysEmptyState(
@@ -2612,7 +2637,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         title: 'No Defense Stages Found',
         description:
             'Add a stage to construct your capstone defense pipeline and scheduler milestone chain.',
-        size: DefensysEmptyStateSize.standard,
+        size: DefensysEmptyStateSize.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 28),
         primaryAction: DefensysEmptyAction(
           label: 'Add Stage',
           icon: Icons.add_rounded,

@@ -341,7 +341,7 @@ abstract class AppLocalizations {
   /// No description provided for @navDefenseBoard.
   ///
   /// In en, this message translates to:
-  /// **'Defense Board'**
+  /// **'Defense Operations'**
   String get navDefenseBoard;
 
   /// No description provided for @navDefenseStages.

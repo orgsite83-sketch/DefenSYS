@@ -9,8 +9,10 @@ import 'package:defensys/services/user_management_provider.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/utils/csv_file_io.dart';
+import 'package:defensys/utils/import/faculty_role_parser.dart';
 import 'package:defensys/utils/import/student_bulk_import_csv.dart';
 import 'package:defensys/utils/import/user_bulk_import_draft.dart';
+import 'official_class_list_parser.dart';
 
 /// Clean, zero-fillup Faculty & Staff Bulk Import view.
 /// Features a modern 2-column top section (Template Guide & File Staging)
@@ -112,8 +114,9 @@ class _BulkImportViewState extends State<BulkImportView> {
     final csvBuffer = StringBuffer();
     csvBuffer.writeln('id_number,first_name,last_name,email,role');
     for (final r in _parsedFacultyRows) {
+      final role = (r['raw_role'] ?? r['role'] ?? 'faculty').toString().replaceAll('"', '""');
       csvBuffer.writeln(
-        '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},${r['role'] ?? 'faculty'}',
+        '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},"$role"',
       );
     }
 
@@ -154,8 +157,9 @@ class _BulkImportViewState extends State<BulkImportView> {
       final csvBuffer = StringBuffer();
       csvBuffer.writeln('id_number,first_name,last_name,email,role');
       for (final r in _parsedFacultyRows) {
+        final role = (r['raw_role'] ?? r['role'] ?? 'faculty').toString().replaceAll('"', '""');
         csvBuffer.writeln(
-          '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},${r['role'] ?? 'faculty'}',
+          '${r['id_number'] ?? r['username'] ?? ''},${r['first_name'] ?? ''},${r['last_name'] ?? ''},${r['email'] ?? ''},"$role"',
         );
       }
 
@@ -362,8 +366,23 @@ class _BulkImportViewState extends State<BulkImportView> {
   void _processPickedFiles(List<PickedTabularFile> files) {
     final allRows = <Map<String, dynamic>>[];
     final validFiles = <PickedTabularFile>[];
+    int studentFileCount = 0;
 
     for (final file in files) {
+      final matrix = file.isXlsx
+          ? _extractXlsxMatrix(file.bytes)
+          : const LineSplitter()
+              .convert(file.text ?? utf8.decode(file.bytes, allowMalformed: true))
+              .map((l) => l.trim())
+              .where((l) => l.isNotEmpty)
+              .map(_splitCsvLine)
+              .toList();
+
+      if (_isStudentClassListOrTemplate(matrix)) {
+        studentFileCount++;
+        continue;
+      }
+
       final rows = file.isXlsx
           ? _parseXlsxBytes(file.bytes, file.name)
           : _parseRawCsvContent(
@@ -378,10 +397,17 @@ class _BulkImportViewState extends State<BulkImportView> {
     }
 
     if (allRows.isEmpty) {
-      ToastService.error(
-        context,
-        'No valid faculty records recognized in staged files.',
-      );
+      if (studentFileCount > 0) {
+        ToastService.error(
+          context,
+          'Student template detected. Please use the Batch Student Enrollment Hub to import students.',
+        );
+      } else {
+        ToastService.error(
+          context,
+          'No valid faculty records recognized in staged files.',
+        );
+      }
       return;
     }
 
@@ -397,10 +423,17 @@ class _BulkImportViewState extends State<BulkImportView> {
 
     final skipped = files.length - validFiles.length;
     if (skipped > 0) {
-      ToastService.warning(
-        context,
-        '${validFiles.length} file(s) loaded • ${allRows.length} faculty records. ($skipped incompatible file(s) skipped)',
-      );
+      if (studentFileCount > 0) {
+        ToastService.warning(
+          context,
+          '${validFiles.length} faculty file(s) loaded • ${allRows.length} records. ($studentFileCount student file(s) skipped — use Student Hub instead)',
+        );
+      } else {
+        ToastService.warning(
+          context,
+          '${validFiles.length} file(s) loaded • ${allRows.length} faculty records. ($skipped incompatible file(s) skipped)',
+        );
+      }
     } else {
       ToastService.success(
         context,
@@ -427,6 +460,223 @@ class _BulkImportViewState extends State<BulkImportView> {
     _scheduleDraftSave();
   }
 
+  bool _isStudentClassListOrTemplate(List<List<String>> matrix) {
+    if (matrix.isEmpty) return false;
+
+    // Check preambles and cells for Official Class List markers
+    final headerScanLimit = matrix.length < 25 ? matrix.length : 25;
+    for (var i = 0; i < headerScanLimit; i++) {
+      final line = matrix[i].join(' ').toLowerCase();
+      if (line.contains('official list of enrolled students') ||
+          line.contains('official list of students') ||
+          line.contains('class section') ||
+          line.contains('subject code') ||
+          line.contains('subject title') ||
+          line.contains('student number') ||
+          line.contains('student no') ||
+          line.contains('student id') ||
+          line.contains('validation date') ||
+          line.contains('or no')) {
+        return true;
+      }
+    }
+
+    // Check for standard student CSV headers or roles
+    if (matrix.isNotEmpty) {
+      final headers = matrix.first.map((c) => c.toLowerCase().trim().replaceAll('"', '')).toList();
+      if (headers.contains('student_number') ||
+          headers.contains('student id') ||
+          headers.contains('year_level') ||
+          headers.contains('section')) {
+        return true;
+      }
+
+      final roleIdx = headers.indexWhere((h) => h == 'role' || h == 'roles' || h == 'user_role');
+      if (roleIdx != -1) {
+        int studentCount = 0;
+        int facultyCount = 0;
+        for (var i = 1; i < matrix.length; i++) {
+          if (roleIdx < matrix[i].length) {
+            final role = matrix[i][roleIdx].toLowerCase().trim().replaceAll('"', '');
+            if (role == 'student') studentCount++;
+            if (role.contains('faculty') ||
+                role.contains('admin') ||
+                role.contains('panelist') ||
+                role.contains('adviser') ||
+                role.contains('instructor') ||
+                role.contains('pit')) {
+              facultyCount++;
+            }
+          }
+        }
+        if (studentCount > 0 && facultyCount == 0) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  List<List<String>> _extractXlsxMatrix(List<int> bytes) {
+    try {
+      final excel = xl.Excel.decodeBytes(bytes);
+      if (excel.tables.isEmpty) return [];
+      final sheet = excel.tables.values.first;
+      return sheet.rows
+          .map((row) => row.map((cell) => _excelCellText(cell?.value)).toList())
+          .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+          .toList();
+    } catch (_) {
+      return [];
+    }
+  }
+
+  List<Map<String, dynamic>> _parseFacultyRowsFromMatrix(List<List<String>> matrix, String fileName) {
+    final rows = <Map<String, dynamic>>[];
+    if (matrix.isEmpty) return rows;
+
+    if (_isStudentClassListOrTemplate(matrix)) {
+      return rows;
+    }
+
+    int headerIdx = -1;
+    int idCol = -1;
+    int firstCol = -1;
+    int lastCol = -1;
+    int nameCol = -1;
+    int emailCol = -1;
+    int roleCol = -1;
+
+    for (var i = 0; i < matrix.length; i++) {
+      final cells = matrix[i].map((c) => c.toLowerCase().trim().replaceAll('"', '').replaceFirst('\ufeff', '')).toList();
+
+      int curId = -1;
+      int curFirst = -1;
+      int curLast = -1;
+      int curName = -1;
+      int curEmail = -1;
+      int curRole = -1;
+
+      for (var c = 0; c < cells.length; c++) {
+        final col = cells[c];
+        if (col.isEmpty) continue;
+
+        if (col == 'id' ||
+            col == 'id_number' ||
+            col == 'id number' ||
+            col == 'id_no' ||
+            col == 'faculty_id' ||
+            col == 'faculty id' ||
+            col == 'employee_id' ||
+            col == 'employee id' ||
+            col == 'emp_id' ||
+            col == 'fac_id' ||
+            col == 'username' ||
+            col == 'user_id' ||
+            col == 'user id') {
+          curId = c;
+        } else if (col == 'first_name' ||
+            col == 'first name' ||
+            col == 'first' ||
+            col == 'fname' ||
+            col == 'given_name' ||
+            col == 'given name') {
+          curFirst = c;
+        } else if (col == 'last_name' ||
+            col == 'last name' ||
+            col == 'last' ||
+            col == 'lname' ||
+            col == 'surname' ||
+            col == 'family_name' ||
+            col == 'family name') {
+          curLast = c;
+        } else if (col == 'name' ||
+            col == 'full_name' ||
+            col == 'full name' ||
+            col == 'faculty_name' ||
+            col == 'faculty name') {
+          curName = c;
+        } else if (col == 'email' ||
+            col == 'email_address' ||
+            col == 'email address' ||
+            col == 'mail' ||
+            col == 'e-mail') {
+          curEmail = c;
+        } else if (col == 'role' ||
+            col == 'roles' ||
+            col == 'position' ||
+            col == 'designation' ||
+            col == 'user_role' ||
+            col == 'type') {
+          curRole = c;
+        }
+      }
+
+      final hasValidIdOrEmail = curId != -1 || curEmail != -1;
+      final hasValidName = (curFirst != -1 && curLast != -1) || curName != -1 || curFirst != -1;
+
+      if (hasValidIdOrEmail && hasValidName) {
+        headerIdx = i;
+        idCol = curId;
+        firstCol = curFirst;
+        lastCol = curLast;
+        nameCol = curName;
+        emailCol = curEmail;
+        roleCol = curRole;
+        break;
+      }
+    }
+
+    if (headerIdx == -1) return rows;
+
+    for (var i = headerIdx + 1; i < matrix.length; i++) {
+      final r = matrix[i];
+      final idVal = idCol >= 0 && idCol < r.length ? r[idCol].trim() : '';
+      var firstVal = firstCol >= 0 && firstCol < r.length ? r[firstCol].trim() : '';
+      var lastVal = lastCol >= 0 && lastCol < r.length ? r[lastCol].trim() : '';
+      final emailVal = emailCol >= 0 && emailCol < r.length ? r[emailCol].trim() : '';
+      final roleVal = roleCol >= 0 && roleCol < r.length ? r[roleCol].trim() : '';
+
+      if (firstVal.isEmpty && lastVal.isEmpty && nameCol >= 0 && nameCol < r.length) {
+        final fullName = r[nameCol].trim();
+        if (fullName.isNotEmpty) {
+          final parts = splitOfficialFullName(fullName);
+          firstVal = parts.firstName;
+          lastVal = parts.lastName;
+        }
+      }
+
+      if (idVal.isEmpty && emailVal.isEmpty) continue;
+      if (firstVal.isEmpty && lastVal.isEmpty && idVal.isEmpty) continue;
+
+      final parsedRoles = parseFacultyRoles(roleVal);
+      // Skip student records in faculty bulk import
+      if (parsedRoles.baseRole == 'student' || roleVal.toLowerCase().trim() == 'student') {
+        continue;
+      }
+
+      rows.add({
+        'id_number': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
+        'username': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
+        'first_name': firstVal,
+        'last_name': lastVal,
+        'email': emailVal,
+        'role': parsedRoles.baseRole,
+        'raw_role': roleVal.isNotEmpty ? roleVal : parsedRoles.baseRole,
+        'is_panelist': parsedRoles.isPanelist,
+        'is_adviser': parsedRoles.isAdviser,
+        'is_pit_lead': parsedRoles.isPitLead,
+        'pit_lead_year': parsedRoles.pitLeadYear,
+        'is_documenter': parsedRoles.isDocumenter,
+        'is_uploader': parsedRoles.isUploader,
+        'source_file': fileName,
+      });
+    }
+
+    return rows;
+  }
+
   List<Map<String, dynamic>> _parseXlsxBytes(List<int> bytes, String fileName) {
     final rows = <Map<String, dynamic>>[];
     try {
@@ -434,57 +684,13 @@ class _BulkImportViewState extends State<BulkImportView> {
       for (final table in excel.tables.keys) {
         final sheet = excel.tables[table];
         if (sheet == null || sheet.rows.isEmpty) continue;
-
-        int headerIdx = -1;
-        int idCol = -1;
-        int firstCol = -1;
-        int lastCol = -1;
-        int emailCol = -1;
-        int roleCol = -1;
-
-        for (var i = 0; i < sheet.rows.length; i++) {
-          final row = sheet.rows[i];
-          final texts = row.map((cell) => _excelCellText(cell?.value)).map((s) => s.toLowerCase()).toList();
-
-          final hasId = texts.any((t) => t.contains('id') || t.contains('username') || t.contains('number'));
-          final hasName = texts.any((t) => t.contains('name'));
-          final hasEmail = texts.any((t) => t.contains('email'));
-
-          if ((hasId || hasEmail) && (hasName || texts.contains('first_name') || texts.contains('first name'))) {
-            headerIdx = i;
-            for (var c = 0; c < texts.length; c++) {
-              final t = texts[c];
-              if (t.contains('id') || t.contains('username') || t.contains('number')) idCol = c;
-              if (t.contains('first') || t == 'fname') firstCol = c;
-              if (t.contains('last') || t == 'lname' || t.contains('surname')) lastCol = c;
-              if (t.contains('email') || t.contains('mail')) emailCol = c;
-              if (t.contains('role') || t.contains('position') || t.contains('type')) roleCol = c;
-            }
-            break;
-          }
-        }
-
-        if (headerIdx == -1) continue;
-
-        for (var i = headerIdx + 1; i < sheet.rows.length; i++) {
-          final r = sheet.rows[i];
-          final idVal = idCol >= 0 && idCol < r.length ? _excelCellText(r[idCol]?.value) : '';
-          final firstVal = firstCol >= 0 && firstCol < r.length ? _excelCellText(r[firstCol]?.value) : '';
-          final lastVal = lastCol >= 0 && lastCol < r.length ? _excelCellText(r[lastCol]?.value) : '';
-          final emailVal = emailCol >= 0 && emailCol < r.length ? _excelCellText(r[emailCol]?.value) : '';
-          final roleVal = roleCol >= 0 && roleCol < r.length ? _excelCellText(r[roleCol]?.value) : '';
-
-          if (idVal.isEmpty && emailVal.isEmpty) continue;
-
-          rows.add({
-            'id_number': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
-            'username': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
-            'first_name': firstVal,
-            'last_name': lastVal,
-            'email': emailVal,
-            'role': roleVal.toLowerCase().contains('admin') ? 'admin' : 'faculty',
-            'source_file': fileName,
-          });
+        final matrix = sheet.rows
+            .map((row) => row.map((cell) => _excelCellText(cell?.value)).toList())
+            .where((row) => row.any((cell) => cell.trim().isNotEmpty))
+            .toList();
+        final parsed = _parseFacultyRowsFromMatrix(matrix, fileName);
+        if (parsed.isNotEmpty) {
+          rows.addAll(parsed);
         }
       }
     } catch (_) {}
@@ -521,57 +727,10 @@ class _BulkImportViewState extends State<BulkImportView> {
   }
 
   List<Map<String, dynamic>> _parseRawCsvContent(String content, {String fileName = 'Staged CSV'}) {
-    final rows = <Map<String, dynamic>>[];
     final lines = const LineSplitter().convert(content).map((l) => l.trim()).where((l) => l.isNotEmpty).toList();
-    if (lines.isEmpty) return rows;
-
-    int headerIdx = -1;
-    Map<String, int> headerMap = {};
-
-    for (var i = 0; i < lines.length; i++) {
-      final cells = _splitCsvLine(lines[i]).map((c) => c.toLowerCase().replaceAll('"', '').trim()).toList();
-      final hasId = cells.any((c) => c.contains('id') || c.contains('username') || c.contains('number'));
-      final hasEmail = cells.any((c) => c.contains('email'));
-      final hasName = cells.any((c) => c.contains('name'));
-
-      if ((hasId || hasEmail) && (hasName || cells.contains('first_name'))) {
-        headerIdx = i;
-        for (var c = 0; c < cells.length; c++) {
-          final col = cells[c];
-          if (col.contains('id') || col.contains('username') || col.contains('number')) headerMap['id'] = c;
-          if (col.contains('first') || col == 'fname') headerMap['first'] = c;
-          if (col.contains('last') || col == 'lname' || col.contains('surname')) headerMap['last'] = c;
-          if (col.contains('email') || col.contains('mail')) headerMap['email'] = c;
-          if (col.contains('role') || col.contains('position') || col.contains('type')) headerMap['role'] = c;
-        }
-        break;
-      }
-    }
-
-    if (headerIdx == -1) return rows;
-
-    for (var i = headerIdx + 1; i < lines.length; i++) {
-      final cells = _splitCsvLine(lines[i]);
-      final idVal = headerMap.containsKey('id') && headerMap['id']! < cells.length ? cells[headerMap['id']!].trim() : '';
-      final firstVal = headerMap.containsKey('first') && headerMap['first']! < cells.length ? cells[headerMap['first']!].trim() : '';
-      final lastVal = headerMap.containsKey('last') && headerMap['last']! < cells.length ? cells[headerMap['last']!] : '';
-      final emailVal = headerMap.containsKey('email') && headerMap['email']! < cells.length ? cells[headerMap['email']!] : '';
-      final roleVal = headerMap.containsKey('role') && headerMap['role']! < cells.length ? cells[headerMap['role']!] : '';
-
-      if (idVal.isEmpty && emailVal.isEmpty) continue;
-
-      rows.add({
-        'id_number': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
-        'username': idVal.isNotEmpty ? idVal : emailVal.split('@').first,
-        'first_name': firstVal,
-        'last_name': lastVal,
-        'email': emailVal,
-        'role': roleVal.toLowerCase().contains('admin') ? 'admin' : 'faculty',
-        'source_file': fileName,
-      });
-    }
-
-    return rows;
+    if (lines.isEmpty) return <Map<String, dynamic>>[];
+    final matrix = lines.map(_splitCsvLine).toList();
+    return _parseFacultyRowsFromMatrix(matrix, fileName);
   }
 
   List<String> _splitCsvLine(String line) {
@@ -616,13 +775,22 @@ class _BulkImportViewState extends State<BulkImportView> {
 
     final usersToImport = _parsedFacultyRows.map((r) {
       final id = (r['id_number'] ?? r['username'] ?? '').toString().trim();
+      final roleStr = (r['raw_role'] ?? r['role'] ?? 'faculty').toString().trim();
+      final parsed = parseFacultyRoles(roleStr);
       return {
         'id_number': id,
         'username': id,
         'first_name': (r['first_name'] ?? '').toString().trim(),
         'last_name': (r['last_name'] ?? '').toString().trim(),
         'email': (r['email'] ?? '').toString().trim(),
-        'role': (r['role'] ?? 'faculty').toString().trim(),
+        'role': (r['role'] ?? parsed.baseRole).toString().trim(),
+        'raw_role': roleStr,
+        'is_panelist': r['is_panelist'] ?? parsed.isPanelist,
+        'is_adviser': r['is_adviser'] ?? parsed.isAdviser,
+        'is_pit_lead': r['is_pit_lead'] ?? parsed.isPitLead,
+        'pit_lead_year': r['pit_lead_year'] ?? parsed.pitLeadYear,
+        'is_documenter': r['is_documenter'] ?? parsed.isDocumenter,
+        'is_uploader': r['is_uploader'] ?? parsed.isUploader,
       };
     }).toList();
 
@@ -834,62 +1002,85 @@ class _BulkImportViewState extends State<BulkImportView> {
             Container(
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _line),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: const Color(0xFFCBD5E1)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.03),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // Titlebar
                   Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: const BoxDecoration(
-                      color: Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.vertical(top: Radius.circular(7)),
-                      border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                      color: Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(9)),
+                      border: Border(bottom: BorderSide(color: Color(0xFFCBD5E1))),
                     ),
-                    child: Row(
+                    child: Wrap(
+                      alignment: WrapAlignment.spaceBetween,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 8,
+                      runSpacing: 6,
                       children: [
-                        const Icon(Icons.table_chart_outlined, size: 14, color: _maroon),
-                        const SizedBox(width: 6),
-                        const Expanded(
-                          child: Text(
-                            'Sample Faculty Spreadsheet',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w800,
-                              color: _ink,
-                            ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(5),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          child: const Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.insert_drive_file_outlined, size: 12, color: Color(0xFF16A34A)),
+                              SizedBox(width: 5),
+                              Text(
+                                'defensys_faculty_import_template.csv',
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1E293B),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        _buildMiniBadge('Faculty', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
-                        const SizedBox(width: 4),
-                        _buildMiniBadge('Panelist', const Color(0xFFFAF5FF), const Color(0xFF7E22CE)),
-                        const SizedBox(width: 4),
-                        _buildMiniBadge('Adviser', const Color(0xFFDCFCE7), const Color(0xFF15803D)),
+                        _buildMiniBadge('Faculty & Staff Template', const Color(0xFFEFF6FF), const Color(0xFF1D4ED8)),
                       ],
                     ),
                   ),
 
-                  // Table Header
+                  // Table Header (Row 1)
                   Container(
-                    color: const Color(0xFFF1F5F9),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    child: const Row(
+                    color: const Color(0xFFE2E8F0),
+                    child: Row(
                       children: [
-                        Expanded(flex: 3, child: Text('id_number', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)))),
-                        Expanded(flex: 3, child: Text('first_name', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)))),
-                        Expanded(flex: 3, child: Text('last_name', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)))),
-                        Expanded(flex: 4, child: Text('email', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)))),
-                        Expanded(flex: 2, child: Text('role', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w800, color: Color(0xFF475569)))),
+                        _buildGutterCell('1', isHeader: true),
+                        Expanded(flex: 3, child: _buildHeaderCell('id_number')),
+                        Expanded(flex: 2, child: _buildHeaderCell('first_name')),
+                        Expanded(flex: 2, child: _buildHeaderCell('last_name')),
+                        Expanded(flex: 3, child: _buildHeaderCell('email')),
+                        Expanded(flex: 4, child: _buildHeaderCell('role')),
                       ],
                     ),
                   ),
-                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const Divider(height: 1, color: Color(0xFFCBD5E1)),
 
                   // Sample Rows
-                  _buildSampleRow('FAC-0001', 'Ada', 'Lovelace', 'ada@ustp.edu.ph', 'faculty', false),
+                  _buildSampleRow('2', 'FAC-0001', 'Ada', 'Lovelace', 'ada@ustp.edu.ph', 'faculty', false),
                   const Divider(height: 1, color: Color(0xFFE2E8F0)),
-                  _buildSampleRow('FAC-0002', 'Alan', 'Turing', 'a.turing@ustp.edu.ph', 'faculty', true),
+                  _buildSampleRow('3', 'FAC-0002', 'Alan', 'Turing', 'a.turing@ustp.edu.ph', 'Panelist, Adviser', true),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  _buildSampleRow('4', 'FAC-0003', 'Grace', 'Hopper', 'g.hopper@ustp.edu.ph', 'PIT Lead 1st Year, Panelist', false),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  _buildSampleRow('5', 'FAC-0004', 'Dennis', 'Ritchie', 'd.ritchie@ustp.edu.ph', 'admin', true),
                 ],
               ),
             ),
@@ -902,7 +1093,7 @@ class _BulkImportViewState extends State<BulkImportView> {
                 SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    'Best for onboarding faculty, advisers, and panelist accounts. Roles and institutional emails are auto-detected with zero manual setup.',
+                    'Best for onboarding faculty, advisers, and panelist accounts. Roles, PIT leads, and institutional emails are auto-detected. For multiple roles, separate them with commas or slashes (e.g., "Panelist, Adviser" or "PIT Lead 1st Year / Panelist").',
                     style: TextStyle(fontSize: 11.5, color: _muted, fontWeight: FontWeight.w500, height: 1.3),
                   ),
                 ),
@@ -930,17 +1121,52 @@ class _BulkImportViewState extends State<BulkImportView> {
     );
   }
 
-  Widget _buildSampleRow(String id, String first, String last, String email, String role, bool isAlt) {
+  Widget _buildGutterCell(String rowNum, {bool isHeader = false}) {
     return Container(
-      color: isAlt ? const Color(0xFFF9FAFB) : Colors.white,
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      width: 26,
+      padding: const EdgeInsets.symmetric(vertical: 5),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: isHeader ? const Color(0xFFCBD5E1) : const Color(0xFFF8FAFC),
+        border: const Border(right: BorderSide(color: Color(0xFFCBD5E1))),
+      ),
+      child: Text(
+        rowNum,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: isHeader ? FontWeight.w900 : FontWeight.w600,
+          color: isHeader ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+          fontFamily: 'monospace',
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeaderCell(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: Color(0xFF334155),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSampleRow(String rowNum, String id, String first, String last, String email, String role, bool isAlt) {
+    return Container(
+      color: isAlt ? const Color(0xFFF8FAFC) : Colors.white,
       child: Row(
         children: [
-          Expanded(flex: 3, child: Text(id, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: _ink))),
-          Expanded(flex: 3, child: Text(first, style: const TextStyle(fontSize: 11, color: _ink))),
-          Expanded(flex: 3, child: Text(last, style: const TextStyle(fontSize: 11, color: _ink))),
-          Expanded(flex: 4, child: Text(email, style: const TextStyle(fontSize: 11, color: _muted))),
-          Expanded(flex: 2, child: Text(role, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: _maroon))),
+          _buildGutterCell(rowNum),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(id, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w700, color: _ink)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(first, style: const TextStyle(fontSize: 10.5, color: _ink)))),
+          Expanded(flex: 2, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(last, style: const TextStyle(fontSize: 10.5, color: _ink)))),
+          Expanded(flex: 3, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(email, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, color: _muted)))),
+          Expanded(flex: 4, child: Padding(padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5), child: Text(role, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: _maroon)))),
         ],
       ),
     );
@@ -1158,7 +1384,8 @@ class _BulkImportViewState extends State<BulkImportView> {
       final last = r['last_name']?.toString().toLowerCase() ?? '';
       final email = r['email']?.toString().toLowerCase() ?? '';
       final role = r['role']?.toString().toLowerCase() ?? '';
-      return id.contains(query) || first.contains(query) || last.contains(query) || email.contains(query) || role.contains(query);
+      final rawRole = r['raw_role']?.toString().toLowerCase() ?? '';
+      return id.contains(query) || first.contains(query) || last.contains(query) || email.contains(query) || role.contains(query) || rawRole.contains(query);
     }).toList();
 
     int duplicateCount = 0;
@@ -1283,7 +1510,8 @@ class _BulkImportViewState extends State<BulkImportView> {
                 final first = row['first_name']?.toString() ?? '';
                 final last = row['last_name']?.toString() ?? '';
                 final email = row['email']?.toString() ?? '';
-                final role = row['role']?.toString().toLowerCase() ?? 'faculty';
+                final rawRole = (row['raw_role'] ?? row['role'] ?? 'faculty').toString();
+                final parsedRoles = parseFacultyRoles(rawRole);
                 final isDup = _isExistingUser(id, email);
 
                 return Container(
@@ -1323,27 +1551,27 @@ class _BulkImportViewState extends State<BulkImportView> {
                         ),
                       ),
 
-                      // Role
+                      // Role Badges
                       Expanded(
-                        flex: 2,
-                        child: Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: role == 'admin' ? const Color(0xFFFEF3C7) : const Color(0xFFEFF6FF),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                role.toUpperCase(),
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w800,
-                                  color: role == 'admin' ? const Color(0xFF92400E) : const Color(0xFF1D4ED8),
-                                ),
+                        flex: 3,
+                        child: Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: parsedRoles.badges.map((b) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: b.bg,
+                              borderRadius: BorderRadius.circular(5),
+                            ),
+                            child: Text(
+                              b.label,
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: b.fg,
                               ),
                             ),
-                          ],
+                          )).toList(),
                         ),
                       ),
 

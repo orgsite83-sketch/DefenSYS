@@ -43,7 +43,7 @@ Student Number,Full Name,Email,Year Level
       text: studentCsv,
     );
 
-    testWidgets('auto-detects faculty CSV, sets mode to Faculty / General Users and shows 10 faculty badge', (tester) async {
+    testWidgets('recognizes faculty CSV in general mode, shows 10 faculty badge and generates preview', (tester) async {
       StagedImportResult? capturedResult;
 
       await tester.pumpWidget(
@@ -55,7 +55,7 @@ Student Number,Full Name,Email,Year Level
                   capturedResult = await showFileImportStagingModal(
                     context,
                     initialFiles: [facultyFile],
-                    importMode: 'student',
+                    importMode: 'general',
                   );
                 },
                 child: const Text('Open Modal'),
@@ -73,7 +73,7 @@ Student Number,Full Name,Email,Year Level
       expect(find.textContaining('Faculty Accounts CSV'), findsOneWidget);
       expect(find.textContaining('10 faculty'), findsOneWidget);
       expect(find.text('Role: Faculty'), findsOneWidget);
-      expect(find.text('Add another user file'), findsOneWidget);
+      expect(find.text('Add another faculty/staff file'), findsOneWidget);
 
       // Confirm generate preview button
       await tester.tap(find.text('Generate Preview Table (10 rows)'));
@@ -84,7 +84,38 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult!.files.length, 1);
     });
 
-    testWidgets('auto-detects official student class list, sets mode to Student Batch and shows section & year badges', (tester) async {
+    testWidgets('rejects student class list in general (faculty) mode as incompatible', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  await showFileImportStagingModal(
+                    context,
+                    initialFiles: [studentFile],
+                    importMode: 'general',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('No valid faculty & staff files detected'), findsOneWidget);
+      expect(find.textContaining('Official Class List (Student)'), findsOneWidget);
+      expect(find.textContaining('Incompatible Format (0 faculty records)'), findsOneWidget);
+      expect(find.textContaining('This file is a Student Class List'), findsOneWidget);
+      expect(find.text('Generate Preview Table'), findsOneWidget);
+    });
+
+    testWidgets('recognizes official student class list in student mode, sets mode to Student Batch and shows section & year badges', (tester) async {
       StagedImportResult? capturedResult;
 
       await tester.pumpWidget(
@@ -96,7 +127,7 @@ Student Number,Full Name,Email,Year Level
                   capturedResult = await showFileImportStagingModal(
                     context,
                     initialFiles: [studentFile],
-                    importMode: 'general',
+                    importMode: 'student',
                   );
                 },
                 child: const Text('Open Modal'),
@@ -125,6 +156,35 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult, isNotNull);
       expect(capturedResult!.importMode, 'student');
       expect(capturedResult!.files.length, 1);
+    });
+
+    testWidgets('rejects faculty template in student mode as incompatible', (tester) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  await showFileImportStagingModal(
+                    context,
+                    initialFiles: [facultyFile],
+                    importMode: 'student',
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.textContaining('Faculty Accounts CSV'), findsOneWidget);
+      expect(find.textContaining('Incompatible Format (0 student records)'), findsOneWidget);
+      expect(find.textContaining('This file is a Faculty & Staff template'), findsOneWidget);
     });
 
     testWidgets('marks non-student CSVs as incompatible, excludes them from valid counts and skips them on proceed', (tester) async {

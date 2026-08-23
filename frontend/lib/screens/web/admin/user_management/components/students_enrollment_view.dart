@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
+import 'package:defensys/services/academic_period_provider.dart';
 import 'package:defensys/widgets/defensys_skeleton.dart';
 import 'package:defensys/widgets/feedback/empty_state.dart';
 
@@ -82,17 +83,19 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
 
   Future<void> _showStudentHistory(Map<String, dynamic> record) async {
     final state = ref.read(studentAcademicRecordsProvider);
+    final activeSem = ref.read(academicPeriodProvider).activeSemester ?? state.activeSemester;
     await StudentProfileDetailsDialog.show(
       context,
       record: record,
       schoolYears: state.schoolYears,
-      activeSemester: state.activeSemester,
+      activeSemester: activeSem,
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(studentAcademicRecordsProvider);
+    final activeSem = ref.watch(academicPeriodProvider).activeSemester ?? state.activeSemester;
     final allFiltered = _filteredRecords(state.records);
     final visibleRows = _visibleRows(allFiltered);
 
@@ -140,17 +143,17 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             Expanded(
               child: _buildMetricCard(
                 title: 'Active Term',
-                value: state.activeSemester?['label']?.toString() ?? 'None Active',
-                subtitle: state.activeSemester?['school_year']?.toString() ?? 'Setup in Academic Periods',
+                value: activeSem?['label']?.toString() ?? 'None Active',
+                subtitle: activeSem?['school_year']?.toString() ?? 'Setup in Academic Periods',
                 icon: Icons.calendar_today_rounded,
-                iconColor: state.activeSemester != null ? _gold : const Color(0xFFD97706),
+                iconColor: activeSem != null ? _gold : const Color(0xFFD97706),
                 iconBg: const Color(0xFFFEF3C7),
               ),
             ),
           ],
         ),
 
-        if (state.activeSemester == null && state.students.isNotEmpty) ...[
+        if (activeSem == null && state.students.isNotEmpty) ...[
           const SizedBox(height: 16),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -255,15 +258,15 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                 DefensysSkeleton.list(count: 6, rowHeight: 52)
               else if (visibleRows.isEmpty)
                 DefensysEmptyState.table(
-                  icon: (state.activeSemester == null && state.students.isNotEmpty)
+                  icon: (activeSem == null && state.students.isNotEmpty)
                       ? Icons.info_outline_rounded
                       : Icons.person_off_outlined,
-                  title: (state.activeSemester == null && state.students.isNotEmpty)
+                  title: (activeSem == null && state.students.isNotEmpty)
                       ? 'No Active Semester Configured'
                       : (state.students.isNotEmpty && state.records.isEmpty)
                           ? 'Unenrolled Student Accounts Found'
                           : 'No Student Records Found',
-                  description: (state.activeSemester == null && state.students.isNotEmpty)
+                  description: (activeSem == null && state.students.isNotEmpty)
                       ? '${state.students.length} student account(s) are registered in the system, but no semester is currently active. Please set up and activate an academic semester in Setup & Configuration > Academic Periods to enroll students.'
                       : (state.students.isNotEmpty && state.records.isEmpty)
                           ? '${state.students.length} student account(s) exist in the system but have not been enrolled in an academic term yet. Use "Batch Enrollment" or "Add Single Student" to enroll them.'
@@ -508,7 +511,10 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
   Widget _studentRow(Map<String, dynamic> r) {
     final yearLevel = r['year_level']?.toString() ?? 'Unassigned';
     final section = r['section']?.toString().trim() ?? '';
+    final sem = r['semester']?.toString() ?? '';
     final period = '${r['semester'] ?? ''}, ${r['school_year'] ?? ''}';
+    final isCapstone = yearLevel.contains('4th') ||
+        (yearLevel.contains('3rd') && sem.contains('2nd'));
 
     return Container(
       height: 57,
@@ -581,7 +587,8 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
                   ),
                   overflow: TextOverflow.ellipsis,
                 ),
-                if (r['instructor_name'] != null &&
+                if (!isCapstone &&
+                    r['instructor_name'] != null &&
                     r['instructor_name'].toString().trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Row(

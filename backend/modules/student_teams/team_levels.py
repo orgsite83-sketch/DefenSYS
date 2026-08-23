@@ -7,6 +7,17 @@ YEAR_LEVEL_CHOICES = ('1st Year', '2nd Year', '3rd Year', '4th Year')
 DEFAULT_CAPSTONE_YEAR = '3rd Year'
 
 
+def default_capstone_year(semester=None):
+    sem = _active_semester(semester)
+    if sem:
+        sem_label = getattr(sem, 'label', sem)
+        if sem_label == Semester.SECOND or str(sem_label).startswith('2nd'):
+            return '3rd Year'
+        if sem_label == Semester.FIRST or str(sem_label).startswith('1st'):
+            return '4th Year'
+    return '4th Year'
+
+
 def level_year(level):
     if level.startswith('1st Year'):
         return '1st Year'
@@ -54,6 +65,29 @@ def normalize_year_level(value):
         if lowered.startswith(year.casefold()):
             return year
     return raw
+
+
+def is_capstone_scope(year_level, semester=None):
+    """
+    Returns True if the given year level and semester constitute Capstone scope.
+    - 4th Year (all semesters) is Capstone.
+    - 3rd Year during 2nd Semester is Capstone 1 Intake.
+    - All other combinations (1st Year, 2nd Year, 3rd Year 1st Sem) are PIT.
+    """
+    norm_year = normalize_year_level(year_level)
+    if norm_year == '4th Year':
+        return True
+    if norm_year == '3rd Year':
+        sem = _active_semester(semester)
+        if sem:
+            sem_label = getattr(sem, 'label', sem)
+            if sem_label == Semester.SECOND or str(sem_label).startswith('2nd'):
+                return True
+    return False
+
+
+def is_pit_scope(year_level, semester=None):
+    return not is_capstone_scope(year_level, semester=semester)
 
 
 def _active_semester(semester=None):
@@ -111,15 +145,15 @@ def infer_year_level_from_members(member_ids, semester=None, *, leader_id=None):
     """
     Infer capstone cohort year from member academic records on the active semester.
     Returns (year_level, issues). Rejects mixed cohorts; prefers leader's year when valid.
-    Empty member_ids returns (DEFAULT_CAPSTONE_YEAR, []).
+    Empty member_ids returns (default_capstone_year(semester), []).
     """
     member_ids = [int(item) for item in (member_ids or []) if item]
     if not member_ids:
-        return DEFAULT_CAPSTONE_YEAR, []
+        return default_capstone_year(semester), []
 
     years = _year_levels_for_students(member_ids, semester)
     if not years:
-        return DEFAULT_CAPSTONE_YEAR, []
+        return default_capstone_year(semester), []
 
     unique = sorted(set(years))
     if len(unique) > 1:
@@ -160,7 +194,8 @@ def infer_section_from_members(member_ids, semester=None, *, required=False):
 def resolve_team_level(*, user, year_level='', level='', member_ids=None, semester=None, leader_id=None):
     """
     Derive canonical StudentTeam.level from role + year_level.
-    Admins: "{year} Capstone". PIT Leads: "{pit_lead_year or year} PIT".
+    Admins: "{year} Capstone" if is_capstone_scope(year, semester) else "{year} PIT".
+    PIT Leads: "{pit_lead_year or year} PIT".
     """
     explicit_level = (level or '').strip()
     year = normalize_year_level(year_level)
@@ -168,7 +203,15 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
     if user_is_admin(user):
         if explicit_level and 'PIT' in explicit_level.upper():
             year = level_year(explicit_level) or year
+            if year and is_capstone_scope(year, semester):
+                raise ValueError(
+                    f'Cannot create {explicit_level} team: '
+                    f'{year} is in Capstone intake scope for this semester.'
+                )
             resolved = f'{year} PIT' if year else explicit_level
+        elif explicit_level and 'CAPSTONE' in explicit_level.upper():
+            year = level_year(explicit_level) or year
+            resolved = f'{year} Capstone' if year else explicit_level
         else:
             inferred_year = None
             if member_ids:
@@ -182,12 +225,13 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
 
             if inferred_year:
                 year = inferred_year
-            elif explicit_level and 'CAPSTONE' in explicit_level.upper():
-                year = level_year(explicit_level)
             elif not year:
-                year = DEFAULT_CAPSTONE_YEAR
+                year = default_capstone_year(semester)
 
-            resolved = f'{year} Capstone'
+            if is_capstone_scope(year, semester):
+                resolved = f'{year} Capstone'
+            else:
+                resolved = f'{year} PIT'
 
     elif user_is_pit_lead_only(user):
         if explicit_level and 'CAPSTONE' in explicit_level.upper():
@@ -216,7 +260,10 @@ def resolve_team_level(*, user, year_level='', level='', member_ids=None, semest
         if explicit_level:
             resolved = explicit_level
         elif year:
-            resolved = f'{year} Capstone'
+            if is_capstone_scope(year, semester):
+                resolved = f'{year} Capstone'
+            else:
+                resolved = f'{year} PIT'
         else:
             raise ValueError('level or year_level is required.')
 
@@ -273,7 +320,8 @@ def prepare_bulk_row(
                 'team_members' in normalized_columns or 'members' in normalized_columns
             )
             is_defensys_template = 'adviser_id' in normalized_columns and 'year_level' in normalized_columns
-            if not (is_client_template or is_defensys_template):
+            is_direct_api_payload = not csv_columns and {'team_name', 'member_ids', 'leader_id'}.issubset(normalized_columns)
+            if not (is_client_template or is_defensys_template or is_direct_api_payload):
                 return None, [
                     "Wrong Template: Capstone import templates must contain 'year_level' and 'adviser_id' columns (or 'Team Name' and 'Team Members' for client format)."
                 ]
@@ -302,7 +350,7 @@ def prepare_bulk_row(
         elif explicit_year:
             data['year_level'] = explicit_year
         else:
-            data['year_level'] = DEFAULT_CAPSTONE_YEAR
+            data['year_level'] = ''
     elif user_is_pit_lead_only(user):
         if member_user_ids:
             inferred, issues = infer_year_level_from_members(
@@ -336,24 +384,35 @@ def prepare_bulk_row(
     elif explicit_year:
         data['year_level'] = explicit_year
 
-    try:
-        data['level'] = resolve_team_level(
-            user=user,
-            year_level=data.get('year_level', ''),
-            level=data.get('level', ''),
-            member_ids=member_user_ids,
-            semester=semester,
-            leader_id=leader_user_id,
-        )
-    except ValueError as exc:
-        return None, [str(exc)]
-    data['year_level'] = level_year(data['level'])
+    explicit_level_input = (row.get('level') or '').strip() if member_user_ids else (data.get('level') or '').strip()
+    if data.get('year_level') or explicit_level_input or member_user_ids:
+        try:
+            data['level'] = resolve_team_level(
+                user=user,
+                year_level=data.get('year_level', ''),
+                level=explicit_level_input,
+                member_ids=member_user_ids,
+                semester=semester,
+                leader_id=leader_user_id,
+            )
+        except ValueError as exc:
+            return None, [str(exc)]
+        data['year_level'] = level_year(data['level'])
     return data, []
 
 
-def program_label_for_row(data, user):
+def program_label_for_row(data, user, semester=None):
     level = (data.get('level') or '').strip()
     year = normalize_year_level(data.get('year_level', '')) or level_year(level)
+    if 'PIT' in level.upper():
+        return f'{year} PIT' if year else 'PIT'
+    if 'CAPSTONE' in level.upper():
+        return f'Capstone · {year}' if year else 'Capstone'
+    if year:
+        if is_capstone_scope(year, semester):
+            return f'Capstone · {year}'
+        else:
+            return f'{year} PIT'
     if user_is_pit_lead_only(user):
         return f'{year} PIT' if year else 'PIT'
     if user_is_admin(user):

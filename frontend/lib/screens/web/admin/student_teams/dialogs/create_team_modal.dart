@@ -25,13 +25,19 @@ Future<void> showCreateTeamModal({
       : state.statuses;
   final name = TextEditingController();
   final projectTitle = TextEditingController();
-  var yearLevel = isCapstoneAdmin ? '3rd Year' : (pitLeadYear ?? '3rd Year');
+  final isFirstSem = state.activeSemester?['label']?.toString().toLowerCase().contains('1st') ?? false;
+  final defaultYear = isCapstoneAdmin
+      ? (isFirstSem ? '4th Year' : '3rd Year')
+      : (pitLeadYear ?? '3rd Year');
+  var yearLevel = isCapstoneAdmin ? defaultYear : (pitLeadYear ?? '3rd Year');
   if (!yearOptions.contains(yearLevel)) {
-    yearLevel = isCapstoneAdmin ? '3rd Year' : (pitLeadYear ?? '3rd Year');
+    yearLevel = defaultYear;
   }
   var level = isPitLeadManager
       ? '$yearLevel PIT'
-      : '${yearLevel.trim()} Capstone';
+      : (yearLevel == '4th Year' || (yearLevel == '3rd Year' && !isFirstSem)
+          ? '$yearLevel Capstone'
+          : '$yearLevel PIT');
   var status = 'Pending';
   if (!statusOptions.contains(status)) {
     status = statusOptions.first;
@@ -84,7 +90,7 @@ Future<void> showCreateTeamModal({
                           labelText: 'Program',
                         ),
                         child: Text(
-                          'Capstone · $yearLevel',
+                          level.contains('Capstone') ? 'Capstone · $yearLevel' : '$yearLevel PIT',
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                       ),
