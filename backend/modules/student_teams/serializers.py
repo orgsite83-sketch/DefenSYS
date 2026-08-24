@@ -418,6 +418,14 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
         return attrs
 
+    def _ensure_adviser_role(self, adviser, changed_by=None):
+        if adviser and getattr(adviser, 'role', None) == 'faculty' and not getattr(adviser, 'is_adviser', False):
+            from user_management.role_assignments import record_role_changes, snapshot_role_flags
+            before_flags = snapshot_role_flags(adviser)
+            adviser.is_adviser = True
+            adviser.save(update_fields=['is_adviser'])
+            record_role_changes(adviser, before_flags, changed_by=changed_by)
+
     @transaction.atomic
     def create(self, validated_data):
         member_ids = validated_data.pop('member_ids')
@@ -437,11 +445,13 @@ class StudentTeamWriteSerializer(serializers.Serializer):
             current_defense_stage=validated_data.get('current_defense_stage') or None,
         )
         self._sync_members(team, member_ids, validated_data['leader'].id)
+        assigned_by = self.context.get('assigned_by') or self.context.get('user')
+        self._ensure_adviser_role(team.adviser, changed_by=assigned_by)
         record_team_adviser_change(
             team,
             None,
             team.adviser,
-            assigned_by=self.context.get('assigned_by'),
+            assigned_by=assigned_by,
             reason=reason,
         )
         return team
@@ -465,11 +475,13 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         instance.current_defense_stage = validated_data.get('current_defense_stage') or None
         instance.save()
         self._sync_members(instance, member_ids, validated_data['leader'].id)
+        assigned_by = self.context.get('assigned_by') or self.context.get('user')
+        self._ensure_adviser_role(instance.adviser, changed_by=assigned_by)
         record_team_adviser_change(
             instance,
             previous_adviser_id,
             instance.adviser,
-            assigned_by=self.context.get('assigned_by'),
+            assigned_by=assigned_by,
             reason=reason,
         )
         return instance

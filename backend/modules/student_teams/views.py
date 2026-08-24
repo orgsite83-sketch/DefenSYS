@@ -156,13 +156,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
     advisers = User.objects.filter(
         role__in=['faculty', 'admin'],
         is_active=True,
-        is_adviser=True,
-    ).order_by('username')
-    if not advisers.exists():
-        advisers = User.objects.filter(
-            role__in=['faculty', 'admin'],
-            is_active=True,
-        ).order_by('username')
+    ).order_by('-is_adviser', 'first_name', 'last_name', 'username')
     
     payload = {
         'active_semester': SemesterSerializer(active).data if active else None,

@@ -33,7 +33,7 @@ class UserManagementScreen extends ConsumerStatefulWidget {
   const UserManagementScreen({
     super.key,
     this.initialBulkImport = false,
-    this.initialUserTab = UserManagementTab.faculty,
+    this.initialUserTab = UserManagementTab.students,
   });
 
   final bool initialBulkImport;

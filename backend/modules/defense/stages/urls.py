@@ -3,6 +3,7 @@ from django.urls import path
 from .views import (
     DefenseStageDetailView,
     DefenseStageListCreateView,
+    DefenseStageReorderView,
     StageDeliverableDetailView,
     StageDeliverableListCreateView,
     StageGradingConfigView,
@@ -11,6 +12,7 @@ from .views import (
 
 urlpatterns = [
     path('', DefenseStageListCreateView.as_view(), name='defense_stages'),
+    path('reorder/', DefenseStageReorderView.as_view(), name='defense_stages_reorder'),
     path('<int:stage_id>/', DefenseStageDetailView.as_view(), name='defense_stage_detail'),
     path(
         '<int:stage_id>/grading-config/',
@@ -20,3 +22,4 @@ urlpatterns = [
     path('<int:stage_id>/deliverables/', StageDeliverableListCreateView.as_view(), name='stage_deliverables'),
     path('<int:stage_id>/deliverables/<int:deliverable_id>/', StageDeliverableDetailView.as_view(), name='stage_deliverable_detail'),
 ]
+

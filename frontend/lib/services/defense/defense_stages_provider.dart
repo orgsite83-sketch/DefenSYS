@@ -228,6 +228,55 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
+  Future<bool> reorderStages(List<int> orderedStageIds) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.post(
+        Uri.parse('$baseUrl/reorder/'),
+        body: jsonEncode({'stage_ids': orderedStageIds}),
+      );
+
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        _applyPayload(payload, successMessage: 'Stage order updated.');
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
+  Future<bool> moveStage(int stageId, int delta) async {
+    final list = List<Map<String, dynamic>>.from(state.stages);
+    final currentIndex = list.indexWhere((s) => _asInt(s['id']) == stageId);
+    if (currentIndex == -1) return false;
+
+    final targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= list.length) return false;
+
+    final stage = list.removeAt(currentIndex);
+    list.insert(targetIndex, stage);
+
+    final orderedIds = list
+        .map((s) => _asInt(s['id']))
+        .whereType<int>()
+        .toList();
+
+    return reorderStages(orderedIds);
+  }
+
   Future<bool> deleteStage(int stageId) async {
     state = state.copyWith(
       isSaving: true,

@@ -570,9 +570,10 @@ class StudentTeamApiTests(APITestCase):
             {
                 'teams': [
                     self._bulk_team_row('Team Valid', 'Ada Lovelace'),
+                    self._bulk_team_row('Team Plain Faculty', 'Plain Faculty'),
                     self._bulk_team_row('Team None', ''),
                     self._bulk_team_row('Team Bad', 'Nobody Here'),
-                    self._bulk_team_row('Team Not Adviser', 'Plain Faculty'),
+                    self._bulk_team_row('Team Student Adviser', 'Juan Dela Cruz'),
                 ],
             },
             format='json',
@@ -580,21 +581,48 @@ class StudentTeamApiTests(APITestCase):
 
         self.assertEqual(response.status_code, 200)
         summary = response.data['summary']
-        self.assertEqual(summary['total'], 4)
-        self.assertEqual(summary['with_adviser'], 1)
+        self.assertEqual(summary['total'], 5)
+        self.assertEqual(summary['with_adviser'], 2)
         self.assertEqual(summary['without_adviser'], 1)
         self.assertEqual(summary['adviser_invalid'], 2)
-        self.assertEqual(summary['ready'], 2)
+        self.assertEqual(summary['ready'], 3)
 
         rows = {item['team_name']: item for item in response.data['rows']}
         self.assertEqual(rows['Team Valid']['adviser_status'], 'valid')
         self.assertTrue(rows['Team Valid']['ready'])
+        self.assertEqual(rows['Team Plain Faculty']['adviser_status'], 'valid')
+        self.assertTrue(rows['Team Plain Faculty']['ready'])
         self.assertEqual(rows['Team None']['adviser_status'], 'none')
         self.assertTrue(rows['Team None']['ready'])
         self.assertEqual(rows['Team Bad']['adviser_status'], 'user_not_found')
         self.assertFalse(rows['Team Bad']['ready'])
-        self.assertEqual(rows['Team Not Adviser']['adviser_status'], 'not_adviser')
-        self.assertFalse(rows['Team Not Adviser']['ready'])
+        self.assertEqual(rows['Team Student Adviser']['adviser_status'], 'not_adviser')
+        self.assertFalse(rows['Team Student Adviser']['ready'])
+
+    def test_bulk_import_auto_promotes_faculty_to_adviser(self):
+        self._activate_capstone_intake_semester()
+        plain_faculty = User.objects.create_user(
+            username='faculty-auto-promote',
+            password='pass12345',
+            role='faculty',
+            first_name='Auto',
+            last_name='Promote',
+            is_adviser=False,
+        )
+        self.assertFalse(plain_faculty.is_adviser)
+        response = self.client.post(
+            '/api/teams/bulk-import/',
+            {
+                'teams': [
+                    self._bulk_team_row('Team Auto Promote', 'Auto Promote'),
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 1)
+        plain_faculty.refresh_from_db()
+        self.assertTrue(plain_faculty.is_adviser)
 
     def test_bulk_import_preview_rejects_pit_lead_wrong_template(self):
         self._activate_capstone_intake_semester()
@@ -1806,7 +1834,7 @@ class StudentTeamApiTests(APITestCase):
         self.adviser.is_active = True
         self.adviser.save()
         
-        # Test non-adviser faculty by name and username
+        # Test active faculty without is_adviser returns valid (auto-promotable)
         non_adviser_faculty = User.objects.create_user(
             username='faculty-3',
             password='pass12345',
@@ -1816,9 +1844,18 @@ class StudentTeamApiTests(APITestCase):
             is_adviser=False,
         )
         user, status, name = resolve_adviser('Alan Turing')
-        self.assertEqual(status, ADVISER_STATUS_NOT_ADVISER)
+        self.assertEqual(status, ADVISER_STATUS_VALID)
+        self.assertEqual(user, non_adviser_faculty)
 
         user, status, name = resolve_adviser('faculty-3')
+        self.assertEqual(status, ADVISER_STATUS_VALID)
+        self.assertEqual(user, non_adviser_faculty)
+
+        # Test student user returns not_adviser
+        user, status, name = resolve_adviser('Juan Dela Cruz')
+        self.assertEqual(status, ADVISER_STATUS_NOT_ADVISER)
+
+        user, status, name = resolve_adviser('2024-0001')
         self.assertEqual(status, ADVISER_STATUS_NOT_ADVISER)
         
         # Test name that does not exist

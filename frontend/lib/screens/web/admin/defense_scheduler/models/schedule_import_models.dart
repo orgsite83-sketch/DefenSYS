@@ -323,9 +323,10 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
   if (name.isEmpty) {
     return const ImportNameMatch(message: 'Panelist name is missing.');
   }
+  final pool = state.faculty.isNotEmpty ? state.faculty : state.panelists;
 
   // 1. Exact full name / username
-  final exact = state.panelists.where((panelist) {
+  final exact = pool.where((panelist) {
     return normalizeName(panelist['name']?.toString() ?? '') == name ||
         normalizeName(panelist['username']?.toString() ?? '') == name;
   }).toList();
@@ -337,7 +338,7 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
   }
 
   // 2. Exact Last Name
-  final lastNameMatches = state.panelists.where((panelist) {
+  final lastNameMatches = pool.where((panelist) {
     final display = panelist['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;
@@ -354,7 +355,7 @@ ImportNameMatch matchPanelist(String rawName, DefenseSchedulerState state) {
 
   // 3. Fuzzy Typo Match on Full Name or Last Name
   final fuzzyMatches = <Map<String, dynamic>>[];
-  for (final panelist in state.panelists) {
+  for (final panelist in pool) {
     final display = panelist['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;
@@ -381,9 +382,10 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
   if (name.isEmpty) {
     return const ImportNameMatch();
   }
+  final pool = state.faculty.isNotEmpty ? state.faculty : state.documenters;
 
   // 1. Exact full name / username
-  final exact = state.documenters.where((doc) {
+  final exact = pool.where((doc) {
     return normalizeName(doc['name']?.toString() ?? '') == name ||
         normalizeName(doc['username']?.toString() ?? '') == name;
   }).toList();
@@ -395,7 +397,7 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
   }
 
   // 2. Exact Last Name
-  final lastNameMatches = state.documenters.where((doc) {
+  final lastNameMatches = pool.where((doc) {
     final display = doc['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;
@@ -412,7 +414,7 @@ ImportNameMatch matchDocumenter(String rawName, DefenseSchedulerState state) {
 
   // 3. Fuzzy Typo Match on Full Name or Last Name
   final fuzzyMatches = <Map<String, dynamic>>[];
-  for (final doc in state.documenters) {
+  for (final doc in pool) {
     final display = doc['name']?.toString() ?? '';
     final parts = display.trim().split(RegExp(r'\s+'));
     final last = parts.isEmpty ? '' : parts.last;

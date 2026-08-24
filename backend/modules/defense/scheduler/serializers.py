@@ -491,12 +491,11 @@ class ScheduleBaseSerializer(serializers.Serializer):
             User.objects.filter(
                 pk__in=unique_ids,
                 role__in=['faculty', 'admin'],
-                is_panelist=True,
                 is_active=True,
             )
         )
         if len(panelists) != len(unique_ids):
-            raise serializers.ValidationError({'panelist_ids': 'All panelists must be assigned faculty panelists.'})
+            raise serializers.ValidationError({'panelist_ids': 'All panelists must be active faculty members.'})
         panelists.sort(key=lambda item: unique_ids.index(item.id))
         return panelists
 
@@ -513,9 +512,24 @@ class ScheduleBaseSerializer(serializers.Serializer):
             raise serializers.ValidationError({'documenter_id': 'PIT schedules cannot have a documenter.'})
         if doc.role not in ['faculty', 'admin']:
             raise serializers.ValidationError({'documenter_id': 'Documenter must be a faculty or admin user.'})
-        if not doc.is_documenter:
-            raise serializers.ValidationError({'documenter_id': 'Assigned faculty must be an eligible documenter (is_documenter=True).'})
         return doc
+
+    def _ensure_panelist_roles(self, panelists, changed_by=None):
+        for panelist in panelists:
+            if panelist and getattr(panelist, 'role', None) in ['faculty', 'admin'] and not getattr(panelist, 'is_panelist', False):
+                from user_management.role_assignments import record_role_changes, snapshot_role_flags
+                before_flags = snapshot_role_flags(panelist)
+                panelist.is_panelist = True
+                panelist.save(update_fields=['is_panelist'])
+                record_role_changes(panelist, before_flags, changed_by=changed_by)
+
+    def _ensure_documenter_role(self, documenter, changed_by=None):
+        if documenter and getattr(documenter, 'role', None) in ['faculty', 'admin'] and not getattr(documenter, 'is_documenter', False):
+            from user_management.role_assignments import record_role_changes, snapshot_role_flags
+            before_flags = snapshot_role_flags(documenter)
+            documenter.is_documenter = True
+            documenter.save(update_fields=['is_documenter'])
+            record_role_changes(documenter, before_flags, changed_by=changed_by)
 
     def _resolve_rubric(self, attrs):
         rubric_id = attrs.get('rubric_id')
@@ -629,10 +643,14 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
     @transaction.atomic
     def create(self, validated_data):
         panelists = validated_data.pop('panelists')
+        actor = getattr(self.context.get('request'), 'user', None)
+        self._ensure_panelist_roles(panelists, changed_by=actor)
+        if validated_data.get('documenter'):
+            self._ensure_documenter_role(validated_data['documenter'], changed_by=actor)
         self._pop_schedule_meta(validated_data)
         schedule = DefenseSchedule.objects.create(
             **validated_data,
-            created_by=getattr(self.context.get('request'), 'user', None),
+            created_by=actor,
         )
         self._sync_panelists(schedule, panelists)
         self._sync_grade_row(schedule)
@@ -841,6 +859,10 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
     @transaction.atomic
     def save(self):
         attrs = self.validated_data
+        actor = getattr(self.context.get('request'), 'user', None)
+        self._ensure_panelist_roles(attrs['panelists'], changed_by=actor)
+        if attrs.get('documenter'):
+            self._ensure_documenter_role(attrs['documenter'], changed_by=actor)
         batch_id = uuid.uuid4()
         start_minutes = attrs['start_time'].hour * 60 + attrs['start_time'].minute
         schedules = []
@@ -859,7 +881,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 slot_duration=attrs['slot_duration'],
                 room=attrs['room'],
                 status=DefenseSchedule.STATUS_SCHEDULED,
-                created_by=getattr(self.context.get('request'), 'user', None),
+                created_by=actor,
             )
             SchedulePanelist.objects.bulk_create([
                 SchedulePanelist(schedule=schedule, panelist=panelist, order=order)
@@ -875,7 +897,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                     schedule.team,
                     schedule.defense_stage,
                     grade=grade,
-                    user=getattr(self.context.get('request'), 'user', None),
+                    user=actor,
                 )
             if schedule.documenter:
                 send_documenter_assignment_notification(schedule)
@@ -980,9 +1002,6 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
         if doc.role not in ['faculty', 'admin']:
             raise serializers.ValidationError('Documenter must be a faculty or admin user.')
 
-        if not doc.is_documenter:
-            raise serializers.ValidationError('Assigned faculty must be an eligible documenter (is_documenter=True).')
-
         # Check if adviser of the team
         if schedule.team and schedule.team.adviser_id == doc.id:
             raise serializers.ValidationError("Documenter cannot be the team's adviser.")
@@ -1006,9 +1025,10 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
                 has_documenter_change = True
 
         # Perform updates
+        request = self.context.get('request')
+        actor = request.user if request else None
+
         if 'status' in validated_data:
-            request = self.context.get('request')
-            actor = request.user if request else None
             transition_schedule_status(
                 schedule,
                 validated_data['status'],
@@ -1018,6 +1038,14 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
             )
 
         if new_doc_id != 'not_provided':
+            if new_doc_id is not None:
+                doc = User.objects.filter(pk=new_doc_id).first()
+                if doc and getattr(doc, 'role', None) in ['faculty', 'admin'] and not getattr(doc, 'is_documenter', False):
+                    from user_management.role_assignments import record_role_changes, snapshot_role_flags
+                    before_flags = snapshot_role_flags(doc)
+                    doc.is_documenter = True
+                    doc.save(update_fields=['is_documenter'])
+                    record_role_changes(doc, before_flags, changed_by=actor)
             schedule.documenter_id = new_doc_id
             schedule.save()
 
@@ -1112,6 +1140,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
             peer_rubrics = peer_rubrics.filter(rubric_filter)
     panelists = User.objects.filter(role__in=['faculty', 'admin'], is_panelist=True, is_active=True).order_by('last_name', 'first_name', 'username')
     documenters = User.objects.filter(role__in=['faculty', 'admin'], is_documenter=True, is_active=True).order_by('last_name', 'first_name', 'username')
+    faculty = User.objects.filter(role__in=['faculty', 'admin'], is_active=True).order_by('last_name', 'first_name', 'username')
     teams = visible_teams_for(user) if user else StudentTeam.objects.select_related('semester', 'leader', 'adviser')
     if semester:
         teams = teams.filter(semester=semester)
@@ -1156,6 +1185,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
         'peer_rubrics': RubricSerializer(peer_rubrics, many=True).data,
         'panelists': PanelistOptionSerializer(panelists, many=True).data,
         'documenters': PanelistOptionSerializer(documenters, many=True).data,
+        'faculty': PanelistOptionSerializer(faculty, many=True).data,
         'teams': ScheduleTeamSerializer(teams, many=True).data,
         'pit_events': pit_events_data,
         'scopes': [

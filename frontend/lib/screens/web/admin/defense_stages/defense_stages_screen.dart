@@ -704,7 +704,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           for (var i = 0; i < state.stages.length; i++) ...[
             _stagePipelineNodeCard(state, state.stages[i], i, state.stages.length),
             if (i < state.stages.length - 1)
-              _pipelineConnectorLine(),
+              _pipelineConnectorLine(state.stages[i + 1]['label']?.toString() ?? ''),
           ],
         ],
       ),
@@ -1047,7 +1047,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                             ),
                           ),
                           const Spacer(),
-                          _buildStageActions(state, stage),
+                          _buildStageActions(state, stage, index, totalStages),
                         ],
                       ),
                     ],
@@ -1109,7 +1109,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           Expanded(flex: 20, child: _stageTh('RUBRIC')),
           _stageThFixed('DELIVERABLES', 120),
           _stageThFixed('STATUS', 120),
-          _stageThFixed('ACTIONS', 160),
+          _stageThFixed('ACTIONS', 220),
         ],
       ),
     );
@@ -1217,7 +1217,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
             ),
           ),
           _stageTdFixed(120, _statusChip(stage)),
-          _stageTdFixedActions(160, _buildStageActions(state, stage)),
+          _stageTdFixedActions(220, _buildStageActions(state, stage, index, state.stages.length)),
         ],
       ),
     );
@@ -1276,49 +1276,50 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return Padding(
       padding: const EdgeInsets.all(16),
       child: Column(
-        children: state.stages.map((stage) {
-          return Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 12),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFCFCFE),
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: const Color(0xFFE6E8EF)),
+        children: [
+          for (int i = 0; i < state.stages.length; i++)
+            Container(
+              width: double.infinity,
+              margin: const EdgeInsets.only(bottom: 12),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFCFCFE),
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: const Color(0xFFE6E8EF)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      _orderTableBadge(state.stages[i]['display_order']),
+                      const SizedBox(width: 12),
+                      Expanded(child: _stageNameCell(state.stages[i])),
+                      _statusChip(state.stages[i]),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: [
+                      _codeTag(state.stages[i]['code']?.toString() ?? ''),
+                      _softChip(
+                        '${_deliverablesCount(state.stages[i])} deliverables',
+                        const Color(0xFFF8FAFC),
+                        AppColors.textPrimary,
+                        const Color(0xFFD7DDE8),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  _previousStageCell(state.stages[i]),
+                  const SizedBox(height: 12),
+                  _buildStageActions(state, state.stages[i], i, state.stages.length),
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    _orderTableBadge(stage['display_order']),
-                    const SizedBox(width: 12),
-                    Expanded(child: _stageNameCell(stage)),
-                    _statusChip(stage),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    _codeTag(stage['code']?.toString() ?? ''),
-                    _softChip(
-                      '${_deliverablesCount(stage)} deliverables',
-                      const Color(0xFFF8FAFC),
-                      AppColors.textPrimary,
-                      const Color(0xFFD7DDE8),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                _previousStageCell(stage),
-                const SizedBox(height: 12),
-                _buildStageActions(state, stage),
-              ],
-            ),
-          );
-        }).toList(),
+        ],
       ),
     );
   }
@@ -1398,6 +1399,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   Widget _buildStageActions(
     DefenseStagesState state,
     Map<String, dynamic> stage,
+    int index,
+    int totalStages,
   ) {
     final stageId = _asInt(stage['id']);
     final status = _stageStatus(stage);
@@ -1405,10 +1408,67 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final published = status == 'published';
 
     return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+      spacing: 6,
+      runSpacing: 6,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: [
+        // Reorder quick controls
+        if (totalStages > 1)
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: index > 0 ? 'Move Up in Sequence (▲)' : 'Already at Start',
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 14),
+                  color: index > 0 ? AppColors.textPrimary : const Color(0xFFCBD5E1),
+                  style: IconButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: index > 0 && !state.isSaving && stageId != null
+                      ? () => _confirmMoveStage(
+                            stageId: stageId,
+                            stageLabel: stage['label']?.toString() ?? 'Stage',
+                            delta: -1,
+                            currentIndex: index,
+                            allStages: state.stages,
+                          )
+                      : null,
+                ),
+                Container(
+                  width: 1,
+                  height: 14,
+                  color: const Color(0xFFE2E8F0),
+                ),
+                IconButton(
+                  tooltip: index < totalStages - 1 ? 'Move Down in Sequence (▼)' : 'Already at End',
+                  icon: const Icon(Icons.arrow_downward_rounded, size: 14),
+                  color: index < totalStages - 1 ? AppColors.textPrimary : const Color(0xFFCBD5E1),
+                  style: IconButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  onPressed: index < totalStages - 1 && !state.isSaving && stageId != null
+                      ? () => _confirmMoveStage(
+                            stageId: stageId,
+                            stageLabel: stage['label']?.toString() ?? 'Stage',
+                            delta: 1,
+                            currentIndex: index,
+                            allStages: state.stages,
+                          )
+                      : null,
+                ),
+              ],
+            ),
+          ),
         if (locked)
           OutlinedButton.icon(
             onPressed: stageId == null ? null : () => _openStageEditor(stage),
@@ -1533,10 +1593,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final description = TextEditingController(
       text: stage?['description']?.toString() ?? '',
     );
-    final order = TextEditingController(
-      text: stage?['display_order']?.toString() ??
-          _nextDisplayOrder(ref.read(defenseStagesProvider)).toString(),
-    );
+    final existingStages = ref.read(defenseStagesProvider).stages;
+    final totalExisting = existingStages.length;
+    final currentOrder = stage != null ? _asInt(stage['display_order']) : null;
+    int selectedPosition = editing
+        ? (currentOrder ?? 1).clamp(1, totalExisting > 0 ? totalExisting : 1)
+        : (totalExisting + 1);
     final panelCtrl = TextEditingController(text: '50');
     final adviserCtrl = TextEditingController(text: '30');
     final peerCtrl = TextEditingController(text: '20');
@@ -1659,12 +1721,39 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: order,
-                          keyboardType: TextInputType.number,
+                        DropdownButtonFormField<int>(
+                          key: ValueKey(selectedPosition),
+                          initialValue: selectedPosition,
                           decoration: const InputDecoration(
-                            labelText: 'Stage Order',
+                            labelText: 'Sequence Position in Pipeline',
+                            helperText: 'Position sets milestone order. Other stages automatically shift.',
+                            isDense: true,
+                            border: OutlineInputBorder(),
                           ),
+                          items: [
+                            for (int i = 1; i <= (editing ? totalExisting : totalExisting + 1); i++)
+                              DropdownMenuItem<int>(
+                                value: i,
+                                child: Text(
+                                  i == 1
+                                      ? 'Position 1 of ${editing ? totalExisting : totalExisting + 1} (Start of Pipeline)'
+                                      : (i == (editing ? totalExisting : totalExisting + 1) && !editing)
+                                          ? 'Position $i of ${totalExisting + 1} (End of Pipeline)'
+                                          : 'Position $i of ${editing ? totalExisting : totalExisting + 1}${i - 2 >= 0 && i - 2 < existingStages.length ? " (After ${existingStages[i - 2]['label']})" : ""}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: (editing && currentOrder == i)
+                                        ? FontWeight.w700
+                                        : FontWeight.w500,
+                                  ),
+                                ),
+                              ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setDialogState(() => selectedPosition = val);
+                            }
+                          },
                         ),
                         const SizedBox(height: 12),
                         TextField(
@@ -2050,7 +2139,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         label.dispose();
         codeCtrl.dispose();
         description.dispose();
-        order.dispose();
         panelCtrl.dispose();
         adviserCtrl.dispose();
         peerCtrl.dispose();
@@ -2068,8 +2156,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final payload = {
       'label': label.text.trim(),
       'code': codeCtrl.text.trim(),
-      'display_order': int.tryParse(order.text.trim()) ??
-          _nextDisplayOrder(ref.read(defenseStagesProvider)),
+      'display_order': selectedPosition,
       'description': description.text.trim(),
       'is_active': isActive,
       'deliverables': deliverables,
@@ -2099,8 +2186,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     }
 
     label.dispose();
+    codeCtrl.dispose();
     description.dispose();
-    order.dispose();
     panelCtrl.dispose();
     adviserCtrl.dispose();
     peerCtrl.dispose();
@@ -2480,6 +2567,80 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     });
   }
 
+  Future<void> _confirmMoveStage({
+    required int stageId,
+    required String stageLabel,
+    required int delta,
+    required int currentIndex,
+    required List<Map<String, dynamic>> allStages,
+  }) async {
+    final targetIndex = currentIndex + delta;
+    if (targetIndex < 0 || targetIndex >= allStages.length) return;
+
+    final targetStageName = allStages[targetIndex]['label']?.toString() ?? 'the adjacent stage';
+    final movingUp = delta < 0;
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Row(
+          children: [
+            Icon(
+              movingUp ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+              color: AppColors.maroon,
+              size: 22,
+            ),
+            const SizedBox(width: 8),
+            Text(movingUp ? 'Move Stage Earlier?' : 'Move Stage Later?'),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              movingUp
+                  ? 'Move "$stageLabel" before "$targetStageName" (Position ${targetIndex + 1})?'
+                  : 'Move "$stageLabel" after "$targetStageName" (Position ${targetIndex + 1})?',
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 14,
+                color: AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              'This will automatically adjust sequence progression and milestone prerequisites across the pipeline.',
+              style: TextStyle(
+                fontSize: 12.5,
+                color: AppColors.textSecondary,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.maroon,
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(movingUp ? 'Move Earlier' : 'Move Later'),
+          ),
+        ],
+      ),
+    );
+
+    if (!mounted || confirmed != true) return;
+
+    await ref.read(defenseStagesProvider.notifier).moveStage(stageId, delta);
+  }
+
   Future<void> _confirmDelete(int stageId, String label) async {
     final confirmed = await showDialog<bool>(
       context: context,
@@ -2677,19 +2838,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     }
 
     return 0;
-  }
-
-  int _nextDisplayOrder(DefenseStagesState state) {
-    var maxOrder = 0;
-
-    for (final stage in state.stages) {
-      final order = _asInt(stage['display_order']) ?? 0;
-      if (order > maxOrder) {
-        maxOrder = order;
-      }
-    }
-
-    return maxOrder + 1;
   }
 
   int _count(DefenseStagesState state, String key) {

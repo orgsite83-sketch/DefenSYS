@@ -926,17 +926,31 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('documenter_id', response.data)
 
-        # 4. Test validation error: must have is_documenter = True
+        # 4. Test auto-promotion: active faculty with is_documenter = False is auto-promoted upon assignment
         non_doc = User.objects.create_user(
             username='non-doc',
             password='pass12345',
             role='faculty',
+            first_name='Evelyn',
+            last_name='Boyd',
             is_documenter=False,
         )
         payload = self.schedule_payload(documenter_id=non_doc.id, team_id=self.team.id)
         response = self.client.post('/api/defense/schedules/', payload, format='json')
-        self.assertEqual(response.status_code, 400)
-        self.assertIn('documenter_id', response.data)
+        self.assertEqual(response.status_code, 201)
+        non_doc.refresh_from_db()
+        self.assertTrue(non_doc.is_documenter)
+        from user_management.models import FacultyRoleAssignment
+        self.assertTrue(
+            FacultyRoleAssignment.objects.filter(
+                user=non_doc,
+                role_key=FacultyRoleAssignment.ROLE_DOCUMENTER,
+                action=FacultyRoleAssignment.ACTION_ASSIGNED,
+            ).exists()
+        )
+        # Clean up schedule to restore team ready state
+        schedule_id = response.data['schedule']['id']
+        DefenseSchedule.objects.get(id=schedule_id).delete()
 
         # 5. Test validation error: documenter cannot be the team's adviser
         payload = self.schedule_payload(documenter_id=self.adviser.id, team_id=self.team.id)
@@ -1131,6 +1145,41 @@ class DefenseSchedulerApiTests(APITestCase):
         )
         self.assertEqual(response.status_code, 400)
         self.assertIn('documenter_id', response.data)
+
+    def test_auto_promote_faculty_to_panelist_on_schedule_create(self):
+        non_panelist = User.objects.create_user(
+            username='non-panelist-faculty',
+            password='pass12345',
+            role='faculty',
+            first_name='Claude',
+            last_name='Shannon',
+            is_panelist=False,
+        )
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            panelist_ids=[non_panelist.id, self.second_panelist.id],
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        non_panelist.refresh_from_db()
+        self.assertTrue(non_panelist.is_panelist)
+        from user_management.models import FacultyRoleAssignment
+        self.assertTrue(
+            FacultyRoleAssignment.objects.filter(
+                user=non_panelist,
+                role_key=FacultyRoleAssignment.ROLE_PANELIST,
+                action=FacultyRoleAssignment.ACTION_ASSIGNED,
+            ).exists()
+        )
+
+    def test_student_as_panelist_rejected(self):
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            panelist_ids=[self.student.id, self.second_panelist.id],
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('panelist_ids', response.data)
 
 
 class PitEventGradingConfigTests(APITestCase):

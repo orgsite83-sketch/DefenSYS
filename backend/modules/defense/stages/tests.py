@@ -152,6 +152,82 @@ class DefenseStageApiTests(APITestCase):
         self.assertEqual(read_response.status_code, 200)
         self.assertEqual(create_response.status_code, 403)
 
+    def test_admin_can_reorder_stages(self):
+        s1 = DefenseStage.objects.get(label='Concept Proposal')
+        s2 = DefenseStage.objects.get(label='Project Proposal')
+        s3 = DefenseStage.objects.get(label='Final Defense')
+
+        # Reverse the order: Final Defense -> Project Proposal -> Concept Proposal
+        response = self.client.post(
+            '/api/defense/stages/reorder/',
+            {'stage_ids': [s3.id, s2.id, s1.id]},
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 200)
+        s3.refresh_from_db()
+        s2.refresh_from_db()
+        s1.refresh_from_db()
+
+        self.assertEqual(s3.display_order, 1)
+        self.assertEqual(s2.display_order, 2)
+        self.assertEqual(s1.display_order, 3)
+
+        # Check prerequisite chaining in response
+        stages_data = response.data['stages']
+        self.assertEqual(stages_data[0]['label'], 'Final Defense')
+        self.assertIsNone(stages_data[0]['previous_stage_label'])
+        self.assertEqual(stages_data[1]['label'], 'Project Proposal')
+        self.assertEqual(stages_data[1]['previous_stage_label'], 'Final Defense')
+        self.assertEqual(stages_data[2]['label'], 'Concept Proposal')
+        self.assertEqual(stages_data[2]['previous_stage_label'], 'Project Proposal')
+
+    def test_reorder_rejects_invalid_ids(self):
+        response = self.client.post(
+            '/api/defense/stages/reorder/',
+            {'stage_ids': [99999]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_reorder_rejects_empty_ids(self):
+        response = self.client.post(
+            '/api/defense/stages/reorder/',
+            {'stage_ids': []},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 400)
+
+    def test_creating_stage_at_position_shifts_subsequent_stages(self):
+        # Insert a stage at display_order=1 (Start of sequence)
+        response = self.client.post(
+            '/api/defense/stages/',
+            {
+                'label': 'Title Defense',
+                'display_order': 1,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        
+        stages = list(DefenseStage.objects.all().order_by('display_order'))
+        self.assertEqual([s.label for s in stages], ['Title Defense', 'Concept Proposal', 'Project Proposal', 'Final Defense'])
+        self.assertEqual([s.display_order for s in stages], [1, 2, 3, 4])
+
+    def test_non_admin_cannot_reorder(self):
+        student = User.objects.create_user(
+            username='student-reorder',
+            password='pass12345',
+            role='student',
+        )
+        self.client.force_authenticate(user=student)
+        response = self.client.post(
+            '/api/defense/stages/reorder/',
+            {'stage_ids': [1, 2, 3]},
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
     def test_admin_dashboard_counts_active_defense_stages(self):
         DefenseStage.objects.filter(label='Final Defense').update(is_active=False)
 

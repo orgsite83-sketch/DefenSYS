@@ -1248,6 +1248,55 @@ class CapstoneDeliverablesApiTests(APITestCase):
         })
         self.assertEqual(res2.status_code, 200)
 
+    def test_faculty_can_review_post_defense_deliverables_when_defense_is_done(self):
+        from django.utils import timezone
+        from defense.scheduler.models import DefenseSchedule
+        from defense.stages.models import DefenseStage
+        stage = DefenseStage.objects.filter(label='Concept Proposal').first() or DefenseStage.objects.create(
+            label='Concept Proposal',
+            display_order=1,
+        )
+        stage.deliverables.filter(deliverable_id='POST_D1').delete()
+        stage.deliverables.create(
+            deliverable_id='POST_D1',
+            label='Concept Paper',
+            deliverable_type='post',
+            required=True,
+        )
+        DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=stage,
+            scheduled_date=timezone.now().date(),
+            start_time='09:00:00',
+            room='Room 301',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        post_sub = DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='Concept Proposal',
+            deliverable_id='POST_D1',
+            label='Concept Paper',
+            deliverable_type='post',
+            required=True,
+            uploaded_by=self.student,
+            status=DeliverableSubmission.STATUS_PENDING,
+        )
+
+        # Faculty adviser can review post-defense deliverable directly
+        self.client.force_authenticate(user=self.adviser)
+        res = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'POST_D1',
+            'status': 'accepted',
+        })
+        self.assertEqual(res.status_code, 200)
+        post_sub.refresh_from_db()
+        self.assertEqual(post_sub.status, DeliverableSubmission.STATUS_ACCEPTED)
+        self.assertEqual(post_sub.reviewed_by, self.adviser)
+
 
 
 

@@ -162,7 +162,7 @@ class FakeAcademicPeriodNotifierWithActiveSemester extends AcademicPeriodNotifie
 }
 
 void main() {
-  testWidgets('UserManagementScreen renders properly with 1 user and original table design', (tester) async {
+  testWidgets('UserManagementScreen defaults to Students & Enrollment tab', (tester) async {
     tester.view.physicalSize = const Size(1400, 900);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -170,6 +170,30 @@ void main() {
     await pumpDefensysWidget(
       tester,
       const Scaffold(body: UserManagementScreen()),
+      overrides: [
+        notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
+        userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),
+        academicPeriodProvider.overrideWith(() => FakeAcademicPeriodNotifier()),
+        studentAcademicRecordsProvider.overrideWith(() => FakeStudentAcademicRecordsNotifier()),
+      ],
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('User & Team Management'), findsOneWidget);
+    expect(find.text('Batch Enrollment'), findsOneWidget);
+    expect(find.text('Add Single Student'), findsOneWidget);
+    expect(find.text('Juan Dela Cruz'), findsOneWidget);
+  });
+
+  testWidgets('UserManagementScreen renders properly with 1 user when faculty tab is selected', (tester) async {
+    tester.view.physicalSize = const Size(1400, 900);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await pumpDefensysWidget(
+      tester,
+      const Scaffold(body: UserManagementScreen(initialUserTab: UserManagementTab.faculty)),
       overrides: [
         notificationsProvider.overrideWith(() => FakeNotificationsNotifier()),
         userManagementProvider.overrideWith(() => FakeUserManagementNotifier()),

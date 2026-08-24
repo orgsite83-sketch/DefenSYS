@@ -31,11 +31,11 @@ class _DefenseStageEditorScreenState
   final _label = TextEditingController();
   final _code = TextEditingController();
   final _description = TextEditingController();
-  final _order = TextEditingController();
   final _panel = TextEditingController(text: '50');
   final _adviser = TextEditingController(text: '30');
   final _peer = TextEditingController(text: '20');
 
+  int _orderPosition = 1;
   bool _isActive = true;
   bool _loading = true;
   bool _saving = false;
@@ -71,7 +71,6 @@ class _DefenseStageEditorScreenState
       _label,
       _code,
       _description,
-      _order,
       _panel,
       _adviser,
       _peer,
@@ -96,7 +95,6 @@ class _DefenseStageEditorScreenState
     _label.dispose();
     _code.dispose();
     _description.dispose();
-    _order.dispose();
     _panel.dispose();
     _adviser.dispose();
     _peer.dispose();
@@ -119,6 +117,8 @@ class _DefenseStageEditorScreenState
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
     final active = ref.read(academicPeriodProvider).activeSemester;
     _semesterId ??= _asInt(active?['id']);
+
+    await ref.read(defenseStagesProvider.notifier).fetchStages();
 
     final detail = await ref
         .read(defenseStagesProvider.notifier)
@@ -162,7 +162,7 @@ class _DefenseStageEditorScreenState
     _label.text = stage['label']?.toString() ?? '';
     _code.text = stage['code']?.toString() ?? '';
     _description.text = stage['description']?.toString() ?? '';
-    _order.text = stage['display_order']?.toString() ?? '1';
+    _orderPosition = _asInt(stage['display_order']) ?? 1;
     _isActive = stage['is_active'] != false;
     final delivs = stage['deliverables'];
     if (delivs is List) {
@@ -246,7 +246,7 @@ class _DefenseStageEditorScreenState
           {
             'label': _label.text.trim(),
             'code': _code.text.trim(),
-            'display_order': int.tryParse(_order.text.trim()) ?? 1,
+            'display_order': _orderPosition,
             'description': _description.text.trim(),
             'is_active': _isActive,
             'deliverables': _deliverables,
@@ -341,6 +341,75 @@ class _DefenseStageEditorScreenState
     );
 
     return items;
+  }
+
+  Widget _buildPositionSelector() {
+    final allStages = ref.watch(defenseStagesProvider).stages;
+    final totalStages = allStages.length;
+    final currentPos = _orderPosition.clamp(1, totalStages > 0 ? totalStages : 1);
+
+    final items = <DropdownMenuItem<int>>[];
+    for (int i = 1; i <= totalStages; i++) {
+      final stageAtPos = allStages[i - 1];
+      final isThisStage = _asInt(stageAtPos['id']) == widget.stageId;
+
+      String desc;
+      if (i == 1) {
+        desc = 'Position 1 of $totalStages (Start of Pipeline)';
+      } else if (i == totalStages) {
+        final prev = allStages[i - 2]['label']?.toString() ?? 'Stage ${i - 1}';
+        desc = 'Position $i of $totalStages (End of Pipeline — After $prev)';
+      } else {
+        final prev = allStages[i - 2]['label']?.toString() ?? 'Stage ${i - 1}';
+        desc = 'Position $i of $totalStages (After $prev)';
+      }
+
+      if (isThisStage) {
+        desc = '$desc [Current]';
+      }
+
+      items.add(
+        DropdownMenuItem<int>(
+          value: i,
+          child: Text(
+            desc,
+            style: TextStyle(
+              fontWeight: isThisStage ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 13,
+            ),
+          ),
+        ),
+      );
+    }
+
+    if (items.isEmpty) {
+      items.add(
+        const DropdownMenuItem<int>(
+          value: 1,
+          child: Text('Position 1 (Start of Pipeline)'),
+        ),
+      );
+    }
+
+    return DropdownButtonFormField<int>(
+      key: ValueKey(currentPos),
+      initialValue: items.any((it) => it.value == currentPos) ? currentPos : items.first.value,
+      decoration: const InputDecoration(
+        labelText: 'Sequence Position in Pipeline',
+        helperText: 'Changing position automatically shifts subsequent defense stages.',
+        border: OutlineInputBorder(),
+        isDense: true,
+      ),
+      items: items,
+      onChanged: _isLocked
+          ? null
+          : (val) {
+              if (val != null && val != _orderPosition) {
+                setState(() => _orderPosition = val);
+                _markDirty();
+              }
+            },
+    );
   }
 
   void _resetWeights() {
@@ -489,12 +558,7 @@ class _DefenseStageEditorScreenState
                           ),
                         ),
                         const SizedBox(height: 12),
-                        TextField(
-                          controller: _order,
-                          readOnly: _isLocked,
-                          keyboardType: TextInputType.number,
-                          decoration: const InputDecoration(labelText: 'Stage order'),
-                        ),
+                        _buildPositionSelector(),
                         const SizedBox(height: 12),
                         TextField(
                           controller: _description,

@@ -364,6 +364,89 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     });
   }
 
+  Future<void> _promptAcceptDialog(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item,
+  ) async {
+    final deliverableName = item['label']?.toString() ?? item['id']?.toString() ?? 'Deliverable';
+    final teamName = team['name']?.toString() ?? 'the team';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Row(
+          children: [
+            Icon(Icons.check_circle_outline, color: AppColors.success, size: 22),
+            SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                'Accept Deliverable',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Are you sure you want to accept "$deliverableName" for $teamName?',
+              style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: AppColors.gold.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: AppColors.gold.withValues(alpha: 0.3)),
+              ),
+              child: const Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: AppColors.gold),
+                  SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      'Accepting will finalize and lock this submission. Any future file replacements or revisions must be unlocked by a System Admin.',
+                      style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(dialogCtx, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.success,
+              foregroundColor: Colors.white,
+              elevation: 0,
+            ),
+            child: const Text('Confirm & Accept'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed == true && mounted) {
+      await ref.read(capstoneDeliverablesProvider.notifier).reviewDeliverable(
+            teamId: parseAsInt(team['id']),
+            stageLabel: stageLabel,
+            deliverableId: item['id'].toString(),
+            status: 'accepted',
+          );
+    }
+  }
+
   Future<void> _promptRejectDialog(
     Map<String, dynamic> team,
     String stageLabel,
@@ -565,7 +648,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final currentStageObj = _stagePayload(stages, stageLabel);
     final endorsed = currentStageObj['endorsed'] == true;
     final locked = item['locked'] == true;
-    final canFacultyReview = currentStageObj['can_faculty_review'] != false;
+    final isPost = item['type'] == 'post' || item['deliverable_type'] == 'post';
+    final canFacultyReview = item['can_faculty_review'] == true ||
+        (isPost
+            ? (currentStageObj['can_faculty_review_post'] != false)
+            : (currentStageObj['can_faculty_review'] != false));
 
     final isWPR = item['id']?.toString() == 'WPR' ||
         item['label']?.toString().contains('Weekly Progress Report') == true;
@@ -755,22 +842,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ],
                       ),
                     ),
-                    if (canFacultyReview) ...[
-                      const SizedBox(width: 6),
-                      OutlinedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () => _promptRejectDialog(team, stageLabel, item),
-                        icon: const Icon(Icons.cancel_outlined, size: 14),
-                        label: const Text('Reject'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: AppColors.danger,
-                          side: const BorderSide(color: AppColors.danger),
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                          visualDensity: VisualDensity.compact,
-                        ),
-                      ),
-                    ],
                   ] else if (subStatus == 'rejected') ...[
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -800,16 +871,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ElevatedButton.icon(
                         onPressed: widget.state.isSaving
                             ? null
-                            : () async {
-                                await ref
-                                    .read(capstoneDeliverablesProvider.notifier)
-                                    .reviewDeliverable(
-                                      teamId: parseAsInt(team['id']),
-                                      stageLabel: stageLabel,
-                                      deliverableId: item['id'].toString(),
-                                      status: 'accepted',
-                                    );
-                              },
+                            : () => _promptAcceptDialog(team, stageLabel, item),
                         icon: const Icon(Icons.check_circle_outline, size: 14),
                         label: const Text('Accept'),
                         style: ElevatedButton.styleFrom(
@@ -826,16 +888,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                       ElevatedButton.icon(
                         onPressed: widget.state.isSaving
                             ? null
-                            : () async {
-                                await ref
-                                    .read(capstoneDeliverablesProvider.notifier)
-                                    .reviewDeliverable(
-                                      teamId: parseAsInt(team['id']),
-                                      stageLabel: stageLabel,
-                                      deliverableId: item['id'].toString(),
-                                      status: 'accepted',
-                                    );
-                              },
+                            : () => _promptAcceptDialog(team, stageLabel, item),
                         icon: const Icon(Icons.check_circle_outline, size: 14),
                         label: const Text('Accept'),
                         style: ElevatedButton.styleFrom(

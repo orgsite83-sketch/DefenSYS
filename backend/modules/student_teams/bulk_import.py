@@ -89,12 +89,9 @@ def resolve_adviser(name_or_username):
     if user:
         if not user.is_active:
             return None, ADVISER_STATUS_INACTIVE, display_name(user)
-        if user.role == 'faculty' and not getattr(user, 'is_adviser', False):
-            return None, ADVISER_STATUS_NOT_ADVISER, display_name(user)
         return user, ADVISER_STATUS_VALID, display_name(user)
 
     # 2. Try resolving by full name
-    normalized = normalize_name(raw)
     faculty_matches = _users_matching_full_name(raw, role=['faculty', 'admin'])
     if len(faculty_matches) > 1:
         return None, ADVISER_STATUS_USER_NOT_FOUND, ''
@@ -102,8 +99,6 @@ def resolve_adviser(name_or_username):
         user = faculty_matches[0]
         if not user.is_active:
             return None, ADVISER_STATUS_INACTIVE, display_name(user)
-        if user.role == 'faculty' and not getattr(user, 'is_adviser', False):
-            return None, ADVISER_STATUS_NOT_ADVISER, display_name(user)
         return user, ADVISER_STATUS_VALID, display_name(user)
 
     all_matches = _users_matching_full_name(raw)
@@ -207,7 +202,7 @@ def validate_bulk_team_row(
         elif adviser_status == ADVISER_STATUS_INACTIVE:
             issues.append(f'Adviser "{adviser_ref}" is inactive.')
         else:
-            issues.append(f'User "{adviser_ref}" is not a project adviser.')
+            issues.append(f'User "{adviser_ref}" is not a faculty member.')
 
     member_ref_map = {}
     for member_ref in data['member_ids']:

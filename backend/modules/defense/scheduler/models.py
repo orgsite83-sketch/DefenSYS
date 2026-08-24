@@ -131,11 +131,8 @@ class DefenseSchedule(models.Model):
                 errors['documenter'] = 'PIT schedules cannot have a documenter.'
             else:
                 role = getattr(self.documenter, 'role', None)
-                is_doc = getattr(self.documenter, 'is_documenter', False)
                 if role not in ['faculty', 'admin']:
                     errors['documenter'] = 'Documenter must be a faculty or admin user.'
-                elif not is_doc:
-                    errors['documenter'] = 'Assigned faculty must be an eligible documenter (is_documenter=True).'
 
                 if self.team_id and self.team.adviser_id == self.documenter_id:
                     errors['documenter'] = "Documenter cannot be the team's adviser."
@@ -247,8 +244,8 @@ class SchedulePanelist(models.Model):
     def clean(self):
         if self.panelist_id:
             is_faculty = getattr(self.panelist, 'role', None) in ['faculty', 'admin']
-            if not is_faculty or not getattr(self.panelist, 'is_panelist', False):
-                raise ValidationError({'panelist': 'Schedule panelists must be assigned faculty panelists.'})
+            if not is_faculty:
+                raise ValidationError({'panelist': 'Schedule panelists must be assigned faculty or admin users.'})
             if self.schedule_id and self.panelist_id == self.schedule.documenter_id:
                 raise ValidationError({'panelist': 'A panelist cannot be assigned as the documenter for this schedule.'})
 

@@ -633,9 +633,16 @@ def stage_payload(team, stage_label):
     from academic_period_management.models import Semester
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
 
+    is_defense_done = is_stage_defense_done(team, stage_label)
+    admin_unlocked_pre = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre') or is_stage_unlocked_by_admin(team, stage_label)
+    admin_unlocked_post = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label)
+    can_faculty_review_pre = (not is_defense_done) or admin_unlocked_pre
+    can_faculty_review_post = True
+
     for item in definitions:
         submission = submitted.get(item['id'])
         is_vault = item['type'] == DeliverableSubmission.TYPE_POST
+        can_review_item = can_faculty_review_post if is_vault else can_faculty_review_pre
         
         suggested = ''
         if is_vault:
@@ -656,6 +663,7 @@ def stage_payload(team, stage_label):
             'suggested_file_name': suggested,
             'uploaded': submission is not None,
             'locked': is_vault and not unlocked,
+            'can_faculty_review': can_review_item,
             'submission': submission_payload(submission) if submission else None,
         })
 
@@ -678,10 +686,6 @@ def stage_payload(team, stage_label):
     progress = get_stage_progress(team, stage_obj) if stage_obj else None
     progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
 
-    is_defense_done = is_stage_defense_done(team, stage_label)
-    admin_unlocked = is_stage_unlocked_by_admin(team, stage_label)
-    can_faculty_review = (not is_defense_done) or admin_unlocked
-
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
@@ -695,8 +699,10 @@ def stage_payload(team, stage_label):
         'stage_progress_status': progress_status,
         'stage_status_detail': stage_status_detail,
         'is_defense_done': is_defense_done,
-        'admin_unlocked': admin_unlocked,
-        'can_faculty_review': can_faculty_review,
+        'admin_unlocked': admin_unlocked_pre,
+        'can_faculty_review': can_faculty_review_pre,
+        'can_faculty_review_pre': can_faculty_review_pre,
+        'can_faculty_review_post': can_faculty_review_post,
         'pre_uploaded': sum(1 for item in pre_items if item['uploaded']),
         'pre_total': len(pre_items),
         'required_uploaded': sum(1 for item in required_items if item['uploaded']),
@@ -1119,13 +1125,6 @@ def endorse_team(team, stage_label):
 def review_submission(team, stage_label, deliverable_id, status_val, feedback_val, reviewer_user):
     from django.utils import timezone
 
-    is_admin = getattr(reviewer_user, 'role', None) == 'admin' or getattr(reviewer_user, 'is_superuser', False)
-    is_defense_done = is_stage_defense_done(team, stage_label)
-    admin_unlocked = is_stage_unlocked_by_admin(team, stage_label)
-
-    if is_defense_done and not is_admin and not admin_unlocked:
-        raise PermissionError('Deliverables for completed defenses are view-only for faculty. Resubmission requests must be unlocked by an Admin.')
-
     try:
         submission = DeliverableSubmission.objects.get(
             team=team,
@@ -1134,6 +1133,14 @@ def review_submission(team, stage_label, deliverable_id, status_val, feedback_va
         )
     except DeliverableSubmission.DoesNotExist:
         raise ValueError('Deliverable submission not found.')
+
+    is_admin = getattr(reviewer_user, 'role', None) == 'admin' or getattr(reviewer_user, 'is_superuser', False)
+    is_defense_done = is_stage_defense_done(team, stage_label)
+    is_post = submission.deliverable_type == DeliverableSubmission.TYPE_POST
+    admin_unlocked = is_stage_unlocked_by_admin(team, stage_label, deliverable_type=submission.deliverable_type)
+
+    if not is_post and is_defense_done and not is_admin and not admin_unlocked:
+        raise PermissionError('Pre-defense deliverables for completed defenses are view-only for faculty. Resubmission requests must be unlocked by an Admin.')
 
     if status_val not in (DeliverableSubmission.STATUS_ACCEPTED, DeliverableSubmission.STATUS_REJECTED):
         raise ValueError('Invalid review status action.')

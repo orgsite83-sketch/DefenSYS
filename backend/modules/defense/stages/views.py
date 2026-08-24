@@ -1,3 +1,4 @@
+from django.db import transaction
 from django.shortcuts import get_object_or_404
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
@@ -22,11 +23,21 @@ from .serializers import (
 )
 
 
+def normalize_stage_orders():
+    """Ensure all defense stages have contiguous, unique display_order values (1, 2, 3...)."""
+    stages = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+    with transaction.atomic():
+        for index, stage in enumerate(stages, start=1):
+            if stage.display_order != index:
+                DefenseStage.objects.filter(pk=stage.pk).update(display_order=index)
+
+
 def ordered_stages(include_inactive=True):
+    normalize_stage_orders()
     queryset = DefenseStage.objects.all()
     if not include_inactive:
         queryset = queryset.filter(is_active=True)
-    return list(queryset.order_by('display_order', 'label'))
+    return list(queryset.order_by('display_order', 'id'))
 
 
 def counts_payload():
@@ -68,7 +79,22 @@ class DefenseStageListCreateView(APIView):
     def post(self, request):
         serializer = DefenseStageWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        stage = serializer.save()
+        
+        with transaction.atomic():
+            stage = serializer.save()
+            # If a specific display_order was requested, place it and re-normalize
+            requested_order = serializer.validated_data.get('display_order')
+            all_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+            if requested_order is not None:
+                insert_idx = max(0, min(requested_order - 1, len(all_stages)))
+                all_stages.insert(insert_idx, stage)
+            else:
+                all_stages.append(stage)
+            
+            for index, s in enumerate(all_stages, start=1):
+                DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
+            stage.refresh_from_db()
+
         return Response(
             {
                 'stage': DefenseStageSerializer(
@@ -115,7 +141,22 @@ class DefenseStageDetailView(APIView):
         stage = self.get_object(stage_id)
         serializer = DefenseStageWriteSerializer(stage, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
-        stage = serializer.save()
+
+        with transaction.atomic():
+            old_order = stage.display_order
+            stage = serializer.save()
+            new_order = serializer.validated_data.get('display_order')
+
+            if new_order is not None and new_order != old_order:
+                other_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+                insert_idx = max(0, min(new_order - 1, len(other_stages)))
+                other_stages.insert(insert_idx, stage)
+                for index, s in enumerate(other_stages, start=1):
+                    DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
+                stage.refresh_from_db()
+            else:
+                normalize_stage_orders()
+                stage.refresh_from_db()
 
         return Response({
             'stage': DefenseStageSerializer(
@@ -139,7 +180,9 @@ class DefenseStageDetailView(APIView):
                 status=status.HTTP_409_CONFLICT,
             )
         try:
-            stage.delete()
+            with transaction.atomic():
+                stage.delete()
+                normalize_stage_orders()
         except ProtectedError:
             return Response(
                 {
@@ -150,6 +193,42 @@ class DefenseStageDetailView(APIView):
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+        return Response(stage_list_payload(), status=status.HTTP_200_OK)
+
+
+class DefenseStageReorderView(APIView):
+    permission_classes = [IsSystemAdmin]
+
+    def post(self, request):
+        stage_ids = request.data.get('stage_ids')
+        if not isinstance(stage_ids, list) or len(stage_ids) == 0:
+            return Response(
+                {'stage_ids': 'A non-empty list of stage IDs is required.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        existing_stages = {s.id: s for s in DefenseStage.objects.all()}
+        # Check all IDs provided exist
+        for sid in stage_ids:
+            if sid not in existing_stages:
+                return Response(
+                    {'stage_ids': f'Stage with ID {sid} does not exist.'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        with transaction.atomic():
+            # Update provided stages in given order
+            assigned_order = 1
+            for sid in stage_ids:
+                DefenseStage.objects.filter(pk=sid).update(display_order=assigned_order)
+                assigned_order += 1
+
+            # If any stages were not included in stage_ids, put them at the end
+            for sid in existing_stages:
+                if sid not in stage_ids:
+                    DefenseStage.objects.filter(pk=sid).update(display_order=assigned_order)
+                    assigned_order += 1
+
         return Response(stage_list_payload(), status=status.HTTP_200_OK)
 
 
