@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/grade_center_provider.dart';
+import '../../../../widgets/dialogs/confirm_dialog.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import 'grade_center_shared.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -251,21 +252,6 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     );
   }
 
-  static const double _tableMinWidth = 1100;
-  Widget _tableColumn(List<CapstoneStageRow> rows) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 8),
-          child: _tableHeaderRow(),
-        ),
-        ...rows.map(_tableDataRow),
-        const SizedBox(height: 8),
-      ],
-    );
-  }
-
   Widget _tableBody(List<CapstoneStageRow> rows) {
     if (state.isLoading || (stagesLoading && stages.isEmpty)) {
       return const SizedBox(
@@ -296,137 +282,533 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
       );
     }
 
+    return _stageCardsList(rows);
+  }
+
+  Widget _stageCardsList(List<CapstoneStageRow> rows) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (int i = 0; i < rows.length; i++) ...[
+            if (i > 0) const SizedBox(height: 14),
+            _stageMilestoneCard(rows[i]),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _stageMilestoneCard(CapstoneStageRow row) {
+    final order = row.displayOrder > 0 ? row.displayOrder : 1;
+    final isComplete = row.isOfficiallyComplete;
+    final hasTeams = row.teamCount > 0;
+    final teamNotice = hasTeams
+        ? '\n\n${row.teamCount} team${row.teamCount == 1 ? '' : 's'} will be affected.'
+        : '';
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isComplete
+              ? const Color(0xFFA7F3D0)
+              : const Color(0xFFE5E7EB),
+          width: 1,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: isComplete
+                ? const Color(0xFF047857).withValues(alpha: 0.04)
+                : Colors.black.withValues(alpha: 0.025),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // Top Row: Order Badge, Stage Name, Description, and Workflow Status
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                capstoneStageOrderBadge(order),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        row.label,
+                        style: const TextStyle(
+                          color: DefensysUi.textDark,
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      if (row.description.isNotEmpty) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          row.description,
+                          style: const TextStyle(
+                            color: Color(0xFF667085),
+                            fontSize: 12,
+                            height: 1.35,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                capstoneStageWorkflowPill(row.workflowStatus),
+              ],
+            ),
+          ),
+
+          // Middle Section: Rich 3-Tile Evaluation & Readiness Snapshot
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+            child: _stageEvaluationSnapshot(row),
+          ),
+
+          const Divider(height: 1, color: Color(0xFFF2F4F7)),
+
+          // Bottom Action Bar: Guidance Note + Actions (More & Main Milestone Button)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 10, 18, 12),
+            child: Builder(
+              builder: (context) => Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Stage Guidance Note (Left)
+                  Expanded(
+                    child: Row(
+                      children: [
+                        Icon(
+                          isComplete
+                              ? Icons.lock_outline_rounded
+                              : Icons.info_outline_rounded,
+                          size: 14,
+                          color: isComplete
+                              ? const Color(0xFF047857)
+                              : const Color(0xFF667085),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            isComplete
+                                ? 'All faculty and panel evaluations are locked for this stage.'
+                                : (hasTeams
+                                    ? 'Complete all required evaluations before marking stage complete.'
+                                    : 'Schedule defenses in Defense Scheduler to begin collecting evaluations.'),
+                            style: TextStyle(
+                              color: isComplete
+                                  ? const Color(0xFF047857)
+                                  : const Color(0xFF667085),
+                              fontSize: 11.5,
+                              fontWeight: isComplete
+                                  ? FontWeight.w600
+                                  : FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+
+                  // More Options Button (Containing View Details)
+                  PopupMenuButton<String>(
+                    tooltip: 'More options',
+                    onSelected: (value) {
+                      if (value == 'view_details') {
+                        onOpenStage(row);
+                      }
+                    },
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                      side: const BorderSide(color: Color(0xFFE5E7EB)),
+                    ),
+                    elevation: 3,
+                    color: Colors.white,
+                    itemBuilder: (context) => [
+                      const PopupMenuItem<String>(
+                        value: 'view_details',
+                        height: 38,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.visibility_outlined,
+                              size: 15,
+                              color: DefensysUi.primaryMaroon,
+                            ),
+                            SizedBox(width: 8),
+                            Text(
+                              'View Details',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysUi.textDark,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(7),
+                        border: Border.all(
+                          color: const Color(0xFFD0D5DD),
+                          width: 1,
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.more_horiz_rounded,
+                        size: 16,
+                        color: Color(0xFF475467),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Main Action Button (Reopen Stage or Mark Complete)
+                  if (isComplete)
+                    OutlinedButton.icon(
+                      onPressed: !state.isSaving
+                          ? () async {
+                              final confirmed = await showConfirmDialog(
+                                context,
+                                title: 'Reopen ${row.label}?',
+                                message:
+                                    'Reopening this defense stage will allow faculty to edit grades again and unlock defense stage settings.$teamNotice\n\nAre you sure you want to reopen ${row.label}?',
+                                confirmLabel: 'Reopen Stage',
+                                cancelLabel: 'Cancel',
+                                destructive: false,
+                                icon: Icons.lock_open_rounded,
+                              );
+                              if (confirmed) {
+                                onOfficiallyCompleteChanged(row, false);
+                              }
+                            }
+                          : null,
+                      icon: const Icon(Icons.replay_rounded, size: 14),
+                      label: const Text('Reopen Stage'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: const Color(0xFF344054),
+                        backgroundColor: Colors.white,
+                        side: const BorderSide(
+                          color: Color(0xFFD0D5DD),
+                          width: 1,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    )
+                  else
+                    ElevatedButton.icon(
+                      onPressed: !state.isSaving
+                          ? () async {
+                              final confirmed = await showConfirmDialog(
+                                context,
+                                title: 'Mark ${row.label} Complete?',
+                                message:
+                                    'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice\n\nAre you sure you want to mark ${row.label} officially complete?',
+                                confirmLabel: 'Mark Complete',
+                                cancelLabel: 'Cancel',
+                                destructive: false,
+                                icon: Icons.verified_rounded,
+                              );
+                              if (confirmed) {
+                                onOfficiallyCompleteChanged(row, true);
+                              }
+                            }
+                          : null,
+                      icon: const Icon(Icons.verified_outlined, size: 15),
+                      label: const Text('Mark Complete'),
+                      style: ElevatedButton.styleFrom(
+                        foregroundColor: Colors.white,
+                        backgroundColor: const Color(0xFF047857),
+                        disabledBackgroundColor: const Color(0xFFE2E8F0),
+                        disabledForegroundColor: const Color(0xFF94A3B8),
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(7),
+                        ),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        textStyle: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _stageEvaluationSnapshot(CapstoneStageRow row) {
+    final isComplete = row.isOfficiallyComplete;
+    final hasTeams = row.teamCount > 0;
+    final groupGrades = gradesForGroup(state, 'capstone', row.label);
+    final readyCount =
+        groupGrades.where((g) => g['grading_ready'] == true).length;
+    final panelCompleteCount =
+        groupGrades.where((g) => g['panel_complete'] == true).length;
+    final adviserCompleteCount =
+        groupGrades.where((g) => g['adviser_complete'] == true).length;
+    final peerCompleteCount =
+        groupGrades.where((g) => g['peer_eval_complete'] == true).length;
+    final peerEnabled =
+        row.peerGradingEnabled || capstoneTermPeerEvalEnabled(state);
+    final adviserEnabled = capstoneTermAdviserGradingEnabled(state);
+
     return LayoutBuilder(
       builder: (context, constraints) {
-        final tableWidth = constraints.maxWidth < _tableMinWidth
-            ? _tableMinWidth
-            : constraints.maxWidth;
+        final isNarrow = constraints.maxWidth < 650;
 
-        return SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: SizedBox(width: tableWidth, child: _tableColumn(rows)),
+        final teamCard = _snapshotTile(
+          icon: Icons.groups_outlined,
+          iconColor: const Color(0xFF475467),
+          label: 'ENROLLED TEAMS',
+          value: '${row.teamCount} ${row.teamCount == 1 ? 'Team' : 'Teams'}',
+          subtitle: hasTeams
+              ? '$readyCount of ${row.teamCount} grading-ready'
+              : 'No teams scheduled',
+        );
+
+        final readinessCard = _snapshotTile(
+          icon: isComplete ? Icons.verified_rounded : Icons.fact_check_outlined,
+          iconColor: isComplete
+              ? const Color(0xFF047857)
+              : const Color(0xFFD97706),
+          label: 'EVALUATION READINESS',
+          value: isComplete
+              ? '100% Finalized'
+              : (hasTeams
+                  ? '$readyCount of ${row.teamCount} Ready'
+                  : 'Pending Schedules'),
+          subtitle: isComplete
+              ? 'Grades locked · Archive eligible'
+              : (hasTeams
+                  ? 'Grading in progress'
+                  : 'No active defense slots'),
+        );
+
+        final componentsCard = _snapshotComponentsTile(
+          panelText:
+              hasTeams ? '$panelCompleteCount/${row.teamCount} done' : 'Required',
+          adviserText: adviserEnabled
+              ? (hasTeams
+                  ? '$adviserCompleteCount/${row.teamCount} done'
+                  : 'Required')
+              : 'Disabled',
+          peerText: peerEnabled
+              ? (hasTeams
+                  ? '$peerCompleteCount/${row.teamCount} done'
+                  : 'Active')
+              : 'Disabled',
+          isComplete: isComplete,
+        );
+
+        if (isNarrow) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              teamCard,
+              const SizedBox(height: 8),
+              readinessCard,
+              const SizedBox(height: 8),
+              componentsCard,
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(child: teamCard),
+            const SizedBox(width: 10),
+            Expanded(child: readinessCard),
+            const SizedBox(width: 10),
+            Expanded(child: componentsCard),
+          ],
         );
       },
     );
   }
 
-  Widget _tableHeaderRow() {
-    const style = TextStyle(
-      color: Color(0xFF98A2B3),
-      fontSize: 10,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 0.5,
-    );
-    return const Row(
-      children: [
-        SizedBox(width: 40, child: Text('', style: style)),
-        Expanded(flex: 4, child: Text('STAGE', style: style)),
-        Expanded(flex: 2, child: Text('STATUS', style: style)),
-        Expanded(flex: 2, child: Text('TEAMS', style: style)),
-        Expanded(flex: 3, child: Text('OFFICIALLY COMPLETE', style: style)),
-        Expanded(flex: 3, child: Text('TERM SETTINGS', style: style)),
-        SizedBox(width: 130, child: Text('ACTIONS', style: style)),
-      ],
+  Widget _snapshotTile({
+    required IconData icon,
+    required Color iconColor,
+    required String label,
+    required String value,
+    required String subtitle,
+  }) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFEAECF0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 13.5, color: iconColor),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF667085),
+                  fontSize: 9.5,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(
+            value,
+            style: const TextStyle(
+              color: DefensysUi.textDark,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 1.5),
+          Text(
+            subtitle,
+            style: const TextStyle(
+              color: Color(0xFF667085),
+              fontSize: 11,
+              height: 1.3,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 
-  Widget _tableDataRow(CapstoneStageRow row) {
-    final order = row.displayOrder > 0 ? row.displayOrder : 1;
+  Widget _snapshotComponentsTile({
+    required String panelText,
+    required String adviserText,
+    required String peerText,
+    required bool isComplete,
+  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      decoration: const BoxDecoration(
-        border: Border(top: BorderSide(color: Color(0xFFF3F4F6))),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF9FAFB),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFEAECF0)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          SizedBox(width: 40, child: capstoneStageOrderBadge(order)),
-          Expanded(
-            flex: 4,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  row.label,
-                  style: const TextStyle(
-                    color: DefensysUi.textDark,
-                    fontSize: 13.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (row.description.isNotEmpty) ...[
-                  const SizedBox(height: 3),
-                  Text(
-                    row.description,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: Color(0xFF98A2B3),
-                      fontSize: 11.5,
-                      height: 1.35,
-                    ),
-                  ),
-                ],
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 2,
-            child: capstoneStageWorkflowPill(row.workflowStatus),
-          ),
-          Expanded(
-            flex: 2,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.groups_outlined,
-                  size: 16,
-                  color: Color(0xFF98A2B3),
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  '${row.teamCount} team${row.teamCount == 1 ? '' : 's'}',
-                  style: const TextStyle(
-                    color: Color(0xFF5D6678),
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            flex: 3,
-            child: officialCompleteToggleRow(
-              value: row.isOfficiallyComplete,
-              enabled: !state.isSaving,
-              onChanged: (value) => onOfficiallyCompleteChanged(row, value),
-            ),
-          ),
-          Expanded(flex: 3, child: capstoneTermSettingsChips(state)),
-          SizedBox(
-            width: 130,
-            child: OutlinedButton.icon(
-              onPressed: () => onOpenStage(row),
-              icon: const Icon(Icons.visibility_outlined, size: 16),
-              label: const Text('View Details'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: DefensysUi.primaryMaroon,
-                side: BorderSide(
-                  color: DefensysUi.primaryMaroon.withValues(alpha: 0.35),
-                ),
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 8,
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 11.5,
+          const Row(
+            children: [
+              Icon(Icons.checklist_rounded, size: 13.5, color: Color(0xFF475467)),
+              SizedBox(width: 5),
+              Text(
+                'EVALUATION COMPONENTS',
+                style: TextStyle(
+                  color: Color(0xFF667085),
+                  fontSize: 9.5,
                   fontWeight: FontWeight.w700,
+                  letterSpacing: 0.4,
                 ),
               ),
-            ),
+            ],
+          ),
+          const SizedBox(height: 5),
+          Row(
+            children: [
+              _componentMiniPill('Panel', panelText),
+              const SizedBox(width: 4),
+              _componentMiniPill('Adviser', adviserText),
+              const SizedBox(width: 4),
+              _componentMiniPill('Peer', peerText),
+            ],
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _componentMiniPill(String name, String status) {
+    final isDone = status.contains('done') || status == 'Complete';
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+        decoration: BoxDecoration(
+          color: isDone ? const Color(0xFFECFDF5) : Colors.white,
+          borderRadius: BorderRadius.circular(4),
+          border: Border.all(
+            color: isDone ? const Color(0xFFA7F3D0) : const Color(0xFFD0D5DD),
+            width: 0.8,
+          ),
+        ),
+        child: Column(
+          children: [
+            Text(
+              name,
+              style: TextStyle(
+                color: isDone ? const Color(0xFF047857) : const Color(0xFF344054),
+                fontSize: 9.5,
+                fontWeight: FontWeight.w700,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            Text(
+              status,
+              style: TextStyle(
+                color: isDone ? const Color(0xFF059669) : const Color(0xFF667085),
+                fontSize: 8.5,
+                fontWeight: FontWeight.w600,
+              ),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+        ),
       ),
     );
   }

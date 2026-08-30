@@ -7,10 +7,11 @@ import '../../../../services/auth_provider.dart';
 import '../../../../services/academic_period_provider.dart';
 import '../../../../services/student_teams_provider.dart';
 import '../../../../services/reports_provider.dart';
+import '../../../../services/defense/defense_stages_provider.dart';
+import '../../../../services/grading/grade_center_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
-import '../../../../widgets/searchable_entity_picker.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class AuditComplianceScreen extends ConsumerStatefulWidget {
@@ -29,7 +30,6 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   final _endDateController = TextEditingController();
 
   // Report Center Form Controllers & States
-  int _selectedReportIndex = 0;
   String? _selectedSemesterId;
   String? _selectedTeamId;
   String? _selectedStudentId;
@@ -41,9 +41,6 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
   String _reportCategoryFilter = '';
   String _selectedScope = '';
   String _reportTrackFilter = '';
-  String _reportYearLevelFilter = '';
-  String _selectedStudentSectionFilter = '';
-  String _selectedTeamSectionFilter = '';
 
   @override
   void initState() {
@@ -79,9 +76,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       }
     }
 
-    // Load periods and teams silently for Report dropdowns
+    // Load periods, teams, defense stages, and PIT events dynamically for Report dropdowns
     ref.read(academicPeriodProvider.notifier).fetchPeriods();
     ref.read(studentTeamsProvider.notifier).fetchTeams();
+    ref.read(defenseStagesProvider.notifier).fetchStages();
+    ref.read(gradeCenterProvider.notifier).fetchGrades();
   }
 
   @override
@@ -357,7 +356,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     final isAdmin = user?['role']?.toString() == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
 
-    final List<Map<String, dynamic>> availableReports = [
+    final List<Map<String, dynamic>> gradingReports = [
       {
         'title': 'Team Grade Report Card',
         'desc': 'Detailed grading summary and criterion assessment scores from panelists, adviser, and peers.',
@@ -365,6 +364,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         'endpoint': 'team-grade',
         'tag': 'Grades',
         'meta': 'PDF • Team Breakdown',
+        'paramHint': 'Requires Team Selection',
       },
       {
         'title': 'Individual Student Grade Audit Card',
@@ -373,15 +373,40 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         'endpoint': 'individual-grade',
         'tag': 'Audit Slip',
         'meta': 'PDF • Individual Breakdown',
+        'paramHint': 'Requires Student Candidate',
+      },
+      {
+        'title': 'Capstone Stage Grade Sheet',
+        'desc': 'Official compiled grade sheet for a specific Capstone defense stage (Concept, Outline, Pre-Oral, Final).',
+        'icon': Icons.school_outlined,
+        'endpoint': 'semester-grades',
+        'scope': 'capstone',
+        'tag': 'Capstone',
+        'meta': 'PDF • Stage Matrix',
+        'paramHint': 'Capstone Stage Scope',
+      },
+      {
+        'title': 'PIT Event Grade Sheet',
+        'desc': 'Official compiled grade sheet for a specific Project in IT (PIT) event or year-level showcase.',
+        'icon': Icons.event_available_outlined,
+        'endpoint': 'semester-grades',
+        'scope': 'pit',
+        'tag': 'PIT Events',
+        'meta': 'PDF • Event Matrix',
+        'paramHint': 'PIT Event Scope',
       },
       {
         'title': 'Semester Grade Summary',
-        'desc': 'Compilation sheet of all student teams and final pass/fail results for the semester.',
+        'desc': 'Compilation sheet of all student teams and final pass/fail results for the semester across all scopes.',
         'icon': Icons.grade_outlined,
         'endpoint': 'semester-grades',
         'tag': 'Summary',
         'meta': 'PDF • Official Roster',
+        'paramHint': 'Semester & Scope Filter',
       },
+    ];
+
+    final List<Map<String, dynamic>> operationsReports = [
       {
         'title': 'Defense Schedule Summary',
         'desc': 'Compiled list of scheduled defense events, panels, times, and venue rooms.',
@@ -389,6 +414,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         'endpoint': 'defense-schedules',
         'tag': 'Schedule',
         'meta': 'PDF • Timetable',
+        'paramHint': 'Semester & Scope Filter',
       },
       {
         'title': 'Team Roster Report',
@@ -397,7 +423,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         'endpoint': 'team-roster',
         'tag': 'Roster',
         'meta': 'PDF • Directory',
+        'paramHint': 'Semester & Level Filter',
       },
+    ];
+
+    final List<Map<String, dynamic>> governanceReports = [
       if (isAdmin)
         {
           'title': 'User Directory',
@@ -406,6 +436,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           'endpoint': 'user-directory',
           'tag': 'Accounts',
           'meta': 'PDF • System Users',
+          'paramHint': 'Role & Status Filter',
         },
       if (isAdmin || isPitLead)
         {
@@ -415,11 +446,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           'endpoint': 'audit-trail',
           'tag': 'Compliance',
           'meta': 'PDF • Change Logs',
+          'paramHint': 'Date Range & Category Filter',
         },
     ];
 
-    final reportIndex = _selectedReportIndex.clamp(0, availableReports.length - 1);
-    final selectedReport = availableReports[reportIndex];
+    final totalReports = gradingReports.length + operationsReports.length + governanceReports.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -448,7 +479,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
                 ),
                 const SizedBox(width: 8),
                 Text(
-                  '${availableReports.length} Reports Ready for PDF Export',
+                  '$totalReports Reports Ready for PDF Export',
                   style: const TextStyle(
                     fontSize: 12,
                     fontWeight: FontWeight.w700,
@@ -459,39 +490,165 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 20),
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final wide = constraints.maxWidth >= 1100;
-            final masterList = _buildMasterReportList(availableReports, reportIndex);
-            final filterForm = _buildReportFilterForm(selectedReport);
+        const SizedBox(height: 24),
 
-            if (!wide) {
-              return Column(
-                children: [
-                  masterList,
-                  const SizedBox(height: 20),
-                  filterForm,
-                ],
-              );
-            }
+        // Section 1: Academic Grading & Evaluation
+        _buildReportCategoryHeader(
+          title: 'ACADEMIC GRADING & EVALUATION',
+          subtitle: 'Official defense grades, individual evaluation slips, and semester compilation rosters.',
+          icon: Icons.assignment_turned_in_outlined,
+          count: gradingReports.length,
+        ),
+        const SizedBox(height: 12),
+        _buildReportCardsGrid(gradingReports),
+        const SizedBox(height: 28),
 
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+        // Section 2: Defense Schedules & Team Rosters
+        _buildReportCategoryHeader(
+          title: 'DEFENSE OPERATIONS & ROSTERS',
+          subtitle: 'Defense timetable schedules, panel room assignments, and official team directories.',
+          icon: Icons.event_note_outlined,
+          count: operationsReports.length,
+        ),
+        const SizedBox(height: 12),
+        _buildReportCardsGrid(operationsReports),
+        const SizedBox(height: 28),
+
+        // Section 3: Governance & System Compliance
+        if (governanceReports.isNotEmpty) ...[
+          _buildReportCategoryHeader(
+            title: 'GOVERNANCE & SYSTEM COMPLIANCE',
+            subtitle: 'Institutional audit registers, evidence logs, and system account directories.',
+            icon: Icons.verified_user_outlined,
+            count: governanceReports.length,
+          ),
+          const SizedBox(height: 12),
+          _buildReportCardsGrid(governanceReports),
+          const SizedBox(height: 20),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildReportCategoryHeader({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required int count,
+  }) {
+    return Row(
+      children: [
+        Container(
+          padding: const EdgeInsets.all(7),
+          decoration: BoxDecoration(
+            color: DefensysTokens.maroon.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+          ),
+          child: Icon(icon, color: DefensysTokens.maroon, size: 16),
+        ),
+        const SizedBox(width: 10),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
               children: [
-                Expanded(flex: 5, child: masterList),
-                const SizedBox(width: 20),
-                Expanded(flex: 7, child: filterForm),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textDark,
+                    letterSpacing: 0.6,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  ),
+                  child: Text(
+                    '$count',
+                    style: const TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.steelGrey,
+                    ),
+                  ),
+                ),
               ],
-            );
-          },
+            ),
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 11.5,
+                color: DefensysTokens.steelGrey,
+              ),
+            ),
+          ],
         ),
       ],
     );
   }
 
-  /// Master Document Selection List (Option 2 Layout)
-  Widget _buildMasterReportList(List<Map<String, dynamic>> reports, int selectedIdx) {
+  Widget _buildReportCardsGrid(List<Map<String, dynamic>> reports) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final crossAxisCount = constraints.maxWidth >= 1150
+            ? 3
+            : constraints.maxWidth >= 720
+                ? 2
+                : 1;
+
+        if (crossAxisCount == 1) {
+          return Column(
+            children: reports
+                .map((r) => Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: _buildReportCatalogCard(r),
+                    ))
+                .toList(),
+          );
+        }
+
+        // Chunk reports into rows for clean grid layout
+        final rows = <Widget>[];
+        for (var i = 0; i < reports.length; i += crossAxisCount) {
+          final rowItems = reports.skip(i).take(crossAxisCount).toList();
+          rows.add(
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                for (var j = 0; j < crossAxisCount; j++) ...[
+                  if (j > 0) const SizedBox(width: 16),
+                  Expanded(
+                    child: j < rowItems.length
+                        ? _buildReportCatalogCard(rowItems[j])
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ],
+            ),
+          );
+          if (i + crossAxisCount < reports.length) {
+            rows.add(const SizedBox(height: 16));
+          }
+        }
+
+        return Column(children: rows);
+      },
+    );
+  }
+
+  Widget _buildReportCatalogCard(Map<String, dynamic> report) {
+    final title = report['title'] as String;
+    final desc = report['desc'] as String;
+    final icon = report['icon'] as IconData;
+    final tag = report['tag'] as String;
+    final paramHint = report['paramHint'] as String? ?? 'PDF Document';
+
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -500,225 +657,188 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x06000000),
-            blurRadius: 4,
+            blurRadius: 6,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Master List Header
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
-            decoration: const BoxDecoration(
-              border: Border(bottom: BorderSide(color: DefensysTokens.border)),
-            ),
-            child: Row(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        child: InkWell(
+          onTap: () => _openReportExportDialog(context, report),
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+          child: Padding(
+            padding: const EdgeInsets.all(20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.article_outlined, color: DefensysTokens.maroon, size: 20),
-                const SizedBox(width: 10),
-                Text('SELECT COMPLIANCE REPORT', style: DefensysUi.tableHeader),
-                const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.neutralBg,
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  ),
-                  child: Text(
-                    '${reports.length} Available',
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w700,
-                      color: DefensysTokens.steelGrey,
+                // Top Header Row
+                Row(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      ),
+                      child: Icon(icon, color: DefensysTokens.maroon, size: 20),
                     ),
+                    const Spacer(),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.gold.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                      ),
+                      child: Text(
+                        tag,
+                        style: const TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.darkGold,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 14),
+
+                // Report Title
+                Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textDark,
+                    height: 1.25,
                   ),
+                ),
+                const SizedBox(height: 6),
+
+                // Description
+                Text(
+                  desc,
+                  style: const TextStyle(
+                    fontSize: 12.5,
+                    color: DefensysTokens.steelGrey,
+                    height: 1.45,
+                  ),
+                  maxLines: 3,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                const SizedBox(height: 18),
+
+                const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                const SizedBox(height: 14),
+
+                // Footer Row: Param Hint & Action Button
+                Row(
+                  children: [
+                    Expanded(
+                      child: Row(
+                        children: [
+                          const Icon(Icons.tune_rounded, size: 13, color: DefensysTokens.steelGrey),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              paramHint,
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: DefensysTokens.steelGrey,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    FilledButton.icon(
+                      icon: const Icon(Icons.download_rounded, size: 14),
+                      label: const Text('Export PDF'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: DefensysTokens.maroon,
+                        foregroundColor: Colors.white,
+                        textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: () => _openReportExportDialog(context, report),
+                    ),
+                  ],
                 ),
               ],
             ),
           ),
-
-          // Master Document List Items
-          ListView.separated(
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: reports.length,
-            separatorBuilder: (context, index) => const Divider(height: 1, color: DefensysTokens.border),
-            itemBuilder: (context, index) {
-              final r = reports[index];
-              final isSelected = index == selectedIdx;
-
-              return Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => setState(() => _selectedReportIndex = index),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 150),
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: isSelected
-                          ? DefensysTokens.maroon.withValues(alpha: 0.05)
-                          : Colors.transparent,
-                    ),
-                    child: Row(
-                      children: [
-                        // Left Selection Indicator Bar
-                        Container(
-                          width: 4,
-                          height: 38,
-                          decoration: BoxDecoration(
-                            color: isSelected ? DefensysTokens.maroon : Colors.transparent,
-                            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Icon Container
-                        Container(
-                          width: 36,
-                          height: 36,
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? DefensysTokens.maroon
-                                : const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                          ),
-                          child: Icon(
-                            r['icon'] as IconData,
-                            color: isSelected ? Colors.white : DefensysTokens.steelGrey,
-                            size: 18,
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        // Title & Meta
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                children: [
-                                  Expanded(
-                                    child: Text(
-                                      r['title'] as String,
-                                      style: TextStyle(
-                                        fontFamily: DefensysTokens.fontFamily,
-                                        color: isSelected
-                                            ? DefensysTokens.maroon
-                                            : DefensysTokens.textDark,
-                                        fontSize: 13.5,
-                                        fontWeight: isSelected
-                                            ? FontWeight.w700
-                                            : FontWeight.w600,
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isSelected
-                                          ? DefensysTokens.gold.withValues(alpha: 0.15)
-                                          : const Color(0xFFF1F5F9),
-                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                                    ),
-                                    child: Text(
-                                      r['tag'] as String,
-                                      style: TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: isSelected
-                                            ? DefensysTokens.darkGold
-                                            : DefensysTokens.steelGrey,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 3),
-                              Text(
-                                r['meta'] as String? ?? 'PDF Document',
-                                style: TextStyle(
-                                  color: isSelected
-                                      ? DefensysTokens.maroon.withValues(alpha: 0.8)
-                                      : DefensysTokens.steelGrey,
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Icon(
-                          Icons.chevron_right_rounded,
-                          size: 18,
-                          color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
+        ),
       ),
     );
   }
 
-  Widget _buildReportFilterForm(Map<String, dynamic> report) {
-    final reportsState = ref.watch(reportsProvider);
-    final academicState = ref.watch(academicPeriodProvider);
-    final teamsState = ref.watch(studentTeamsProvider);
-    
-    final endpoint = report['endpoint'] as String;
+  /// Opens the Dedicated Export Configuration Dialog
+  void _openReportExportDialog(BuildContext context, Map<String, dynamic> report) {
+    final teamsState = ref.read(studentTeamsProvider);
+    final academicState = ref.read(academicPeriodProvider);
+    final defenseStagesState = ref.read(defenseStagesProvider);
+    final gradeCenterState = ref.read(gradeCenterProvider);
 
-    // Load active semester ID initially
-    final activeSemId = academicState.activeSemester?['id']?.toString();
-    _selectedSemesterId ??= activeSemId;
-
-    // Load first team ID initially
-    if (_selectedTeamId == null && teamsState.teams.isNotEmpty) {
-      _selectedTeamId = teamsState.teams.first['id']?.toString();
-    }
-
-    // Load first student ID initially
-    if (_selectedStudentId == null && teamsState.students.isNotEmpty) {
-      _selectedStudentId = teamsState.students.first['id']?.toString();
-    }
-
-    // Build student metadata lookup map from teams data
+    // Build combined students list from team members (primary) and unassigned students
     final Map<String, Map<String, dynamic>> studentMetaMap = {};
-    for (final student in teamsState.students) {
-      final sId = student['id']?.toString() ?? '';
-      Map<String, dynamic>? assignedTeam;
-      bool isLeader = false;
-      String? section;
+    final Map<String, Map<String, dynamic>> allStudentsMap = {};
 
-      for (final team in teamsState.teams) {
-        final members = team['members'];
-        if (members is List) {
-          for (final m in members) {
-            if (m is Map && m['id']?.toString() == sId) {
-              assignedTeam = team;
-              isLeader = m['is_leader'] == true;
-              section = team['section']?.toString() ?? team['year_level']?.toString();
-              break;
+    for (final team in teamsState.teams) {
+      final sec = team['section']?.toString() ?? team['year_level']?.toString();
+      final leader = team['leader'] as Map<String, dynamic>?;
+      if (leader != null) {
+        final id = leader['id']?.toString();
+        if (id != null) {
+          allStudentsMap[id] = leader;
+          studentMetaMap[id] = {
+            'teamName': team['name'],
+            'projectTitle': team['project_title'],
+            'section': sec,
+          };
+        }
+      }
+
+      final members = team['members'] as List<dynamic>?;
+      if (members != null) {
+        for (final m in members) {
+          if (m is Map<String, dynamic>) {
+            final mId = m['id']?.toString();
+            if (mId != null) {
+              allStudentsMap[mId] = m;
+              studentMetaMap[mId] = {
+                'teamName': team['name'],
+                'projectTitle': team['project_title'],
+                'section': sec,
+              };
             }
           }
         }
-        if (assignedTeam != null) break;
       }
-
-      studentMetaMap[sId] = {
-        'student': student,
-        'team': assignedTeam,
-        'isLeader': isLeader,
-        'section': section,
-      };
     }
+
+    // If no team memberships, add raw students
+    for (final st in teamsState.students) {
+      final sId = st['id']?.toString();
+      if (sId != null && !allStudentsMap.containsKey(sId)) {
+        allStudentsMap[sId] = st;
+        studentMetaMap[sId] = {
+          'teamName': 'Unassigned',
+          'projectTitle': null,
+          'section': null,
+        };
+      }
+    }
+
+    final List<Map<String, dynamic>> allStudentsList = allStudentsMap.values.toList();
 
     // Extract student sections & counts
     final Set<String> studentSectionsSet = {};
@@ -732,42 +852,6 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     }
     final List<String> studentSections = studentSectionsSet.toList()..sort();
 
-    // Filter students by section if selected
-    final List<Map<String, dynamic>> filteredStudents = teamsState.students.where((s) {
-      if (_selectedStudentSectionFilter.isEmpty) return true;
-      final meta = studentMetaMap[s['id']?.toString() ?? ''];
-      return meta?['section'] == _selectedStudentSectionFilter;
-    }).toList();
-
-    // Build student entity picker items
-    final List<EntityPickerItem<String>> studentPickerItems = filteredStudents.map((s) {
-      final sId = s['id']?.toString() ?? '';
-      final meta = studentMetaMap[sId];
-      final name = s['name'] ?? s['username'] ?? 'Student';
-      final username = s['username']?.toString() ?? sId;
-      final team = meta?['team'] as Map<String, dynamic>?;
-      final section = meta?['section'] as String?;
-
-      final subtitleParts = <String>[];
-      if (team != null && team['name'] != null) {
-        subtitleParts.add(team['name'].toString());
-      } else {
-        subtitleParts.add('No Team Assigned');
-      }
-      if (section != null && section.isNotEmpty) {
-        subtitleParts.add(section);
-      }
-
-      return EntityPickerItem<String>(
-        value: sId,
-        label: name.toString(),
-        badge: username,
-        subtitle: subtitleParts.join(' • '),
-        avatarText: _getInitials(name.toString()),
-        meta: meta,
-      );
-    }).toList();
-
     // Extract team sections & counts
     final Set<String> teamSectionsSet = {};
     final Map<String, int> teamSectionCounts = {};
@@ -780,623 +864,844 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     }
     final List<String> teamSections = teamSectionsSet.toList()..sort();
 
-    // Filter teams by section if selected
-    final List<Map<String, dynamic>> filteredTeams = teamsState.teams.where((t) {
-      if (_selectedTeamSectionFilter.isEmpty) return true;
-      final sec = t['section']?.toString() ?? t['year_level']?.toString();
-      return sec == _selectedTeamSectionFilter;
-    }).toList();
-
-    // Build team entity picker items
-    final List<EntityPickerItem<String>> teamPickerItems = filteredTeams.map((t) {
-      final tId = t['id']?.toString() ?? '';
-      final name = t['name']?.toString() ?? 'Team';
-      final sec = t['section']?.toString() ?? t['year_level']?.toString();
-      final projectTitle = t['project_title']?.toString() ?? t['system_name']?.toString() ?? '';
-      final leader = t['leader_name']?.toString() ?? '';
-
-      final subtitleParts = <String>[];
-      if (projectTitle.isNotEmpty) {
-        subtitleParts.add(projectTitle);
-      } else if (leader.isNotEmpty) {
-        subtitleParts.add('Lead: $leader');
-      }
-      if (sec != null && sec.isNotEmpty) {
-        subtitleParts.add(sec);
-      }
-
-      return EntityPickerItem<String>(
-        value: tId,
-        label: name,
-        badge: sec,
-        subtitle: subtitleParts.isNotEmpty ? subtitleParts.join(' • ') : null,
-        icon: Icons.groups_rounded,
-        meta: t,
-      );
-    }).toList();
-
-    // Selected Student Metadata
-    final selectedStudentMeta = _selectedStudentId != null ? studentMetaMap[_selectedStudentId] : null;
-    final selectedStudentObj = selectedStudentMeta?['student'] as Map<String, dynamic>?;
-    final selectedStudentTeam = selectedStudentMeta?['team'] as Map<String, dynamic>?;
-    final selectedStudentIsLeader = selectedStudentMeta?['isLeader'] == true;
-    final selectedStudentSection = selectedStudentMeta?['section'] as String?;
-
-    // Selected Team Metadata
-    final selectedTeamObj = _selectedTeamId != null
-        ? teamsState.teams.firstWhere(
-            (t) => t['id']?.toString() == _selectedTeamId,
-            orElse: () => <String, dynamic>{},
-          )
-        : null;
-
-    final List<Map<String, dynamic>> semestersList = [];
-    for (final year in academicState.schoolYears) {
-      final sems = year['semesters'];
-      if (sems is List) {
-        for (final sem in sems) {
-          if (sem is Map) {
-            semestersList.add({
-              'id': sem['id']?.toString() ?? '',
-              'label': '${year['school_year'] ?? ''} | ${sem['label'] ?? ''}',
-            });
-          }
-        }
+    final List<Map<String, dynamic>> capstoneStages = [];
+    for (final s in defenseStagesState.stages) {
+      final label = s['label']?.toString() ?? s['name']?.toString() ?? '';
+      if (label.trim().isNotEmpty) {
+        capstoneStages.add({
+          'id': s['id'],
+          'label': label.trim(),
+          'sequence': s['sequence_order'] ?? s['display_order'] ?? s['sequence'],
+        });
       }
     }
 
-    // Build Live Summary strings
-    String selectedSemLabel = semestersList.firstWhere(
-      (s) => s['id'] == _selectedSemesterId,
-      orElse: () => {'label': 'Active Semester'},
-    )['label'] as String;
+    final List<Map<String, dynamic>> pitEvents = [];
+    for (final evt in gradeCenterState.pitEvents) {
+      final name = evt['event_name']?.toString() ?? evt['name']?.toString() ?? evt['label']?.toString() ?? '';
+      if (name.trim().isNotEmpty) {
+        pitEvents.add({
+          'id': evt['id'],
+          'event_name': name.trim(),
+          'year_level': evt['year_level'],
+        });
+      }
+    }
+    if (pitEvents.isEmpty) {
+      pitEvents.addAll([
+        {'id': 1, 'event_name': '1st Year PIT'},
+        {'id': 2, 'event_name': '2nd Year PIT'},
+        {'id': 3, 'event_name': '3rd Year PIT'},
+      ]);
+    }
 
-    String selectedTeamLabel = selectedTeamObj != null && selectedTeamObj.isNotEmpty
-        ? (selectedTeamObj['name']?.toString() ?? 'Selected Team')
-        : 'Selected Team';
-
-    String selectedStudentLabel = selectedStudentObj != null
-        ? '${selectedStudentObj['name'] ?? selectedStudentObj['username']} (${selectedStudentObj['username'] ?? ''})'
-        : 'Selected Student Candidate';
-
-    return Container(
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x0A000000),
-            blurRadius: 8,
-            offset: Offset(0, 3),
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return _ReportExportConfigDialog(
+          report: report,
+          academicState: academicState,
+          teamsState: teamsState,
+          allStudents: allStudentsList,
+          studentMetaMap: studentMetaMap,
+          studentSections: studentSections,
+          studentSectionCounts: studentSectionCounts,
+          teamSections: teamSections,
+          teamSectionCounts: teamSectionCounts,
+          capstoneStages: capstoneStages,
+          pitEvents: pitEvents,
+          initialSemesterId: _selectedSemesterId ?? academicState.activeSemester?['id']?.toString(),
+          initialStudentId: _selectedStudentId,
+          initialTeamId: _selectedTeamId,
+          initialScope: report['scope']?.toString() ?? _selectedScope,
+          initialLevel: _selectedLevel,
+          initialYearLevel: _selectedYearLevel,
+          initialRole: _selectedRole,
+          initialCategory: _reportCategoryFilter,
+          initialTrack: _reportTrackFilter,
+          initialStartDate: _reportStartDateController.text.trim(),
+          initialEndDate: _reportEndDateController.text.trim(),
+          onDownload: (params) async {
+            return await _triggerReportDownload(
+              report,
+              studentId: params['studentId'],
+              teamId: params['teamId'],
+              semesterId: params['semesterId'],
+              scope: params['scope'],
+              stage: params['stage'],
+              pitEvent: params['pitEvent'],
+              level: params['level'],
+              yearLevel: params['yearLevel'],
+              role: params['role'],
+              category: params['category'],
+              track: params['track'],
+              startDate: params['startDate'],
+              endDate: params['endDate'],
+              exportFormat: params['exportFormat'] ?? 'pdf',
+            );
+          },
+          onFetchPreview: (params) async {
+            return await _triggerReportPreview(
+              report,
+              studentId: params['studentId'],
+              teamId: params['teamId'],
+              semesterId: params['semesterId'],
+              scope: params['scope'],
+              stage: params['stage'],
+              pitEvent: params['pitEvent'],
+              level: params['level'],
+              yearLevel: params['yearLevel'],
+              role: params['role'],
+              category: params['category'],
+              track: params['track'],
+              startDate: params['startDate'],
+              endDate: params['endDate'],
+            );
+          },
+          onOpenStudentPicker: (currId) => _showStudentPickerDialog(
+            context: context,
+            students: allStudentsList,
+            studentMetaMap: studentMetaMap,
+            sections: studentSections,
+            sectionCounts: studentSectionCounts,
+            currentSelectedId: currId,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Header with maroon top accent border
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: const BoxDecoration(
-              border: Border(
-                top: BorderSide(color: DefensysTokens.maroon, width: 4),
-                bottom: BorderSide(color: DefensysTokens.border, width: 1),
-              ),
-            ),
-            child: Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                    shape: BoxShape.circle,
-                  ),
-                  child: Icon(report['icon'] as IconData, color: DefensysTokens.maroon, size: 22),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                              report['title'] as String,
-                              style: DefensysUi.sectionTitle,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                            ),
-                            child: const Text(
-                              'EXPORT CONFIG',
-                              style: TextStyle(
-                                fontSize: 9.5,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.maroon,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        'Configure output parameters and download official PDF.',
-                        style: DefensysUi.subtitle,
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
+          onOpenTeamPicker: (currId) => _showTeamPickerDialog(
+            context: context,
+            teams: teamsState.teams,
+            sections: teamSections,
+            sectionCounts: teamSectionCounts,
+            currentSelectedId: currId,
           ),
-          Padding(
-            padding: const EdgeInsets.all(22),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Selected Report Information Preview Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(14),
-                  margin: const EdgeInsets.only(bottom: 20),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.04),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                    border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15)),
-                  ),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline_rounded, size: 18, color: DefensysTokens.maroon),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'REPORT DESCRIPTION & OBJECTIVE',
-                              style: TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.maroon,
-                                letterSpacing: 0.5,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              report['desc'] as String,
-                              style: const TextStyle(
-                                fontSize: 12,
-                                color: DefensysTokens.textDark,
-                                height: 1.45,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                if (endpoint == 'team-grade') ...[
-                  // Section / Cohort Quick Filter Chips for Teams
-                  if (teamSections.isNotEmpty)
-                    _buildSectionFilterChips(
-                      sections: teamSections,
-                      selectedSection: _selectedTeamSectionFilter,
-                      totalCount: teamsState.teams.length,
-                      sectionCounts: teamSectionCounts,
-                      onSelected: (sec) {
-                        setState(() {
-                          _selectedTeamSectionFilter = sec;
-                        });
-                      },
-                    ),
-
-                  const _FormSectionLabel('SEARCH & SELECT STUDENT TEAM'),
-                  const SizedBox(height: 6),
-                  teamsState.isLoading
-                      ? const LinearProgressIndicator()
-                      : SearchableEntityPicker<String>(
-                          items: teamPickerItems,
-                          selectedValue: _selectedTeamId,
-                          hintText: 'Search team by name, project, leader, or section...',
-                          searchHintText: 'Type team name, title, leader, or section...',
-                          searchMatcher: (item, query) {
-                            final q = query.toLowerCase();
-                            final meta = item.meta;
-                            final nameMatch = item.label.toLowerCase().contains(q);
-                            final titleMatch = meta?['project_title']?.toString().toLowerCase().contains(q) ?? false;
-                            final leadMatch = meta?['leader_name']?.toString().toLowerCase().contains(q) ?? false;
-                            final adviserMatch = meta?['adviser_name']?.toString().toLowerCase().contains(q) ?? false;
-                            final secMatch = (meta?['section']?.toString().toLowerCase().contains(q) ?? false) ||
-                                (meta?['year_level']?.toString().toLowerCase().contains(q) ?? false);
-                            return nameMatch || titleMatch || leadMatch || adviserMatch || secMatch;
-                          },
-                          onChanged: (val) => setState(() => _selectedTeamId = val),
-                        ),
-
-                  // Selected Team Rich Preview Context Card
-                  if (selectedTeamObj != null && selectedTeamObj.isNotEmpty)
-                    _buildSelectedTeamCard(selectedTeamObj)
-                  else
-                    const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'individual-grade') ...[
-                  // Section / Cohort Quick Filter Chips for Students
-                  if (studentSections.isNotEmpty)
-                    _buildSectionFilterChips(
-                      sections: studentSections,
-                      selectedSection: _selectedStudentSectionFilter,
-                      totalCount: teamsState.students.length,
-                      sectionCounts: studentSectionCounts,
-                      onSelected: (sec) {
-                        setState(() {
-                          _selectedStudentSectionFilter = sec;
-                        });
-                      },
-                    ),
-
-                  const _FormSectionLabel('SEARCH & SELECT STUDENT CANDIDATE'),
-                  const SizedBox(height: 6),
-                  teamsState.isLoading
-                      ? const LinearProgressIndicator()
-                      : SearchableEntityPicker<String>(
-                          items: studentPickerItems,
-                          selectedValue: _selectedStudentId,
-                          hintText: 'Search student by ID, full name, team, or section...',
-                          searchHintText: 'Type student ID (e.g. 4011), name, or team...',
-                          searchMatcher: (item, query) {
-                            final q = query.toLowerCase();
-                            final meta = item.meta;
-                            final student = meta?['student'] as Map<String, dynamic>?;
-                            final team = meta?['team'] as Map<String, dynamic>?;
-                            final nameMatch = item.label.toLowerCase().contains(q);
-                            final usernameMatch = student?['username']?.toString().toLowerCase().contains(q) ?? false;
-                            final idMatch = student?['id']?.toString().contains(q) ?? false;
-                            final emailMatch = student?['email']?.toString().toLowerCase().contains(q) ?? false;
-                            final teamMatch = team?['name']?.toString().toLowerCase().contains(q) ?? false;
-                            final secMatch = meta?['section']?.toString().toLowerCase().contains(q) ?? false;
-                            return nameMatch || usernameMatch || idMatch || emailMatch || teamMatch || secMatch;
-                          },
-                          onChanged: (val) => setState(() => _selectedStudentId = val),
-                        ),
-
-                  // Selected Candidate Rich Preview Context Card
-                  if (selectedStudentObj != null)
-                    _buildSelectedCandidateCard(
-                      selectedStudentObj,
-                      selectedStudentTeam,
-                      selectedStudentIsLeader,
-                      selectedStudentSection,
-                    )
-                  else
-                    const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster') ...[
-                  const _FormSectionLabel('ACADEMIC SEMESTER'),
-                  const SizedBox(height: 6),
-                  academicState.isLoading
-                      ? const LinearProgressIndicator()
-                      : DropdownButtonFormField<String>(
-                          initialValue: _selectedSemesterId,
-                          isExpanded: true,
-                          decoration: _inputDecoration('Choose semester...'),
-                          items: semestersList.map((s) {
-                            return DropdownMenuItem<String>(
-                              value: s['id']?.toString(),
-                              child: Text(s['label']?.toString() ?? 'N/A'),
-                            );
-                          }).toList(),
-                          onChanged: (val) => setState(() => _selectedSemesterId = val),
-                        ),
-                  const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') ...[
-                  const _FormSectionLabel('ACADEMIC SCOPE'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedScope,
-                    isExpanded: true,
-                    decoration: _inputDecoration('Filter scope...'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Records (Capstone & PIT)')),
-                      DropdownMenuItem(value: 'capstone', child: Text('Capstone Only')),
-                      DropdownMenuItem(value: 'pit', child: Text('PIT Only')),
-                    ],
-                    onChanged: (val) => setState(() => _selectedScope = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'team-roster') ...[
-                  const _FormSectionLabel('ACADEMIC PROGRAM LEVEL'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedLevel,
-                    isExpanded: true,
-                    decoration: _inputDecoration('Filter program level...'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Levels (Capstone & PIT)')),
-                      DropdownMenuItem(value: 'capstone', child: Text('Capstone Teams')),
-                      DropdownMenuItem(value: 'pit', child: Text('PIT Teams')),
-                    ],
-                    onChanged: (val) => setState(() => _selectedLevel = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                  const _FormSectionLabel('STUDENT YEAR LEVEL'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedYearLevel,
-                    isExpanded: true,
-                    decoration: _inputDecoration('Filter year level...'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Year Levels')),
-                      DropdownMenuItem(value: '3rd Year', child: Text('3rd Year')),
-                      DropdownMenuItem(value: '4th Year', child: Text('4th Year')),
-                    ],
-                    onChanged: (val) => setState(() => _selectedYearLevel = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'user-directory') ...[
-                  const _FormSectionLabel('FILTER BY PORTAL ROLE'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _selectedRole,
-                    isExpanded: true,
-                    decoration: _inputDecoration('Select role filter...'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All System Roles')),
-                      DropdownMenuItem(value: 'admin', child: Text('System Administrators')),
-                      DropdownMenuItem(value: 'faculty', child: Text('Faculty / Evaluators')),
-                      DropdownMenuItem(value: 'student', child: Text('Capstone Students')),
-                    ],
-                    onChanged: (val) => setState(() => _selectedRole = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                ],
-
-                if (endpoint == 'audit-trail') ...[
-                  const _FormSectionLabel('ACADEMIC TRACK'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _reportTrackFilter,
-                    isExpanded: true,
-                    decoration: _inputDecoration('All tracks'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Tracks')),
-                      DropdownMenuItem(value: 'capstone', child: Text('Capstone')),
-                      DropdownMenuItem(value: 'pit', child: Text('PIT')),
-                    ],
-                    onChanged: (val) => setState(() => _reportTrackFilter = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                  const _FormSectionLabel('YEAR LEVEL (FOR PIT)'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _reportYearLevelFilter,
-                    isExpanded: true,
-                    decoration: _inputDecoration('All year levels'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Year Levels')),
-                      DropdownMenuItem(value: '1st Year', child: Text('1st Year')),
-                      DropdownMenuItem(value: '2nd Year', child: Text('2nd Year')),
-                      DropdownMenuItem(value: '3rd Year', child: Text('3rd Year')),
-                      DropdownMenuItem(value: '4th Year', child: Text('4th Year')),
-                    ],
-                    onChanged: (val) => setState(() => _reportYearLevelFilter = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                  const _FormSectionLabel('AUDIT PROCESS AREA'),
-                  const SizedBox(height: 6),
-                  DropdownButtonFormField<String>(
-                    initialValue: _reportCategoryFilter,
-                    isExpanded: true,
-                    decoration: _inputDecoration('All process areas'),
-                    items: const [
-                      DropdownMenuItem(value: '', child: Text('All Process Areas')),
-                      DropdownMenuItem(value: 'academic_period', child: Text('Academic Period Changes')),
-                      DropdownMenuItem(value: 'grade_center', child: Text('Grade & Result Decisions')),
-                      DropdownMenuItem(value: 'scheduling', child: Text('Schedule Changes')),
-                      DropdownMenuItem(value: 'repository', child: Text('Project Archive Evidence')),
-                      DropdownMenuItem(value: 'guest_access', child: Text('Guest Access Activity')),
-                    ],
-                    onChanged: (val) => setState(() => _reportCategoryFilter = val ?? ''),
-                  ),
-                  const SizedBox(height: 18),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _FormSectionLabel('START DATE'),
-                            const SizedBox(height: 6),
-                            TextField(
-                              controller: _reportStartDateController,
-                              readOnly: true,
-                              onTap: () => _selectDate(context, _reportStartDateController, (_) {}),
-                              decoration: _inputDecoration('YYYY-MM-DD').copyWith(
-                                suffixIcon: const Icon(Icons.calendar_today_rounded, size: 16),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const _FormSectionLabel('END DATE'),
-                            const SizedBox(height: 6),
-                            TextField(
-                              controller: _reportEndDateController,
-                              readOnly: true,
-                              onTap: () => _selectDate(context, _reportEndDateController, (_) {}),
-                              decoration: _inputDecoration('YYYY-MM-DD').copyWith(
-                                suffixIcon: const Icon(Icons.calendar_today_rounded, size: 16),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                ],
-
-                // Live Export Summary Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(12),
-                  margin: const EdgeInsets.only(bottom: 18),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.neutralBg,
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                    border: Border.all(color: DefensysTokens.neutralBorder),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.info_outline_rounded, size: 16, color: DefensysTokens.steelGrey),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          endpoint == 'team-grade'
-                              ? 'Exporting: $selectedTeamLabel Grade Card'
-                              : endpoint == 'individual-grade'
-                                  ? 'Exporting: $selectedStudentLabel Audit Slip'
-                                  : endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster'
-                                      ? 'Exporting: ${report['title']} for $selectedSemLabel'
-                                      : 'Exporting: ${report['title']} (Official Audit PDF)',
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            fontWeight: FontWeight.w600,
-                            color: DefensysTokens.textDark,
-                          ),
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-
-                SizedBox(
-                  width: double.infinity,
-                  height: DefensysTokens.buttonHeightPrimary,
-                  child: FilledButton.icon(
-                    onPressed: reportsState.isLoading ? null : () => _triggerReportDownload(report),
-                    icon: reportsState.isLoading
-                        ? const SizedBox(
-                            width: 18,
-                            height: 18,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                    label: Text(
-                      reportsState.isLoading ? 'Generating Document...' : 'Generate & Download PDF',
-                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5),
-                    ),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      elevation: 2,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 
-  String _getInitials(String name) {
-    final parts = name.trim().split(RegExp(r'\s+'));
-    if (parts.isEmpty || parts[0].isEmpty) return '?';
-    if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
-    return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+  /// Fetches structured preview data for the Live Data Viewer
+  Future<ReportPreviewData?> _triggerReportPreview(
+    Map<String, dynamic> report, {
+    String? studentId,
+    String? teamId,
+    String? semesterId,
+    String? scope,
+    String? stage,
+    String? pitEvent,
+    String? level,
+    String? yearLevel,
+    String? role,
+    String? category,
+    String? track,
+    String? startDate,
+    String? endDate,
+  }) async {
+    final endpoint = report['endpoint'] as String;
+    final queryParams = <String, String>{};
+
+    if (endpoint == 'team-grade') {
+      final tId = teamId ?? _selectedTeamId;
+      if (tId == null) return null;
+      final fullEndpoint = 'team-grade/$tId/';
+      return await ref.read(reportsProvider.notifier).fetchReportPreview(
+        endpoint: fullEndpoint,
+        queryParams: queryParams,
+      );
+    }
+
+    if (endpoint == 'individual-grade') {
+      final sId = studentId ?? _selectedStudentId;
+      if (sId == null) return null;
+      final semId = semesterId ?? _selectedSemesterId;
+      if (semId != null && semId.isNotEmpty) {
+        queryParams['semester_id'] = semId;
+      }
+      final fullEndpoint = 'individual-grade/$sId/';
+      return await ref.read(reportsProvider.notifier).fetchReportPreview(
+        endpoint: fullEndpoint,
+        queryParams: queryParams,
+      );
+    }
+
+    final semId = semesterId ?? _selectedSemesterId;
+    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster') {
+      if (semId != null && semId.isNotEmpty) {
+        queryParams['semester_id'] = semId;
+      }
+    }
+
+    final scp = scope ?? _selectedScope;
+    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') {
+      if (scp.isNotEmpty) queryParams['scope'] = scp;
+      if (stage != null && stage.isNotEmpty) queryParams['stage'] = stage;
+      if (pitEvent != null && pitEvent.isNotEmpty) queryParams['pit_event'] = pitEvent;
+    }
+
+    if (endpoint == 'team-roster') {
+      final lvl = level ?? _selectedLevel;
+      final yLvl = yearLevel ?? _selectedYearLevel;
+      if (lvl.isNotEmpty) queryParams['level'] = lvl;
+      if (yLvl.isNotEmpty) queryParams['year_level'] = yLvl;
+    }
+
+    if (endpoint == 'user-directory') {
+      final r = role ?? _selectedRole;
+      if (r.isNotEmpty) queryParams['role'] = r;
+    }
+
+    if (endpoint == 'audit-trail') {
+      final cat = category ?? _reportCategoryFilter;
+      final trk = track ?? _reportTrackFilter;
+      final yLvl = yearLevel ?? _selectedYearLevel;
+      final start = startDate ?? _reportStartDateController.text.trim();
+      final end = endDate ?? _reportEndDateController.text.trim();
+      if (cat.isNotEmpty) queryParams['category'] = cat;
+      if (trk.isNotEmpty) queryParams['track'] = trk;
+      if (yLvl.isNotEmpty) queryParams['year_level'] = yLvl;
+      if (start.isNotEmpty) queryParams['start_date'] = start;
+      if (end.isNotEmpty) queryParams['end_date'] = end;
+    }
+
+    return await ref.read(reportsProvider.notifier).fetchReportPreview(
+      endpoint: '$endpoint/',
+      queryParams: queryParams,
+    );
   }
 
-  Widget _buildSectionFilterChips({
+  /// Opens the Keyboard-Friendly Student Picker Modal Dialog
+  Future<String?> _showStudentPickerDialog({
+    required BuildContext context,
+    required List<Map<String, dynamic>> students,
+    required Map<String, Map<String, dynamic>> studentMetaMap,
     required List<String> sections,
-    required String selectedSection,
-    required ValueChanged<String> onSelected,
-    required int totalCount,
     required Map<String, int> sectionCounts,
-  }) {
-    if (sections.isEmpty) return const SizedBox.shrink();
+    String? currentSelectedId,
+  }) async {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return _StudentPickerDialog(
+          students: students,
+          studentMetaMap: studentMetaMap,
+          sections: sections,
+          sectionCounts: sectionCounts,
+          initialSelectedId: currentSelectedId,
+        );
+      },
+    );
+  }
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const Row(
+  /// Opens the Keyboard-Friendly Team Picker Modal Dialog
+  Future<String?> _showTeamPickerDialog({
+    required BuildContext context,
+    required List<Map<String, dynamic>> teams,
+    required List<String> sections,
+    required Map<String, int> sectionCounts,
+    String? currentSelectedId,
+  }) async {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (dialogCtx) {
+        return _TeamPickerDialog(
+          teams: teams,
+          sections: sections,
+          sectionCounts: sectionCounts,
+          initialSelectedId: currentSelectedId,
+        );
+      },
+    );
+  }
+
+  Future<bool> _triggerReportDownload(
+    Map<String, dynamic> report, {
+    String? studentId,
+    String? teamId,
+    String? semesterId,
+    String? scope,
+    String? stage,
+    String? pitEvent,
+    String? level,
+    String? yearLevel,
+    String? role,
+    String? category,
+    String? track,
+    String? startDate,
+    String? endDate,
+    String exportFormat = 'pdf',
+  }) async {
+    final endpoint = report['endpoint'] as String;
+    final queryParams = <String, String>{};
+
+    final ext = exportFormat == 'xlsx'
+        ? '.xlsx'
+        : exportFormat == 'csv'
+            ? '.csv'
+            : exportFormat == 'doc' || exportFormat == 'docx'
+                ? '.doc'
+                : '.pdf';
+
+    if (endpoint == 'team-grade') {
+      final tId = teamId ?? _selectedTeamId;
+      if (tId == null) {
+        showValidationToast(context, 'Please select a student team.');
+        return false;
+      }
+      final fullEndpoint = 'team-grade/$tId/';
+
+      final success = await ref.read(reportsProvider.notifier).downloadReport(
+        endpoint: fullEndpoint,
+        queryParams: queryParams,
+        defaultFilename: 'DefenSYS_Team_Grade_Report$ext',
+        exportFormat: exportFormat,
+      );
+
+      _showDownloadResultToast(success, exportFormat);
+      return success;
+    }
+
+    if (endpoint == 'individual-grade') {
+      final sId = studentId ?? _selectedStudentId;
+      if (sId == null) {
+        showValidationToast(context, 'Please select a student candidate.');
+        return false;
+      }
+      final semId = semesterId ?? _selectedSemesterId;
+      if (semId != null && semId.isNotEmpty) {
+        queryParams['semester_id'] = semId;
+      }
+      final fullEndpoint = 'individual-grade/$sId/';
+
+      final success = await ref.read(reportsProvider.notifier).downloadReport(
+        endpoint: fullEndpoint,
+        queryParams: queryParams,
+        defaultFilename: 'DefenSYS_Individual_Grade_Audit$ext',
+        exportFormat: exportFormat,
+      );
+
+      _showDownloadResultToast(success, exportFormat);
+      return success;
+    }
+
+    final semId = semesterId ?? _selectedSemesterId;
+    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster') {
+      if (semId != null && semId.isNotEmpty) {
+        queryParams['semester_id'] = semId;
+      }
+    }
+
+    final scp = scope ?? _selectedScope;
+    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') {
+      if (scp.isNotEmpty) queryParams['scope'] = scp;
+      if (stage != null && stage.isNotEmpty) queryParams['stage'] = stage;
+      if (pitEvent != null && pitEvent.isNotEmpty) queryParams['pit_event'] = pitEvent;
+    }
+
+    if (endpoint == 'team-roster') {
+      final lvl = level ?? _selectedLevel;
+      final yLvl = yearLevel ?? _selectedYearLevel;
+      if (lvl.isNotEmpty) queryParams['level'] = lvl;
+      if (yLvl.isNotEmpty) queryParams['year_level'] = yLvl;
+    }
+
+    if (endpoint == 'user-directory') {
+      final r = role ?? _selectedRole;
+      if (r.isNotEmpty) queryParams['role'] = r;
+    }
+
+    if (endpoint == 'audit-trail') {
+      final cat = category ?? _reportCategoryFilter;
+      final trk = track ?? _reportTrackFilter;
+      final yLvl = yearLevel ?? _selectedYearLevel;
+      final start = startDate ?? _reportStartDateController.text.trim();
+      final end = endDate ?? _reportEndDateController.text.trim();
+      if (cat.isNotEmpty) queryParams['category'] = cat;
+      if (trk.isNotEmpty) queryParams['track'] = trk;
+      if (yLvl.isNotEmpty) queryParams['year_level'] = yLvl;
+      if (start.isNotEmpty) queryParams['start_date'] = start;
+      if (end.isNotEmpty) queryParams['end_date'] = end;
+    }
+
+    final success = await ref.read(reportsProvider.notifier).downloadReport(
+      endpoint: '$endpoint/',
+      queryParams: queryParams,
+      defaultFilename: 'DefenSYS_${report['title'].toString().replaceAll(' ', '_')}$ext',
+      exportFormat: exportFormat,
+    );
+
+    _showDownloadResultToast(success, exportFormat);
+    return success;
+  }
+
+  void _showDownloadResultToast(bool success, [String format = 'pdf']) {
+    if (!mounted) return;
+    final error = ref.read(reportsProvider).error;
+    final fmtUpper = format.toUpperCase();
+    if (success) {
+      showSuccessToast(context, '$fmtUpper report generated and downloaded successfully!');
+    } else {
+      showErrorToast(context, 'Failed to generate $fmtUpper: ${error ?? "Unknown error"}');
+    }
+  }
+}
+
+/// Helper function to get 2 initials from full name
+String _extractInitials(String name) {
+  final parts = name.trim().split(RegExp(r'\s+'));
+  if (parts.isEmpty || parts[0].isEmpty) return '?';
+  if (parts.length == 1) return parts[0].substring(0, 1).toUpperCase();
+  return '${parts[0][0]}${parts[parts.length - 1][0]}'.toUpperCase();
+}
+
+InputDecoration _reportInputDecoration(String hint) {
+  return InputDecoration(
+    hintText: hint,
+    filled: true,
+    fillColor: const Color(0xFFF8FAFC),
+    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+    isDense: true,
+    border: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      borderSide: const BorderSide(color: DefensysTokens.border),
+    ),
+    enabledBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      borderSide: const BorderSide(color: DefensysTokens.border),
+    ),
+    focusedBorder: OutlineInputBorder(
+      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+    ),
+  );
+}
+
+/// Dialog: Student Candidate Picker with Search & Section Filters
+class _StudentPickerDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> students;
+  final Map<String, Map<String, dynamic>> studentMetaMap;
+  final List<String> sections;
+  final Map<String, int> sectionCounts;
+  final String? initialSelectedId;
+
+  const _StudentPickerDialog({
+    required this.students,
+    required this.studentMetaMap,
+    required this.sections,
+    required this.sectionCounts,
+    this.initialSelectedId,
+  });
+
+  @override
+  State<_StudentPickerDialog> createState() => _StudentPickerDialogState();
+}
+
+class _StudentPickerDialogState extends State<_StudentPickerDialog> {
+  final _searchController = TextEditingController();
+  String _selectedSection = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+
+    final filtered = widget.students.where((s) {
+      final sId = s['id']?.toString() ?? '';
+      final meta = widget.studentMetaMap[sId];
+
+      if (_selectedSection.isNotEmpty && meta?['section'] != _selectedSection) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final name = (s['name'] ?? s['username'] ?? '').toString().toLowerCase();
+      final username = (s['username'] ?? sId).toString().toLowerCase();
+      final email = (s['email'] ?? '').toString().toLowerCase();
+      final team = meta?['team'] as Map<String, dynamic>?;
+      final teamName = (team?['name'] ?? '').toString().toLowerCase();
+      final sec = (meta?['section'] ?? '').toString().toLowerCase();
+
+      return name.contains(query) ||
+          username.contains(query) ||
+          sId.contains(query) ||
+          email.contains(query) ||
+          teamName.contains(query) ||
+          sec.contains(query);
+    }).toList();
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 640,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
           children: [
-            Icon(Icons.filter_alt_outlined, size: 14, color: DefensysTokens.steelGrey),
-            SizedBox(width: 4),
-            Text(
-              'QUICK FILTER BY SECTION / COHORT',
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.w800,
-                color: DefensysTokens.steelGrey,
-                letterSpacing: 0.5,
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: DefensysTokens.border)),
               ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                    ),
+                    child: const Icon(Icons.person_search_rounded, color: DefensysTokens.maroon, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select Student Candidate',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${filtered.length} of ${widget.students.length} candidates available',
+                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+
+            // Search Bar & Filter Chips
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Search by student ID (e.g. 4011), name, team, section...',
+                      hintStyle: const TextStyle(fontSize: 13, color: DefensysTokens.steelGrey),
+                      prefixIcon: const Icon(Icons.search_rounded, color: DefensysTokens.steelGrey, size: 20),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () => _searchController.clear(),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
+                      ),
+                    ),
+                  ),
+                  if (widget.sections.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildFilterChip(
+                            label: 'All Sections (${widget.students.length})',
+                            isSelected: _selectedSection.isEmpty,
+                            onTap: () => setState(() => _selectedSection = ''),
+                          ),
+                          const SizedBox(width: 6),
+                          ...widget.sections.map((sec) {
+                            final count = widget.sectionCounts[sec] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _buildFilterChip(
+                                label: '$sec ($count)',
+                                isSelected: _selectedSection == sec,
+                                onTap: () => setState(() => _selectedSection = sec),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+            // Candidates List
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.person_off_outlined, size: 36, color: DefensysTokens.steelGrey),
+                            ),
+                            const SizedBox(height: 14),
+                            const Text(
+                              'No matching student candidates',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Try adjusting your search keywords or resetting the section filter.',
+                              style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                              textAlign: TextAlign.center,
+                            ),
+                            if (_searchController.text.isNotEmpty || _selectedSection.isNotEmpty) ...[
+                              const SizedBox(height: 14),
+                              TextButton.icon(
+                                icon: const Icon(Icons.refresh_rounded, size: 16),
+                                label: const Text('Reset Filters'),
+                                style: TextButton.styleFrom(foregroundColor: DefensysTokens.maroon),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  setState(() => _selectedSection = '');
+                                },
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      itemCount: filtered.length,
+                      separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                      itemBuilder: (ctx, i) {
+                        final s = filtered[i];
+                        final sId = s['id']?.toString() ?? '';
+                        final meta = widget.studentMetaMap[sId];
+                        final name = s['name'] ?? s['username'] ?? 'Student';
+                        final username = s['username']?.toString() ?? sId;
+                        final email = s['email']?.toString() ?? '';
+                        final team = meta?['team'] as Map<String, dynamic>?;
+                        final isLeader = meta?['isLeader'] == true;
+                        final section = meta?['section'] as String?;
+                        final isSelected = widget.initialSelectedId == sId;
+
+                        return Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.of(context).pop(sId),
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 120),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                border: Border.all(
+                                  color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  // Initials Avatar
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Text(
+                                      _extractInitials(name.toString()),
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w800,
+                                        color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  // Details
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                name.toString(),
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                                                  color: DefensysTokens.textDark,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                              decoration: BoxDecoration(
+                                                color: isSelected ? DefensysTokens.maroon : const Color(0xFF1E293B),
+                                                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                              ),
+                                              child: Text(
+                                                'ID: $username',
+                                                style: const TextStyle(
+                                                  fontSize: 9.5,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: Colors.white,
+                                                ),
+                                              ),
+                                            ),
+                                            if (isLeader) ...[
+                                              const SizedBox(width: 5),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: DefensysTokens.gold.withValues(alpha: 0.2),
+                                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                                ),
+                                                child: const Text(
+                                                  'LEADER',
+                                                  style: TextStyle(
+                                                    fontSize: 8.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: DefensysTokens.darkGold,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Row(
+                                          children: [
+                                            if (team != null) ...[
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                                decoration: BoxDecoration(
+                                                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                                ),
+                                                child: Row(
+                                                  mainAxisSize: MainAxisSize.min,
+                                                  children: [
+                                                    const Icon(Icons.groups_rounded, size: 11, color: DefensysTokens.maroon),
+                                                    const SizedBox(width: 3),
+                                                    Text(
+                                                      team['name']?.toString() ?? 'Team',
+                                                      style: const TextStyle(
+                                                        fontSize: 10.5,
+                                                        fontWeight: FontWeight.w700,
+                                                        color: DefensysTokens.maroon,
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ] else ...[
+                                              const Text(
+                                                'No Team Assigned',
+                                                style: TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                                              ),
+                                            ],
+                                            if (section != null && section.isNotEmpty) ...[
+                                              const SizedBox(width: 6),
+                                              const Text('•', style: TextStyle(color: DefensysTokens.steelGrey)),
+                                              const SizedBox(width: 6),
+                                              Text(
+                                                section,
+                                                style: const TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: DefensysTokens.steelGrey,
+                                                ),
+                                              ),
+                                            ],
+                                            if (email.isNotEmpty) ...[
+                                              const SizedBox(width: 6),
+                                              const Text('•', style: TextStyle(color: DefensysTokens.steelGrey)),
+                                              const SizedBox(width: 6),
+                                              Expanded(
+                                                child: Text(
+                                                  email,
+                                                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                                                  overflow: TextOverflow.ellipsis,
+                                                ),
+                                              ),
+                                            ],
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  // Radio Checkmark
+                                  const SizedBox(width: 10),
+                                  Icon(
+                                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                    color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
-        const SizedBox(height: 6),
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              _buildSectionChip(
-                label: 'All Sections ($totalCount)',
-                isSelected: selectedSection.isEmpty,
-                onTap: () => onSelected(''),
-              ),
-              const SizedBox(width: 6),
-              ...sections.map((sec) {
-                final count = sectionCounts[sec] ?? 0;
-                return Padding(
-                  padding: const EdgeInsets.only(right: 6),
-                  child: _buildSectionChip(
-                    label: '$sec ($count)',
-                    isSelected: selectedSection == sec,
-                    onTap: () => onSelected(sec),
-                  ),
-                );
-              }),
-            ],
-          ),
-        ),
-        const SizedBox(height: 14),
-      ],
+      ),
     );
   }
 
-  Widget _buildSectionChip({
+  Widget _buildFilterChip({
     required String label,
     required bool isSelected,
     required VoidCallback onTap,
@@ -1406,8 +1711,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 150),
+        child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
           decoration: BoxDecoration(
             color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
@@ -1428,431 +1732,2158 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       ),
     );
   }
+}
 
-  Widget _buildSelectedCandidateCard(
-    Map<String, dynamic> student,
-    Map<String, dynamic>? team,
-    bool isLeader,
-    String? section,
-  ) {
-    final studentName = student['name'] ?? student['username'] ?? 'Student';
-    final studentId = student['username'] ?? student['id']?.toString() ?? '';
-    final studentEmail = student['email']?.toString() ?? '';
-    final teamName = team?['name']?.toString() ?? 'No Team Assigned';
+/// Dialog: Student Team Picker with Search & Section Filters
+class _TeamPickerDialog extends StatefulWidget {
+  final List<Map<String, dynamic>> teams;
+  final List<String> sections;
+  final Map<String, int> sectionCounts;
+  final String? initialSelectedId;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(top: 10, bottom: 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: DefensysTokens.maroon.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: DefensysTokens.maroon.withValues(alpha: 0.1),
-              shape: BoxShape.circle,
-              border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              _getInitials(studentName.toString()),
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w800,
-                color: DefensysTokens.maroon,
+  const _TeamPickerDialog({
+    required this.teams,
+    required this.sections,
+    required this.sectionCounts,
+    this.initialSelectedId,
+  });
+
+  @override
+  State<_TeamPickerDialog> createState() => _TeamPickerDialogState();
+}
+
+class _TeamPickerDialogState extends State<_TeamPickerDialog> {
+  final _searchController = TextEditingController();
+  String _selectedSection = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController.addListener(() => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final query = _searchController.text.trim().toLowerCase();
+
+    final filtered = widget.teams.where((t) {
+      final sec = (t['section']?.toString() ?? t['year_level']?.toString() ?? '').trim();
+
+      if (_selectedSection.isNotEmpty && sec != _selectedSection) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final name = (t['name'] ?? '').toString().toLowerCase();
+      final title = (t['project_title'] ?? t['system_name'] ?? '').toString().toLowerCase();
+      final lead = (t['leader_name'] ?? '').toString().toLowerCase();
+      final adviser = (t['adviser_name'] ?? '').toString().toLowerCase();
+      final secLower = sec.toLowerCase();
+
+      return name.contains(query) ||
+          title.contains(query) ||
+          lead.contains(query) ||
+          adviser.contains(query) ||
+          secLower.contains(query);
+    }).toList();
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 640,
+          maxHeight: MediaQuery.of(context).size.height * 0.85,
+        ),
+        child: Column(
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: DefensysTokens.border)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                    ),
+                    child: const Icon(Icons.groups_rounded, color: DefensysTokens.maroon, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Select Student Team',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.textDark,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '${filtered.length} of ${widget.teams.length} teams available',
+                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
               ),
             ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        studentName.toString(),
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: DefensysTokens.textDark,
-                        ),
-                        overflow: TextOverflow.ellipsis,
+
+            // Search Bar & Filter Chips
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 10),
+              child: Column(
+                children: [
+                  TextField(
+                    controller: _searchController,
+                    autofocus: true,
+                    decoration: InputDecoration(
+                      hintText: 'Search by team name, project title, leader, adviser, section...',
+                      hintStyle: const TextStyle(fontSize: 13, color: DefensysTokens.steelGrey),
+                      prefixIcon: const Icon(Icons.search_rounded, color: DefensysTokens.steelGrey, size: 20),
+                      suffixIcon: _searchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () => _searchController.clear(),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
                       ),
                     ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.maroon,
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                      ),
-                      child: Text(
-                        'ID: $studentId',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                        ),
-                      ),
-                    ),
-                    if (isLeader) ...[
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: DefensysTokens.gold.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                        ),
-                        child: const Text(
-                          'LEADER',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w800,
-                            color: DefensysTokens.darkGold,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 4),
-                Row(
-                  children: [
-                    const Icon(Icons.groups_outlined, size: 14, color: DefensysTokens.steelGrey),
-                    const SizedBox(width: 4),
-                    Text(
-                      teamName,
-                      style: const TextStyle(
-                        fontSize: 11.5,
-                        fontWeight: FontWeight.w600,
-                        color: DefensysTokens.steelGrey,
-                      ),
-                    ),
-                    if (section != null && section.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Text(
-                          section,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: DefensysTokens.steelGrey,
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (studentEmail.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Text(
-                        '• $studentEmail',
-                        style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ],
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: DefensysTokens.successBg,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-              border: Border.all(color: DefensysTokens.successBorder),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle_rounded, size: 14, color: DefensysTokens.successText),
-                SizedBox(width: 5),
-                Text(
-                  'Ready to Export',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.successText,
                   ),
-                ),
-              ],
+                  if (widget.sections.isNotEmpty) ...[
+                    const SizedBox(height: 12),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _buildFilterChip(
+                            label: 'All Sections (${widget.teams.length})',
+                            isSelected: _selectedSection.isEmpty,
+                            onTap: () => setState(() => _selectedSection = ''),
+                          ),
+                          const SizedBox(width: 6),
+                          ...widget.sections.map((sec) {
+                            final count = widget.sectionCounts[sec] ?? 0;
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: _buildFilterChip(
+                                label: '$sec ($count)',
+                                isSelected: _selectedSection == sec,
+                                onTap: () => setState(() => _selectedSection = sec),
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
             ),
-          ),
-        ],
+
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+            // Teams List
+            Expanded(
+              child: filtered.isEmpty
+                  ? Center(
+                      child: Padding(
+                        padding: const EdgeInsets.all(32),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF1F5F9),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.group_off_outlined, size: 36, color: DefensysTokens.steelGrey),
+                            ),
+                            const SizedBox(height: 14),
+                            const Text(
+                              'No matching student teams',
+                              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+                            ),
+                            const SizedBox(height: 4),
+                            const Text(
+                              'Try adjusting your search keywords or resetting the section filter.',
+                              style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
+                    )
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      itemCount: filtered.length,
+                      separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                      itemBuilder: (ctx, i) {
+                        final t = filtered[i];
+                        final tId = t['id']?.toString() ?? '';
+                        final teamName = t['name']?.toString() ?? 'Team';
+                        final projectTitle = t['project_title']?.toString() ?? t['system_name']?.toString() ?? 'No Project Title';
+                        final leaderName = t['leader_name']?.toString() ?? 'Unassigned';
+                        final adviserName = t['adviser_name']?.toString() ?? 'Unassigned';
+                        final sec = t['section']?.toString() ?? t['year_level']?.toString() ?? '';
+                        final members = t['members'] is List ? (t['members'] as List) : [];
+                        final isSelected = widget.initialSelectedId == tId;
+
+                        return Material(
+                          color: Colors.transparent,
+                          child: InkWell(
+                            onTap: () => Navigator.of(context).pop(tId),
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 120),
+                              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                border: Border.all(
+                                  color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                                  width: isSelected ? 1.5 : 1,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Container(
+                                    width: 38,
+                                    height: 38,
+                                    decoration: BoxDecoration(
+                                      color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                    ),
+                                    alignment: Alignment.center,
+                                    child: Icon(
+                                      Icons.groups_rounded,
+                                      color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                      size: 20,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            Flexible(
+                                              child: Text(
+                                                teamName,
+                                                style: TextStyle(
+                                                  fontSize: 13.5,
+                                                  fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                                                  color: DefensysTokens.textDark,
+                                                ),
+                                                overflow: TextOverflow.ellipsis,
+                                              ),
+                                            ),
+                                            if (sec.isNotEmpty) ...[
+                                              const SizedBox(width: 8),
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                                                decoration: BoxDecoration(
+                                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.08),
+                                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                                ),
+                                                child: Text(
+                                                  sec,
+                                                  style: TextStyle(
+                                                    fontSize: 9.5,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                                  ),
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(width: 5),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFE2E8F0),
+                                                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                              ),
+                                              child: Text(
+                                                '${members.length} members',
+                                                style: const TextStyle(
+                                                  fontSize: 9,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: DefensysTokens.steelGrey,
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 3),
+                                        Text(
+                                          projectTitle,
+                                          style: const TextStyle(
+                                            fontSize: 11.5,
+                                            fontWeight: FontWeight.w500,
+                                            color: DefensysTokens.textSecondary,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Leader: $leaderName • Adviser: $adviserName',
+                                          style: const TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+
+                                  const SizedBox(width: 10),
+                                  Icon(
+                                    isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                    color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                    size: 20,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  Widget _buildSelectedTeamCard(Map<String, dynamic> team) {
-    final teamName = team['name']?.toString() ?? 'Team';
-    final projectTitle = team['project_title']?.toString() ?? team['system_name']?.toString() ?? 'No Project Title Recorded';
-    final leaderName = team['leader_name']?.toString() ?? 'Unassigned';
-    final adviserName = team['adviser_name']?.toString() ?? 'Unassigned';
-    final section = team['section']?.toString() ?? team['year_level']?.toString() ?? '';
-    final members = team['members'] is List ? (team['members'] as List) : [];
-
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(14),
-      margin: const EdgeInsets.only(top: 10, bottom: 18),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
-        boxShadow: [
-          BoxShadow(
-            color: DefensysTokens.maroon.withValues(alpha: 0.04),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              color: DefensysTokens.maroon.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-              border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
-            ),
-            alignment: Alignment.center,
-            child: const Icon(Icons.groups_rounded, color: DefensysTokens.maroon, size: 22),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        teamName,
-                        style: const TextStyle(
-                          fontSize: 13.5,
-                          fontWeight: FontWeight.w700,
-                          color: DefensysTokens.textDark,
-                        ),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (section.isNotEmpty) ...[
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                        ),
-                        child: Text(
-                          section,
-                          style: const TextStyle(
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            color: DefensysTokens.maroon,
-                          ),
-                        ),
-                      ),
-                    ],
-                    const SizedBox(width: 6),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                        border: Border.all(color: const Color(0xFFE2E8F0)),
-                      ),
-                      child: Text(
-                        '${members.length} members',
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: DefensysTokens.steelGrey,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  projectTitle,
-                  style: const TextStyle(
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w500,
-                    color: DefensysTokens.textSecondary,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Text(
-                  'Leader: $leaderName  •  Adviser: $adviserName',
-                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+  Widget _buildFilterChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            border: Border.all(
+              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
             ),
           ),
-          const SizedBox(width: 10),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: DefensysTokens.successBg,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-              border: Border.all(color: DefensysTokens.successBorder),
-            ),
-            child: const Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.check_circle_rounded, size: 14, color: DefensysTokens.successText),
-                SizedBox(width: 5),
-                Text(
-                  'Ready to Export',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.successText,
-                  ),
-                ),
-              ],
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
+}
 
-  InputDecoration _inputDecoration(String hint) {
-    return InputDecoration(
-      hintText: hint,
-      filled: true,
-      fillColor: const Color(0xFFF8FAFC),
-      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-      isDense: true,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: DefensysTokens.border),
-      ),
-      enabledBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: DefensysTokens.border),
-      ),
-      focusedBorder: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
-      ),
-    );
+/// Dialog: Dedicated Report Export Master-Detail Configuration & Live Data Viewer Modal
+class _ReportExportConfigDialog extends StatefulWidget {
+  final Map<String, dynamic> report;
+  final AcademicPeriodState academicState;
+  final StudentTeamsState teamsState;
+  final List<Map<String, dynamic>> allStudents;
+  final Map<String, Map<String, dynamic>> studentMetaMap;
+  final List<String> studentSections;
+  final Map<String, int> studentSectionCounts;
+  final List<String> teamSections;
+  final Map<String, int> teamSectionCounts;
+  final List<Map<String, dynamic>> capstoneStages;
+  final List<Map<String, dynamic>> pitEvents;
+  final String? initialSemesterId;
+  final String? initialStudentId;
+  final String? initialTeamId;
+  final String initialScope;
+  final String? initialStage;
+  final String? initialPitEvent;
+  final String initialLevel;
+  final String initialYearLevel;
+  final String initialRole;
+  final String initialCategory;
+  final String initialTrack;
+  final String initialStartDate;
+  final String initialEndDate;
+  final Future<bool> Function(Map<String, String>) onDownload;
+  final Future<ReportPreviewData?> Function(Map<String, String>) onFetchPreview;
+  final Future<String?> Function(String? currentId) onOpenStudentPicker;
+  final Future<String?> Function(String? currentId) onOpenTeamPicker;
+
+  const _ReportExportConfigDialog({
+    required this.report,
+    required this.academicState,
+    required this.teamsState,
+    required this.allStudents,
+    required this.studentMetaMap,
+    required this.studentSections,
+    required this.studentSectionCounts,
+    required this.teamSections,
+    required this.teamSectionCounts,
+    required this.capstoneStages,
+    required this.pitEvents,
+    this.initialSemesterId,
+    this.initialStudentId,
+    this.initialTeamId,
+    required this.initialScope,
+    this.initialStage,
+    this.initialPitEvent,
+    required this.initialLevel,
+    required this.initialYearLevel,
+    required this.initialRole,
+    required this.initialCategory,
+    required this.initialTrack,
+    required this.initialStartDate,
+    required this.initialEndDate,
+    required this.onDownload,
+    required this.onFetchPreview,
+    required this.onOpenStudentPicker,
+    required this.onOpenTeamPicker,
+  });
+
+  @override
+  State<_ReportExportConfigDialog> createState() => _ReportExportConfigDialogState();
+}
+
+class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
+  String _selectedFormat = 'pdf'; // 'pdf', 'xlsx', 'csv', 'doc'
+
+  String? _selectedSemesterId;
+  String? _selectedStudentId;
+  String? _selectedTeamId;
+  String _selectedScope = '';
+  String _selectedStage = '';
+  String _selectedPitEvent = '';
+  String _selectedLevel = '';
+  String _selectedYearLevel = '';
+  String _selectedRole = '';
+  String _reportCategoryFilter = '';
+  String _reportTrackFilter = '';
+  final _startDateController = TextEditingController();
+  final _endDateController = TextEditingController();
+
+  final _selectorSearchController = TextEditingController();
+  String _selectedSectionFilter = '';
+  final _viewerSearchController = TextEditingController();
+
+  bool _isDownloading = false;
+  bool _isLoadingPreview = false;
+  ReportPreviewData? _previewData;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedSemesterId = widget.initialSemesterId;
+    _selectedStudentId = widget.initialStudentId;
+    _selectedTeamId = widget.initialTeamId;
+    _selectedScope = widget.initialScope;
+    _selectedStage = widget.initialStage ?? '';
+    _selectedPitEvent = widget.initialPitEvent ?? '';
+    _selectedLevel = widget.initialLevel;
+    _selectedYearLevel = widget.initialYearLevel;
+    _selectedRole = widget.initialRole;
+    _reportCategoryFilter = widget.initialCategory;
+    _reportTrackFilter = widget.initialTrack;
+    _startDateController.text = widget.initialStartDate;
+    _endDateController.text = widget.initialEndDate;
+
+    _selectorSearchController.addListener(() => setState(() {}));
+    _viewerSearchController.addListener(() => setState(() {}));
+
+    // Auto load preview if parameters are ready
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadPreview();
+    });
   }
 
-  Future<void> _triggerReportDownload(Map<String, dynamic> report) async {
-    final endpoint = report['endpoint'] as String;
-    final queryParams = <String, String>{};
+  @override
+  void dispose() {
+    _startDateController.dispose();
+    _endDateController.dispose();
+    _selectorSearchController.dispose();
+    _viewerSearchController.dispose();
+    super.dispose();
+  }
 
-    if (endpoint == 'team-grade') {
-      if (_selectedTeamId == null) {
-        showValidationToast(context, 'Please select a student team.');
-        return;
-      }
-      final fullEndpoint = 'team-grade/$_selectedTeamId/';
+  Map<String, String> _buildCurrentParams() {
+    return <String, String>{
+      if (_selectedStudentId != null) 'studentId': _selectedStudentId!,
+      if (_selectedTeamId != null) 'teamId': _selectedTeamId!,
+      if (_selectedSemesterId != null) 'semesterId': _selectedSemesterId!,
+      if (_selectedScope.isNotEmpty) 'scope': _selectedScope,
+      if (_selectedStage.isNotEmpty) 'stage': _selectedStage,
+      if (_selectedPitEvent.isNotEmpty) 'pitEvent': _selectedPitEvent,
+      if (_selectedLevel.isNotEmpty) 'level': _selectedLevel,
+      if (_selectedYearLevel.isNotEmpty) 'yearLevel': _selectedYearLevel,
+      if (_selectedRole.isNotEmpty) 'role': _selectedRole,
+      if (_reportCategoryFilter.isNotEmpty) 'category': _reportCategoryFilter,
+      if (_reportTrackFilter.isNotEmpty) 'track': _reportTrackFilter,
+      if (_startDateController.text.isNotEmpty) 'startDate': _startDateController.text.trim(),
+      if (_endDateController.text.isNotEmpty) 'endDate': _endDateController.text.trim(),
+      'exportFormat': _selectedFormat,
+    };
+  }
 
-      final success = await ref.read(reportsProvider.notifier).downloadReport(
-        endpoint: fullEndpoint,
-        queryParams: queryParams,
-        defaultFilename: 'DefenSYS_Team_Grade_Report.pdf',
-      );
+  Future<void> _loadPreview() async {
+    final endpoint = widget.report['endpoint'] as String;
 
-      _showDownloadResultToast(success);
+    // Check if required selection is missing
+    if (endpoint == 'individual-grade' && _selectedStudentId == null) {
+      if (mounted) setState(() => _previewData = null);
       return;
+    }
+    if (endpoint == 'team-grade' && _selectedTeamId == null) {
+      if (mounted) setState(() => _previewData = null);
+      return;
+    }
+
+    setState(() => _isLoadingPreview = true);
+
+    final preview = await widget.onFetchPreview(_buildCurrentParams());
+
+    if (mounted) {
+      setState(() {
+        _isLoadingPreview = false;
+        _previewData = preview;
+      });
+    }
+  }
+
+  Future<void> _handleDownload() async {
+    final endpoint = widget.report['endpoint'] as String;
+
+    if (endpoint == 'individual-grade' && _selectedStudentId == null) {
+      showValidationToast(context, 'Please select a student candidate from the list.');
+      return;
+    }
+
+    if (endpoint == 'team-grade' && _selectedTeamId == null) {
+      showValidationToast(context, 'Please select a student team from the list.');
+      return;
+    }
+
+    setState(() => _isDownloading = true);
+
+    final success = await widget.onDownload(_buildCurrentParams());
+
+    if (mounted) {
+      setState(() => _isDownloading = false);
+      if (success) {
+        Navigator.of(context).pop();
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final endpoint = widget.report['endpoint'] as String;
+    final title = widget.report['title'] as String;
+    final desc = widget.report['desc'] as String;
+    final icon = widget.report['icon'] as IconData;
+    final tag = widget.report['tag'] as String;
+
+    final selectedStudentMeta = _selectedStudentId != null ? widget.studentMetaMap[_selectedStudentId] : null;
+    final selectedStudentObj = selectedStudentMeta?['student'] as Map<String, dynamic>?;
+
+    final selectedTeamObj = _selectedTeamId != null
+        ? widget.teamsState.teams.firstWhere(
+            (t) => t['id']?.toString() == _selectedTeamId,
+            orElse: () => <String, dynamic>{},
+          )
+        : null;
+
+    final List<Map<String, dynamic>> semestersList = [];
+    for (final year in widget.academicState.schoolYears) {
+      final sems = year['semesters'];
+      if (sems is List) {
+        for (final sem in sems) {
+          if (sem is Map) {
+            semestersList.add({
+              'id': sem['id']?.toString() ?? '',
+              'label': '${year['school_year'] ?? ''} | ${sem['label'] ?? ''}',
+            });
+          }
+        }
+      }
+    }
+
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: 1120,
+          maxHeight: MediaQuery.of(context).size.height * 0.90,
+        ),
+        child: Column(
+          children: [
+            // 1. Modal Institutional Header
+            Container(
+              padding: const EdgeInsets.fromLTRB(22, 16, 20, 16),
+              decoration: const BoxDecoration(
+                border: Border(
+                  top: BorderSide(color: DefensysTokens.maroon, width: 4),
+                  bottom: BorderSide(color: DefensysTokens.border),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                    ),
+                    child: Icon(icon, color: DefensysTokens.maroon, size: 22),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                title,
+                                style: const TextStyle(
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w800,
+                                  color: DefensysTokens.textDark,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                              ),
+                              child: Text(
+                                tag,
+                                style: const TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: DefensysTokens.maroon,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          desc,
+                          style: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+            ),
+
+            // 2. Main Two-Pane Split (Left: Selector / Filters, Right: Live Data Viewer)
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  // Left Pane (Width: 380)
+                  SizedBox(
+                    width: 380,
+                    child: _buildLeftSelectorPane(
+                      endpoint: endpoint,
+                      semestersList: semestersList,
+                    ),
+                  ),
+
+                  // Vertical Separator
+                  const VerticalDivider(width: 1, thickness: 1, color: DefensysTokens.border),
+
+                  // Right Pane: Live Data Preview
+                  Expanded(
+                    child: _buildRightPreviewPane(
+                      endpoint: endpoint,
+                      selectedStudentObj: selectedStudentObj,
+                      selectedTeamObj: selectedTeamObj,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // 3. Modal Bottom Footer (Format selector pills + Download button)
+            _buildModalFooter(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Left Pane: Either List of Items (Teams/Students) or Filter Parameters Form
+  Widget _buildLeftSelectorPane({
+    required String endpoint,
+    required List<Map<String, dynamic>> semestersList,
+  }) {
+    if (endpoint == 'team-grade') {
+      return _buildTeamListSelector();
     }
 
     if (endpoint == 'individual-grade') {
-      if (_selectedStudentId == null) {
-        showValidationToast(context, 'Please select a student candidate.');
-        return;
-      }
-      final fullEndpoint = 'individual-grade/$_selectedStudentId/';
-
-      final success = await ref.read(reportsProvider.notifier).downloadReport(
-        endpoint: fullEndpoint,
-        queryParams: queryParams,
-        defaultFilename: 'DefenSYS_Individual_Grade_Audit.pdf',
-      );
-
-      _showDownloadResultToast(success);
-      return;
+      return _buildStudentListSelector(semestersList: semestersList);
     }
 
-    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules' || endpoint == 'team-roster') {
-      if (_selectedSemesterId != null) {
-        queryParams['semester_id'] = _selectedSemesterId!;
-      }
-    }
-
-    if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') {
-      if (_selectedScope.isNotEmpty) {
-        queryParams['scope'] = _selectedScope;
-      }
-    }
-
-    if (endpoint == 'team-roster') {
-      if (_selectedLevel.isNotEmpty) queryParams['level'] = _selectedLevel;
-      if (_selectedYearLevel.isNotEmpty) queryParams['year_level'] = _selectedYearLevel;
-    }
-
-    if (endpoint == 'user-directory') {
-      if (_selectedRole.isNotEmpty) queryParams['role'] = _selectedRole;
-    }
-
-    if (endpoint == 'audit-trail') {
-      if (_reportCategoryFilter.isNotEmpty) queryParams['category'] = _reportCategoryFilter;
-      if (_reportTrackFilter.isNotEmpty) queryParams['track'] = _reportTrackFilter;
-      if (_reportYearLevelFilter.isNotEmpty) queryParams['year_level'] = _reportYearLevelFilter;
-      final start = _reportStartDateController.text.trim();
-      final end = _reportEndDateController.text.trim();
-      if (start.isNotEmpty) queryParams['start_date'] = start;
-      if (end.isNotEmpty) queryParams['end_date'] = end;
-    }
-
-    final success = await ref.read(reportsProvider.notifier).downloadReport(
-      endpoint: '$endpoint/',
-      queryParams: queryParams,
-      defaultFilename: 'DefenSYS_${report['title'].toString().replaceAll(' ', '_')}.pdf',
-    );
-
-    _showDownloadResultToast(success);
+    // Filter controls for aggregate reports
+    return _buildAggregateFiltersPane(endpoint: endpoint, semestersList: semestersList);
   }
 
-  void _showDownloadResultToast(bool success) {
-    if (!mounted) return;
-    final error = ref.read(reportsProvider).error;
-    if (success) {
-      showSuccessToast(context, 'PDF report generated and downloaded successfully!');
-    } else {
-      showErrorToast(context, 'Failed to generate PDF: ${error ?? "Unknown error"}');
+  /// Left Pane: Student Teams List Selector
+  Widget _buildTeamListSelector() {
+    final query = _selectorSearchController.text.trim().toLowerCase();
+
+    final filtered = widget.teamsState.teams.where((t) {
+      final sec = (t['section']?.toString() ?? t['year_level']?.toString() ?? '').trim();
+
+      if (_selectedSectionFilter.isNotEmpty && sec != _selectedSectionFilter) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final name = (t['name'] ?? '').toString().toLowerCase();
+      final title = (t['project_title'] ?? t['system_name'] ?? '').toString().toLowerCase();
+      final lead = (t['leader_name'] ?? '').toString().toLowerCase();
+      final adviser = (t['adviser_name'] ?? '').toString().toLowerCase();
+      final secLower = sec.toLowerCase();
+
+      return name.contains(query) ||
+          title.contains(query) ||
+          lead.contains(query) ||
+          adviser.contains(query) ||
+          secLower.contains(query);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left Pane Search & Filter Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'SELECT TEAM',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.steelGrey,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${filtered.length} of ${widget.teamsState.teams.length}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 36,
+                child: TextField(
+                  controller: _selectorSearchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search team, project, leader...',
+                    hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: DefensysTokens.steelGrey),
+                    suffixIcon: _selectorSearchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 14),
+                            onPressed: () => _selectorSearchController.clear(),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.teamSections.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildMiniFilterChip(
+                        label: 'All',
+                        isSelected: _selectedSectionFilter.isEmpty,
+                        onTap: () => setState(() => _selectedSectionFilter = ''),
+                      ),
+                      const SizedBox(width: 5),
+                      ...widget.teamSections.map((sec) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 5),
+                          child: _buildMiniFilterChip(
+                            label: sec,
+                            isSelected: _selectedSectionFilter == sec,
+                            onTap: () => setState(() => _selectedSectionFilter = sec),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+        // Selectable Teams List
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No matching teams found.',
+                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filtered.length,
+                  separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                  itemBuilder: (ctx, i) {
+                    final t = filtered[i];
+                    final tId = t['id']?.toString() ?? '';
+                    final teamName = t['name']?.toString() ?? 'Team';
+                    final projectTitle = t['project_title']?.toString() ?? t['system_name']?.toString() ?? 'No Project Title';
+                    final leaderName = t['leader_name']?.toString() ?? 'Unassigned';
+                    final sec = t['section']?.toString() ?? t['year_level']?.toString() ?? '';
+                    final isSelected = _selectedTeamId == tId;
+
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() => _selectedTeamId = tId);
+                          _loadPreview();
+                        },
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                            border: Border.all(
+                              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                ),
+                                alignment: Alignment.center,
+                                child: Icon(
+                                  Icons.groups_rounded,
+                                  color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                  size: 18,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            teamName,
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                                              color: DefensysTokens.textDark,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        if (sec.isNotEmpty) ...[
+                                          const SizedBox(width: 6),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.08),
+                                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                            ),
+                                            child: Text(
+                                              sec,
+                                              style: TextStyle(
+                                                fontSize: 8.5,
+                                                fontWeight: FontWeight.w700,
+                                                color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      projectTitle,
+                                      style: const TextStyle(fontSize: 11, color: DefensysTokens.textSecondary),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 1),
+                                    Text(
+                                      'Leader: $leaderName',
+                                      style: const TextStyle(fontSize: 10, color: DefensysTokens.steelGrey),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Left Pane: Student Candidates List Selector
+  Widget _buildStudentListSelector({required List<Map<String, dynamic>> semestersList}) {
+    final query = _selectorSearchController.text.trim().toLowerCase();
+
+    final filtered = widget.allStudents.where((s) {
+      final sId = s['id']?.toString() ?? '';
+      final meta = widget.studentMetaMap[sId];
+
+      if (_selectedSectionFilter.isNotEmpty && meta?['section'] != _selectedSectionFilter) {
+        return false;
+      }
+
+      if (query.isEmpty) return true;
+
+      final name = (s['name'] ?? s['username'] ?? '').toString().toLowerCase();
+      final username = (s['username'] ?? sId).toString().toLowerCase();
+      final email = (s['email'] ?? '').toString().toLowerCase();
+      final team = meta?['team'] as Map<String, dynamic>?;
+      final teamName = (team?['name'] ?? '').toString().toLowerCase();
+      final sec = (meta?['section'] ?? '').toString().toLowerCase();
+
+      return name.contains(query) ||
+          username.contains(query) ||
+          sId.contains(query) ||
+          email.contains(query) ||
+          teamName.contains(query) ||
+          sec.contains(query);
+    }).toList();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Left Pane Search & Filter Header
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'SELECT STUDENT CANDIDATE',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.steelGrey,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const Spacer(),
+                  Text(
+                    '${filtered.length} of ${widget.allStudents.length}',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              SizedBox(
+                height: 36,
+                child: TextField(
+                  controller: _selectorSearchController,
+                  decoration: InputDecoration(
+                    hintText: 'Search by ID (e.g. 4011), name, team...',
+                    hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                    prefixIcon: const Icon(Icons.search_rounded, size: 16, color: DefensysTokens.steelGrey),
+                    suffixIcon: _selectorSearchController.text.isNotEmpty
+                        ? IconButton(
+                            icon: const Icon(Icons.clear_rounded, size: 14),
+                            onPressed: () => _selectorSearchController.clear(),
+                          )
+                        : null,
+                    filled: true,
+                    fillColor: const Color(0xFFF8FAFC),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                    border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.border),
+                    ),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.border),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                    ),
+                  ),
+                ),
+              ),
+              if (widget.studentSections.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _buildMiniFilterChip(
+                        label: 'All',
+                        isSelected: _selectedSectionFilter.isEmpty,
+                        onTap: () => setState(() => _selectedSectionFilter = ''),
+                      ),
+                      const SizedBox(width: 5),
+                      ...widget.studentSections.map((sec) {
+                        return Padding(
+                          padding: const EdgeInsets.only(right: 5),
+                          child: _buildMiniFilterChip(
+                            label: sec,
+                            isSelected: _selectedSectionFilter == sec,
+                            onTap: () => setState(() => _selectedSectionFilter = sec),
+                          ),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+        // Selectable Students List
+        Expanded(
+          child: filtered.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No matching candidates found.',
+                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                    ),
+                  ),
+                )
+              : ListView.separated(
+                  padding: const EdgeInsets.all(12),
+                  itemCount: filtered.length,
+                  separatorBuilder: (ctx, i) => const SizedBox(height: 6),
+                  itemBuilder: (ctx, i) {
+                    final s = filtered[i];
+                    final sId = s['id']?.toString() ?? '';
+                    final meta = widget.studentMetaMap[sId];
+                    final name = s['name'] ?? s['username'] ?? 'Student';
+                    final username = s['username']?.toString() ?? sId;
+                    final team = meta?['team'] as Map<String, dynamic>?;
+                    final isLeader = meta?['isLeader'] == true;
+                    final section = meta?['section'] as String?;
+                    final isSelected = _selectedStudentId == sId;
+
+                    return Material(
+                      color: Colors.transparent,
+                      child: InkWell(
+                        onTap: () {
+                          setState(() => _selectedStudentId = sId);
+                          _loadPreview();
+                        },
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 120),
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                          decoration: BoxDecoration(
+                            color: isSelected ? DefensysTokens.maroon.withValues(alpha: 0.05) : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                            border: Border.all(
+                              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                alignment: Alignment.center,
+                                child: Text(
+                                  _extractInitials(name.toString()),
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w800,
+                                    color: isSelected ? Colors.white : DefensysTokens.maroon,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Flexible(
+                                          child: Text(
+                                            name.toString(),
+                                            style: TextStyle(
+                                              fontSize: 12.5,
+                                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w700,
+                                              color: DefensysTokens.textDark,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                          decoration: BoxDecoration(
+                                            color: isSelected ? DefensysTokens.maroon : const Color(0xFF1E293B),
+                                            borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                          ),
+                                          child: Text(
+                                            'ID: $username',
+                                            style: const TextStyle(fontSize: 8.5, fontWeight: FontWeight.w700, color: Colors.white),
+                                          ),
+                                        ),
+                                        if (isLeader) ...[
+                                          const SizedBox(width: 4),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: DefensysTokens.gold.withValues(alpha: 0.2),
+                                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                            ),
+                                            child: const Text(
+                                              'LEAD',
+                                              style: TextStyle(fontSize: 8, fontWeight: FontWeight.w800, color: DefensysTokens.darkGold),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Row(
+                                      children: [
+                                        if (team != null) ...[
+                                          Expanded(
+                                            child: Text(
+                                              '${team['name']} ${section != null ? "• $section" : ""}',
+                                              style: const TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                        ] else ...[
+                                          const Text('No Team Assigned', style: TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey)),
+                                        ],
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Icon(
+                                isSelected ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                                color: isSelected ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                                size: 18,
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Left Pane: Aggregate Reports Filter Parameters
+  Widget _buildAggregateFiltersPane({
+    required String endpoint,
+    required List<Map<String, dynamic>> semestersList,
+  }) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'EXPORT FILTERS',
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              color: DefensysTokens.steelGrey,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+
+          // Semester Dropdown
+          if (endpoint != 'user-directory') ...[
+            const _FormSectionLabel('ACADEMIC SEMESTER'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedSemesterId,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Choose semester...'),
+              items: semestersList.map((s) {
+                return DropdownMenuItem<String>(
+                  value: s['id']?.toString(),
+                  child: Text(s['label']?.toString() ?? 'N/A', style: const TextStyle(fontSize: 12.5)),
+                );
+              }).toList(),
+              onChanged: (val) {
+                setState(() => _selectedSemesterId = val);
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Scope Dropdown
+          if (endpoint == 'semester-grades' || endpoint == 'defense-schedules') ...[
+            const _FormSectionLabel('ACADEMIC SCOPE'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              value: _selectedScope,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Filter scope...'),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Records (Capstone & PIT)', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'capstone', child: Text('Capstone Only', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'pit', child: Text('PIT Only', style: TextStyle(fontSize: 12.5))),
+              ],
+              onChanged: (val) {
+                setState(() {
+                  _selectedScope = val ?? '';
+                  if (_selectedScope == 'capstone') {
+                    _selectedPitEvent = '';
+                  } else if (_selectedScope == 'pit') {
+                    _selectedStage = '';
+                  } else {
+                    _selectedStage = '';
+                    _selectedPitEvent = '';
+                  }
+                });
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+
+            // Capstone Stage Dropdown
+            if (_selectedScope == 'capstone') ...[
+              const _FormSectionLabel('CAPSTONE DEFENSE STAGE'),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: _selectedStage,
+                isExpanded: true,
+                decoration: _reportInputDecoration('Select stage...'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('All Capstone Stages', style: TextStyle(fontSize: 12.5))),
+                  ...widget.capstoneStages.map((stg) {
+                    final label = stg['label']?.toString() ?? stg['name']?.toString() ?? 'Stage';
+                    return DropdownMenuItem<String>(
+                      value: label,
+                      child: Text(label, style: const TextStyle(fontSize: 12.5)),
+                    );
+                  }),
+                ],
+                onChanged: (val) {
+                  setState(() => _selectedStage = val ?? '');
+                  _loadPreview();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // PIT Event / Year Level Dropdown
+            if (_selectedScope == 'pit') ...[
+              const _FormSectionLabel('PIT EVENT / YEAR LEVEL'),
+              const SizedBox(height: 6),
+              DropdownButtonFormField<String>(
+                value: _selectedPitEvent,
+                isExpanded: true,
+                decoration: _reportInputDecoration('Select PIT event...'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('All PIT Events', style: TextStyle(fontSize: 12.5))),
+                  ...widget.pitEvents.map((evt) {
+                    final name = evt['event_name']?.toString() ?? evt['name']?.toString() ?? evt['label']?.toString() ?? 'PIT Event';
+                    return DropdownMenuItem<String>(
+                      value: name,
+                      child: Text(name, style: const TextStyle(fontSize: 12.5)),
+                    );
+                  }),
+                  if (widget.pitEvents.isEmpty) ...const [
+                    DropdownMenuItem(value: '1st Year PIT', child: Text('1st Year PIT', style: TextStyle(fontSize: 12.5))),
+                    DropdownMenuItem(value: '2nd Year PIT', child: Text('2nd Year PIT', style: TextStyle(fontSize: 12.5))),
+                    DropdownMenuItem(value: '3rd Year PIT', child: Text('3rd Year PIT', style: TextStyle(fontSize: 12.5))),
+                  ],
+                ],
+                onChanged: (val) {
+                  setState(() => _selectedPitEvent = val ?? '');
+                  _loadPreview();
+                },
+              ),
+              const SizedBox(height: 16),
+            ],
+          ],
+
+          // Program & Year Level Filters
+          if (endpoint == 'team-roster') ...[
+            const _FormSectionLabel('PROGRAM LEVEL'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedLevel,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Filter level...'),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Program Levels', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'capstone', child: Text('Capstone Teams', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'pit', child: Text('PIT Teams', style: TextStyle(fontSize: 12.5))),
+              ],
+              onChanged: (val) {
+                setState(() => _selectedLevel = val ?? '');
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+            const _FormSectionLabel('STUDENT YEAR LEVEL'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedYearLevel,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Filter year level...'),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Year Levels', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: '3rd Year', child: Text('3rd Year', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: '4th Year', child: Text('4th Year', style: TextStyle(fontSize: 12.5))),
+              ],
+              onChanged: (val) {
+                setState(() => _selectedYearLevel = val ?? '');
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // User Directory Role Filter
+          if (endpoint == 'user-directory') ...[
+            const _FormSectionLabel('SYSTEM ROLE'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _selectedRole,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Choose role...'),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Roles & Accounts', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'student', child: Text('Students Only', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'faculty', child: Text('Faculty & Panelists', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'admin', child: Text('System Administrators', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'pit_lead', child: Text('PIT Leads', style: TextStyle(fontSize: 12.5))),
+              ],
+              onChanged: (val) {
+                setState(() => _selectedRole = val ?? '');
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Audit Trail Date Range & Category
+          if (endpoint == 'audit-trail') ...[
+            const _FormSectionLabel('DATE RANGE (OPTIONAL)'),
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _startDateController,
+                    readOnly: true,
+                    decoration: _reportInputDecoration('Start Date').copyWith(
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2035),
+                          );
+                          if (picked != null) {
+                            _startDateController.text =
+                                '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                            setState(() {});
+                            _loadPreview();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _endDateController,
+                    readOnly: true,
+                    decoration: _reportInputDecoration('End Date').copyWith(
+                      suffixIcon: IconButton(
+                        icon: const Icon(Icons.calendar_today_outlined, size: 16),
+                        onPressed: () async {
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate: DateTime.now(),
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime(2035),
+                          );
+                          if (picked != null) {
+                            _endDateController.text =
+                                '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+                            setState(() {});
+                            _loadPreview();
+                          }
+                        },
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const _FormSectionLabel('AUDIT LOG CATEGORY'),
+            const SizedBox(height: 6),
+            DropdownButtonFormField<String>(
+              initialValue: _reportCategoryFilter,
+              isExpanded: true,
+              decoration: _reportInputDecoration('Filter category...'),
+              items: const [
+                DropdownMenuItem(value: '', child: Text('All Audit Categories', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'authentication', child: Text('Authentication & Access', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'grading', child: Text('Grading & Defense Scores', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'team', child: Text('Team Management & Roster', style: TextStyle(fontSize: 12.5))),
+                DropdownMenuItem(value: 'compliance', child: Text('System & Compliance', style: TextStyle(fontSize: 12.5))),
+              ],
+              onChanged: (val) {
+                setState(() => _reportCategoryFilter = val ?? '');
+                _loadPreview();
+              },
+            ),
+            const SizedBox(height: 16),
+          ],
+
+          // Quick Reset Filters Button
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              icon: const Icon(Icons.refresh_rounded, size: 15),
+              label: const Text('Reset All Filters'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: DefensysTokens.maroon,
+                side: BorderSide(color: DefensysTokens.maroon.withValues(alpha: 0.3)),
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
+              ),
+              onPressed: () {
+                setState(() {
+                  _selectedScope = '';
+                  _selectedLevel = '';
+                  _selectedYearLevel = '';
+                  _selectedRole = '';
+                  _reportCategoryFilter = '';
+                  _startDateController.clear();
+                  _endDateController.clear();
+                });
+                _loadPreview();
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Right Pane: Live Data Preview Table + KPI Cards
+  Widget _buildRightPreviewPane({
+    required String endpoint,
+    required Map<String, dynamic>? selectedStudentObj,
+    required Map<String, dynamic>? selectedTeamObj,
+  }) {
+    // Missing selection guard
+    if (endpoint == 'individual-grade' && selectedStudentObj == null) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.person_search_rounded, size: 42, color: DefensysTokens.maroon),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Select a Student Candidate',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textDark),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose a student candidate from the list on the left to preview individual grade breakdowns and peer multipliers.',
+                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
     }
+
+    if (endpoint == 'team-grade' && (selectedTeamObj == null || selectedTeamObj.isEmpty)) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(18),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.groups_rounded, size: 42, color: DefensysTokens.maroon),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Select a Student Team',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, color: DefensysTokens.textDark),
+              ),
+              const SizedBox(height: 6),
+              const Text(
+                'Choose a team from the list on the left to preview evaluation criteria, panel scores, and member grades.',
+                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    if (_isLoadingPreview) {
+      return const Center(
+        child: Padding(
+          padding: EdgeInsets.all(40),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircularProgressIndicator(color: DefensysTokens.maroon),
+              SizedBox(height: 16),
+              Text(
+                'Compiling live report dataset...',
+                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: DefensysTokens.textDark),
+              ),
+              SizedBox(height: 4),
+              Text(
+                'Fetching realtime evaluations, defense scores, and audit records.',
+                style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final data = _previewData;
+    if (data == null || data.rows.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.dataset_linked_outlined, size: 40, color: DefensysTokens.steelGrey),
+              const SizedBox(height: 12),
+              const Text(
+                'No data records found for current filter',
+                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
+              ),
+              const SizedBox(height: 4),
+              const Text(
+                'Try adjusting the semester or filter criteria on the left.',
+                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 14),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.refresh_rounded, size: 16),
+                label: const Text('Refresh Data'),
+                onPressed: _loadPreview,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Filter rows by in-viewer search
+    final query = _viewerSearchController.text.trim().toLowerCase();
+    final displayRows = data.rows.where((row) {
+      if (query.isEmpty) return true;
+      for (final val in row.values) {
+        if (val != null && val.toString().toLowerCase().contains(query)) {
+          return true;
+        }
+      }
+      return false;
+    }).toList();
+
+    return Column(
+      children: [
+        // KPI Summary Cards
+        if (data.summaryKpis.isNotEmpty)
+          Container(
+            padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              border: Border(bottom: BorderSide(color: DefensysTokens.border)),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: data.summaryKpis.map((kpi) {
+                  final label = kpi['label']?.toString() ?? '';
+                  final val = kpi['value']?.toString() ?? '';
+                  final badge = kpi['badge']?.toString();
+
+                  return Container(
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      border: Border.all(color: DefensysTokens.border),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          label.toUpperCase(),
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.steelGrey,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Text(
+                              val,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w800,
+                                color: DefensysTokens.textDark,
+                              ),
+                            ),
+                            if (badge != null && badge.isNotEmpty) ...[
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                decoration: BoxDecoration(
+                                  color: badge == 'PASSED'
+                                      ? DefensysTokens.successBg
+                                      : DefensysTokens.gold.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                ),
+                                child: Text(
+                                  badge,
+                                  style: TextStyle(
+                                    fontSize: 8.5,
+                                    fontWeight: FontWeight.w800,
+                                    color: badge == 'PASSED' ? DefensysTokens.successText : DefensysTokens.darkGold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+        // Live Table Search Bar
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: SizedBox(
+                  height: 34,
+                  child: TextField(
+                    controller: _viewerSearchController,
+                    decoration: InputDecoration(
+                      hintText: 'Search within preview table...',
+                      hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                      prefixIcon: const Icon(Icons.search_rounded, size: 15, color: DefensysTokens.steelGrey),
+                      suffixIcon: _viewerSearchController.text.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 13),
+                              onPressed: () => _viewerSearchController.clear(),
+                            )
+                          : null,
+                      filled: true,
+                      fillColor: const Color(0xFFF8FAFC),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.border),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                ),
+                child: Text(
+                  '${displayRows.length} of ${data.rows.length} rows',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                ),
+              ),
+              const SizedBox(width: 4),
+              IconButton(
+                icon: const Icon(Icons.refresh_rounded, size: 18, color: DefensysTokens.steelGrey),
+                tooltip: 'Refresh dataset',
+                onPressed: _loadPreview,
+              ),
+            ],
+          ),
+        ),
+
+        const Divider(height: 1, color: Color(0xFFF1F5F9)),
+
+        // Interactive Data Grid
+        Expanded(
+          child: displayRows.isEmpty
+              ? const Center(
+                  child: Padding(
+                    padding: EdgeInsets.all(24),
+                    child: Text(
+                      'No matching records found in table.',
+                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                    ),
+                  ),
+                )
+              : SingleChildScrollView(
+                  scrollDirection: Axis.vertical,
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 620),
+                      child: DataTable(
+                        headingRowHeight: 36,
+                        dataRowMinHeight: 32,
+                        dataRowMaxHeight: 44,
+                        headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                        horizontalMargin: 14,
+                        columnSpacing: 16,
+                        columns: data.columns.map((col) {
+                          final label = col['label']?.toString() ?? '';
+                          final align = col['align']?.toString() ?? 'left';
+
+                          return DataColumn(
+                            numeric: align == 'center' || align == 'right',
+                            label: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: DefensysTokens.textDark,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          );
+                        }).toList(),
+                        rows: displayRows.asMap().entries.map((entry) {
+                          final idx = entry.key;
+                          final row = entry.value;
+                          final isStripe = idx % 2 == 1;
+
+                          return DataRow(
+                            color: WidgetStateProperty.all(
+                              isStripe ? const Color(0xFFFAFAFA) : Colors.white,
+                            ),
+                            cells: data.columns.map((col) {
+                              final key = col['key']?.toString() ?? '';
+                              final val = row[key]?.toString() ?? '';
+                              final align = col['align']?.toString() ?? 'left';
+
+                              // Check if cell is a result/badge
+                              final isPassed = val == 'PASSED' || val == 'ACTIVE';
+                              final isFailed = val == 'FAILED' || val == 'REVISION';
+                              final isSpecial = isPassed || isFailed;
+
+                              if (isSpecial) {
+                                return DataCell(
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: isPassed ? DefensysTokens.successBg : DefensysTokens.dangerBg,
+                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                                    ),
+                                    child: Text(
+                                      val,
+                                      style: TextStyle(
+                                        fontSize: 9.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: isPassed ? DefensysTokens.successText : DefensysTokens.dangerText,
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              }
+
+                              return DataCell(
+                                Align(
+                                  alignment: align == 'center'
+                                      ? Alignment.center
+                                      : align == 'right'
+                                          ? Alignment.centerRight
+                                          : Alignment.centerLeft,
+                                  child: Text(
+                                    val,
+                                    style: const TextStyle(
+                                      fontSize: 11,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              );
+                            }).toList(),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+                  ),
+                ),
+        ),
+      ],
+    );
+  }
+
+  /// Modal Bottom Footer Bar with Format Chooser Pills + Action Buttons
+  Widget _buildModalFooter() {
+    final formats = [
+      {
+        'id': 'pdf',
+        'label': 'PDF Document',
+        'ext': '.pdf',
+        'icon': Icons.picture_as_pdf_outlined,
+        'color': DefensysTokens.maroon,
+      },
+      {
+        'id': 'xlsx',
+        'label': 'Excel Spreadsheet',
+        'ext': '.xlsx',
+        'icon': Icons.table_view_rounded,
+        'color': const Color(0xFF16A34A),
+      },
+      {
+        'id': 'csv',
+        'label': 'CSV File',
+        'ext': '.csv',
+        'icon': Icons.grid_on_rounded,
+        'color': const Color(0xFF2563EB),
+      },
+      {
+        'id': 'doc',
+        'label': 'Word Document',
+        'ext': '.doc',
+        'icon': Icons.description_outlined,
+        'color': const Color(0xFF0284C7),
+      },
+    ];
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(top: BorderSide(color: DefensysTokens.border)),
+      ),
+      child: Row(
+        children: [
+          // Format Selector Label
+          const Text(
+            'FILE FORMAT:',
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+              color: DefensysTokens.steelGrey,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(width: 10),
+
+          // Format Selector Pills
+          ...formats.map((fmt) {
+            final id = fmt['id'] as String;
+            final label = fmt['label'] as String;
+            final iconData = fmt['icon'] as IconData;
+            final color = fmt['color'] as Color;
+            final isSelected = _selectedFormat == id;
+
+            return Padding(
+              padding: const EdgeInsets.only(right: 6),
+              child: Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () => setState(() => _selectedFormat = id),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: isSelected ? color.withValues(alpha: 0.08) : Colors.white,
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                      border: Border.all(
+                        color: isSelected ? color : const Color(0xFFCBD5E1),
+                        width: isSelected ? 1.5 : 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          iconData,
+                          size: 14,
+                          color: isSelected ? color : DefensysTokens.steelGrey,
+                        ),
+                        const SizedBox(width: 5),
+                        Text(
+                          label,
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                            color: isSelected ? color : DefensysTokens.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            );
+          }),
+
+          const Spacer(),
+
+          // Cancel Button
+          OutlinedButton(
+            style: OutlinedButton.styleFrom(
+              foregroundColor: DefensysTokens.textDark,
+              side: const BorderSide(color: DefensysTokens.border),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
+            ),
+            onPressed: _isDownloading ? null : () => Navigator.of(context).pop(),
+            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+          ),
+          const SizedBox(width: 8),
+
+          // Download Primary Action
+          FilledButton.icon(
+            style: FilledButton.styleFrom(
+              backgroundColor: DefensysTokens.maroon,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
+            ),
+            icon: _isDownloading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+                  )
+                : const Icon(Icons.file_download_outlined, size: 16),
+            label: Text(
+              _isDownloading
+                  ? 'Generating ${_selectedFormat.toUpperCase()}...'
+                  : 'Download ${_selectedFormat.toUpperCase()} Export',
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+            ),
+            onPressed: _isDownloading ? null : _handleDownload,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMiniFilterChip({
+    required String label,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: isSelected ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            border: Border.all(
+              color: isSelected ? DefensysTokens.maroon : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
+              color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

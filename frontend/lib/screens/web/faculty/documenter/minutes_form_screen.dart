@@ -8,6 +8,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../utils/pdf_viewer.dart';
 import '../e_signature_upload_dialog.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/widgets.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
 class MinutesFormScreen extends ConsumerStatefulWidget {
@@ -884,14 +885,12 @@ class _MinutesFormScreenState extends ConsumerState<MinutesFormScreen> {
 
     if (status == 'draft' && isDocumenter) {
       buttons.add(
-        OutlinedButton.icon(
-          icon: const Icon(Icons.save_rounded),
-          label: const Text('Save Draft'),
+        DefensysSaveButton(
+          label: 'Save Draft',
+          savingLabel: 'Saving Draft…',
           onPressed: _saveDraft,
-          style: OutlinedButton.styleFrom(
-            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-          ),
+          isPill: false,
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 20),
         ),
       );
       buttons.add(const SizedBox(width: 16));

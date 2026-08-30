@@ -11,9 +11,10 @@ psycopg2>=2.9.9,<3.0
 python-dotenv>=1.0.0,<2.0
 sentry-sdk[django]>=2.0,<3.0
 
-# --- PDF & reports (capstone_deliverables) ---
+# --- PDF & reports (capstone_deliverables & audit exports) ---
 reportlab>=4.0,<5.0
 pdfplumber>=0.11,<1.0
+openpyxl>=3.1.2,<4.0
 
 # --- ML / NLP (pdf_processor, naive_bayes_classifier) ---
 numpy>=1.26,<3.0

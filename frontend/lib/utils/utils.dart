@@ -4,6 +4,7 @@ export 'import/student_bulk_import_csv.dart';
 export 'import/team_bulk_import_csv.dart';
 export 'import/team_bulk_import_draft.dart';
 export 'import/user_bulk_import_draft.dart';
+export 'import/schedule_import_draft.dart';
 export 'import/progress_upload.dart';
 
 // Platform Utils

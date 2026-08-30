@@ -49,19 +49,22 @@ def counts_payload():
     }
 
 
-def stage_list_payload():
+def stage_list_payload(semester=None):
+    if not semester:
+        from academic_period_management.models import Semester
+        semester = Semester.objects.filter(is_active=True).first()
     stages = ordered_stages()
     active = [stage for stage in stages if stage.is_active]
     return {
         'stages': DefenseStageSerializer(
             stages,
             many=True,
-            context={'ordered_stages': stages},
+            context={'ordered_stages': stages, 'semester': semester},
         ).data,
         'active_stages': DefenseStageSerializer(
             active,
             many=True,
-            context={'ordered_stages': active},
+            context={'ordered_stages': active, 'semester': semester},
         ).data,
         'counts': counts_payload(),
     }
@@ -74,9 +77,27 @@ class DefenseStageListCreateView(APIView):
         return [IsSystemAdmin()]
 
     def get(self, request):
-        return Response(stage_list_payload())
+        semester = resolve_semester(request.query_params.get('semester_id'))
+        return Response(stage_list_payload(semester))
 
     def post(self, request):
+        from .serializers import check_stage_locked
+
+        requested_order = request.data.get('display_order')
+        if requested_order is not None:
+            try:
+                requested_order = int(requested_order)
+                all_existing = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+                for s in all_existing:
+                    locked, _ = check_stage_locked(s)
+                    if locked and s.display_order >= requested_order:
+                        return Response(
+                            {'display_order': 'New defense stages cannot be placed before completed defense stages.'},
+                            status=status.HTTP_400_BAD_REQUEST,
+                        )
+            except (ValueError, TypeError):
+                pass
+
         serializer = DefenseStageWriteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         
@@ -113,7 +134,7 @@ def _stage_detail_payload(stage, request):
     payload = {
         'stage': DefenseStageSerializer(
             stage,
-            context={'ordered_stages': ordered_stages()},
+            context={'ordered_stages': ordered_stages(), 'semester': semester},
         ).data,
     }
     if semester:
@@ -138,7 +159,33 @@ class DefenseStageDetailView(APIView):
         return Response(_stage_detail_payload(stage, request))
 
     def patch(self, request, stage_id):
+        from .serializers import check_stage_locked
+
         stage = self.get_object(stage_id)
+        locked, reason = check_stage_locked(stage)
+
+        requested_order = request.data.get('display_order')
+        if requested_order is not None:
+            try:
+                requested_order = int(requested_order)
+                if locked and requested_order != stage.display_order:
+                    return Response(
+                        {'display_order': reason or 'Completed defense stages cannot change sequence position.'},
+                        status=status.HTTP_409_CONFLICT,
+                    )
+                if not locked and requested_order != stage.display_order:
+                    other_stages = list(DefenseStage.objects.exclude(pk=stage.pk).order_by('display_order', 'id'))
+                    insert_idx = max(0, min(requested_order - 1, len(other_stages)))
+                    for idx, s in enumerate(other_stages):
+                        s_locked, _ = check_stage_locked(s)
+                        if s_locked and idx >= insert_idx:
+                            return Response(
+                                {'display_order': 'Cannot move a defense stage before an already completed defense stage.'},
+                                status=status.HTTP_400_BAD_REQUEST,
+                            )
+            except (ValueError, TypeError):
+                pass
+
         serializer = DefenseStageWriteSerializer(stage, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
 
@@ -200,6 +247,8 @@ class DefenseStageReorderView(APIView):
     permission_classes = [IsSystemAdmin]
 
     def post(self, request):
+        from .serializers import check_stage_locked
+
         stage_ids = request.data.get('stage_ids')
         if not isinstance(stage_ids, list) or len(stage_ids) == 0:
             return Response(
@@ -215,6 +264,22 @@ class DefenseStageReorderView(APIView):
                     {'stage_ids': f'Stage with ID {sid} does not exist.'},
                     status=status.HTTP_400_BAD_REQUEST,
                 )
+
+        # Enforce that completed stages cannot be reordered or moved
+        all_ordered = list(DefenseStage.objects.all().order_by('display_order', 'id'))
+        completed_stages = [s for s in all_ordered if check_stage_locked(s)[0]]
+        if completed_stages:
+            for idx, c_stage in enumerate(completed_stages):
+                if idx >= len(stage_ids) or stage_ids[idx] != c_stage.id:
+                    return Response(
+                        {
+                            'stage_ids': (
+                                f'Completed stage "{c_stage.label}" is locked in sequence and cannot be reordered '
+                                'or preceded by draft/active stages.'
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
 
         with transaction.atomic():
             # Update provided stages in given order

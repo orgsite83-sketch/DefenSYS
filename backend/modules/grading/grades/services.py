@@ -899,22 +899,19 @@ def resolve_canonical_capstone_grade(grade):
 
 
 def adviser_capstone_grades_for_user(user):
-    """One canonical capstone grade row per advised team."""
+    """Canonical capstone grade rows for teams and stages advised by user."""
     grades = (
         grade_queryset()
         .filter(team__adviser=user, scope=TeamGrade.SCOPE_CAPSTONE)
         .select_related('team', 'team__semester')
         .order_by('team__name', 'stage_label')
     )
-    seen_teams = set()
+    seen_grade_ids = set()
     canonical_rows = []
     for grade in grades:
-        team_id = grade.team_id
-        if team_id in seen_teams:
-            continue
-        seen_teams.add(team_id)
         canonical = resolve_canonical_capstone_grade(grade)
-        if canonical is not None:
+        if canonical is not None and canonical.id not in seen_grade_ids:
+            seen_grade_ids.add(canonical.id)
             canonical_rows.append(canonical)
     return canonical_rows
 
@@ -1026,6 +1023,34 @@ def _lookup_grade_for_schedule(schedule, stage_label):
     return legacy.order_by('-updated_at', '-id').first(), identity
 
 
+def _snapshot_attempt(grade, user=None):
+    """Snapshot current scores and verdict into GradeAttemptHistory before re-defense overwrite."""
+    from .models import GradeAttemptHistory
+
+    attempt_num = grade.attempt_count or 1
+    if GradeAttemptHistory.objects.filter(team_grade=grade, attempt_number=attempt_num).exists():
+        return None
+
+    return GradeAttemptHistory.objects.create(
+        team_grade=grade,
+        attempt_number=attempt_num,
+        schedule=grade.schedule,
+        panel_score=grade.panel_score,
+        adviser_score=grade.adviser_score,
+        peer_score=grade.peer_score,
+        final_grade=grade.final_grade,
+        panel_weight=grade.panel_weight,
+        adviser_weight=grade.adviser_weight,
+        peer_weight=grade.peer_weight,
+        verdict=getattr(grade, 'verdict', '') or '',
+        verdict_remarks=getattr(grade, 'verdict_remarks', '') or '',
+        verdict_by=getattr(grade, 'verdict_by', None),
+        verdict_at=getattr(grade, 'verdict_at', None),
+        revision_deadline=getattr(grade, 'revision_deadline', None),
+        snapshotted_by=user,
+    )
+
+
 class GradeContextService:
     """Central resolver for TeamGrade lifecycle operations."""
 
@@ -1052,6 +1077,26 @@ class GradeContextService:
 
         changed = False
         if grade.schedule_id != schedule.id:
+            if grade.schedule_id is not None and (
+                grade.panel_score is not None
+                or grade.final_grade is not None
+                or getattr(grade, 'verdict', '')
+            ):
+                _snapshot_attempt(grade)
+                grade.attempt_count = (grade.attempt_count or 1) + 1
+                grade.panel_score = None
+                grade.panel_score_is_override = False
+                grade.adviser_score = None
+                grade.adviser_score_is_override = False
+                grade.peer_score = None
+                grade.peer_score_is_override = False
+                grade.final_grade = None
+                grade.status = TeamGrade.STATUS_PENDING
+                grade.verdict = ''
+                grade.verdict_remarks = ''
+                grade.verdict_by = None
+                grade.verdict_at = None
+                grade.revision_deadline = None
             grade.schedule = schedule
             changed = True
         if grade.defense_stage_id != (identity['defense_stage'].id if identity['defense_stage'] else None):
@@ -1176,7 +1221,10 @@ class GradeContextService:
         grade.recalculate()
         if not grade.is_complete:
             raise ValidationError({'status': 'Only complete grades can be finalized for archive.'})
-        if grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD:
+        verdict = getattr(grade, 'verdict', '')
+        if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
+            raise ValidationError({'status': 'Grades marked for re-defense cannot be finalized for archive.'})
+        if not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
             raise ValidationError({'status': 'Only passed grades can be finalized for archive.'})
         if grade.status == TeamGrade.STATUS_PUBLISHED:
             return grade
@@ -1456,10 +1504,12 @@ def assigned_adviser_rubric_payload(grade):
         }
     criteria = [
         {
+            'id': criterion.id,
             'name': criterion.name,
             'description': criterion.description,
             'max_score': criterion.max_score,
             'display_order': criterion.display_order,
+            'target_type': criterion.target_type,
         }
         for criterion in rubric.criteria.all().order_by('display_order', 'id')
     ]
@@ -1876,7 +1926,13 @@ def _auto_finalize_passed_grades_in_queryset(grades, user=None):
         if not grade.is_complete:
             skipped_incomplete += 1
             continue
-        if grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD:
+        verdict = getattr(grade, 'verdict', '')
+        if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
+            _mark_schedule_done_from_grade(grade)
+            _apply_team_result_from_grade(grade)
+            skipped_below_threshold += 1
+            continue
+        if not verdict and (grade.final_grade is None or grade.final_grade < PASS_GRADE_THRESHOLD):
             _mark_schedule_done_from_grade(grade)
             _apply_team_result_from_grade(grade)
             skipped_below_threshold += 1
@@ -1930,12 +1986,14 @@ def maybe_auto_finalize_passed_grade(grade, user=None):
     grade.recalculate()
     if grade.status in TeamGrade.LOCKED_STATUSES:
         return grade
-    if (
-        grade.is_complete
-        and grade.final_grade is not None
-        and grade.final_grade >= PASS_GRADE_THRESHOLD
-    ):
-        return finalize_passed_grade_for_archive(grade, user=user)
+    verdict = getattr(grade, 'verdict', '')
+    if verdict == TeamGrade.VERDICT_FOR_REDEFENSE:
+        return grade
+    if grade.is_complete:
+        if verdict in TeamGrade.PASSING_VERDICTS:
+            return finalize_passed_grade_for_archive(grade, user=user)
+        if not verdict and grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD:
+            return finalize_passed_grade_for_archive(grade, user=user)
     return grade
 
 
@@ -2052,6 +2110,22 @@ class StageCompletionService:
                 settings_payload = _pit_group_settings(semester, label, pit_event_config=config)
                 settings_payload['auto_publish'] = auto_result
             else:
+                if getattr(config, 'defense_stage', None):
+                    from defense.stages.models import DefenseStage
+                    from student_teams.models import StudentTeam
+                    active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
+                    curr_idx = -1
+                    for i, stg in enumerate(active_stages):
+                        if stg.id == config.defense_stage_id:
+                            curr_idx = i
+                            break
+                    if curr_idx != -1 and curr_idx + 1 < len(active_stages):
+                        next_stage = active_stages[curr_idx + 1]
+                        StudentTeam.objects.filter(
+                            semester=semester,
+                            current_defense_stage=config.defense_stage.label
+                        ).update(current_defense_stage=next_stage.label)
+
                 settings_payload = _capstone_group_settings(semester, label, defense_stage=config.defense_stage)
                 settings_payload['auto_finalize'] = auto_result
                 settings_payload['auto_publish'] = auto_result
@@ -2188,6 +2262,8 @@ def update_group_settings(
 
 
 def require_grade_editable(grade):
+    if (getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE or getattr(grade, 'attempt_count', 1) > 1) and grade.status not in TeamGrade.LOCKED_STATUSES:
+        return
     settings = group_settings_for_grade(grade)
     if settings.get('is_officially_complete'):
         raise ValidationError(

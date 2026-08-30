@@ -489,12 +489,14 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                             color: DefensysTokens.maroon,
                           ),
                           const SizedBox(width: 6),
-                          const Text(
-                            'Team Criteria (Graded once for the team)',
-                            style: TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                              color: DefensysTokens.maroon,
+                          const Expanded(
+                            child: Text(
+                              'Team Criteria (Graded once for the team)',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: DefensysTokens.maroon,
+                              ),
                             ),
                           ),
                         ],
@@ -631,11 +633,17 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                           'Score (normalized)',
                           style: TextStyle(fontSize: 13, color: Colors.grey),
                         ),
-                        Text(
-                          '${panelPct.toStringAsFixed(1)}%  ×  $panelWeight%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            color: Colors.grey,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            '${panelPct.toStringAsFixed(1)}%  ×  $panelWeight%  =  ${(panelPct * panelWeight / 100).toStringAsFixed(1)} pts',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.grey,
+                            ),
+                            textAlign: TextAlign.right,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],

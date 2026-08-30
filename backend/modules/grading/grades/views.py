@@ -194,7 +194,7 @@ class GradeCenterSyncView(APIView):
 
 
 class GradeCenterDetailView(APIView):
-    permission_classes = [CanManageModule]
+    permission_classes = [IsAuthenticated]
 
     def get_object(self, request, grade_id):
         return get_object_or_404(grade_records_for(request.user), pk=grade_id)
@@ -204,6 +204,8 @@ class GradeCenterDetailView(APIView):
         return Response({'grade': TeamGradeSerializer(grade).data})
 
     def patch(self, request, grade_id):
+        if not CanManageModule().has_permission(request, self):
+            raise PermissionDenied('Only administrators and PIT leads can manage this resource.')
         grade = self.get_object(request, grade_id)
         old_values = grade_audit_values(grade)
         try:
@@ -383,3 +385,104 @@ class GradeCenterGroupSettingsView(APIView):
         if auto_finalize:
             response_payload['auto_finalize'] = auto_finalize
         return Response(response_payload)
+
+
+class TeamGradeVerdictView(APIView):
+    """
+    API endpoint to record or update defense verdict for a specific TeamGrade.
+    Accessible to administrators and the assigned panel chair.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, grade_id):
+        grade = get_object_or_404(TeamGrade.objects.with_relations(), pk=grade_id)
+
+        is_admin = (
+            request.user.is_staff
+            or request.user.is_superuser
+            or getattr(request.user, 'role', None) == 'admin'
+        )
+        is_chair = False
+        if grade.schedule:
+            is_chair = grade.schedule.panel_assignments.filter(
+                panelist=request.user,
+                is_chair=True,
+            ).exists()
+
+        if not (is_admin or is_chair):
+            return Response(
+                {'detail': 'Only the panel chair or an administrator can issue defense verdicts.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        verdict = request.data.get('verdict')
+        valid_verdicts = [v[0] for v in TeamGrade.VERDICT_CHOICES]
+        if not verdict or verdict not in valid_verdicts:
+            return Response(
+                {
+                    'detail': f'Invalid verdict "{verdict}". Must be one of: {", ".join(valid_verdicts)}.',
+                    'valid_verdicts': valid_verdicts,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        if grade.panel_score is None:
+            return Response(
+                {'detail': 'Panel grading must be submitted before issuing a verdict.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        verdict_remarks = (request.data.get('verdict_remarks') or '').strip()
+        revision_deadline = request.data.get('revision_deadline')
+        parsed_deadline = None
+        if revision_deadline:
+            from django.utils.dateparse import parse_date
+            parsed_deadline = parse_date(str(revision_deadline).strip())
+            if not parsed_deadline:
+                return Response(
+                    {'detail': 'Invalid revision_deadline format (YYYY-MM-DD expected).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        grade.verdict = verdict
+        grade.verdict_remarks = verdict_remarks
+        grade.verdict_by = request.user
+        grade.verdict_at = timezone.now()
+        grade.revision_deadline = parsed_deadline
+        grade.save(update_fields=[
+            'verdict',
+            'verdict_remarks',
+            'verdict_by',
+            'verdict_at',
+            'revision_deadline',
+            'updated_at',
+        ])
+
+        _apply_team_result_from_grade(grade)
+
+        from authentication_access_control.models import SystemAuditLog
+        from authentication_access_control.audit import log_high_impact_action
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='defense.verdict_submitted',
+            target=grade,
+            target_type='TeamGrade',
+            target_id=grade.pk,
+            actor=request.user,
+            new_values={
+                'grade_id': grade.id,
+                'team_id': grade.team_id,
+                'verdict': verdict,
+                'verdict_remarks': verdict_remarks,
+                'revision_deadline': str(parsed_deadline) if parsed_deadline else None,
+            },
+        )
+
+        grade = grade_records_for(request.user).get(pk=grade.pk)
+        return Response({
+            'success': True,
+            'message': f'Defense verdict "{verdict}" recorded successfully.',
+            'grade': TeamGradeSerializer(grade).data,
+            **grade_center_payload(request),
+        })
+

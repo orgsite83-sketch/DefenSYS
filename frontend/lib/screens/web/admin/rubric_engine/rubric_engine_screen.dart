@@ -212,7 +212,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _buildPageHeader(RubricEngineState state, {required bool isPitLeadOnly}) {
     return DefensysPageHeader(
       icon: Icons.auto_awesome_mosaic_rounded,
-      title: 'Rubric Engine',
+      title: 'Evaluation Rubrics',
       subtitle: isPitLeadOnly
           ? 'Create and manage PIT evaluation rubrics for your department events.'
           : 'Central repository for Capstone and PIT evaluation rubrics across academic stages.',
@@ -300,11 +300,11 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _buildStats(RubricEngineState state, {required bool isPitLeadOnly}) {
     final hideAdviser = isPitLeadOnly || state.scope == 'pit';
 
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Expanded(
-          child: _evaluationStatCard(
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isNarrow = constraints.maxWidth < 780;
+        final cards = [
+          _evaluationStatCard(
             state: state,
             evalType: 'panel',
             title: 'Panel Rubrics',
@@ -313,11 +313,8 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             accent: DefensysUi.primaryMaroon,
             iconBg: const Color(0xFFFFF1F2),
           ),
-        ),
-        if (!hideAdviser) ...[
-          const SizedBox(width: 14),
-          Expanded(
-            child: _evaluationStatCard(
+          if (!hideAdviser)
+            _evaluationStatCard(
               state: state,
               evalType: 'adviser',
               title: 'Adviser Rubrics',
@@ -326,11 +323,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
               accent: const Color(0xFF059669),
               iconBg: const Color(0xFFECFDF5),
             ),
-          ),
-        ],
-        const SizedBox(width: 14),
-        Expanded(
-          child: _evaluationStatCard(
+          _evaluationStatCard(
             state: state,
             evalType: 'peer',
             title: 'Peer Rubrics',
@@ -339,8 +332,29 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             accent: const Color(0xFF2563EB),
             iconBg: const Color(0xFFEFF6FF),
           ),
-        ),
-      ],
+        ];
+
+        if (isNarrow) {
+          return Column(
+            children: [
+              for (int i = 0; i < cards.length; i++) ...[
+                if (i > 0) const SizedBox(height: 12),
+                cards[i],
+              ],
+            ],
+          );
+        }
+
+        return Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (int i = 0; i < cards.length; i++) ...[
+              if (i > 0) const SizedBox(width: 14),
+              Expanded(child: cards[i]),
+            ],
+          ],
+        );
+      },
     );
   }
 
@@ -477,12 +491,16 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                             color: selected ? accent : const Color(0xFF94A3B8),
                           ),
                           const SizedBox(width: 4),
-                          Text(
-                            selected ? 'Filter active · Tap to clear' : 'Tap to filter table',
-                            style: TextStyle(
-                              color: selected ? accent : const Color(0xFF94A3B8),
-                              fontSize: 11,
-                              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                          Expanded(
+                            child: Text(
+                              selected ? 'Filter active · Tap to clear' : 'Tap to filter table',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: selected ? accent : const Color(0xFF94A3B8),
+                                fontSize: 11,
+                                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                              ),
                             ),
                           ),
                         ],
@@ -530,14 +548,17 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
                     children: [
                       _searchField(state),
                       const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(child: _termSegmentedControl(state)),
-                          if (!isPitLeadOnly) ...[
-                            const SizedBox(width: 10),
-                            Expanded(child: _scopeSegmentedControl(state)),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _termSegmentedControl(state),
+                            if (!isPitLeadOnly) ...[
+                              const SizedBox(width: 10),
+                              _scopeSegmentedControl(state),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ],
                   );

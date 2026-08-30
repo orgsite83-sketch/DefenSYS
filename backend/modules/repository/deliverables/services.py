@@ -136,7 +136,70 @@ def current_stage_for_team(team):
     if not team:
         return default_stage_label()
     if team.is_capstone:
-        return team.current_defense_stage or team.ready_for_stage or default_stage_label()
+        from defense.scheduler.models import DefenseSchedule
+        from defense.stages.models import DefenseStage, StageGradingConfig
+        from student_teams.models import TeamStageProgress
+        from grading.grades.models import TeamGrade
+        from grading.constants import PASS_GRADE_THRESHOLD
+
+        # 1. If currently scheduled, the scheduled stage is active
+        sched = (
+            DefenseSchedule.objects.filter(
+                team=team,
+                scope=DefenseSchedule.SCOPE_CAPSTONE,
+                status=DefenseSchedule.STATUS_SCHEDULED,
+            )
+            .order_by('scheduled_date', 'start_time')
+            .first()
+        )
+        if sched and sched.defense_stage:
+            return sched.defense_stage.label
+
+        # 2. Get all configured active stages in sequential order
+        stages = list(
+            DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id')
+        )
+        if not stages:
+            return team.current_defense_stage or team.ready_for_stage or default_stage_label()
+
+        # 3. Check completion for each stage in order
+        completed_stage_ids = set()
+        for stg in stages:
+            # Check if stage is marked officially complete for this semester
+            if team.semester_id and StageGradingConfig.objects.filter(
+                semester=team.semester,
+                defense_stage=stg,
+                is_officially_complete=True,
+            ).exists():
+                completed_stage_ids.add(stg.id)
+                continue
+
+            # Check if team has passed/archived progress for this stage
+            if TeamStageProgress.objects.filter(
+                team=team,
+                defense_stage=stg,
+                status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
+            ).exists():
+                completed_stage_ids.add(stg.id)
+                continue
+
+            # Check if team has a passing published grade for this stage
+            if TeamGrade.objects.filter(
+                team=team,
+                defense_stage=stg,
+                status=TeamGrade.STATUS_PUBLISHED,
+                final_grade__gte=PASS_GRADE_THRESHOLD,
+            ).exists():
+                completed_stage_ids.add(stg.id)
+                continue
+
+        # 4. Find the first uncompleted stage in order
+        for stg in stages:
+            if stg.id not in completed_stage_ids:
+                return stg.label
+
+        # 5. If all configured stages are completed, return the last completed stage
+        return stages[-1].label
     else:
         # For PIT: find the scheduled schedule or the first event config
         from defense.scheduler.models import DefenseSchedule
@@ -322,8 +385,6 @@ def filter_teams(request, queryset):
 
 def archive_unlocked(team, stage_label, deliverable_type='post'):
     if deliverable_type == 'pre':
-        if team.status == StudentTeam.STATUS_APPROVED:
-            return True
         if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre'):
             return True
         if team.is_capstone:
@@ -335,8 +396,6 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
                 return True
         return is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label)
 
-    if team.status == StudentTeam.STATUS_APPROVED:
-        return True
     if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
         return True
     if is_stage_defense_done(team, stage_label):
@@ -420,7 +479,8 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
 
     from student_teams.models import TeamStageProgress
     from student_teams.services import get_stage_progress
-    from defense.scheduler.models import DefenseSchedule
+    from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
+    from defense.stages.models import StageGradingConfig
     from django.utils import timezone
 
     is_capstone = getattr(team, 'is_capstone', False)
@@ -436,13 +496,33 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
     )
     if stage_obj:
         active_schedules = active_schedules.filter(defense_stage=stage_obj)
+    else:
+        active_schedules = active_schedules.filter(event_name=stage_label)
 
     is_defense_today = active_schedules.filter(scheduled_date=today).exists()
     has_active_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_SCHEDULED).exists()
     has_done_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_DONE).exists()
 
-    if progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule:
-        if archive_required_complete:
+    is_officially_complete = False
+    if is_capstone and stage_obj:
+        sem = getattr(team, 'semester', None)
+        is_officially_complete = StageGradingConfig.objects.filter(
+            defense_stage=stage_obj,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
+    elif not is_capstone:
+        sem = getattr(team, 'semester', None)
+        is_officially_complete = PitEventGradingConfig.objects.filter(
+            event_name=stage_label,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
+
+    if is_officially_complete or progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule:
+        if archive_required_complete or is_officially_complete:
             return 'passed'
         else:
             return 'pending_post_defense'
@@ -475,6 +555,8 @@ def is_stage_defense_done(team, stage_label):
     )
     if stage_obj:
         active_schedules = active_schedules.filter(defense_stage=stage_obj)
+    else:
+        active_schedules = active_schedules.filter(event_name=stage_label)
 
     has_done_schedule = active_schedules.exists()
 
@@ -631,13 +713,65 @@ def stage_payload(team, stage_label):
 
     from repository.project_archive.services import resolve_archive_file_template
     from academic_period_management.models import Semester
+    from student_teams.services import get_stage_progress
+    from defense.stages.models import StageGradingConfig
+    from defense.scheduler.models import DefenseSchedule, PitEventGradingConfig
+    from django.utils import timezone
+
     semester_label = team.semester.label if team.semester_id else Semester.FIRST
+
+    is_capstone = getattr(team, 'is_capstone', False)
+    stage_obj = defense_stage_for_label(stage_label) if is_capstone else None
+    progress = get_stage_progress(team, stage_obj) if stage_obj else None
+    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
+    is_endorsed = was_stage_endorsed(team, stage_obj) if is_capstone else (team.ready_for_stage == stage_label)
+
+    today = timezone.localdate()
+    active_schedules = DefenseSchedule.objects.filter(
+        scope=DefenseSchedule.SCOPE_CAPSTONE if is_capstone else DefenseSchedule.SCOPE_PIT,
+        team=team,
+        status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+    )
+    if stage_obj:
+        active_schedules = active_schedules.filter(defense_stage=stage_obj)
+    else:
+        active_schedules = active_schedules.filter(event_name=stage_label)
+
+    is_defense_today = active_schedules.filter(scheduled_date=today).exists()
+    has_active_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_SCHEDULED).exists()
+    has_done_schedule = active_schedules.filter(status=DefenseSchedule.STATUS_DONE).exists()
+
+    is_stage_officially_complete = False
+    if is_capstone and stage_obj:
+        sem = getattr(team, 'semester', None)
+        is_stage_officially_complete = StageGradingConfig.objects.filter(
+            defense_stage=stage_obj,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
+    elif not is_capstone:
+        sem = getattr(team, 'semester', None)
+        is_stage_officially_complete = PitEventGradingConfig.objects.filter(
+            event_name=stage_label,
+            is_officially_complete=True,
+        ).filter(
+            Q(semester=sem) if sem else Q()
+        ).exists()
 
     is_defense_done = is_stage_defense_done(team, stage_label)
     admin_unlocked_pre = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='pre') or is_stage_unlocked_by_admin(team, stage_label)
     admin_unlocked_post = is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label)
-    can_faculty_review_pre = (not is_defense_done) or admin_unlocked_pre
+    can_faculty_review_pre = ((not is_endorsed and not is_defense_done) or admin_unlocked_pre)
     can_faculty_review_post = True
+
+    can_cancel_endorsement = bool(
+        is_endorsed
+        and not has_active_schedule
+        and not has_done_schedule
+        and not is_stage_officially_complete
+        and not is_defense_done
+    )
 
     for item in definitions:
         submission = submitted.get(item['id'])
@@ -678,18 +812,16 @@ def stage_payload(team, stage_label):
         or all(item['uploaded'] for item in archive_required_items)
     )
     
-    from student_teams.services import get_stage_progress
-    is_endorsed = was_stage_endorsed(team, defense_stage_for_label(stage_label)) if team.is_capstone else (team.ready_for_stage == stage_label)
     stage_status_detail = compute_stage_status_detail(team, stage_label, configured, archive_required_complete)
-
-    stage_obj = defense_stage_for_label(stage_label) if team.is_capstone else None
-    progress = get_stage_progress(team, stage_obj) if stage_obj else None
-    progress_status = progress.status if progress else ('ready' if team.ready_for_stage == stage_label else 'locked')
 
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
         'endorsed': is_endorsed,
+        'is_officially_complete': is_stage_officially_complete,
+        'has_active_schedule': has_active_schedule,
+        'has_done_schedule': has_done_schedule,
+        'can_cancel_endorsement': can_cancel_endorsement,
         'archive_unlocked': unlocked,
         'vault_unlocked': unlocked,
         'pre_unlocked': archive_unlocked(team, stage_label, deliverable_type='pre'),
@@ -806,18 +938,18 @@ def team_payload(team, selected_stage=None):
     if selected:
         if team.is_capstone:
             grade_obj = TeamGrade.objects.filter(
+                Q(defense_stage__label=selected) | Q(stage_label=selected),
                 team=team,
                 semester=team.semester,
                 scope=TeamGrade.SCOPE_CAPSTONE,
-                defense_stage__label=selected
-            ).first()
+            ).order_by('-updated_at', '-id').first()
         else:
             grade_obj = TeamGrade.objects.filter(
+                Q(pit_event_config__event_name=selected) | Q(stage_label=selected),
                 team=team,
                 semester=team.semester,
                 scope=TeamGrade.SCOPE_PIT,
-                pit_event_config__event_name=selected
-            ).first()
+            ).order_by('-updated_at', '-id').first()
 
         if grade_obj:
             student_grades = StudentStageGrade.objects.filter(team_grade=grade_obj)
@@ -835,12 +967,16 @@ def team_payload(team, selected_stage=None):
 
             grade_payload = {
                 'id': grade_obj.id,
+                'schedule_id': grade_obj.schedule_id,
+                'scheduled_date': grade_obj.schedule.scheduled_date.isoformat() if grade_obj.schedule and grade_obj.schedule.scheduled_date else None,
+                'stage_label': grade_obj.stage_label,
                 'panel_score': float(grade_obj.panel_score) if grade_obj.panel_score is not None else None,
                 'peer_score': float(grade_obj.peer_score) if grade_obj.peer_score is not None else None,
                 'adviser_score': float(grade_obj.adviser_score) if grade_obj.adviser_score is not None else None,
                 'final_grade': float(grade_obj.final_grade) if grade_obj.final_grade is not None else None,
                 'status': grade_obj.status,
                 'result': grade_obj.result,
+                'is_officially_complete': bool(selected_payload.get('is_officially_complete', False)),
                 'peer_per_student': peer_per_student,
             }
 
@@ -1118,6 +1254,40 @@ def endorse_team(team, stage_label):
     else:
         team.ready_for_stage = stage_label
         team.save(update_fields=['ready_for_stage', 'updated_at'])
+    return team
+
+
+@transaction.atomic
+def unendorse_team(team, stage_label):
+    from defense.scheduler.models import DefenseSchedule
+    if team.is_capstone:
+        stage = defense_stage_for_label(stage_label)
+        if stage is None:
+            raise ValueError('Defense stage does not exist.')
+
+        has_schedule = DefenseSchedule.objects.filter(
+            team=team,
+            defense_stage=stage,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+        ).exists()
+        if has_schedule:
+            raise ValueError('Cannot cancel endorsement: defense is already scheduled or completed.')
+
+        mark_stage_locked(team, stage)
+    else:
+        has_schedule = DefenseSchedule.objects.filter(
+            team=team,
+            event_name__iexact=stage_label,
+            scope=DefenseSchedule.SCOPE_PIT,
+            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+        ).exists()
+        if has_schedule:
+            raise ValueError('Cannot cancel endorsement: defense is already scheduled or completed.')
+
+        if team.ready_for_stage == stage_label:
+            team.ready_for_stage = None
+            team.save(update_fields=['ready_for_stage', 'updated_at'])
     return team
 
 

@@ -5,6 +5,22 @@ import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
 
+enum DefenseOperationsView { schedules, readiness }
+
+final defenseBoardActiveViewProvider =
+    NotifierProvider<DefenseBoardActiveViewNotifier, DefenseOperationsView>(
+      DefenseBoardActiveViewNotifier.new,
+    );
+
+class DefenseBoardActiveViewNotifier extends Notifier<DefenseOperationsView> {
+  @override
+  DefenseOperationsView build() => DefenseOperationsView.schedules;
+
+  void setView(DefenseOperationsView view) {
+    state = view;
+  }
+}
+
 final defenseBoardProvider =
     NotifierProvider<DefenseBoardNotifier, DefenseBoardState>(
       DefenseBoardNotifier.new,
@@ -18,12 +34,16 @@ class DefenseBoardState {
   final List<String> statuses;
   final List<Map<String, dynamic>> scopes;
   final List<Map<String, dynamic>> documenters;
+  final List<Map<String, dynamic>> advisers;
+  final List<Map<String, dynamic>> sections;
   final Map<String, dynamic> counts;
   final Map<String, dynamic>? activeSemester;
   final String search;
   final String stage;
   final String status;
   final String scope;
+  final String adviser;
+  final String section;
   final String? error;
   final String? message;
 
@@ -35,12 +55,16 @@ class DefenseBoardState {
     this.statuses = const [],
     this.scopes = const [],
     this.documenters = const [],
+    this.advisers = const [],
+    this.sections = const [],
     this.counts = const {},
     this.activeSemester,
     this.search = '',
     this.stage = '',
     this.status = '',
     this.scope = '',
+    this.adviser = '',
+    this.section = '',
     this.error,
     this.message,
   });
@@ -53,12 +77,16 @@ class DefenseBoardState {
     List<String>? statuses,
     List<Map<String, dynamic>>? scopes,
     List<Map<String, dynamic>>? documenters,
+    List<Map<String, dynamic>>? advisers,
+    List<Map<String, dynamic>>? sections,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? activeSemester,
     String? search,
     String? stage,
     String? status,
     String? scope,
+    String? adviser,
+    String? section,
     String? error,
     String? message,
     bool clearActiveSemester = false,
@@ -73,6 +101,8 @@ class DefenseBoardState {
       statuses: statuses ?? this.statuses,
       scopes: scopes ?? this.scopes,
       documenters: documenters ?? this.documenters,
+      advisers: advisers ?? this.advisers,
+      sections: sections ?? this.sections,
       counts: counts ?? this.counts,
       activeSemester: clearActiveSemester
           ? null
@@ -81,6 +111,8 @@ class DefenseBoardState {
       stage: stage ?? this.stage,
       status: status ?? this.status,
       scope: scope ?? this.scope,
+      adviser: adviser ?? this.adviser,
+      section: section ?? this.section,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -100,12 +132,16 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
     String? stage,
     String? status,
     String? scope,
+    String? adviser,
+    String? section,
     String? successMessage,
   }) async {
     final nextSearch = search ?? state.search;
     final nextStage = stage ?? state.stage;
     final nextStatus = status ?? state.status;
     final nextScope = scope ?? state.scope;
+    final nextAdviser = adviser ?? state.adviser;
+    final nextSection = section ?? state.section;
 
     state = state.copyWith(
       isLoading: state.schedules.isEmpty,
@@ -114,6 +150,8 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
       stage: nextStage,
       status: nextStatus,
       scope: nextScope,
+      adviser: nextAdviser,
+      section: nextSection,
       clearError: true,
       clearMessage: true,
     );
@@ -125,6 +163,8 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
           if (nextStage.isNotEmpty) 'stage': nextStage,
           if (nextStatus.isNotEmpty) 'status': nextStatus,
           if (nextScope.isNotEmpty) 'scope': nextScope,
+          if (nextAdviser.isNotEmpty) 'adviser': nextAdviser,
+          if (nextSection.isNotEmpty) 'section': nextSection,
         },
       );
       final response = await _client.get(uri);
@@ -261,6 +301,8 @@ class DefenseBoardNotifier extends Notifier<DefenseBoardState> {
       statuses: _readStringList(payload['statuses']),
       scopes: _readMapList(payload['scopes']),
       documenters: _readMapList(payload['documenters']),
+      advisers: _readMapList(payload['advisers']),
+      sections: _readMapList(payload['sections']),
       counts: payload['counts'] is Map
           ? Map<String, dynamic>.from(payload['counts'])
           : state.counts,

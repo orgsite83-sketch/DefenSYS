@@ -224,11 +224,11 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
-              title: 'Archive items',
+              title: 'Post-defense',
               value: _count(state, 'archive_submissions'),
-              valueColor: const Color(0xFF7C3AED),
-              icon: Icons.lock_outline_rounded,
-              iconTint: const Color(0xFFDDD6FE),
+              valueColor: AppColors.maroon,
+              icon: Icons.inventory_2_outlined,
+              iconTint: const Color(0xFFFECDD3),
             ),
           ),
           const SizedBox(width: 14),

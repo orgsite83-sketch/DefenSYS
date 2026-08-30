@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/academic_period_provider.dart';
 import '../../../../services/student_academic_records_provider.dart';
 import '../../../../utils/csv_file_io.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -1015,12 +1016,14 @@ class _StudentAcademicRecordsScreenState
                   onPressed: () => Navigator.pop(dialogContext, false),
                   child: const Text('Cancel'),
                 ),
-                ElevatedButton(
+                FilledButton.icon(
                   onPressed:
                       selectedStudentId == null || selectedSemesterId == null
                       ? null
                       : () => Navigator.pop(dialogContext, true),
-                  child: Text(editing ? 'Save Changes' : 'Save Record'),
+                  icon: const Icon(Icons.save_rounded, size: 16),
+                  label: Text(editing ? 'Save Changes' : 'Save Record'),
+                  style: DefensysTokens.saveButtonStyle(isPill: false),
                 ),
               ],
             );
@@ -1446,6 +1449,22 @@ class _StudentAcademicRecordsScreenState
     final nameIndex = findHeader((value) => value == 'full name' || value == 'name');
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');
+    final contactIndex = findHeader(
+      (value) =>
+          value == 'contact' ||
+          value == 'contact no' ||
+          value == 'contact no.' ||
+          value == 'contact number' ||
+          value == 'phone' ||
+          value == 'phone no' ||
+          value == 'phone no.' ||
+          value == 'phone number' ||
+          value == 'mobile' ||
+          value == 'mobile no' ||
+          value == 'mobile no.' ||
+          value == 'mobile number' ||
+          value == 'cellphone',
+    );
     final section = metadata['section']?.toString() ?? '';
     final yearLevel = metadata['year_level']?.toString() ?? '';
     final students = <Map<String, dynamic>>[];
@@ -1460,11 +1479,14 @@ class _StudentAcademicRecordsScreenState
       final rowYear = levelIndex != -1
           ? _normalizeYearLevel(read(levelIndex))
           : yearLevel;
+      final contact = contactIndex == -1 ? '' : read(contactIndex);
       students.add({
         'id_number': id,
         'first_name': splitName.firstName,
         'last_name': splitName.lastName,
         'email': emailIndex == -1 ? '' : read(emailIndex),
+        if (contact.isNotEmpty) 'phone_number': contact,
+        if (contact.isNotEmpty) 'contact': contact,
         'role': 'student',
         if (rowYear.isNotEmpty) 'year_level': rowYear,
         if (section.isNotEmpty) 'section': section,

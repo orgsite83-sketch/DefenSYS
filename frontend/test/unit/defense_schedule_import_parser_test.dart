@@ -26,6 +26,7 @@ Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Panel 
       expect(result.stage, equals('REDEFENSE - Capstone Project and Research 1'));
       expect(result.date, equals('May 18, 2026'));
       expect(result.room, equals('SMART ROOM'));
+      expect(result.isRedefense, isTrue);
 
       expect(result.rows, hasLength(2));
 

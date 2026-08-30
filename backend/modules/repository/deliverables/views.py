@@ -17,6 +17,7 @@ from .services import (
     active_semester,
     counts_payload,
     endorse_team,
+    unendorse_team,
     filter_teams,
     remove_submission,
     team_payload,
@@ -253,6 +254,27 @@ class CapstoneDeliverableEndorseView(APIView):
             
         try:
             endorse_team(team, attrs['stage_label'])
+        except ValueError as exc:
+            return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)
+
+
+class CapstoneDeliverableUnendorseView(APIView):
+    permission_classes = [CanManageDeliverables]
+
+    def post(self, request):
+        if getattr(request.user, 'role', None) == 'student':
+            return Response({'detail': 'Students cannot cancel endorsement.'}, status=status.HTTP_403_FORBIDDEN)
+        serializer = DeliverableActionSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        attrs = serializer.validated_data
+        team = get_allowed_team(request, attrs['team_id'])
+        
+        if not check_deliverable_write_permission(request.user, team):
+            return Response({'detail': 'You do not have permission to modify endorsement for this team.'}, status=status.HTTP_403_FORBIDDEN)
+            
+        try:
+            unendorse_team(team, attrs['stage_label'])
         except ValueError as exc:
             return Response({'detail': str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response(deliverables_payload(request, scope='pit' if team.is_pit else 'capstone'), status=status.HTTP_200_OK)

@@ -322,7 +322,8 @@ List<RouteBase> _adminRoutes() {
               path: ':stageId/edit',
               builder: (_, state) {
                 final id = int.parse(state.pathParameters['stageId']!);
-                return AdminDefenseStageEditorRoute(stageId: id);
+                final tab = int.tryParse(state.uri.queryParameters['tab'] ?? '') ?? 0;
+                return AdminDefenseStageEditorRoute(stageId: id, initialTab: tab);
               },
             ),
           ],
@@ -384,6 +385,22 @@ List<RouteBase> _facultyRoutes() {
         GoRoute(
           path: 'grade-center',
           builder: (_, __) => const SizedBox.shrink(),
+          routes: [
+            GoRoute(
+              path: 'grades/:gradeId',
+              builder: (_, state) {
+                final id = int.parse(state.pathParameters['gradeId']!);
+                return AdminGradeTeamDetailRoute(gradeId: id);
+              },
+            ),
+            GoRoute(
+              path: 'events/:groupKey',
+              builder: (_, state) {
+                final key = state.pathParameters['groupKey']!;
+                return AdminGradeEventTeamsRoute(groupKey: key);
+              },
+            ),
+          ],
         ),
         GoRoute(path: 'rubrics', builder: (_, __) => const SizedBox.shrink()),
         GoRoute(

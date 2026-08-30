@@ -13,7 +13,7 @@ from defense.stages.models import DefenseStage
 from defense.stages.serializers import DefenseStageSerializer
 from grading.rubrics.models import Rubric
 from grading.rubrics.serializers import RubricSerializer
-from student_teams.models import StudentTeam
+from student_teams.models import StudentTeam, TeamStageProgress
 from student_teams.services import get_ready_teams, is_stage_ready, mark_stage_scheduled
 from .models import DefenseSchedule, SchedulePanelist, PitEventDeliverable
 from .pit_config import get_pit_event_config, pit_event_config_payload, upsert_pit_event_config
@@ -104,7 +104,7 @@ def schedule_queryset():
             'rubric',
             'created_by',
         )
-        .prefetch_related('panel_assignments', 'panel_assignments__panelist')
+        .prefetch_related('panel_assignments', 'panel_assignments__panelist', 'grade_records')
     )
 
 
@@ -124,6 +124,10 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
     adviser_name = serializers.SerializerMethodField()
     instructor_name = serializers.SerializerMethodField()
     display_semester = serializers.CharField(source='semester.display_name', read_only=True)
+    completed_stages = serializers.SerializerMethodField()
+    scheduled_stages = serializers.SerializerMethodField()
+    redefense_stages = serializers.SerializerMethodField()
+    stage_progress = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentTeam
@@ -141,6 +145,10 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             'leader_name',
             'adviser_name',
             'instructor_name',
+            'completed_stages',
+            'scheduled_stages',
+            'redefense_stages',
+            'stage_progress',
         ]
 
     def get_leader_name(self, obj):
@@ -164,6 +172,67 @@ class ScheduleTeamSerializer(serializers.ModelSerializer):
             return display_name(assignment.faculty)
         return None
 
+    def get_completed_stages(self, obj):
+        from grading.grades.models import TeamGrade
+        completed = set()
+        for prog in obj.stage_progress.all():
+            if prog.status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED]:
+                if prog.defense_stage:
+                    completed.add(prog.defense_stage.label)
+        for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
+            if grade.result == 'passed' and grade.defense_stage:
+                completed.add(grade.defense_stage.label)
+            elif grade.scope == TeamGrade.SCOPE_PIT and grade.result == 'passed' and grade.stage_label:
+                completed.add(grade.stage_label)
+        return sorted(list(completed))
+
+    def get_scheduled_stages(self, obj):
+        scheduled = set()
+        for sched in obj.defense_schedules.all():
+            if sched.status == DefenseSchedule.STATUS_SCHEDULED:
+                stage_label = sched.stage_label
+                if stage_label:
+                    scheduled.add(stage_label)
+        return sorted(list(scheduled))
+
+    def get_redefense_stages(self, obj):
+        from grading.grades.models import TeamGrade
+        redefense = set()
+        completed = set(self.get_completed_stages(obj))
+        for grade in TeamGrade.objects.filter(team=obj, semester=obj.semester):
+            if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE and grade.defense_stage:
+                label = grade.defense_stage.label
+                if label not in completed:
+                    redefense.add(label)
+        return sorted(list(redefense))
+
+    def get_stage_progress(self, obj):
+        result = {}
+        completed = set(self.get_completed_stages(obj))
+        scheduled = set(self.get_scheduled_stages(obj))
+        redefense = set(self.get_redefense_stages(obj))
+        for c in completed:
+            result[c] = 'completed'
+        for r in redefense:
+            if r not in result:
+                result[r] = 'for_redefense'
+        for s in scheduled:
+            if s not in result:
+                result[s] = 'scheduled'
+        if obj.ready_for_stage and obj.ready_for_stage not in result:
+            result[obj.ready_for_stage] = 'ready'
+        return result
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        completed = set(data.get('completed_stages') or [])
+        redefense = set(data.get('redefense_stages') or [])
+        if data.get('ready_for_stage') in completed:
+            data['ready_for_stage'] = None
+        if not data.get('ready_for_stage') and redefense:
+            data['ready_for_stage'] = next(iter(redefense))
+        return data
+
 
 class SchedulePanelistSerializer(serializers.ModelSerializer):
     id = serializers.IntegerField(source='panelist.id', read_only=True)
@@ -186,6 +255,10 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     team_name = serializers.CharField(source='team.name', read_only=True)
     project_title = serializers.CharField(source='team.project_title', read_only=True)
     team_level = serializers.CharField(source='team.level', read_only=True)
+    section = serializers.CharField(source='team.section', read_only=True, allow_null=True)
+    adviser_id = serializers.IntegerField(source='team.adviser.id', read_only=True, allow_null=True)
+    adviser_name = serializers.SerializerMethodField()
+    leader_name = serializers.SerializerMethodField()
     defense_stage_id = serializers.IntegerField(source='defense_stage.id', read_only=True, allow_null=True)
     defense_stage_label = serializers.CharField(source='defense_stage.label', read_only=True, allow_null=True)
     pit_event_config_id = serializers.SerializerMethodField()
@@ -200,6 +273,8 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
     minutes_status = serializers.SerializerMethodField()
     minutes_id = serializers.SerializerMethodField()
     display_status = serializers.SerializerMethodField()
+    grade_id = serializers.SerializerMethodField()
+    grade_status = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseSchedule
@@ -213,6 +288,10 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'team_name',
             'project_title',
             'team_level',
+            'section',
+            'adviser_id',
+            'adviser_name',
+            'leader_name',
             'defense_stage_id',
             'defense_stage_label',
             'pit_event_config_id',
@@ -226,6 +305,8 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'room',
             'status',
             'display_status',
+            'grade_id',
+            'grade_status',
             'panelists',
             'panelist_ids',
             'created_by_name',
@@ -236,6 +317,91 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
             'created_at',
             'updated_at',
         ]
+
+    def get_grade_id(self, obj):
+        try:
+            grades = list(obj.grade_records.all())
+            if grades:
+                grades.sort(key=lambda g: (g.updated_at or g.created_at, g.id), reverse=True)
+                return grades[0].id
+        except Exception:
+            pass
+
+        from grading.grades.models import TeamGrade
+        try:
+            if obj.scope == DefenseSchedule.SCOPE_CAPSTONE and obj.defense_stage_id:
+                grade = TeamGrade.objects.filter(
+                    team_id=obj.team_id,
+                    semester_id=obj.semester_id,
+                    defense_stage_id=obj.defense_stage_id,
+                ).order_by('-updated_at', '-id').first()
+                if grade:
+                    if grade.schedule_id != obj.id:
+                        grade.schedule = obj
+                        grade.save(update_fields=['schedule'])
+                    return grade.id
+            elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
+                grade = TeamGrade.objects.filter(
+                    team_id=obj.team_id,
+                    semester_id=obj.semester_id,
+                    stage_label=obj.event_name,
+                ).order_by('-updated_at', '-id').first()
+                if grade:
+                    if grade.schedule_id != obj.id:
+                        grade.schedule = obj
+                        grade.save(update_fields=['schedule'])
+                    return grade.id
+            elif obj.stage_label:
+                grade = TeamGrade.objects.filter(
+                    team_id=obj.team_id,
+                    semester_id=obj.semester_id,
+                    stage_label=obj.stage_label,
+                ).order_by('-updated_at', '-id').first()
+                if grade:
+                    if grade.schedule_id != obj.id:
+                        grade.schedule = obj
+                        grade.save(update_fields=['schedule'])
+                    return grade.id
+        except Exception:
+            pass
+
+        try:
+            from grading.grades.services import GradeContextService
+            grade, _, _ = GradeContextService.get_or_create_for_schedule(obj)
+            return grade.id if grade else None
+        except Exception:
+            return None
+
+    def get_grade_status(self, obj):
+        try:
+            grades = list(obj.grade_records.all())
+            if grades:
+                grades.sort(key=lambda g: (g.updated_at or g.created_at, g.id), reverse=True)
+                return grades[0].status
+        except Exception:
+            pass
+
+        from grading.grades.models import TeamGrade
+        try:
+            if obj.scope == DefenseSchedule.SCOPE_CAPSTONE and obj.defense_stage_id:
+                grade = TeamGrade.objects.filter(
+                    team_id=obj.team_id,
+                    semester_id=obj.semester_id,
+                    defense_stage_id=obj.defense_stage_id,
+                ).order_by('-updated_at', '-id').first()
+                if grade:
+                    return grade.status
+            elif obj.scope == DefenseSchedule.SCOPE_PIT and obj.event_name:
+                grade = TeamGrade.objects.filter(
+                    team_id=obj.team_id,
+                    semester_id=obj.semester_id,
+                    stage_label=obj.event_name,
+                ).order_by('-updated_at', '-id').first()
+                if grade:
+                    return grade.status
+        except Exception:
+            pass
+        return None
 
     def get_display_status(self, obj):
         if obj.status == DefenseSchedule.STATUS_SCHEDULED:
@@ -262,6 +428,16 @@ class DefenseScheduleSerializer(serializers.ModelSerializer):
 
     def get_created_by_name(self, obj):
         return display_name(obj.created_by)
+
+    def get_adviser_name(self, obj):
+        if obj.team and obj.team.adviser:
+            return display_name(obj.team.adviser)
+        return ''
+
+    def get_leader_name(self, obj):
+        if obj.team and obj.team.leader:
+            return display_name(obj.team.leader)
+        return ''
 
     def get_documenter_name(self, obj):
         return display_name(obj.documenter)
@@ -695,8 +871,16 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
         if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE and not team.is_capstone:
             raise serializers.ValidationError({'team_id': 'Capstone schedules require a Capstone team.'})
-        if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE and not is_stage_ready(team, attrs['defense_stage']):
-            raise serializers.ValidationError({'team_id': 'Team is not endorsed for this stage.'})
+        if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
+            from student_teams.models import TeamStageProgress
+            if TeamStageProgress.objects.filter(
+                team=team,
+                defense_stage=attrs['defense_stage'],
+                status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
+            ).exists():
+                raise serializers.ValidationError({'team_id': 'Team has already completed and passed this stage.'})
+            if not is_stage_ready(team, attrs['defense_stage']):
+                raise serializers.ValidationError({'team_id': 'Team is not endorsed for this stage.'})
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT and not team.is_pit:
             raise serializers.ValidationError({'team_id': 'PIT schedules require a PIT team.'})
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
@@ -710,18 +894,37 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
         return team
 
     def _validate_duplicate(self, attrs):
-        queryset = DefenseSchedule.objects.filter(
+        active_qs = DefenseSchedule.objects.filter(
             scope=attrs['scope'],
             semester=attrs['semester'],
             team=attrs['team'],
-            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+            status=DefenseSchedule.STATUS_SCHEDULED,
         )
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
-            queryset = queryset.filter(event_name__iexact=attrs['event_name'])
+            active_qs = active_qs.filter(event_name__iexact=attrs['event_name'])
         else:
-            queryset = queryset.filter(defense_stage=attrs['defense_stage'])
-        if queryset.exists():
-            raise serializers.ValidationError({'team_id': 'This team already has a scheduled or completed defense for this stage or event.'})
+            active_qs = active_qs.filter(defense_stage=attrs['defense_stage'])
+        if active_qs.exists():
+            raise serializers.ValidationError({'team_id': 'This team already has an active scheduled defense slot.'})
+
+        if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
+            from student_teams.models import TeamStageProgress
+            if TeamStageProgress.objects.filter(
+                team=attrs['team'],
+                defense_stage=attrs['defense_stage'],
+                status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
+            ).exists():
+                raise serializers.ValidationError({'team_id': 'This team has already completed and passed this stage.'})
+        elif attrs['scope'] == DefenseSchedule.SCOPE_PIT:
+            done_qs = DefenseSchedule.objects.filter(
+                scope=DefenseSchedule.SCOPE_PIT,
+                semester=attrs['semester'],
+                team=attrs['team'],
+                event_name__iexact=attrs['event_name'],
+                status=DefenseSchedule.STATUS_DONE,
+            )
+            if done_qs.exists():
+                raise serializers.ValidationError({'team_id': f'Team {attrs["team"].name} has already completed this PIT event.'})
 
     def _sync_panelists(self, schedule, panelists):
         SchedulePanelist.objects.bulk_create([
@@ -811,6 +1014,13 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE:
                 if not team.is_capstone:
                     raise serializers.ValidationError({'slots': 'Capstone plans can only include Capstone teams.'})
+                from student_teams.models import TeamStageProgress
+                if TeamStageProgress.objects.filter(
+                    team=team,
+                    defense_stage=attrs['defense_stage'],
+                    status__in=[TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_ARCHIVED],
+                ).exists():
+                    raise serializers.ValidationError({'slots': f'{team.name} has already completed and passed this stage.'})
                 if not is_stage_ready(team, attrs['defense_stage']):
                     raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for this stage.'})
             elif not team.is_pit:
@@ -824,18 +1034,38 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                         if (team.ready_for_stage or '').strip().lower() != attrs['event_name'].strip().lower():
                             raise serializers.ValidationError({'slots': f'{team.name} is not endorsed for {attrs["event_name"]}.'})
 
-            existing = DefenseSchedule.objects.filter(
+            active_existing = DefenseSchedule.objects.filter(
                 scope=attrs['scope'],
                 semester=attrs['semester'],
                 team=team,
-                status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE],
+                status=DefenseSchedule.STATUS_SCHEDULED,
             )
             if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
-                existing = existing.filter(event_name__iexact=attrs['event_name'])
+                active_existing = active_existing.filter(event_name__iexact=attrs['event_name'])
             else:
-                existing = existing.filter(defense_stage=attrs['defense_stage'])
-            if existing.exists():
-                raise serializers.ValidationError({'slots': f'{team.name} already has a scheduled or completed defense for this stage or event.'})
+                active_existing = active_existing.filter(defense_stage=attrs['defense_stage'])
+            if active_existing.exists():
+                raise serializers.ValidationError({'slots': f'{team.name} already has an active scheduled defense slot.'})
+
+            if attrs['scope'] == DefenseSchedule.SCOPE_CAPSTONE and attrs.get('defense_stage'):
+                from grading.grades.models import TeamGrade
+                grade = TeamGrade.objects.filter(
+                    team=team,
+                    semester=attrs['semester'],
+                    defense_stage=attrs['defense_stage'],
+                ).first()
+                if grade and grade.result == 'passed':
+                    raise serializers.ValidationError({'slots': f'{team.name} has already completed and passed this stage.'})
+            elif attrs['scope'] == DefenseSchedule.SCOPE_PIT:
+                done_existing = DefenseSchedule.objects.filter(
+                    scope=DefenseSchedule.SCOPE_PIT,
+                    semester=attrs['semester'],
+                    team=team,
+                    event_name__iexact=attrs['event_name'],
+                    status=DefenseSchedule.STATUS_DONE,
+                )
+                if done_existing.exists():
+                    raise serializers.ValidationError({'slots': f'{team.name} has already completed this PIT event.'})
 
         doc = attrs.get('documenter')
         if doc:
@@ -1146,6 +1376,7 @@ def schedule_options_payload(user=None, semester=None, pit_lead_only=None):
         teams = teams.filter(semester=semester)
     else:
         teams = teams.none()
+    teams = teams.prefetch_related('stage_progress__defense_stage', 'defense_schedules')
 
     from .models import PitEventGradingConfig
     from .pit_config import pit_event_config_payload

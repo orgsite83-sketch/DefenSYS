@@ -10,6 +10,7 @@ class ParsedScheduleImport {
     this.date,
     this.semester,
     this.room,
+    this.isRedefense = false,
   });
 
   final List<ParsedScheduleImportRow> rows;
@@ -17,6 +18,32 @@ class ParsedScheduleImport {
   final String? date;
   final String? semester;
   final String? room;
+  final bool isRedefense;
+
+  Map<String, dynamic> toJson() => {
+    'rows': rows.map((r) => r.toJson()).toList(),
+    'stage': stage,
+    'date': date,
+    'semester': semester,
+    'room': room,
+    'is_redefense': isRedefense,
+  };
+
+  factory ParsedScheduleImport.fromJson(Map<String, dynamic> json) {
+    final rawRows = json['rows'] as List? ?? const [];
+    return ParsedScheduleImport(
+      rows: rawRows
+          .map((r) => ParsedScheduleImportRow.fromJson(
+                Map<String, dynamic>.from(r as Map),
+              ))
+          .toList(),
+      stage: json['stage']?.toString(),
+      date: json['date']?.toString(),
+      semester: json['semester']?.toString(),
+      room: json['room']?.toString(),
+      isRedefense: json['is_redefense'] == true,
+    );
+  }
 }
 
 class ParsedScheduleImportRow {
@@ -53,6 +80,54 @@ class ParsedScheduleImportRow {
   final String startTime;
   final String endTime;
   final int? slotDuration;
+
+  Map<String, dynamic> toJson() => {
+    'sheet_row': sheetRow,
+    'time': time,
+    'team_name': teamName,
+    'project_title': projectTitle,
+    'adviser': adviser,
+    'members': members,
+    'chair': chair,
+    'panel_members': panelMembers,
+    'documenter': documenter,
+    'room': room,
+    'date': date,
+    'stage': stage,
+    'start_time': startTime,
+    'end_time': endTime,
+    'slot_duration': slotDuration,
+  };
+
+  factory ParsedScheduleImportRow.fromJson(Map<String, dynamic> json) {
+    return ParsedScheduleImportRow(
+      sheetRow: json['sheet_row'] is int
+          ? json['sheet_row'] as int
+          : int.tryParse(json['sheet_row']?.toString() ?? '') ?? 0,
+      time: json['time']?.toString() ?? '',
+      teamName: json['team_name']?.toString() ?? '',
+      projectTitle: json['project_title']?.toString() ?? '',
+      adviser: json['adviser']?.toString() ?? '',
+      members: (json['members'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      chair: json['chair']?.toString() ?? '',
+      panelMembers: (json['panel_members'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          const [],
+      documenter: json['documenter']?.toString() ?? '',
+      room: json['room']?.toString() ?? '',
+      date: json['date']?.toString() ?? '',
+      stage: json['stage']?.toString() ?? '',
+      startTime: json['start_time']?.toString() ?? '',
+      endTime: json['end_time']?.toString() ?? '',
+      slotDuration: json['slot_duration'] is int
+          ? json['slot_duration'] as int
+          : int.tryParse(json['slot_duration']?.toString() ?? ''),
+    );
+  }
 }
 
 ParsedScheduleImport parseScheduleImportFile({
@@ -274,12 +349,18 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
       })
       .toList(growable: false);
 
+  final rawStage = (metadata['stage'] ?? '').toLowerCase();
+  final isRedefense = rawStage.contains('redef') ||
+      rawStage.contains('redefense') ||
+      rawStage.contains('re-defense');
+
   return ParsedScheduleImport(
     rows: rows,
     stage: metadata['stage'],
     date: metadata['date'],
     semester: metadata['semester'],
     room: metadata['room'],
+    isRedefense: isRedefense,
   );
 }
 

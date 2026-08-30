@@ -49,14 +49,13 @@ String canonicalizeEventOrStageName(String input) {
       .replaceAll(RegExp(r'\b(yr|years?)\b'), 'year')
       .replaceAll(RegExp(r'\b(exp|expos?|exhibition)\b'), 'expo')
       .replaceAll(RegExp(r'\b(prop|proposals?)\b'), 'proposal')
-      .replaceAll(RegExp(r'\b(redef|redefense|re-defense)\b'), 'redefense')
       .replaceAll(RegExp(r'\b(mid|midterms?)\b'), 'midterm')
       .replaceAll(RegExp(r'\b(fin|finals?)\b'), 'final')
       .replaceAll(RegExp(r'\b(sem|semesters?)\b'), 'semester');
 
   // Remove common filler words for stages
   text = text
-      .replaceAll(RegExp(r'\b(defense|project|and|research)\b'), ' ')
+      .replaceAll(RegExp(r'\b(defense|redef|redefense|re-defense|project|and|research)\b'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
 

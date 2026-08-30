@@ -2,18 +2,28 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../config/api_config.dart';
 import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/auth_provider.dart';
+import '../../../../services/authenticated_client.dart';
 import '../../../../services/defense_board_provider.dart';
 import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
+import '../../../../toasts/feedback_toast.dart';
+import '../defense_scheduler/components/team_readiness_tracker.dart';
 import '../defense_scheduler/defense_scheduler_screen.dart';
 import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
+import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
 import '../defense_scheduler/dialogs/venue_conflict_dialog.dart';
+import '../defense_scheduler/models/schedule_import_models.dart';
 import '../grade_center/grade_center_screen.dart';
+import '../grade_center/grade_center_team_detail_screen.dart';
+import '../../../../services/grading/grade_center_provider.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../faculty/minutes_form_screen.dart';
+import '../../../../utils/import/schedule_import_draft.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
   const DefenseBoardScreen({super.key});
@@ -26,19 +36,82 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final TextEditingController _searchController = TextEditingController();
   int? _selectedMinutesScheduleId;
   bool _showScheduler = false;
+  String? _schedulerScope;
+  int? _schedulerStageId;
+  String? _schedulerEventName;
+
+  // Readiness State
+  String _readinessScope = 'capstone';
+  int? _selectedReadinessStageId;
+  String? _selectedReadinessEventName;
+  bool _isSendingReminder = false;
+
+  // Session Accordion & Pagination State
+  final Set<String> _collapsedSessions = {};
+  final Map<String, int> _sessionPages = {};
+  bool _hasImportDraft = false;
+  ScheduleImportDraft? _savedImportDraft;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(defenseBoardProvider.notifier).fetchBoard();
+      ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+      _checkImportDraft();
     });
+  }
+
+  Future<void> _checkImportDraft() async {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+    if (!isAdmin && !isPitLead) return;
+    final scope = isAdmin ? 'capstone' : 'pit';
+    final draft = await loadScheduleImportDraft(scope: scope);
+    if (mounted) {
+      setState(() {
+        _savedImportDraft = (draft != null && draft.parsed.rows.isNotEmpty) ? draft : null;
+        _hasImportDraft = _savedImportDraft != null;
+      });
+    }
   }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _sendReminder(dynamic teamId, String stageLabel) async {
+    setState(() => _isSendingReminder = true);
+    try {
+      final client = ref.read(authenticatedHttpClientProvider);
+      final url = '${ApiConfig.teamsUrl}/$teamId/remind/';
+      final response = await client.post(
+        Uri.parse(url),
+        headers: {'Content-Type': 'application/json'},
+        body: '{"stage_label": "$stageLabel"}',
+      );
+
+      if (response.statusCode == 200) {
+        if (mounted) {
+          showSuccessToast(context, 'Reminder notification successfully sent.');
+        }
+      } else {
+        if (mounted) {
+          showErrorToast(context, 'Failed to send reminder.');
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorToast(context, 'Connection error: $e');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isSendingReminder = false);
+      }
+    }
   }
 
   @override
@@ -57,16 +130,88 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     if (_showScheduler) {
       return DefenseSchedulerScreen(
+        initialScope: _schedulerScope,
+        initialStageId: _schedulerStageId,
+        initialEventName: _schedulerEventName,
         onBack: () {
           setState(() {
             _showScheduler = false;
+            _schedulerScope = null;
+            _schedulerStageId = null;
+            _schedulerEventName = null;
           });
           ref.read(defenseBoardProvider.notifier).fetchBoard();
+          ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
         },
       );
     }
 
     final state = ref.watch(defenseBoardProvider);
+    final schedState = ref.watch(defenseSchedulerProvider);
+    final currentView = ref.watch(defenseBoardActiveViewProvider);
+    final user = ref.watch(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    final isPitLead = user?['is_pit_lead'] == true;
+
+    final effectiveReadinessScope = isPitLead && !isAdmin ? 'pit' : _readinessScope;
+
+    // Determine active stage/event name
+    String activeStageName = '';
+    if (effectiveReadinessScope == 'capstone') {
+      if (schedState.defenseStages.isNotEmpty) {
+        if (_selectedReadinessStageId == null) {
+          final firstWithReady = schedState.defenseStages.firstWhere(
+            (stg) {
+              final label = stg['label']?.toString() ?? '';
+              return teamsForScope(schedState, 'capstone').any((t) => isTeamStageReady(t, label));
+            },
+            orElse: () => schedState.defenseStages.first,
+          );
+          _selectedReadinessStageId = asInt(firstWithReady['id']);
+        }
+        final stageObj = schedState.defenseStages.firstWhere(
+          (stg) => asInt(stg['id']) == _selectedReadinessStageId,
+          orElse: () => schedState.defenseStages.first,
+        );
+        activeStageName = stageObj['label']?.toString() ?? '';
+      }
+    } else {
+      if (schedState.pitEvents.isNotEmpty) {
+        if (_selectedReadinessEventName == null || _selectedReadinessEventName!.isEmpty) {
+          final firstWithReady = schedState.pitEvents.firstWhere(
+            (evt) {
+              final name = evt['event_name']?.toString() ?? '';
+              return teamsForScope(schedState, 'pit').any((t) => isTeamStageReady(t, name));
+            },
+            orElse: () => schedState.pitEvents.first,
+          );
+          _selectedReadinessEventName = firstWithReady['event_name']?.toString() ?? '';
+        }
+        activeStageName = _selectedReadinessEventName ?? '';
+      }
+    }
+
+    final scopeTeams = teamsForScope(schedState, effectiveReadinessScope);
+    final readyTeamsForActiveStage = scopeTeams
+        .where((t) => activeStageName.isNotEmpty && isTeamStageReady(t, activeStageName))
+        .toList();
+    final completedTeamsForActiveStage = scopeTeams
+        .where((t) => activeStageName.isNotEmpty && isTeamStageCompleted(t, activeStageName))
+        .toList();
+    final pendingTeamsForActiveStage = scopeTeams
+        .where((t) =>
+            activeStageName.isNotEmpty &&
+            !isTeamStageReady(t, activeStageName) &&
+            !isTeamStageCompleted(t, activeStageName) &&
+            !isTeamStageScheduled(t, activeStageName))
+        .toList();
+
+    final totalReadyAcrossAllStages = schedState.teams
+        .where((t) {
+          final readyStage = t['ready_for_stage']?.toString() ?? '';
+          return readyStage.isNotEmpty && isTeamStageReady(t, readyStage);
+        })
+        .length;
 
     final cp = DefensysUi.contentPadding;
 
@@ -74,7 +219,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       backgroundColor: DefensysUi.bgLight,
       body: RefreshIndicator(
         color: AppColors.maroon,
-        onRefresh: () => ref.read(defenseBoardProvider.notifier).fetchBoard(),
+        onRefresh: () async {
+          await Future.wait([
+            ref.read(defenseBoardProvider.notifier).fetchBoard(),
+            ref.read(defenseSchedulerProvider.notifier).fetchSchedules(),
+          ]);
+        },
         child: CustomScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
           slivers: [
@@ -84,50 +234,752 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _buildHeader(state),
-                    const SizedBox(height: 26),
-                    _buildSummaryCards(state),
-
-                    const SizedBox(height: 22),
-                    _buildFilterBar(state),
+                    _buildHeader(
+                      state,
+                      schedState,
+                      effectiveReadinessScope,
+                      activeStageName,
+                      readyTeamsForActiveStage.length,
+                      currentView,
+                    ),
+                    if (_savedImportDraft != null) ...[
+                      const SizedBox(height: 16),
+                      _buildDraftResumeBanner(),
+                    ],
+                    const SizedBox(height: 20),
+                    _buildViewSwitcher(state, schedState, currentView),
+                    const SizedBox(height: 20),
+                    if (currentView == DefenseOperationsView.schedules) ...[
+                      _buildReadinessCalloutBanner(totalReadyAcrossAllStages),
+                      _buildSummaryCards(state),
+                      const SizedBox(height: 22),
+                      _buildFilterBar(state),
+                    ] else ...[
+                      _buildReadinessSummaryCards(
+                        schedState,
+                        activeStageName,
+                        scopeTeams.length,
+                        readyTeamsForActiveStage.length,
+                        completedTeamsForActiveStage.length,
+                        pendingTeamsForActiveStage.length,
+                      ),
+                    ],
                   ],
                 ),
               ),
             ),
-            if (state.isLoading)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: SizedBox.expand(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
-                    child: _buildLoadingState(),
+            if (currentView == DefenseOperationsView.schedules) ...[
+              if (state.isLoading)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: SizedBox.expand(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                      child: _buildLoadingState(),
+                    ),
+                  ),
+                )
+              else if (state.schedules.isEmpty)
+                SliverFillRemaining(
+                  hasScrollBody: false,
+                  child: SizedBox.expand(
+                    child: Padding(
+                      padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                      child: _buildEmptyBoard(),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
+                  sliver: SliverToBoxAdapter(
+                    child: _buildBoardSection(state),
                   ),
                 ),
-              )
-            else if (state.schedules.isEmpty)
-              SliverFillRemaining(
-                hasScrollBody: false,
-                child: SizedBox.expand(
-                  child: Padding(
-                    padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
-                    child: _buildEmptyBoard(),
-                  ),
-                ),
-              )
-            else
+            ] else ...[
               SliverPadding(
                 padding: EdgeInsets.fromLTRB(cp.left, 0, cp.right, cp.bottom),
                 sliver: SliverToBoxAdapter(
-                  child: _buildBoardSection(state),
+                  child: schedState.isLoading && schedState.teams.isEmpty
+                      ? _buildLoadingState()
+                      : TeamReadinessTracker(
+                          state: schedState,
+                          scope: effectiveReadinessScope,
+                          activeStageOrEventName: activeStageName,
+                          title: 'Cohort Deliverables & Readiness Queue',
+                          subtitle:
+                              'Monitor deliverable completeness and instructor endorsements across sections. Teams marked "Ready" have met all pre-defense requirements and are eligible for scheduling.',
+                          stageSelector: _buildStagePillsRow(
+                            schedState,
+                            effectiveReadinessScope,
+                            activeStageName,
+                          ),
+                          headerAction: readyTeamsForActiveStage.isNotEmpty
+                              ? ElevatedButton.icon(
+                                  onPressed: () => _openScheduler(
+                                    scope: effectiveReadinessScope,
+                                    stageId: _selectedReadinessStageId,
+                                    eventName: _selectedReadinessEventName,
+                                  ),
+                                  icon: const Icon(
+                                    Icons.auto_awesome_rounded,
+                                    size: 15,
+                                    color: AppColors.gold,
+                                  ),
+                                  label: Text(
+                                    'Schedule ${readyTeamsForActiveStage.length} Ready ${readyTeamsForActiveStage.length == 1 ? 'Team' : 'Teams'}',
+                                    style: const TextStyle(
+                                      fontSize: 12.5,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.maroon,
+                                    foregroundColor: Colors.white,
+                                    elevation: 1,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 8,
+                                    ),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
+                                  ),
+                                )
+                              : null,
+                          onReviewTeamDeliverables: (team, stageLabel) =>
+                              TeamDeliverablesReviewDialog.show(
+                            context,
+                            ref,
+                            team: team,
+                            stageLabel: stageLabel,
+                            scope: effectiveReadinessScope,
+                          ),
+                          onSendReminder: _sendReminder,
+                          isSendingReminder: _isSendingReminder,
+                        ),
                 ),
               ),
+            ],
           ],
         ),
       ),
     );
   }
 
-  Widget _buildHeader(DefenseBoardState state) {
+  Widget _buildViewSwitcher(
+    DefenseBoardState state,
+    DefenseSchedulerState schedState,
+    DefenseOperationsView currentView,
+  ) {
+    final scheduleCount = _count(state, 'all');
+    final totalReady = schedState.teams
+        .where((t) {
+          final readyStage = t['ready_for_stage']?.toString() ?? '';
+          return readyStage.isNotEmpty && isTeamStageReady(t, readyStage);
+        })
+        .length;
+    final totalCompleted = schedState.teams
+        .where((t) => ((t['completed_stages'] as List<dynamic>?) ?? []).isNotEmpty)
+        .length;
+    final totalPending = schedState.teams.length - totalReady;
+
+    String readinessBadge;
+    Color badgeColor;
+    Color badgeTextColor;
+
+    if (totalReady > 0) {
+      readinessBadge = '$totalReady Ready';
+      badgeColor = const Color(0xFFDEF7EC);
+      badgeTextColor = const Color(0xFF03543F);
+    } else if (totalCompleted > 0) {
+      readinessBadge = 'Complete';
+      badgeColor = const Color(0xFFDEF7EC);
+      badgeTextColor = const Color(0xFF03543F);
+    } else {
+      readinessBadge = '$totalPending Pending';
+      badgeColor = const Color(0xFFFEF3C7);
+      badgeTextColor = const Color(0xFF92400E);
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        children: [
+          _viewTabButton(
+            title: 'Defense Schedules',
+            icon: Icons.calendar_month_rounded,
+            countBadge: '$scheduleCount',
+            badgeColor: const Color(0xFFE2E8F0),
+            badgeTextColor: const Color(0xFF334155),
+            isSelected: currentView == DefenseOperationsView.schedules,
+            onTap: () => ref
+                .read(defenseBoardActiveViewProvider.notifier)
+                .setView(DefenseOperationsView.schedules),
+          ),
+          _viewTabButton(
+            title: 'Pre-Defense Readiness Queue',
+            icon: Icons.checklist_rtl_rounded,
+            countBadge: readinessBadge,
+            badgeColor: badgeColor,
+            badgeTextColor: badgeTextColor,
+            isSelected: currentView == DefenseOperationsView.readiness,
+            onTap: () => ref
+                .read(defenseBoardActiveViewProvider.notifier)
+                .setView(DefenseOperationsView.readiness),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _viewTabButton({
+    required String title,
+    required IconData icon,
+    required String countBadge,
+    required Color badgeColor,
+    required Color badgeTextColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(9),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 17,
+              color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 13.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: isSelected ? badgeColor : const Color(0xFFE2E8F0),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                countBadge,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? badgeTextColor : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDraftResumeBanner() {
+    if (_savedImportDraft == null) return const SizedBox.shrink();
+    final rowCount = _savedImportDraft!.parsed.rows.length;
+    final timeStr = MaterialLocalizations.of(context).formatTimeOfDay(
+      TimeOfDay.fromDateTime(_savedImportDraft!.savedAt),
+    );
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFF93C5FD)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.pending_actions_rounded,
+            color: Color(0xFF2563EB),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'Unfinished schedule import draft — $rowCount staged ${rowCount == 1 ? 'slot' : 'slots'} · Saved at $timeStr',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF1E3A8A),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          ElevatedButton.icon(
+            onPressed: _openImportScheduleDialog,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF2563EB),
+              foregroundColor: Colors.white,
+              elevation: 0,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(Icons.play_arrow_rounded, size: 16),
+            label: const Text(
+              'Resume Draft',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+            ),
+          ),
+          const SizedBox(width: 8),
+          OutlinedButton.icon(
+            onPressed: () async {
+              final user = ref.read(authProvider).user;
+              final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+              final scope = isAdmin ? 'capstone' : 'pit';
+              await clearScheduleImportDraft(scope: scope);
+              await _checkImportDraft();
+              if (mounted) {
+                showInfoToast(context, 'Schedule import draft discarded.');
+              }
+            },
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFFDC2626),
+              side: const BorderSide(color: Color(0xFFFCA5A5)),
+              backgroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(8),
+              ),
+            ),
+            icon: const Icon(Icons.delete_outline_rounded, size: 15, color: Color(0xFFDC2626)),
+            label: const Text(
+              'Discard',
+              style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFFDC2626)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadinessCalloutBanner(int readyCount) {
+    if (readyCount <= 0) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 20),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFECFDF5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFA7F3D0)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.verified_rounded,
+            color: Color(0xFF059669),
+            size: 20,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              '$readyCount ${readyCount == 1 ? 'team has' : 'teams have'} met all deliverable requirements and ${readyCount == 1 ? 'is' : 'are'} ready for defense scheduling.',
+              style: const TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF065F46),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          TextButton.icon(
+            onPressed: () {
+              ref
+                  .read(defenseBoardActiveViewProvider.notifier)
+                  .setView(DefenseOperationsView.readiness);
+            },
+            icon: const Icon(Icons.arrow_forward_rounded, size: 15, color: Color(0xFF047857)),
+            label: const Text(
+              'Open Readiness Queue',
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF047857),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStagePillsRow(DefenseSchedulerState schedState, String scope, String activeStageName) {
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.tune_rounded, size: 16, color: Color(0xFF64748B)),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Target Defense Milestone / Event:',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF64748B),
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const Spacer(),
+                  if (isAdmin) ...[
+                    Container(
+                      height: 28,
+                      padding: const EdgeInsets.all(2),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _scopeMiniPill('Capstone', 'capstone', scope == 'capstone'),
+                          _scopeMiniPill('PIT', 'pit', scope == 'pit'),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 10),
+              if (scope == 'capstone') ...[
+                if (schedState.defenseStages.isEmpty)
+                  const Text(
+                    'No defense stages configured. Go to Defense Stages Setup to create milestones.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: schedState.defenseStages.map((stage) {
+                      final stageId = asInt(stage['id']);
+                      final stageLabel = stage['label']?.toString() ?? '';
+                      final isSelected = stageId == _selectedReadinessStageId ||
+                          (stageId == null && stageLabel == activeStageName);
+
+                      final readyCountForStage = teamsForScope(schedState, 'capstone')
+                          .where((t) => isTeamStageReady(t, stageLabel))
+                          .length;
+                      final completedCountForStage = teamsForScope(schedState, 'capstone')
+                          .where((t) => isTeamStageCompleted(t, stageLabel))
+                          .length;
+                      final pendingCountForStage = teamsForScope(schedState, 'capstone')
+                          .where((t) =>
+                              !isTeamStageReady(t, stageLabel) &&
+                              !isTeamStageCompleted(t, stageLabel) &&
+                              !isTeamStageScheduled(t, stageLabel))
+                          .length;
+
+                      String badgeText;
+                      Color badgeColor;
+                      Color badgeTextColor;
+
+                      if (readyCountForStage > 0) {
+                        badgeText = '$readyCountForStage ready';
+                        badgeColor = const Color(0xFFDEF7EC);
+                        badgeTextColor = const Color(0xFF03543F);
+                      } else if (completedCountForStage > 0) {
+                        badgeText = 'Complete';
+                        badgeColor = const Color(0xFFDEF7EC);
+                        badgeTextColor = const Color(0xFF03543F);
+                      } else {
+                        badgeText = '$pendingCountForStage pending';
+                        badgeColor = const Color(0xFFFEF3C7);
+                        badgeTextColor = const Color(0xFF92400E);
+                      }
+
+                      return _stageFilterPill(
+                        label: stageLabel,
+                        badgeText: badgeText,
+                        badgeColor: badgeColor,
+                        badgeTextColor: badgeTextColor,
+                        isSelected: isSelected,
+                        onTap: () {
+                          setState(() {
+                            _selectedReadinessStageId = stageId;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+              ] else ...[
+                if (schedState.pitEvents.isEmpty)
+                  const Text(
+                    'No PIT events configured for this term.',
+                    style: TextStyle(fontSize: 12, color: Color(0xFF94A3B8)),
+                  )
+                else
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: schedState.pitEvents.map((evt) {
+                      final eventName = evt['event_name']?.toString() ?? '';
+                      final isSelected = eventName == activeStageName;
+                      final readyCountForEvent = teamsForScope(schedState, 'pit')
+                          .where((t) => isTeamStageReady(t, eventName))
+                          .length;
+                      final completedCountForEvent = teamsForScope(schedState, 'pit')
+                          .where((t) => isTeamStageCompleted(t, eventName))
+                          .length;
+                      final pendingCountForEvent = teamsForScope(schedState, 'pit')
+                          .where((t) =>
+                              !isTeamStageReady(t, eventName) &&
+                              !isTeamStageCompleted(t, eventName) &&
+                              !isTeamStageScheduled(t, eventName))
+                          .length;
+
+                      String badgeText;
+                      Color badgeColor;
+                      Color badgeTextColor;
+
+                      if (readyCountForEvent > 0) {
+                        badgeText = '$readyCountForEvent ready';
+                        badgeColor = const Color(0xFFDEF7EC);
+                        badgeTextColor = const Color(0xFF03543F);
+                      } else if (completedCountForEvent > 0) {
+                        badgeText = 'Complete';
+                        badgeColor = const Color(0xFFDEF7EC);
+                        badgeTextColor = const Color(0xFF03543F);
+                      } else {
+                        badgeText = '$pendingCountForEvent pending';
+                        badgeColor = const Color(0xFFFEF3C7);
+                        badgeTextColor = const Color(0xFF92400E);
+                      }
+
+                      return _stageFilterPill(
+                        label: eventName,
+                        badgeText: badgeText,
+                        badgeColor: badgeColor,
+                        badgeTextColor: badgeTextColor,
+                        isSelected: isSelected,
+                        onTap: () {
+                          setState(() {
+                            _selectedReadinessEventName = eventName;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+              ],
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _stageFilterPill({
+    required String label,
+    required String badgeText,
+    required Color badgeColor,
+    required Color badgeTextColor,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: isSelected ? AppColors.maroon : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: isSelected ? AppColors.maroon : const Color(0xFFCBD5E1),
+            width: isSelected ? 1.5 : 1.0,
+          ),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.maroon.withValues(alpha: 0.2),
+                    blurRadius: 6,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 12.5,
+                fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                color: isSelected ? Colors.white : AppColors.textPrimary,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+              decoration: BoxDecoration(
+                color: isSelected ? Colors.white.withValues(alpha: 0.2) : badgeColor,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Text(
+                badgeText,
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w800,
+                  color: isSelected ? Colors.white : badgeTextColor,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scopeMiniPill(String label, String value, bool isSelected) {
+    return InkWell(
+      onTap: () {
+        setState(() {
+          _readinessScope = value;
+          _selectedReadinessStageId = null;
+          _selectedReadinessEventName = null;
+        });
+      },
+      borderRadius: BorderRadius.circular(4),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+            color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReadinessSummaryCards(
+    DefenseSchedulerState schedState,
+    String activeStageName,
+    int totalScopeTeams,
+    int readyCount,
+    int completedCount,
+    int pendingCount,
+  ) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact = constraints.maxWidth < 1100;
+
+        final cards = [
+          _buildSummaryCard(
+            icon: Icons.groups_rounded,
+            iconColor: const Color(0xFF475569),
+            label: 'Total Enrolled Teams',
+            value: totalScopeTeams,
+          ),
+          _buildSummaryCard(
+            icon: Icons.check_circle_rounded,
+            iconColor: const Color(0xFF10B981),
+            label: 'Ready for Scheduling',
+            value: readyCount,
+          ),
+          _buildSummaryCard(
+            icon: Icons.task_alt_rounded,
+            iconColor: const Color(0xFF059669),
+            label: 'Completed Milestone',
+            value: completedCount,
+          ),
+          _buildSummaryCard(
+            icon: Icons.pending_actions_rounded,
+            iconColor: const Color(0xFFF59E0B),
+            label: 'Pending Endorsements',
+            value: pendingCount,
+          ),
+        ];
+
+        if (compact) {
+          return Column(
+            children: cards
+                .map((c) => Padding(
+                      padding: const EdgeInsets.only(bottom: 14),
+                      child: c,
+                    ))
+                .toList(),
+          );
+        }
+
+        return Row(
+          children: [
+            Expanded(child: cards[0]),
+            const SizedBox(width: 14),
+            Expanded(child: cards[1]),
+            const SizedBox(width: 14),
+            Expanded(child: cards[2]),
+            const SizedBox(width: 14),
+            Expanded(child: cards[3]),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildHeader(
+    DefenseBoardState state,
+    DefenseSchedulerState schedState,
+    String effectiveReadinessScope,
+    String activeStageName,
+    int readyCount,
+    DefenseOperationsView currentView,
+  ) {
     final user = ref.watch(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
@@ -232,13 +1084,37 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     size: 16,
                     color: Color(0xFFB45309),
                   ),
-                  label: const Text(
-                    'Import Schedule',
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13,
-                      color: Color(0xFF92400E),
-                    ),
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        'Import Schedule',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 13,
+                          color: Color(0xFF92400E),
+                        ),
+                      ),
+                      if (_hasImportDraft) ...[
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFB45309),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'DRAFT',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
               ),
@@ -246,7 +1122,17 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               SizedBox(
                 height: 40,
                 child: ElevatedButton.icon(
-                  onPressed: _openScheduler,
+                  onPressed: () {
+                    if (currentView == DefenseOperationsView.readiness && readyCount > 0) {
+                      _openScheduler(
+                        scope: effectiveReadinessScope,
+                        stageId: _selectedReadinessStageId,
+                        eventName: _selectedReadinessEventName,
+                      );
+                    } else {
+                      _openScheduler();
+                    }
+                  },
                   style: ElevatedButton.styleFrom(
                     elevation: 1,
                     shadowColor: AppColors.maroon.withValues(alpha: 0.3),
@@ -263,9 +1149,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                     size: 16,
                     color: AppColors.gold,
                   ),
-                  label: const Text(
-                    'Generate Schedule',
-                    style: TextStyle(
+                  label: Text(
+                    currentView == DefenseOperationsView.readiness && readyCount > 0
+                        ? 'Schedule $readyCount Ready ${readyCount == 1 ? 'Team' : 'Teams'}'
+                        : 'Generate Schedule',
+                    style: const TextStyle(
                       fontWeight: FontWeight.w800,
                       fontSize: 13,
                       color: Colors.white,
@@ -368,6 +1256,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     required Color iconColor,
     required String label,
     required int value,
+    String? customValueText,
   }) {
     return Container(
       height: 94,
@@ -396,29 +1285,35 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             child: Icon(icon, color: iconColor, size: 24),
           ),
           const SizedBox(width: 16),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '$value',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
-                  color: AppColors.textPrimary,
-                  letterSpacing: -0.5,
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  customValueText ?? '$value',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                    letterSpacing: -0.5,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                label,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.textSecondary,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 2),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: AppColors.textSecondary,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -445,7 +1340,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final isStacked = constraints.maxWidth < 950;
+          final isStacked = constraints.maxWidth < 1100;
+          final isPit = state.scope == 'pit';
 
           if (isStacked) {
             return Column(
@@ -453,11 +1349,22 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               children: [
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
-                  child: _buildScopeTabs(state),
+                  child: Row(
+                    children: [
+                      _buildScopeTabs(state),
+                      const SizedBox(width: 10),
+                      _buildCollapseAllButton(state),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 14),
                 Row(
                   children: [
+                    if (!isPit)
+                      Expanded(child: _buildAdviserDropdown(state, null))
+                    else
+                      Expanded(child: _buildSectionDropdown(state, null)),
+                    const SizedBox(width: 10),
                     if (showStageOrEventFilter) ...[
                       Expanded(child: _buildStageOrEventDropdown(state, null)),
                       const SizedBox(width: 10),
@@ -474,14 +1381,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           return Row(
             children: [
               _buildScopeTabs(state),
-              const SizedBox(width: 16),
-              if (showStageOrEventFilter) ...[
-                _buildStageOrEventDropdown(state, 160),
-                const SizedBox(width: 12),
+              const SizedBox(width: 14),
+              if (!isPit) ...[
+                _buildAdviserDropdown(state, 175),
+                const SizedBox(width: 10),
+              ] else ...[
+                _buildSectionDropdown(state, 165),
+                const SizedBox(width: 10),
               ],
-              _buildStatusDropdown(state, 160),
-              const SizedBox(width: 12),
+              if (showStageOrEventFilter) ...[
+                _buildStageOrEventDropdown(state, 150),
+                const SizedBox(width: 10),
+              ],
+              _buildStatusDropdown(state, 140),
+              const SizedBox(width: 10),
               Expanded(child: _buildSearchField(state, null)),
+              const SizedBox(width: 10),
+              _buildCollapseAllButton(state),
             ],
           );
         },
@@ -538,6 +1454,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 stage: '',
                 status: state.status,
                 scope: scopeValue,
+                adviser: '',
+                section: '',
                 search: _searchController.text.trim(),
               );
         },
@@ -582,6 +1500,184 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
   }
 
+  Widget _buildAdviserDropdown(DefenseBoardState state, double? width) {
+    final Map<String, String> adviserMap = {};
+    for (final adv in state.advisers) {
+      final id = adv['id']?.toString() ?? '';
+      final name = adv['name']?.toString() ?? '';
+      final count = adv['count']?.toString() ?? '0';
+      if (id.isNotEmpty && name.isNotEmpty) {
+        adviserMap[id] = '$name ($count)';
+      }
+    }
+
+    if (adviserMap.isEmpty) {
+      final Map<String, int> counts = {};
+      for (final s in state.schedules) {
+        final advName = s['adviser_name']?.toString() ?? '';
+        final advId = s['adviser_id']?.toString() ?? '';
+        if (advName.isNotEmpty) {
+          counts[advName] = (counts[advName] ?? 0) + 1;
+          adviserMap[advId.isNotEmpty ? advId : advName] = '$advName (${counts[advName]})';
+        }
+      }
+    }
+
+    final currentValue = adviserMap.containsKey(state.adviser) ? state.adviser : '';
+
+    return SizedBox(
+      width: width,
+      height: 48,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('adviser_filter_${state.scope}'),
+        initialValue: currentValue,
+        decoration: _inputDecoration(
+          prefixIcon: const Icon(Icons.person_outline_rounded, color: AppColors.textSecondary, size: 18),
+        ),
+        dropdownColor: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        isExpanded: true,
+        items: [
+          const DropdownMenuItem<String>(
+            value: '',
+            child: Text(
+              'All Advisers',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ...adviserMap.entries.map(
+            (entry) => DropdownMenuItem<String>(
+              value: entry.key,
+              child: Text(
+                entry.value,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+        onChanged: (value) {
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
+                stage: state.stage,
+                status: state.status,
+                scope: state.scope,
+                adviser: value ?? '',
+                section: state.section,
+                search: _searchController.text.trim(),
+              );
+        },
+      ),
+    );
+  }
+
+  Widget _buildSectionDropdown(DefenseBoardState state, double? width) {
+    final Map<String, String> sectionMap = {};
+    for (final sec in state.sections) {
+      final name = sec['name']?.toString() ?? '';
+      final count = sec['count']?.toString() ?? '0';
+      if (name.isNotEmpty) {
+        sectionMap[name] = '$name ($count)';
+      }
+    }
+
+    if (sectionMap.isEmpty) {
+      final Map<String, int> counts = {};
+      for (final s in state.schedules) {
+        final secName = s['section']?.toString() ?? '';
+        if (secName.isNotEmpty) {
+          counts[secName] = (counts[secName] ?? 0) + 1;
+          sectionMap[secName] = '$secName (${counts[secName]})';
+        }
+      }
+    }
+
+    final currentValue = sectionMap.containsKey(state.section) ? state.section : '';
+
+    return SizedBox(
+      width: width,
+      height: 48,
+      child: DropdownButtonFormField<String>(
+        key: ValueKey('section_filter_${state.scope}'),
+        initialValue: currentValue,
+        decoration: _inputDecoration(
+          prefixIcon: const Icon(Icons.school_outlined, color: AppColors.textSecondary, size: 18),
+        ),
+        dropdownColor: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        isExpanded: true,
+        items: [
+          const DropdownMenuItem<String>(
+            value: '',
+            child: Text(
+              'All Sections',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+            ),
+          ),
+          ...sectionMap.entries.map(
+            (entry) => DropdownMenuItem<String>(
+              value: entry.key,
+              child: Text(
+                entry.value,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ),
+        ],
+        onChanged: (value) {
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
+                stage: state.stage,
+                status: state.status,
+                scope: state.scope,
+                adviser: state.adviser,
+                section: value ?? '',
+                search: _searchController.text.trim(),
+              );
+        },
+      ),
+    );
+  }
+
+  Widget _buildCollapseAllButton(DefenseBoardState state) {
+    final groups = _groupSchedules(state.schedules);
+    final allKeys = groups.map((g) => g.key).toSet();
+    final isAllCollapsed = allKeys.isNotEmpty && _collapsedSessions.containsAll(allKeys);
+
+    return OutlinedButton.icon(
+      icon: Icon(
+        isAllCollapsed ? Icons.unfold_more_rounded : Icons.unfold_less_rounded,
+        size: 16,
+        color: DefensysTokens.textDark,
+      ),
+      label: Text(
+        isAllCollapsed ? 'Expand All' : 'Collapse All',
+        style: const TextStyle(
+          fontFamily: DefensysTokens.fontFamilyInter,
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: DefensysTokens.textDark,
+        ),
+      ),
+      style: OutlinedButton.styleFrom(
+        side: const BorderSide(color: Color(0xFFE2E8F0)),
+        backgroundColor: Colors.white,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+      ),
+      onPressed: () {
+        setState(() {
+          if (isAllCollapsed) {
+            _collapsedSessions.clear();
+          } else {
+            _collapsedSessions.addAll(allKeys);
+          }
+        });
+      },
+    );
+  }
+
   Widget _buildStageOrEventDropdown(DefenseBoardState state, double? width) {
     final isPit = state.scope == 'pit';
     final defaultLabel = isPit ? 'All Events' : 'All Stages';
@@ -589,7 +1685,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     final Set<String> scopeOptions = {};
 
-    // 1. Gather stage/event labels directly from schedule records matching the selected scope
     for (final schedule in state.schedules) {
       final itemScope = schedule['scope']?.toString() ?? 'capstone';
       final stageLabel = schedule['stage_label']?.toString();
@@ -600,7 +1695,6 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       }
     }
 
-    // 2. Fallback to state.stageOptions if schedules list is empty
     if (scopeOptions.isEmpty && state.stageOptions.isNotEmpty) {
       scopeOptions.addAll(state.stageOptions);
     }
@@ -645,6 +1739,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                 stage: value ?? '',
                 status: state.status,
                 scope: state.scope,
+                adviser: state.adviser,
+                section: state.section,
                 search: _searchController.text.trim(),
               );
         },
@@ -682,12 +1778,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
           ),
         ],
         onChanged: (value) {
-          ref
-              .read(defenseBoardProvider.notifier)
-              .fetchBoard(
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
                 stage: state.stage,
                 status: value ?? '',
                 scope: state.scope,
+                adviser: state.adviser,
+                section: state.section,
                 search: _searchController.text.trim(),
               );
         },
@@ -715,6 +1811,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                           stage: state.stage,
                           status: state.status,
                           scope: state.scope,
+                          adviser: state.adviser,
+                          section: state.section,
                           search: '',
                         );
                   },
@@ -722,12 +1820,12 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
               : null,
         ),
         onSubmitted: (value) {
-          ref
-              .read(defenseBoardProvider.notifier)
-              .fetchBoard(
+          ref.read(defenseBoardProvider.notifier).fetchBoard(
                 stage: state.stage,
                 status: state.status,
                 scope: state.scope,
+                adviser: state.adviser,
+                section: state.section,
                 search: value.trim(),
               );
         },
@@ -790,16 +1888,19 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   }
 
   Widget _buildSessionCard(_SessionGroup group, DefenseBoardState state) {
+    final isCollapsed = _collapsedSessions.contains(group.key);
+
     return Container(
       width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 20),
+      margin: const EdgeInsets.only(bottom: 16),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x05000000),
+            color: Color(0x06000000),
             blurRadius: 14,
             offset: Offset(0, 4),
           ),
@@ -808,271 +1909,459 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          _buildSessionHeader(group),
-          const Divider(height: 1, thickness: 1, color: Color(0xFFEDF2F7)),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              if (constraints.maxWidth < 900) {
-                return _buildCompactTeamList(group, state);
-              }
-              return _buildDesktopTeamTable(group, state);
-            },
-          ),
+          _buildSessionHeader(group, isCollapsed),
+          if (!isCollapsed)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth < 900) {
+                  return _buildCompactTeamList(group, state);
+                }
+                return _buildDesktopTeamTable(group, state);
+              },
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildSessionHeader(_SessionGroup group) {
+  Widget _buildSessionHeader(_SessionGroup group, bool isCollapsed) {
     final isPit = group.scope == 'pit';
+    final accentColor = isPit ? const Color(0xFF0284C7) : DefensysTokens.maroon;
+    final isDocUnassigned = group.documenterName.isEmpty;
 
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Scope & Stage Badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: isPit
-                      ? const Color(0xFFE0F2FE)
-                      : AppColors.maroon.withValues(alpha: 0.10),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: isPit
-                        ? const Color(0xFFBAE6FD)
-                        : AppColors.maroon.withValues(alpha: 0.22),
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      isPit ? Icons.alt_route_rounded : Icons.school_rounded,
-                      size: 15,
-                      color: isPit ? const Color(0xFF0284C7) : AppColors.maroon,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      isPit ? 'PIT Scope • ${group.stageLabel}' : group.stageLabel,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: isPit ? const Color(0xFF0369A1) : AppColors.maroon,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 14),
-              // Date Chip
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.calendar_today_rounded, size: 14, color: AppColors.textSecondary),
-                  const SizedBox(width: 6),
-                  Text(
-                    group.scheduledDate,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(width: 16),
-              // Room Chip
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.place_rounded, size: 15, color: AppColors.textSecondary),
-                  const SizedBox(width: 4),
-                  Text(
-                    group.room,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textPrimary,
-                    ),
-                  ),
-                ],
-              ),
-              const Spacer(),
-              // Teams count badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFEDF2F7),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  '${group.schedules.length} ${group.schedules.length == 1 ? 'Team' : 'Teams'}',
-                  style: const TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textSecondary,
-                  ),
-                ),
-              ),
-            ],
+    return Material(
+      color: Colors.white,
+      child: InkWell(
+        onTap: () {
+          setState(() {
+            if (_collapsedSessions.contains(group.key)) {
+              _collapsedSessions.remove(group.key);
+            } else {
+              _collapsedSessions.add(group.key);
+            }
+          });
+        },
+        child: Container(
+          decoration: const BoxDecoration(
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFEDF2F7), width: 1),
+            ),
           ),
-          const SizedBox(height: 12),
-          // Sub-header info: Panelists & Documenter
-          Wrap(
-            spacing: 24,
-            runSpacing: 8,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.people_outline_rounded, size: 16, color: AppColors.textSecondary),
-                  const SizedBox(width: 6),
-                  const Text(
-                    'Panel: ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textSecondary,
-                    ),
-                  ),
-                  Flexible(
-                    child: Text(
-                      group.panelNames,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              if (!isPit)
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.edit_note_rounded, size: 16, color: AppColors.textSecondary),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Documenter: ',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textSecondary,
-                      ),
-                    ),
-                    Text(
-                      group.documenterName.isNotEmpty ? group.documenterName : 'Unassigned',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: group.documenterName.isEmpty ? FontWeight.w600 : FontWeight.w700,
-                        color: group.documenterName.isEmpty
-                            ? Colors.amber.shade900
-                            : AppColors.textPrimary,
-                        fontStyle: group.documenterName.isEmpty ? FontStyle.italic : FontStyle.normal,
-                      ),
-                    ),
-                  ],
+          child: IntrinsicHeight(
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Left Accent Bar (solid colored indicator)
+                Container(
+                  width: 4,
+                  color: accentColor,
                 ),
-            ],
+                // Main Header Content
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        // Row 1: Scope Pill + Stage Title + Date/Venue Capsule + Team Count + Chevron
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            // Scope Pill
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: accentColor.withValues(alpha: 0.10),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                isPit ? 'PIT' : 'CAPSTONE',
+                                style: TextStyle(
+                                  fontFamily: DefensysTokens.fontFamilyInter,
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w800,
+                                  letterSpacing: 0.8,
+                                  color: accentColor,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            // Stage Label
+                            Text(
+                              group.stageLabel,
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.textPrimary,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            // Date & Venue Capsule
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(
+                                    Icons.calendar_today_rounded,
+                                    size: 13,
+                                    color: DefensysTokens.steelGrey,
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    group.scheduledDate,
+                                    style: const TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                  ),
+                                  const Padding(
+                                    padding: EdgeInsets.symmetric(horizontal: 8),
+                                    child: Text(
+                                      '•',
+                                      style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 12),
+                                    ),
+                                  ),
+                                  const Icon(
+                                    Icons.place_rounded,
+                                    size: 14,
+                                    color: DefensysTokens.steelGrey,
+                                  ),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    group.room,
+                                    style: const TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const Spacer(),
+                            // Team count badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(20),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: accentColor,
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    '${group.schedules.length} ${group.schedules.length == 1 ? 'Team' : 'Teams'}',
+                                    style: const TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            // Chevron Toggle Indicator
+                            Container(
+                              padding: const EdgeInsets.all(4),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF1F5F9),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Icon(
+                                isCollapsed ? Icons.expand_more_rounded : Icons.expand_less_rounded,
+                                size: 18,
+                                color: DefensysTokens.steelGrey,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        // Row 2: Panel and Documenter together in natural reading order
+                        Wrap(
+                          spacing: 18,
+                          runSpacing: 8,
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          children: [
+                            // Panel Tag & Names
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text(
+                                    'PANEL',
+                                    style: TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: DefensysTokens.steelGrey,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  group.panelNames.isNotEmpty ? group.panelNames : 'No panel assigned',
+                                  style: const TextStyle(
+                                    fontFamily: DefensysTokens.fontFamilyInter,
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w500,
+                                    color: DefensysTokens.textPrimary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!isPit) ...[
+                              const Text(
+                                '•',
+                                style: TextStyle(color: Color(0xFFCBD5E1), fontSize: 14),
+                              ),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Text(
+                                      'DOCUMENTER',
+                                      style: TextStyle(
+                                        fontFamily: DefensysTokens.fontFamilyInter,
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.5,
+                                        color: DefensysTokens.steelGrey,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                    decoration: BoxDecoration(
+                                      color: isDocUnassigned ? DefensysTokens.warningBg : const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(
+                                        color: isDocUnassigned ? DefensysTokens.warningBorder : const Color(0xFFE2E8F0),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      isDocUnassigned ? 'Unassigned' : group.documenterName,
+                                      style: TextStyle(
+                                        fontFamily: DefensysTokens.fontFamilyInter,
+                                        fontSize: 12,
+                                        fontWeight: isDocUnassigned ? FontWeight.w600 : FontWeight.w500,
+                                        color: isDocUnassigned ? DefensysTokens.warningText : DefensysTokens.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildDesktopTeamTable(_SessionGroup group, DefenseBoardState state) {
     final isPit = group.scope == 'pit';
+    const pageSize = 10;
+    final totalTeams = group.schedules.length;
+    final totalPages = (totalTeams / pageSize).ceil();
+    final currentPage = _sessionPages[group.key] ?? 0;
+    final safePage = currentPage >= totalPages ? 0 : currentPage;
+
+    final paginatedSchedules = totalTeams > pageSize
+        ? group.schedules.sublist(
+            safePage * pageSize,
+            (safePage + 1) * pageSize > totalTeams ? totalTeams : (safePage + 1) * pageSize,
+          )
+        : group.schedules;
 
     return Column(
       children: [
-        // Sub-table Header
+        // Sub-table Header (Refined Uppercase Small-Caps)
         Container(
-          height: 42,
-          color: const Color(0xFFF8FAFC),
+          height: 38,
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            border: Border(
+              bottom: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+            ),
+          ),
           child: Row(
             children: [
-              const _HeaderCell('Time Slot', flex: 1),
-              _HeaderCell('Team & Project Title', flex: isPit ? 5 : 4),
-              if (!isPit) const _HeaderCell('Minutes', flex: 2),
-              const _HeaderCell('Evaluation & Grades', flex: 2),
-              const _HeaderCell('Status', flex: 2),
-              const _HeaderCell('Action', flex: 1),
+              const _HeaderCell('TIME SLOT', flex: 1),
+              _HeaderCell('TEAM & PROJECT TITLE', flex: isPit ? 5 : 4),
+              if (!isPit) const _HeaderCell('MINUTES', flex: 2),
+              const _HeaderCell('EVALUATION', flex: 2),
+              const _HeaderCell('STATUS', flex: 2),
+              const _HeaderCell('DETAILS', flex: 1),
             ],
           ),
         ),
-        const Divider(height: 1, thickness: 1, color: Color(0xFFEDF2F7)),
         ListView.separated(
           shrinkWrap: true,
           physics: const NeverScrollableScrollPhysics(),
-          itemCount: group.schedules.length,
+          itemCount: paginatedSchedules.length,
           separatorBuilder: (_, __) =>
               const Divider(height: 1, thickness: 1, color: Color(0xFFF1F5F9)),
           itemBuilder: (context, index) {
-            final schedule = group.schedules[index];
+            final schedule = paginatedSchedules[index];
             final projectTitle = schedule['project_title']?.toString() ?? '';
+            final adviserName = schedule['adviser_name']?.toString() ?? '';
+            final section = schedule['section']?.toString() ?? '';
 
-            return SizedBox(
-              height: 58,
+            return Container(
+              constraints: const BoxConstraints(minHeight: 68),
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Row(
                 children: [
                   _BodyCell(
                     flex: 1,
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFF1F5F9),
-                        borderRadius: BorderRadius.circular(8),
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
                       ),
-                      child: Text(
-                        _shortTime(schedule['start_time']),
-                        style: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.access_time_rounded,
+                            size: 13,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _shortTime(schedule['start_time']),
+                            style: const TextStyle(
+                              fontFamily: DefensysTokens.fontFamilyInter,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: DefensysTokens.textDark,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                   _BodyCell(
                     flex: isPit ? 5 : 4,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          schedule['team_name']?.toString() ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 14,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
-                          ),
-                        ),
-                        if (projectTitle.isNotEmpty) ...[
-                          const SizedBox(height: 2),
+                    child: InkWell(
+                      onTap: () => _showDefenseDetailsDialog(schedule, group),
+                      borderRadius: BorderRadius.circular(4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
                           Text(
-                            projectTitle,
+                            schedule['team_name']?.toString() ?? '',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
+                              fontFamily: DefensysTokens.fontFamilyInter,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                              color: DefensysTokens.textPrimary,
                             ),
                           ),
+                          if (projectTitle.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              projectTitle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 12,
+                                color: DefensysTokens.textSecondary,
+                              ),
+                            ),
+                          ],
+                          if (!isPit && adviserName.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.person_outline_rounded, size: 12, color: DefensysTokens.steelGrey),
+                                const SizedBox(width: 3),
+                                Flexible(
+                                  child: Text(
+                                    'Adviser: $adviserName',
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontFamily: DefensysTokens.fontFamilyInter,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.steelGrey,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ] else if (isPit && section.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.school_outlined, size: 12, color: DefensysTokens.steelGrey),
+                                const SizedBox(width: 3),
+                                Text(
+                                  'Section: $section',
+                                  style: const TextStyle(
+                                    fontFamily: DefensysTokens.fontFamilyInter,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w600,
+                                    color: DefensysTokens.steelGrey,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
                   ),
                   if (!isPit)
@@ -1086,144 +2375,697 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
                   ),
                   _BodyCell(
                     flex: 2,
-                    child: _statusChip(schedule['status']?.toString() ?? ''),
+                    child: _statusChip(
+                      schedule['display_status']?.toString() ??
+                          schedule['status']?.toString() ??
+                          '',
+                    ),
                   ),
                   _BodyCell(
                     flex: 1,
-                    child: _deleteAction(state, schedule),
+                    child: _rowActionButtons(state, schedule, group),
                   ),
                 ],
               ),
             );
           },
         ),
+        if (totalTeams > pageSize)
+          _buildTablePagination(group.key, safePage, totalPages, totalTeams, pageSize),
       ],
+    );
+  }
+
+  Widget _buildTablePagination(
+    String groupKey,
+    int currentPage,
+    int totalPages,
+    int totalTeams,
+    int pageSize,
+  ) {
+    final startIdx = currentPage * pageSize + 1;
+    final endIdx = (currentPage + 1) * pageSize > totalTeams
+        ? totalTeams
+        : (currentPage + 1) * pageSize;
+
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8FAFC),
+        border: Border(
+          top: BorderSide(color: Color(0xFFE2E8F0), width: 1),
+        ),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(
+            'Showing $startIdx–$endIdx of $totalTeams teams',
+            style: const TextStyle(
+              fontFamily: DefensysTokens.fontFamilyInter,
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: DefensysTokens.steelGrey,
+            ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left_rounded, size: 18),
+                splashRadius: 14,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                onPressed: currentPage > 0
+                    ? () {
+                        setState(() {
+                          _sessionPages[groupKey] = currentPage - 1;
+                        });
+                      }
+                    : null,
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: Text(
+                  'Page ${currentPage + 1} of $totalPages',
+                  style: const TextStyle(
+                    fontFamily: DefensysTokens.fontFamilyInter,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: DefensysTokens.textDark,
+                  ),
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right_rounded, size: 18),
+                splashRadius: 14,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                onPressed: currentPage < totalPages - 1
+                    ? () {
+                        setState(() {
+                          _sessionPages[groupKey] = currentPage + 1;
+                        });
+                      }
+                    : null,
+              ),
+            ],
+          ),
+        ],
+      ),
     );
   }
 
   Widget _buildCompactTeamList(_SessionGroup group, DefenseBoardState state) {
     final isPit = group.scope == 'pit';
+    const pageSize = 10;
+    final totalTeams = group.schedules.length;
+    final totalPages = (totalTeams / pageSize).ceil();
+    final currentPage = _sessionPages[group.key] ?? 0;
+    final safePage = currentPage >= totalPages ? 0 : currentPage;
+
+    final paginatedSchedules = totalTeams > pageSize
+        ? group.schedules.sublist(
+            safePage * pageSize,
+            (safePage + 1) * pageSize > totalTeams ? totalTeams : (safePage + 1) * pageSize,
+          )
+        : group.schedules;
 
     return Padding(
       padding: const EdgeInsets.all(12),
       child: Column(
-        children: group.schedules.map((schedule) {
-          final teamName = schedule['team_name']?.toString() ?? 'Unnamed Team';
-          final projectTitle = schedule['project_title']?.toString() ?? '';
+        children: [
+          ...paginatedSchedules.map((schedule) {
+            final teamName = schedule['team_name']?.toString() ?? 'Unnamed Team';
+            final projectTitle = schedule['project_title']?.toString() ?? '';
+            final adviserName = schedule['adviser_name']?.toString() ?? '';
+            final section = schedule['section']?.toString() ?? '';
 
-          return Container(
-            margin: const EdgeInsets.only(bottom: 10),
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(color: const Color(0xFFE9EDF4)),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: Text(
-                        _shortTime(schedule['start_time']),
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
+            return Container(
+              margin: const EdgeInsets.only(bottom: 10),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE9EDF4)),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
                         ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
                         child: Text(
-                          teamName,
-                          overflow: TextOverflow.ellipsis,
+                          _shortTime(schedule['start_time']),
                           style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w800,
-                            color: AppColors.textPrimary,
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.textPrimary,
                           ),
                         ),
                       ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: InkWell(
+                          onTap: () => _showDefenseDetailsDialog(schedule, group),
+                          child: Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            child: Text(
+                              teamName,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontFamily: DefensysTokens.fontFamilyInter,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.textPrimary,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      _rowActionButtons(state, schedule, group),
+                    ],
+                  ),
+                  if (projectTitle.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      projectTitle,
+                      style: const TextStyle(
+                        fontFamily: DefensysTokens.fontFamilyInter,
+                        fontSize: 12,
+                        color: DefensysTokens.textSecondary,
+                      ),
                     ),
-                    _deleteAction(state, schedule),
                   ],
-                ),
-                if (projectTitle.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    projectTitle,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      color: AppColors.textSecondary,
+                  if (!isPit && adviserName.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.steelGrey),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Adviser: $adviserName',
+                          style: const TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ],
                     ),
+                  ] else if (isPit && section.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.school_outlined, size: 13, color: DefensysTokens.steelGrey),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Section: $section',
+                          style: const TextStyle(
+                            fontFamily: DefensysTokens.fontFamilyInter,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      _statusChip(
+                        schedule['display_status']?.toString() ??
+                            schedule['status']?.toString() ??
+                            '',
+                      ),
+                      if (!isPit) _minutesStatusChip(schedule),
+                      _evaluationChip(schedule),
+                    ],
                   ),
                 ],
-                const SizedBox(height: 10),
-                Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  crossAxisAlignment: WrapCrossAlignment.center,
-                  children: [
-                    _statusChip(
-                      schedule['display_status']?.toString() ??
-                          schedule['status']?.toString() ??
-                          '',
-                    ),
-                    if (!isPit) _minutesStatusChip(schedule),
-                    _evaluationChip(schedule),
-                  ],
-                ),
-              ],
-            ),
-          );
-        }).toList(),
+              ),
+            );
+          }),
+          if (totalTeams > pageSize)
+            _buildTablePagination(group.key, safePage, totalPages, totalTeams, pageSize),
+        ],
       ),
     );
   }
 
-  Widget _deleteAction(DefenseBoardState state, Map<String, dynamic> schedule) {
+  Widget _rowActionButtons(
+    DefenseBoardState state,
+    Map<String, dynamic> schedule,
+    _SessionGroup group,
+  ) {
     final user = ref.watch(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     final isSchedulePit = schedule['scope'] == 'pit';
     final canDelete = isAdmin || (isPitLead && isSchedulePit);
 
-    if (!canDelete) return const SizedBox.shrink();
-
     final currentStatus = (schedule['display_status']?.toString() ??
             schedule['status']?.toString() ??
             '')
         .toLowerCase();
-    if (['ongoing', 'done', 'completed', 'archived'].contains(currentStatus)) {
-      return const SizedBox.shrink();
-    }
-
+    final isScheduled = !['ongoing', 'done', 'completed', 'archived'].contains(currentStatus);
     final scheduleId = _asInt(schedule['id']);
 
-    return IconButton(
-      tooltip: 'Delete schedule',
-      splashRadius: 20,
-      color: const Color(0xFFEF4444),
-      style: IconButton.styleFrom(
-        hoverColor: const Color(0xFFFEE2E2),
-      ),
-      onPressed: state.isSaving || scheduleId == null
-          ? null
-          : () => _confirmDelete(
-              scheduleId,
-              schedule['team_name']?.toString() ?? 'schedule',
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        IconButton(
+          tooltip: 'View Defense Details',
+          splashRadius: 18,
+          iconSize: 18,
+          color: DefensysTokens.steelGrey,
+          style: IconButton.styleFrom(
+            hoverColor: const Color(0xFFF1F5F9),
+          ),
+          onPressed: () => _showDefenseDetailsDialog(schedule, group),
+          icon: const Icon(Icons.info_outline_rounded),
+        ),
+        if (canDelete && isScheduled)
+          IconButton(
+            tooltip: 'Delete schedule',
+            splashRadius: 18,
+            iconSize: 18,
+            color: const Color(0xFFEF4444),
+            style: IconButton.styleFrom(
+              hoverColor: const Color(0xFFFEE2E2),
             ),
-      icon: const Icon(Icons.delete_outline_rounded, size: 20),
+            onPressed: state.isSaving || scheduleId == null
+                ? null
+                : () => _confirmDelete(
+                    scheduleId,
+                    schedule['team_name']?.toString() ?? 'schedule',
+                  ),
+            icon: const Icon(Icons.delete_outline_rounded),
+          ),
+      ],
+    );
+  }
+
+  void _showDefenseDetailsDialog(Map<String, dynamic> schedule, _SessionGroup group) {
+    final isPit = group.scope == 'pit';
+    final accentColor = isPit ? const Color(0xFF0284C7) : DefensysTokens.maroon;
+    final teamName = schedule['team_name']?.toString() ?? 'Unnamed Team';
+    final projectTitle = schedule['project_title']?.toString() ?? 'No title provided';
+    final teamLevel = schedule['team_level']?.toString() ?? '';
+    final adviserName = schedule['adviser_name']?.toString() ?? '';
+    final section = schedule['section']?.toString() ?? '';
+    final leaderName = schedule['leader_name']?.toString() ?? '';
+    final rubricName = schedule['rubric_name']?.toString() ?? 'Default Evaluation Rubric';
+    final status = (schedule['display_status']?.toString() ?? schedule['status']?.toString() ?? 'scheduled').toLowerCase();
+    final startTime = _shortTime(schedule['start_time']);
+    final slotDuration = schedule['slot_duration']?.toString() ?? '60';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        clipBehavior: Clip.antiAlias,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 600),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Header Banner
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  border: Border(
+                    bottom: const BorderSide(color: Color(0xFFE2E8F0)),
+                    left: BorderSide(color: accentColor, width: 4),
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: accentColor.withValues(alpha: 0.10),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        isPit ? 'PIT' : 'CAPSTONE',
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                          color: accentColor,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            group.stageLabel,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w700,
+                              color: DefensysTokens.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '${group.scheduledDate} • $startTime ($slotDuration min) • ${group.room}',
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: DefensysTokens.textSecondary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                      onPressed: () => Navigator.pop(ctx),
+                      splashRadius: 18,
+                    ),
+                  ],
+                ),
+              ),
+              // Body Content
+              Flexible(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // Team & Project Card
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.groups_rounded, size: 18, color: DefensysTokens.steelGrey),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    teamName,
+                                    style: const TextStyle(
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w700,
+                                      color: DefensysTokens.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                                if (teamLevel.isNotEmpty)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                                    ),
+                                    child: Text(
+                                      teamLevel,
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w600,
+                                        color: DefensysTokens.textDark,
+                                      ),
+                                    ),
+                                  ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              projectTitle,
+                              style: const TextStyle(
+                                fontSize: 13,
+                                color: DefensysTokens.textSecondary,
+                                height: 1.4,
+                              ),
+                            ),
+                            if (adviserName.isNotEmpty || section.isNotEmpty || leaderName.isNotEmpty) ...[
+                              const Divider(height: 20, color: Color(0xFFE2E8F0)),
+                              Wrap(
+                                spacing: 18,
+                                runSpacing: 6,
+                                children: [
+                                  if (adviserName.isNotEmpty)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.person_outline_rounded, size: 14, color: DefensysTokens.steelGrey),
+                                        const SizedBox(width: 4),
+                                        Text('Adviser: $adviserName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                      ],
+                                    ),
+                                  if (section.isNotEmpty)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.school_outlined, size: 14, color: DefensysTokens.steelGrey),
+                                        const SizedBox(width: 4),
+                                        Text('Section: $section', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                      ],
+                                    ),
+                                  if (leaderName.isNotEmpty)
+                                    Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.star_outline_rounded, size: 14, color: DefensysTokens.steelGrey),
+                                        const SizedBox(width: 4),
+                                        Text('Leader: $leaderName', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: DefensysTokens.textDark)),
+                                      ],
+                                    ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Defense Committee Section
+                      const Text(
+                        'DEFENSE COMMITTEE',
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: DefensysTokens.steelGrey,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                        ),
+                        child: Column(
+                          children: [
+                            Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Icon(Icons.people_outline_rounded, size: 16, color: DefensysTokens.steelGrey),
+                                const SizedBox(width: 8),
+                                const Text(
+                                  'Panelists: ',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: DefensysTokens.textDark,
+                                  ),
+                                ),
+                                Expanded(
+                                  child: Text(
+                                    group.panelNames.isNotEmpty ? group.panelNames : 'None assigned',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      color: DefensysTokens.textPrimary,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            if (!isPit) ...[
+                              const Divider(height: 18, color: Color(0xFFF1F5F9)),
+                              Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Icon(Icons.edit_note_rounded, size: 16, color: DefensysTokens.steelGrey),
+                                  const SizedBox(width: 8),
+                                  const Text(
+                                    'Documenter: ',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: Text(
+                                      group.documenterName.isNotEmpty ? group.documenterName : 'Unassigned',
+                                      style: TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: group.documenterName.isEmpty ? FontWeight.w600 : FontWeight.w500,
+                                        color: group.documenterName.isEmpty ? DefensysTokens.warningText : DefensysTokens.textPrimary,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      // Meta Grid: Status & Rubric
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'CURRENT STATUS',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: DefensysTokens.steelGrey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  _statusChip(status),
+                                ],
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(color: const Color(0xFFE2E8F0)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'EVALUATION RUBRIC',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.5,
+                                      color: DefensysTokens.steelGrey,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    rubricName,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: DefensysTokens.textDark,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              // Footer Actions
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                decoration: const BoxDecoration(
+                  color: Color(0xFFF8FAFC),
+                  border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    if (!isPit) ...[
+                      OutlinedButton.icon(
+                        icon: const Icon(Icons.description_outlined, size: 15),
+                        label: const Text('Open Minutes'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: DefensysTokens.textDark,
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        ),
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          final scheduleId = _asInt(schedule['id']);
+                          if (scheduleId != null) {
+                            setState(() => _selectedMinutesScheduleId = scheduleId);
+                          }
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                    ],
+                    ElevatedButton.icon(
+                      icon: const Icon(Icons.grading_rounded, size: 15),
+                      label: const Text('Evaluation & Grades'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: accentColor,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        elevation: 0,
+                      ),
+                      onPressed: () {
+                        Navigator.pop(ctx);
+                        _openEvaluationAndGrades(schedule);
+                      },
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1232,56 +3074,67 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     Color bg;
     Color fg;
+    Color border;
     IconData iconData;
     String text;
 
     switch (normalized) {
       case 'ongoing':
-        bg = const Color(0xFFFEF3C7);
-        fg = const Color(0xFFB45309);
+        bg = DefensysTokens.warningBg;
+        fg = DefensysTokens.warningText;
+        border = DefensysTokens.warningBorder;
         iconData = Icons.play_circle_rounded;
-        text = 'ongoing';
+        text = 'Ongoing';
         break;
       case 'done':
       case 'completed':
-        bg = const Color(0xFFDCFCE7);
-        fg = const Color(0xFF15803D);
+        bg = DefensysTokens.successBg;
+        fg = DefensysTokens.successText;
+        border = DefensysTokens.successBorder;
         iconData = Icons.check_circle_rounded;
-        text = 'completed';
+        text = 'Completed';
         break;
       case 'cancelled':
-        bg = const Color(0xFFFEE2E2);
-        fg = const Color(0xFFB91C1C);
+        bg = DefensysTokens.dangerBg;
+        fg = DefensysTokens.dangerText;
+        border = DefensysTokens.dangerBorder;
         iconData = Icons.cancel_rounded;
-        text = 'cancelled';
+        text = 'Cancelled';
         break;
       case 'archived':
-        bg = const Color(0xFFF3F4F6);
-        fg = const Color(0xFF4B5563);
+        bg = DefensysTokens.archivedBg;
+        fg = DefensysTokens.archivedText;
+        border = DefensysTokens.archivedBorder;
         iconData = Icons.archive_rounded;
-        text = 'archived';
+        text = 'Archived';
         break;
       default:
-        bg = const Color(0xFFE0F2FE);
-        fg = const Color(0xFF0369A1);
+        bg = DefensysTokens.infoBg;
+        fg = DefensysTokens.infoText;
+        border = DefensysTokens.infoBorder;
         iconData = Icons.schedule_rounded;
-        text = 'scheduled';
+        text = 'Scheduled';
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
       decoration: BoxDecoration(
         color: bg,
-        borderRadius: BorderRadius.circular(999),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(iconData, size: 13, color: fg),
+          Icon(iconData, size: 12, color: fg),
           const SizedBox(width: 4),
           Text(
             text,
-            style: TextStyle(color: fg, fontSize: 12, fontWeight: FontWeight.w800),
+            style: TextStyle(
+              color: fg,
+              fontSize: 11,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -1452,16 +3305,20 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     );
 
     if (!mounted) return;
+    await _checkImportDraft();
     ref.read(defenseBoardProvider.notifier).fetchBoard();
   }
 
-  void _openScheduler() {
+  void _openScheduler({String? scope, int? stageId, String? eventName}) {
     final user = ref.read(authProvider).user;
     final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
     final isPitLead = user?['is_pit_lead'] == true;
     if (!isAdmin && !isPitLead) return;
 
     setState(() {
+      _schedulerScope = scope;
+      _schedulerStageId = stageId;
+      _schedulerEventName = eventName;
       _showScheduler = true;
     });
   }
@@ -1541,27 +3398,32 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     String label = 'No Minutes';
     Color bg = const Color(0xFFF1F5F9);
     Color fg = const Color(0xFF64748B);
+    Color border = const Color(0xFFE2E8F0);
     IconData icon = Icons.description_outlined;
 
     if (status == 'draft') {
       label = 'Draft';
-      bg = const Color(0xFFFEF3C7);
-      fg = const Color(0xFF92400E);
+      bg = const Color(0xFFFFFBEB);
+      fg = const Color(0xFFB45309);
+      border = const Color(0xFFFDE68A);
       icon = Icons.edit_note_rounded;
     } else if (status == 'submitted') {
       label = 'Submitted';
-      bg = const Color(0xFFDBEAFE);
-      fg = const Color(0xFF1E40AF);
+      bg = const Color(0xFFEFF6FF);
+      fg = const Color(0xFF1D4ED8);
+      border = const Color(0xFFBFDBFE);
       icon = Icons.send_rounded;
     } else if (status == 'adviser_signed') {
       label = 'Adviser Signed';
-      bg = const Color(0xFFF3E8FF);
-      fg = const Color(0xFF6B21A8);
+      bg = const Color(0xFFFAF5FF);
+      fg = const Color(0xFF7E22CE);
+      border = const Color(0xFFE9D5FF);
       icon = Icons.draw_rounded;
     } else if (status == 'completed') {
       label = 'Completed';
-      bg = const Color(0xFFDCFCE7);
-      fg = const Color(0xFF15803D);
+      bg = const Color(0xFFECFDF5);
+      fg = const Color(0xFF047857);
+      border = const Color(0xFFA7F3D0);
       icon = Icons.task_alt_rounded;
     }
 
@@ -1573,26 +3435,28 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       },
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: border),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(icon, size: 13, color: fg),
-            const SizedBox(width: 5),
+            const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 color: fg,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.open_in_new_rounded, size: 11, color: fg),
+            const SizedBox(width: 3),
+            Icon(Icons.open_in_new_rounded, size: 10, color: fg),
           ],
         ),
       ),
@@ -1601,9 +3465,65 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
   void _openEvaluationAndGrades(Map<String, dynamic> schedule) {
     final location = GoRouterState.of(context).uri.path;
-    if (location.startsWith('/admin/')) {
+    final isAdmin = location.startsWith('/admin/');
+    final isFaculty = location.startsWith('/faculty/');
+
+    int? gradeId = asInt(schedule['grade_id']);
+
+    // Fallback: lookup in gradeCenterProvider state if not directly in schedule map
+    if (gradeId == null) {
+      final gcState = ref.read(gradeCenterProvider);
+      final schedId = asInt(schedule['id']);
+      final teamId = asInt(schedule['team_id']);
+      final stageLabel = schedule['stage_label']?.toString() ??
+          schedule['defense_stage_label']?.toString() ??
+          '';
+
+      for (final g in gcState.grades) {
+        if (schedId != null && asInt(g['schedule_id']) == schedId) {
+          gradeId = asInt(g['id']);
+          break;
+        }
+        if (teamId != null &&
+            asInt(g['team_id']) == teamId &&
+            stageLabel.isNotEmpty &&
+            g['stage_label']?.toString().toLowerCase() ==
+                stageLabel.toLowerCase()) {
+          gradeId = asInt(g['id']);
+          break;
+        }
+      }
+    }
+
+    final isLocked = (schedule['grade_status']?.toString() ?? '') == 'published' ||
+        (schedule['status']?.toString() ?? '').toLowerCase() == 'completed' ||
+        (schedule['status']?.toString() ?? '').toLowerCase() == 'done';
+
+    if (gradeId != null) {
+      if (isAdmin) {
+        context.push('${AdminRoutes.gradeDetail(gradeId)}?locked=${isLocked ? 1 : 0}');
+        return;
+      } else if (isFaculty) {
+        context.push('${FacultyRoutes.gradeDetail(gradeId)}?locked=${isLocked ? 1 : 0}');
+        return;
+      } else {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GradeCenterTeamDetailScreen(
+              gradeId: gradeId!,
+              isLocked: isLocked,
+              onBack: () => Navigator.pop(context),
+            ),
+          ),
+        );
+        return;
+      }
+    }
+
+    if (isAdmin) {
       context.go(AdminRoutes.gradeCenter);
-    } else if (location.startsWith('/faculty/')) {
+    } else if (isFaculty) {
       context.go(FacultyRoutes.gradeCenter);
     } else {
       Navigator.push(
@@ -1620,8 +3540,8 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         .toLowerCase();
     final isDone = ['done', 'completed'].contains(status);
 
-    final Color bg = isDone ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9);
-    final Color fg = isDone ? const Color(0xFFB45309) : const Color(0xFF475569);
+    final Color bg = isDone ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC);
+    final Color fg = isDone ? const Color(0xFFB45309) : DefensysTokens.textSecondary;
     final Color border =
         isDone ? const Color(0xFFFDE68A) : const Color(0xFFE2E8F0);
     final String label = isDone ? 'View Evaluation' : 'Evaluation & Grades';
@@ -1630,7 +3550,7 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
       onTap: () => _openEvaluationAndGrades(schedule),
       borderRadius: BorderRadius.circular(6),
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: bg,
           borderRadius: BorderRadius.circular(6),
@@ -1639,18 +3559,23 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.star_rounded, size: 14, color: fg),
+            Icon(
+              isDone ? Icons.star_rounded : Icons.grading_rounded,
+              size: 13,
+              color: fg,
+            ),
             const SizedBox(width: 4),
             Text(
               label,
               style: TextStyle(
+                fontFamily: DefensysTokens.fontFamilyInter,
                 color: fg,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.arrow_forward_ios_rounded, size: 10, color: fg),
+            const SizedBox(width: 3),
+            Icon(Icons.arrow_forward_ios_rounded, size: 9, color: fg),
           ],
         ),
       ),
@@ -1673,9 +3598,11 @@ class _HeaderCell extends StatelessWidget {
         child: Text(
           text,
           style: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w800,
-            color: AppColors.textSecondary,
+            fontFamily: DefensysTokens.fontFamilyInter,
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.6,
+            color: DefensysTokens.steelGrey,
           ),
         ),
       ),

@@ -10,6 +10,7 @@ import '../../../../notifications/notifications_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../config/api_config.dart';
 import '../../../../widgets/defensys_logo_mark.dart';
+import '../../../../widgets/dialogs/prompt_missing_phone_dialog.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
 
 export '../../../../widgets/status_badge.dart';
@@ -283,6 +284,7 @@ class _TopNav extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).user;
+    PromptMissingPhoneDialog.maybeShow(context, ref);
     final displayName = user != null && user['name'] != null
         ? user['name'] as String
         : 'Administrator';
@@ -353,13 +355,18 @@ class _TopNav extends ConsumerWidget {
                         : null,
                   ),
                   const SizedBox(width: 14),
-                  Text(
-                    displayName,
-                    style: const TextStyle(
-                      fontFamily: DefensysUi.fontFamily,
-                      color: DefensysUi.textDark,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontFamily: DefensysUi.fontFamily,
+                        color: DefensysUi.textDark,
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ],

@@ -32,6 +32,13 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['stats']['total_faculty'], 2)
         self.assertEqual(response.data['stats']['total_teams'], 0)
         self.assertEqual(response.data['stats']['upcoming_defenses'], 0)
+        self.assertIn('upcoming_defenses_list', response.data)
+        self.assertIn('team_pipeline', response.data)
+        self.assertIn('action_items', response.data)
+        self.assertIn('recent_activity', response.data)
+        self.assertEqual(response.data['team_pipeline']['total_teams'], 0)
+        self.assertEqual(response.data['team_pipeline']['teams_with_adviser'], 0)
+        self.assertEqual(response.data['team_pipeline']['teams_without_adviser'], 0)
         self.assertNotEqual(response.data['stats']['total_students'], 150)
 
     def test_faculty_dashboard_reflects_request_user_roles(self):
@@ -516,6 +523,9 @@ class DashboardApiTests(APITestCase):
             semester=semester,
             scope=TeamGrade.SCOPE_PIT,
             stage_label='Concept Proposal',
+            panel_weight=60,
+            peer_weight=40,
+            adviser_weight=0,
             panel_score=Decimal('88.50'),
             peer_score=Decimal('90.00'),
             status=TeamGrade.STATUS_PUBLISHED,

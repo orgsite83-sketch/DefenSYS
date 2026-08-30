@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/widgets/dialogs/confirm_dialog.dart';
 
 /// Modal dialog for creating a single user or editing an existing user's details.
@@ -40,6 +41,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
   late final TextEditingController _firstNameController;
   late final TextEditingController _lastNameController;
   late final TextEditingController _emailController;
+  late final TextEditingController _phoneController;
   late final TextEditingController _passwordController;
 
   late bool _editing;
@@ -69,6 +71,11 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     _emailController = TextEditingController(
       text: user?['email']?.toString() ?? '',
     );
+    _phoneController = TextEditingController(
+      text: user?['phone_number']?.toString() ??
+          user?['contact']?.toString() ??
+          '',
+    );
     _passwordController = TextEditingController();
 
     _initialRole = user?['role']?.toString() ?? widget.defaultRole;
@@ -96,6 +103,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
     _firstNameController.dispose();
     _lastNameController.dispose();
     _emailController.dispose();
+    _phoneController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -116,6 +124,7 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
       'first_name': _firstNameController.text.trim(),
       'last_name': _lastNameController.text.trim(),
       'email': _emailController.text.trim(),
+      'phone_number': _phoneController.text.trim(),
       'role': _initialRole,
       'is_active': _isActive,
       'is_panelist': _isPanelist,
@@ -227,6 +236,14 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
               TextField(
                 controller: _emailController,
                 decoration: const InputDecoration(labelText: 'Email'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: _phoneController,
+                decoration: const InputDecoration(
+                  labelText: 'Mobile / Phone Number',
+                  hintText: 'e.g. 0917 123 4567',
+                ),
               ),
               if (_editing) ...[
                 const SizedBox(height: 12),
@@ -425,17 +442,24 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                         style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
                   const SizedBox(width: 10),
-                  FilledButton(
+                  FilledButton.icon(
                     onPressed: _onSave,
-                    style: FilledButton.styleFrom(
-                      backgroundColor: const Color(0xFF7A1C1C),
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 11),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(_editing ? 'Save Changes' : 'Create Faculty',
+                    icon: Icon(_editing ? Icons.save_rounded : Icons.person_add_rounded, size: 16),
+                    style: _editing
+                        ? DefensysTokens.saveButtonStyle(
+                            isPill: false,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 11),
+                          )
+                        : FilledButton.styleFrom(
+                            backgroundColor: const Color(0xFF7A1C1C),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 18, vertical: 11),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                          ),
+                    label: Text(_editing ? 'Save Changes' : 'Create Faculty',
                         style: const TextStyle(fontWeight: FontWeight.w700)),
                   ),
                 ],

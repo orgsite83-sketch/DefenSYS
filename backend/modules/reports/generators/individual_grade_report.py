@@ -8,8 +8,9 @@ from reportlab.lib import colors
 
 from reports.pdf_styles import (
     defensys_styles,
-    defensys_cover_page,
-    defensys_confidential_callout,
+    defensys_official_header,
+    defensys_metadata_grid,
+    defensys_signatures_block,
     defensys_table_style,
     NumberedCanvas,
 )
@@ -17,26 +18,17 @@ from reports.pdf_styles import (
 
 def generate_individual_grade_pdf(student, student_grade, team_grade, generated_by_user):
     """
-    Generate a confidential PDF report detailing an individual student's grades,
+    Generate an official USTP DIT confidential PDF report detailing an individual student's grades,
     peer evaluation score contribution, panel assessment, and official audit summary.
-
-    Args:
-        student: User model instance (Student)
-        student_grade: StudentStageGrade model instance or None
-        team_grade: TeamGrade database object
-        generated_by_user: Username/Name of the requestor
-
-    Returns:
-        bytes: PDF binary content
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        topMargin=0.85 * inch,
-        bottomMargin=0.85 * inch,
-        leftMargin=0.75 * inch,
-        rightMargin=0.75 * inch,
+        topMargin=0.42 * inch,
+        bottomMargin=0.50 * inch,
+        leftMargin=0.50 * inch,
+        rightMargin=0.50 * inch,
     )
 
     doc.generated_by = generated_by_user
@@ -45,37 +37,45 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     story = []
     styles = defensys_styles()
 
-    # 1. Cover Page
     team = team_grade.team
     semester = team_grade.semester
     student_name = student.get_full_name() or student.username
+    adviser_name = f"{team.adviser.first_name} {team.adviser.last_name}".strip() if team.adviser else "Unassigned"
 
-    metadata_rows = [
-        ("Student Name:", student_name),
-        ("Student ID / Username:", student.username),
-        ("Academic Period:", f"{semester.school_year.label} — {semester.label}"),
-        ("Team Name:", team.name or "N/A"),
-        ("Project Title:", team.project_title or "N/A"),
-        ("Course / Year Level:", f"{team.level or 'N/A'} — {team.year_level or 'N/A'}"),
-        ("Defense Stage:", team_grade.stage_label or "N/A"),
-        ("Project Adviser:", f"{team.adviser.first_name} {team.adviser.last_name}".strip() if team.adviser else "N/A"),
-    ]
-
-    defensys_cover_page(
+    # 1. Official Header Banner & Document Title
+    defensys_official_header(
         story=story,
-        title="Individual Student Grade Audit Report",
-        subtitle=f"Confidential Performance & Evaluation Breakdown — {team_grade.stage_label}",
-        generated_by_user=generated_by_user,
-        metadata_rows=metadata_rows,
+        title=f"Individual Student Grade Audit Report — {student_name}",
+        subtitle=f"Certified Academic Performance & Defense Breakdown · {team_grade.stage_label or 'Defense Stage'}"
     )
 
-    # 2. Main Page Header & Confidential Callout
-    story.append(defensys_confidential_callout())
-    story.append(Spacer(1, 0.25 * inch))
+    # 2. Metadata Grid
+    stage_text = f"{team_grade.stage_label or 'Defense Stage'}"
+    if getattr(team_grade, 'attempt_count', 1) > 1:
+        stage_text += f" (Attempt #{team_grade.attempt_count})"
+
+    metadata_rows = [
+        ("Student Candidate", f"{student_name} (ID: {student.username})"),
+        ("Student Team & Section", f"{team.name or 'Team'} · {team.section or team.year_level or 'BSIT'}"),
+        ("Title of Approved Project", team.project_title or team.name or "N/A"),
+        ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
+        ("Capstone Defense Stage", stage_text),
+        ("Project Adviser", adviser_name),
+    ]
+
+    verdict_val = getattr(team_grade, 'verdict', '')
+    if verdict_val:
+        verdict_display = dict(team_grade.VERDICT_CHOICES).get(verdict_val, verdict_val.replace('_', ' ').title())
+        if team_grade.revision_deadline:
+            verdict_display += f" (Deadline: {team_grade.revision_deadline.strftime('%b %d, %Y')})"
+        metadata_rows.append(("Panel Verdict", verdict_display))
+
+    story.append(defensys_metadata_grid(metadata_rows, width=7.0*inch))
+    story.append(Spacer(1, 0.08*inch))
 
     # 3. Overall Grade Breakdown
     story.append(Paragraph("Individual Academic Grade Breakdown", styles['SectionHeader']))
-    story.append(Spacer(1, 0.05 * inch))
+    story.append(Spacer(1, 0.03*inch))
 
     def format_score(val):
         return f"{val:.2f}%" if val is not None else "Pending"
@@ -88,7 +88,6 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     if student_grade and student_grade.final_grade is not None:
         student_final = student_grade.final_grade
     else:
-        # Calculate from components if available
         if student_panel is not None and student_peer is not None:
             tot = student_panel * Decimal(team_grade.panel_weight) + student_peer * Decimal(team_grade.peer_weight)
             if team_grade.is_capstone and team_grade.adviser_weight > 0 and student_adviser is not None:
@@ -100,9 +99,10 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     summary_data = [
         [
             Paragraph("<b>Assessment Component</b>", styles['TableHeader']),
-            Paragraph("<b>Weight</b>", styles['TableHeader']),
-            Paragraph("<b>Earned Score</b>", styles['TableHeader']),
-            Paragraph("<b>Weighted Value</b>", styles['TableHeader']),
+            Paragraph("<b>Weight</b>", styles['TableHeaderCenter']),
+            Paragraph("<b>Earned Score</b>", styles['TableHeaderCenter']),
+            Paragraph("<b>Weighted Value</b>", styles['TableHeaderCenter']),
+            Paragraph("<b>Evaluation Remarks / Source</b>", styles['TableHeader'])
         ]
     ]
 
@@ -114,9 +114,10 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     )
     summary_data.append([
         Paragraph("Panel Defense Evaluation", styles['TableCell']),
-        Paragraph(f"{team_grade.panel_weight}%", styles['TableCell']),
-        Paragraph(format_score(student_panel), styles['TableCell']),
-        Paragraph(format_score(panel_val), styles['TableCell']),
+        Paragraph(f"{team_grade.panel_weight}%", styles['TableCellCenter']),
+        Paragraph(format_score(student_panel), styles['TableCellCenter']),
+        Paragraph(format_score(panel_val), styles['TableCellCenter']),
+        Paragraph("Composite panel rubric score", styles['TableCell']),
     ])
 
     # Adviser Component (if Capstone)
@@ -128,9 +129,10 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         )
         summary_data.append([
             Paragraph("Project Adviser Grade", styles['TableCell']),
-            Paragraph(f"{team_grade.adviser_weight}%", styles['TableCell']),
-            Paragraph(format_score(student_adviser), styles['TableCell']),
-            Paragraph(format_score(adviser_val), styles['TableCell']),
+            Paragraph(f"{team_grade.adviser_weight}%", styles['TableCellCenter']),
+            Paragraph(format_score(student_adviser), styles['TableCellCenter']),
+            Paragraph(format_score(adviser_val), styles['TableCellCenter']),
+            Paragraph(f"Assessed by {adviser_name}", styles['TableCell']),
         ])
 
     # Peer Evaluation Component
@@ -141,9 +143,10 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
     )
     summary_data.append([
         Paragraph("Individual Peer Evaluation Contribution", styles['TableCell']),
-        Paragraph(f"{team_grade.peer_weight}%", styles['TableCell']),
-        Paragraph(format_score(student_peer), styles['TableCell']),
-        Paragraph(format_score(peer_val), styles['TableCell']),
+        Paragraph(f"{team_grade.peer_weight}%", styles['TableCellCenter']),
+        Paragraph(format_score(student_peer), styles['TableCellCenter']),
+        Paragraph(format_score(peer_val), styles['TableCellCenter']),
+        Paragraph("Internal peer rubric average", styles['TableCell']),
     ])
 
     # Final Result
@@ -153,22 +156,23 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
 
     summary_data.append([
         Paragraph("<b>TOTAL OFFICIAL GRADE</b>", styles['TableCellBold']),
-        Paragraph("<b>100%</b>", styles['TableCellBold']),
-        Paragraph(f"<b>{format_score(student_final)}</b>", styles['TableCellBold']),
-        Paragraph(f"<b>Status: {status_str}</b>", styles['TableCellBold']),
+        Paragraph("<b>100%</b>", styles['TableCellBoldCenter']),
+        Paragraph(f"<b>{format_score(student_final)}</b>", styles['TableCellBoldCenter']),
+        Paragraph(f"<b>{format_score(student_final)}</b>", styles['TableCellBoldCenter']),
+        Paragraph(f"<b>Official Status: {status_str}</b>", styles['TableCellBold']),
     ])
 
-    summary_table = Table(summary_data, colWidths=[2.6 * inch, 1.1 * inch, 1.5 * inch, 1.8 * inch])
+    summary_table = Table(summary_data, colWidths=[2.0 * inch, 0.8 * inch, 1.0 * inch, 1.0 * inch, 2.2 * inch])
     summary_table.setStyle(defensys_table_style())
     story.append(summary_table)
-    story.append(Spacer(1, 0.3 * inch))
+    story.append(Spacer(1, 0.08 * inch))
 
     # 4. Panelist Defense Feedback & Remarks
     submissions = list(team_grade.panelist_submissions.all().select_related('panelist'))
     remarks_list = [s for s in submissions if s.remarks and s.remarks.strip()]
     if remarks_list:
-        story.append(Paragraph("Panelist Defense Feedback & Remarks", styles['SectionHeader']))
-        story.append(Spacer(1, 0.05 * inch))
+        story.append(Paragraph("Panelist Defense Feedback & Direct Observations", styles['SectionHeader']))
+        story.append(Spacer(1, 0.03 * inch))
 
         rem_data = [[
             Paragraph("<b>Panelist</b>", styles['TableHeader']),
@@ -185,32 +189,14 @@ def generate_individual_grade_pdf(student, student_grade, team_grade, generated_
         rem_table = Table(rem_data, colWidths=[2.2 * inch, 4.8 * inch])
         rem_table.setStyle(defensys_table_style())
         story.append(rem_table)
-        story.append(Spacer(1, 0.3 * inch))
 
-    # 5. Formal Certification Notice & Signature Signoff
-    story.append(Paragraph("Official Audit & Verification Certification", styles['SectionHeader']))
-    story.append(Spacer(1, 0.05 * inch))
-
-    cert_text = (
-        "This Individual Student Grade Audit Report has been extracted directly from the DefenSYS "
-        "Academic Governance Registry upon verified audit request. All criterion assessments, "
-        "panelist deliberations, and peer evaluation weights reflect institutional records."
+    # 5. Official Signatures Block
+    defensys_signatures_block(
+        story=story,
+        prepared_by=generated_by_user,
+        noted_by=adviser_name,
+        approved_by="IT Program Chairperson"
     )
-    story.append(Paragraph(cert_text, styles['Normal']))
-    story.append(Spacer(1, 0.4 * inch))
-
-    sig_data = [
-        [
-            Paragraph("________________________________________<br/><b>PIT Coordinator / Adviser</b>", styles['Normal']),
-            Paragraph("________________________________________<br/><b>Department Chair / Dean</b>", styles['Normal']),
-        ]
-    ]
-    sig_table = Table(sig_data, colWidths=[3.5 * inch, 3.5 * inch])
-    sig_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-    ]))
-    story.append(sig_table)
 
     # Build document
     doc.build(story, canvasmaker=NumberedCanvas)

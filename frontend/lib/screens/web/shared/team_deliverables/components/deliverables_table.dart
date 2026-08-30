@@ -408,7 +408,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 children: [
                   Icon(Icons.info_outline, size: 16, color: AppColors.gold),
                   SizedBox(width: 8),
-                  const Expanded(
+                  Expanded(
                     child: Text(
                       'Accepting will finalize and lock this submission. Any future file replacements or revisions must be unlocked by a System Admin.',
                       style: TextStyle(fontSize: 12, color: AppColors.textPrimary, height: 1.3),
@@ -842,6 +842,22 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                         ],
                       ),
                     ),
+                    if (canFacultyReview) ...[
+                      const SizedBox(width: 6),
+                      OutlinedButton.icon(
+                        onPressed: widget.state.isSaving
+                            ? null
+                            : () => _promptRejectDialog(team, stageLabel, item),
+                        icon: const Icon(Icons.cancel_outlined, size: 14),
+                        label: const Text('Reject'),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: AppColors.danger,
+                          side: const BorderSide(color: AppColors.danger),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                          visualDensity: VisualDensity.compact,
+                        ),
+                      ),
+                    ],
                   ] else if (subStatus == 'rejected') ...[
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -1193,7 +1209,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     );
   }
 
-  Widget _expandedTabButton(int teamId, int tabIndex, String label) {
+  Widget _expandedTabButton(
+    int teamId,
+    int tabIndex,
+    String label, {
+    String? badgeText,
+    Color? badgeColor,
+  }) {
     final activeTab = _cardActiveTabs[teamId] ?? 0;
     final isActive = activeTab == tabIndex;
     return InkWell(
@@ -1203,26 +1225,376 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         });
       },
       child: Container(
-        height: 38,
+        height: 40,
         alignment: Alignment.center,
         decoration: BoxDecoration(
           border: isActive
               ? const Border(
                   bottom: BorderSide(
                     color: AppColors.maroon,
-                    width: 2,
+                    width: 2.5,
                   ),
                 )
               : null,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-            color: isActive ? AppColors.maroon : AppColors.textSecondary,
-            fontSize: 13,
-          ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontWeight: isActive ? FontWeight.bold : FontWeight.w600,
+                color: isActive ? AppColors.maroon : AppColors.textSecondary,
+                fontSize: 13,
+              ),
+            ),
+            if (badgeText != null) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: (badgeColor ?? AppColors.textSecondary).withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badgeText,
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: badgeColor ?? AppColors.textSecondary,
+                  ),
+                ),
+              ),
+            ],
+          ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildStagePipelineBar({
+    required Map<String, dynamic> team,
+    required List<Map<String, dynamic>> stages,
+    required String selectedStage,
+    required Map<String, dynamic> stagePayload,
+  }) {
+    final teamId = parseAsInt(team['id']);
+    final isPit = widget.state.scope == 'pit';
+    final currentStageName = team['current_stage']?.toString();
+
+    if (stages.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 20, color: Colors.grey.shade500),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isPit
+                    ? 'No PIT events configured for ${team['year_level'] ?? 'this team'}.'
+                    : 'No defense stages configured for this academic term.',
+                style: const TextStyle(fontSize: 13, color: AppColors.textSecondary),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header: Timeline title, click guide, unlock button & status badge
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  const Icon(
+                    Icons.linear_scale_rounded,
+                    size: 16,
+                    color: AppColors.maroon,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    isPit ? 'PIT EVENT TIMELINE' : 'DEFENSE STAGE PIPELINE',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w900,
+                      fontSize: 11,
+                      color: AppColors.textSecondary,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: const Color(0xFFCBD5E1)),
+                    ),
+                    child: Text(
+                      isPit
+                          ? 'Click event to switch view'
+                          : 'Click stage to switch view',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (widget.state.scope == 'admin' && stagePayload['is_defense_done'] == true) ...[
+                    OutlinedButton.icon(
+                      onPressed: widget.state.isSaving
+                          ? null
+                          : () async {
+                              final success = await ref
+                                  .read(capstoneDeliverablesProvider.notifier)
+                                  .unlockDeliverables(
+                                    teamId: teamId,
+                                    stageLabel: selectedStage,
+                                  );
+                              if (success && mounted) {
+                                showInfoToast(
+                                  context,
+                                  stagePayload['admin_unlocked'] == true
+                                      ? 'Deliverables relocked.'
+                                      : 'Deliverables unlocked for resubmission.',
+                                );
+                              }
+                            },
+                      icon: Icon(
+                        stagePayload['admin_unlocked'] == true
+                            ? Icons.lock_outline
+                            : Icons.lock_open_outlined,
+                        size: 13,
+                      ),
+                      label: Text(
+                        stagePayload['admin_unlocked'] == true
+                            ? 'Relock'
+                            : 'Unlock for Resubmission',
+                        style: const TextStyle(fontSize: 11),
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: stagePayload['admin_unlocked'] == true
+                            ? AppColors.danger
+                            : AppColors.maroon,
+                        side: BorderSide(
+                          color: stagePayload['admin_unlocked'] == true
+                              ? AppColors.danger
+                              : AppColors.maroon,
+                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        visualDensity: VisualDensity.compact,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  _buildStageStatusBadge(stagePayload),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Stepper cards Wrap
+          Wrap(
+            spacing: 10,
+            runSpacing: 10,
+            children: stages.asMap().entries.map((entry) {
+              final idx = entry.key;
+              final item = entry.value;
+              final label = item['stage_label']?.toString() ?? '';
+              final isSelected = label == selectedStage;
+              final isTeamCurrent = label == currentStageName;
+
+              final isStageComplete = item['required_complete'] == true;
+              final isStageEndorsed = item['endorsed'] == true;
+              final isOfficiallyComplete = item['is_officially_complete'] == true;
+              final statusDetail = item['stage_status_detail']?.toString();
+              final isPassed = statusDetail == 'passed' || isOfficiallyComplete;
+
+              Color stepBg = isSelected
+                  ? AppColors.maroon
+                  : (isPassed || isStageEndorsed
+                      ? AppColors.success
+                      : (isStageComplete
+                          ? Colors.blue.shade600
+                          : (isTeamCurrent
+                              ? AppColors.maroon.withValues(alpha: 0.15)
+                              : const Color(0xFFE2E8F0))));
+              Color stepTextColor = isSelected || isPassed || isStageEndorsed || isStageComplete
+                  ? Colors.white
+                  : (isTeamCurrent ? AppColors.maroon : AppColors.textSecondary);
+
+              final showCurrentBadge = isTeamCurrent && (!isPassed || idx == stages.length - 1);
+
+              return Material(
+                color: Colors.transparent,
+                child: InkWell(
+                  onTap: () {
+                    setState(() {
+                      _cardSelectedStages[teamId] = label;
+                    });
+                  },
+                  borderRadius: BorderRadius.circular(10),
+                  child: AnimatedContainer(
+                    duration: const Duration(milliseconds: 160),
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    decoration: BoxDecoration(
+                      color: isSelected
+                          ? Colors.white
+                          : (isTeamCurrent
+                              ? Colors.white
+                              : const Color(0xFFF1F5F9)),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: isSelected
+                            ? AppColors.maroon
+                            : (isTeamCurrent
+                                ? AppColors.maroon.withValues(alpha: 0.45)
+                                : const Color(0xFFCBD5E1)),
+                        width: isSelected ? 2.0 : (isTeamCurrent ? 1.5 : 1.0),
+                      ),
+                      boxShadow: isSelected
+                          ? [
+                              BoxShadow(
+                                color: AppColors.maroon.withValues(alpha: 0.12),
+                                blurRadius: 6,
+                                offset: const Offset(0, 2),
+                              ),
+                            ]
+                          : null,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        // Step number or check
+                        Container(
+                          width: 22,
+                          height: 22,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: stepBg,
+                          ),
+                          child: isPassed
+                              ? const Icon(Icons.check, size: 13, color: Colors.white)
+                              : (isStageEndorsed
+                                  ? const Icon(Icons.verified_rounded, size: 13, color: Colors.white)
+                                  : (isStageComplete
+                                      ? const Icon(Icons.check_circle_outline, size: 13, color: Colors.white)
+                                      : Text(
+                                          '${idx + 1}',
+                                          style: TextStyle(
+                                            fontSize: 10.5,
+                                            fontWeight: FontWeight.w800,
+                                            color: stepTextColor,
+                                          ),
+                                        ))),
+                        ),
+                        const SizedBox(width: 8),
+
+                        // Stage Name & Markers
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  label,
+                                  style: TextStyle(
+                                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                                    color: isSelected ? AppColors.maroon : AppColors.textPrimary,
+                                    fontSize: 12.5,
+                                  ),
+                                ),
+                                if (showCurrentBadge) ...[
+                                  const SizedBox(width: 6),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: AppColors.maroon,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: const Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        Icon(Icons.star_rounded, size: 9, color: Colors.white),
+                                        SizedBox(width: 2),
+                                        Text(
+                                          'CURRENT',
+                                          style: TextStyle(
+                                            fontSize: 8.5,
+                                            fontWeight: FontWeight.w900,
+                                            color: Colors.white,
+                                            letterSpacing: 0.4,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                            if (isSelected) ...[
+                              const SizedBox(height: 2),
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Container(
+                                    width: 5,
+                                    height: 5,
+                                    decoration: const BoxDecoration(
+                                      shape: BoxShape.circle,
+                                      color: AppColors.maroon,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 4),
+                                  const Text(
+                                    'Viewing stage data',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.maroon,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ],
       ),
     );
   }
@@ -1248,25 +1620,45 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final complete = stage['required_complete'] == true;
     final endorsed = stage['endorsed'] == true;
     final canEndorse = configured && complete && !endorsed;
+    final canCancelEndorsement = (stage['can_cancel_endorsement'] == true) ||
+        (endorsed &&
+            stage['has_active_schedule'] != true &&
+            stage['has_done_schedule'] != true &&
+            stage['is_defense_done'] != true &&
+            stage['stage_status_detail'] == 'endorsed');
+    final isFacultyOrAdmin = widget.isAdviser ||
+        widget.state.scope == 'pit' ||
+        widget.state.scope == 'capstone' ||
+        widget.state.scope == 'admin';
 
     final activeTab = _cardActiveTabs[teamId] ?? 0;
+    final reqUploaded = parseAsInt(stage['required_uploaded']);
+    final reqTotal = parseAsInt(stage['required_total']);
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        // Inline Tab Swapping
+        // Workspace Tab Switcher
         Container(
-          height: 38,
+          height: 40,
           decoration: const BoxDecoration(
             border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
           ),
           child: Row(
             children: [
-              _expandedTabButton(teamId, 0, '📁 Deliverables'),
-              const SizedBox(width: 20),
+              _expandedTabButton(
+                teamId,
+                0,
+                '📁 Deliverables',
+                badgeText: configured ? '$reqUploaded/$reqTotal' : null,
+                badgeColor: (configured && reqUploaded >= reqTotal && reqTotal > 0)
+                    ? AppColors.success
+                    : AppColors.textSecondary,
+              ),
+              const SizedBox(width: 24),
               _expandedTabButton(teamId, 1, '📊 Grades & Rubric'),
               if (widget.state.scope == 'capstone') ...[
-                const SizedBox(width: 20),
+                const SizedBox(width: 24),
                 _expandedTabButton(teamId, 2, '📅 Weekly Reports'),
               ],
             ],
@@ -1315,423 +1707,265 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 ],
               ),
             )
-          else
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(18),
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.02),
-                    blurRadius: 8,
-                    offset: const Offset(0, 4),
+          else ...[
+            // Deliverables Progress Summary (Required & Post-Defense Archive)
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final useVerticalLayout = constraints.maxWidth < 600;
+                final requiredUploaded = parseAsInt(stage['required_uploaded']);
+                final requiredTotal = parseAsInt(stage['required_total']);
+                final configuredReq = stage['deliverables_configured'] == true;
+                final archiveUnlocked = stage['archive_unlocked'] == true;
+
+                final reqBlock = Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
                   ),
-                ],
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  child: _requiredProgressBlock(
+                    configured: configuredReq,
+                    done: requiredUploaded,
+                    total: requiredTotal,
+                  ),
+                );
+
+                if (!archiveUnlocked) {
+                  return reqBlock;
+                }
+
+                final archiveBlock = Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: const Color(0xFFF1F5F9)),
+                  ),
+                  child: _archiveProgressBlock(stage),
+                );
+
+                if (useVerticalLayout) {
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.touch_app_outlined,
-                            size: 15,
-                            color: AppColors.maroon,
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            widget.state.scope == 'pit' ? 'PIT Event Overview' : 'Defense Stage Overview',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.w900,
-                              fontSize: 12,
-                              color: AppColors.textSecondary,
-                              letterSpacing: 0.5,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF1F5F9),
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
-                            ),
-                            child: Text(
-                              widget.state.scope == 'pit'
-                                  ? 'Click event to select view'
-                                  : 'Click stage to select view',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textSecondary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (widget.state.scope == 'admin' && stage['is_defense_done'] == true) ...[
-                            OutlinedButton.icon(
-                              onPressed: widget.state.isSaving
-                                  ? null
-                                  : () async {
-                                      final success = await ref
-                                          .read(capstoneDeliverablesProvider.notifier)
-                                          .unlockDeliverables(
-                                            teamId: teamId,
-                                            stageLabel: selectedStage,
-                                          );
-                                      if (success && mounted) {
-                                        showInfoToast(
-                                          context,
-                                          stage['admin_unlocked'] == true
-                                              ? 'Deliverables relocked.'
-                                              : 'Deliverables unlocked for resubmission.',
-                                        );
-                                      }
-                                    },
-                              icon: Icon(
-                                stage['admin_unlocked'] == true
-                                    ? Icons.lock_outline
-                                    : Icons.lock_open_outlined,
-                                size: 14,
-                              ),
-                              label: Text(
-                                stage['admin_unlocked'] == true
-                                    ? 'Relock Deliverables'
-                                    : 'Unlock for Resubmission',
-                              ),
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: stage['admin_unlocked'] == true
-                                    ? AppColors.danger
-                                    : AppColors.maroon,
-                                side: BorderSide(
-                                  color: stage['admin_unlocked'] == true
-                                      ? AppColors.danger
-                                      : AppColors.maroon,
-                                ),
-                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                                visualDensity: VisualDensity.compact,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                          ],
-                          _buildStageStatusBadge(stage),
-                        ],
-                      ),
+                      reqBlock,
+                      const SizedBox(height: 12),
+                      archiveBlock,
                     ],
+                  );
+                }
+
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(child: reqBlock),
+                    const SizedBox(width: 16),
+                    Expanded(child: archiveBlock),
+                  ],
+                );
+              },
+            ),
+
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: Divider(color: Color(0xFFE2E8F0), height: 1),
+            ),
+
+            _sectionTitle('Pre-Defense Requirements'),
+            const SizedBox(height: 8),
+            if (pre.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text(
+                  'No pre-defense requirements configured.',
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontStyle: FontStyle.italic,
+                    fontSize: 12,
                   ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: stages.map((item) {
-                      final label = item['stage_label']?.toString() ?? '';
-                      final active = label == selectedStage;
-                      final isCurrentConfig = label == team['current_stage']?.toString();
+                ),
+              )
+            else
+              ...pre.map(
+                (item) => _deliverableRow(
+                  team,
+                  selectedStage,
+                  item,
+                  (fn) => setState(fn),
+                ),
+              ),
 
-                      final isStageComplete = item['required_complete'] == true;
-                      final isStageEndorsed = item['endorsed'] == true;
-                      final isPit = widget.state.scope == 'pit';
+            if (stage['archive_unlocked'] == true) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Divider(color: Color(0xFFE2E8F0), height: 1),
+              ),
+              _sectionTitle('Post-Defense Deliverables'),
+              const SizedBox(height: 8),
+              if (vault.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No post-defense deliverables configured.',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontStyle: FontStyle.italic,
+                      fontSize: 12,
+                    ),
+                  ),
+                )
+              else
+                ...vault.map(
+                  (item) => _deliverableRow(
+                    team,
+                    selectedStage,
+                    item,
+                    (fn) => setState(fn),
+                  ),
+                ),
+            ],
 
-                      return Tooltip(
-                        message: active
-                            ? '$label (Currently active ${isPit ? 'event' : 'stage'})'
-                            : 'Click to select and view $label deliverables',
-                        child: Material(
-                          color: Colors.transparent,
-                          child: InkWell(
-                            onTap: () {
-                              setState(() {
-                                _cardSelectedStages[teamId] = label;
-                              });
-                            },
-                            borderRadius: BorderRadius.circular(8),
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 150),
-                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                              decoration: BoxDecoration(
-                                color: active
-                                    ? AppColors.maroon
-                                    : const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(8),
-                                border: Border.all(
-                                  color: active
-                                      ? AppColors.maroon
-                                      : const Color(0xFFCBD5E1),
-                                  width: active ? 1.5 : 1.0,
-                                ),
-                                boxShadow: active
-                                    ? [
-                                        BoxShadow(
-                                          color: AppColors.maroon.withValues(alpha: 0.25),
-                                          blurRadius: 4,
-                                          offset: const Offset(0, 2),
-                                        )
-                                      ]
-                                    : [],
+            if (canEndorse) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Divider(color: Color(0xFFE2E8F0), height: 1),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: ElevatedButton.icon(
+                  onPressed: widget.state.isSaving
+                      ? null
+                      : () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Text('Endorse Team'),
+                              content: Text(
+                                'Endorse ${team['name']} for $selectedStage? '
+                                'This confirms all required deliverables are complete '
+                                'and the team is ready for defense scheduling.',
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  if (active) ...[
-                                    const Icon(
-                                      Icons.check_circle,
-                                      size: 14,
-                                      color: Colors.white,
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ] else if (isStageEndorsed) ...[
-                                    const Icon(
-                                      Icons.verified,
-                                      size: 14,
-                                      color: AppColors.success,
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ] else if (isStageComplete) ...[
-                                    const Icon(
-                                      Icons.check_circle_outline,
-                                      size: 14,
-                                      color: Colors.blue,
-                                    ),
-                                    const SizedBox(width: 6),
-                                  ],
-                                  Text(
-                                    label,
-                                    style: TextStyle(
-                                      fontWeight: active ? FontWeight.w700 : FontWeight.w600,
-                                      color: active ? Colors.white : AppColors.textPrimary,
-                                      fontSize: 12,
-                                    ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Cancel'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  icon: const Icon(Icons.verified_outlined),
+                                  label: const Text('Endorse'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.success,
+                                    foregroundColor: Colors.white,
                                   ),
-                                  if (isCurrentConfig) ...[
-                                    const SizedBox(width: 6),
-                                    Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                      decoration: BoxDecoration(
-                                        color: active
-                                            ? Colors.white.withValues(alpha: 0.25)
-                                            : AppColors.maroon.withValues(alpha: 0.1),
-                                        borderRadius: BorderRadius.circular(4),
-                                      ),
-                                      child: Text(
-                                        'Current',
-                                        style: TextStyle(
-                                          fontSize: 9,
-                                          fontWeight: FontWeight.bold,
-                                          color: active ? Colors.white : AppColors.maroon,
-                                        ),
-                                      ),
-                                    ),
-                                  ],
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true && mounted) {
+                            await ref
+                                .read(capstoneDeliverablesProvider.notifier)
+                                .endorseTeam(
+                                  parseAsInt(team['id']),
+                                  selectedStage,
+                                );
+                          }
+                        },
+                  icon: const Icon(Icons.verified_outlined, size: 16),
+                  label: const Text(
+                    'Endorse Team',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.maroon,
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
+              ),
+            ] else if (canCancelEndorsement && isFacultyOrAdmin) ...[
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: Divider(color: Color(0xFFE2E8F0), height: 1),
+              ),
+              Align(
+                alignment: Alignment.centerRight,
+                child: OutlinedButton.icon(
+                  onPressed: widget.state.isSaving
+                      ? null
+                      : () async {
+                          final confirmed = await showDialog<bool>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              title: const Row(
+                                children: [
+                                  Icon(Icons.warning_amber_rounded, color: AppColors.danger),
+                                  SizedBox(width: 8),
+                                  Text('Cancel Endorsement'),
                                 ],
                               ),
-                            ),
-                          ),
-                        ),
-                      );
-                    }).toList(),
-                  ),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 14),
-                    child: Divider(color: Color(0xFFF1F5F9), height: 1),
-                  ),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      final useVerticalLayout = constraints.maxWidth < 600;
-                      final requiredUploaded = parseAsInt(stage['required_uploaded']);
-                      final requiredTotal = parseAsInt(stage['required_total']);
-                      final configuredReq = stage['deliverables_configured'] == true;
-                      final archiveUnlocked = stage['archive_unlocked'] == true;
-
-                      final reqBlock = Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFF1F5F9)),
-                        ),
-                        child: _requiredProgressBlock(
-                          configured: configuredReq,
-                          done: requiredUploaded,
-                          total: requiredTotal,
-                        ),
-                      );
-
-                      if (!archiveUnlocked) {
-                        return reqBlock;
-                      }
-
-                      final archiveBlock = Container(
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFFF1F5F9)),
-                        ),
-                        child: _archiveProgressBlock(stage),
-                      );
-
-                      if (useVerticalLayout) {
-                        return Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            reqBlock,
-                            const SizedBox(height: 12),
-                            archiveBlock,
-                          ],
-                        );
-                      }
-
-                      return Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(child: reqBlock),
-                          const SizedBox(width: 16),
-                          Expanded(child: archiveBlock),
-                        ],
-                      );
-                    },
-                  ),
-
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 16),
-                    child: Divider(color: Color(0xFFE2E8F0), height: 1),
-                  ),
-
-                  _sectionTitle('Pre-Defense Requirements'),
-                  const SizedBox(height: 8),
-                  if (pre.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 8),
-                      child: Text(
-                        'No pre-defense requirements configured.',
-                        style: TextStyle(
-                          color: AppColors.textSecondary,
-                          fontStyle: FontStyle.italic,
-                          fontSize: 12,
-                        ),
-                      ),
-                    )
-                  else
-                    ...pre.map(
-                      (item) => _deliverableRow(
-                        team,
-                        selectedStage,
-                        item,
-                        (fn) => setState(fn),
-                      ),
-                    ),
-
-                  if (stage['archive_unlocked'] == true) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Divider(color: Color(0xFFE2E8F0), height: 1),
-                    ),
-                    _sectionTitle('Post-Defense Deliverables'),
-                    const SizedBox(height: 8),
-                    if (vault.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 8),
-                        child: Text(
-                          'No post-defense deliverables configured.',
-                          style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontStyle: FontStyle.italic,
-                            fontSize: 12,
-                          ),
-                        ),
-                      )
-                    else
-                      ...vault.map(
-                        (item) => _deliverableRow(
-                          team,
-                          selectedStage,
-                          item,
-                          (fn) => setState(fn),
-                        ),
-                      ),
-                  ],
-                  if (canEndorse) ...[
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 16),
-                      child: Divider(color: Color(0xFFE2E8F0), height: 1),
-                    ),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: ElevatedButton.icon(
-                        onPressed: widget.state.isSaving
-                            ? null
-                            : () async {
-                                final confirmed = await showDialog<bool>(
-                                  context: context,
-                                  builder: (dialogContext) => AlertDialog(
-                                    title: const Text('Endorse Team'),
-                                    content: Text(
-                                      'Endorse ${team['name']} for $selectedStage? '
-                                      'This confirms all required deliverables are complete '
-                                      'and the team is ready for defense scheduling.',
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () =>
-                                            Navigator.pop(dialogContext, false),
-                                        child: const Text('Cancel'),
-                                      ),
-                                      ElevatedButton.icon(
-                                        onPressed: () =>
-                                            Navigator.pop(dialogContext, true),
-                                        icon: const Icon(Icons.verified_outlined),
-                                        label: const Text('Endorse'),
-                                        style: ElevatedButton.styleFrom(
-                                          backgroundColor: AppColors.success,
-                                          foregroundColor: Colors.white,
-                                        ),
-                                      ),
-                                    ],
+                              content: Text(
+                                'Cancel endorsement for ${team['name']} on stage "$selectedStage"?\n\n'
+                                'This will remove the team from the defense scheduling queue and unlock pre-defense deliverables for review and revision.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, false),
+                                  child: const Text('Keep Endorsed'),
+                                ),
+                                ElevatedButton.icon(
+                                  onPressed: () =>
+                                      Navigator.pop(dialogContext, true),
+                                  icon: const Icon(Icons.undo, size: 16),
+                                  label: const Text('Cancel Endorsement'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: AppColors.danger,
+                                    foregroundColor: Colors.white,
                                   ),
+                                ),
+                              ],
+                            ),
+                          );
+                          if (confirmed == true && mounted) {
+                            await ref
+                                .read(capstoneDeliverablesProvider.notifier)
+                                .unendorseTeam(
+                                  parseAsInt(team['id']),
+                                  selectedStage,
                                 );
-                                if (confirmed == true && mounted) {
-                                  await ref
-                                      .read(capstoneDeliverablesProvider.notifier)
-                                      .endorseTeam(
-                                        parseAsInt(team['id']),
-                                        selectedStage,
-                                      );
-                                }
-                              },
-                        icon: const Icon(Icons.verified_outlined, size: 16),
-                        label: const Text(
-                          'Endorse Team',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.maroon,
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(10),
-                          ),
-                        ),
-                      ),
+                          }
+                        },
+                  icon: const Icon(Icons.undo, size: 16),
+                  label: const Text(
+                    'Cancel Endorsement',
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
                     ),
-                  ],
-                ],
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.danger,
+                    side: BorderSide(color: AppColors.danger.withValues(alpha: 0.5)),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                  ),
+                ),
               ),
-            ),
+            ],
+          ],
         ] else if (activeTab == 1) ...[
           GradeDeliverableTab(
             team: team,
@@ -1865,6 +2099,25 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 const SizedBox(height: 10),
                 Row(
                   children: [
+                    if (team['current_stage']?.toString().isNotEmpty == true) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AppColors.maroon.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+                        ),
+                        child: Text(
+                          team['current_stage'].toString(),
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: AppColors.maroon,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     if (team['adviser_name']?.toString().isNotEmpty == true) ...[
                       const Icon(Icons.person_outline, size: 12, color: AppColors.textSecondary),
                       const SizedBox(width: 4),
@@ -2147,6 +2400,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
       orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
     );
+    final stages = _stageList(team);
+    final selectedStage = _effectiveSelectedStage(team);
+    final stagePayload = _stagePayload(stages, selectedStage);
+    final currentStage = team['current_stage']?.toString();
 
     return Container(
       decoration: cardDecoration(),
@@ -2161,13 +2418,54 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      team['name']?.toString() ?? '',
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.textPrimary,
-                      ),
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            team['name']?.toString() ?? '',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ),
+                        if (currentStage != null && currentStage.isNotEmpty) ...[
+                          const SizedBox(width: 10),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: AppColors.maroon.withValues(alpha: 0.08),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.25)),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Container(
+                                  width: 6,
+                                  height: 6,
+                                  decoration: const BoxDecoration(
+                                    shape: BoxShape.circle,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                Text(
+                                  widget.state.scope == 'pit'
+                                      ? 'Active Event: $currentStage'
+                                      : 'Current Stage: $currentStage',
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ],
                     ),
                     const SizedBox(height: 4),
                     Text(
@@ -2180,7 +2478,8 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                   ],
                 ),
               ),
-              if (team['adviser_name']?.toString().isNotEmpty == true)
+              if (team['adviser_name']?.toString().isNotEmpty == true) ...[
+                const SizedBox(width: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -2189,8 +2488,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     border: Border.all(color: const Color(0xFFCBD5E1)),
                   ),
                   child: Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.person, size: 14, color: AppColors.textSecondary),
+                      const Icon(Icons.person_outline, size: 14, color: AppColors.textSecondary),
                       const SizedBox(width: 6),
                       Text(
                         'Adviser: ${team['adviser_name']}',
@@ -2203,10 +2503,18 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ],
                   ),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 12),
           _buildCompactRosterBanner(context, team, gradeRecord),
+          const SizedBox(height: 16),
+          _buildStagePipelineBar(
+            team: team,
+            stages: stages,
+            selectedStage: selectedStage,
+            stagePayload: stagePayload,
+          ),
           const SizedBox(height: 16),
           const Divider(color: Color(0xFFE2E8F0), height: 1),
           const SizedBox(height: 16),

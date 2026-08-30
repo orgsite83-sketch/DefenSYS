@@ -139,11 +139,74 @@ List<Map<String, dynamic>> teamsForScope(
   }).toList();
 }
 
+/// Returns the stage lifecycle status for a team and milestone:
+/// 'completed' (passed/done)
+/// 'scheduled' (defense date set)
+/// 'ready' (deliverables & endorsement complete, awaiting scheduling)
+/// 'pending' (missing deliverables or awaiting instructor/adviser endorsement)
+String getTeamStageStatus(Map<String, dynamic> team, String stageLabel) {
+  if (stageLabel.isEmpty) return 'pending';
+
+  final completedStages = (team['completed_stages'] as List<dynamic>?)
+          ?.map((e) => e.toString().trim())
+          .toSet() ??
+      {};
+  final scheduledStages = (team['scheduled_stages'] as List<dynamic>?)
+          ?.map((e) => e.toString().trim())
+          .toSet() ??
+      {};
+  final stageProgress =
+      (team['stage_progress'] as Map<String, dynamic>?) ?? {};
+
+  final progVal =
+      stageProgress[stageLabel]?.toString().toLowerCase().trim() ?? '';
+  if (progVal == 'completed' ||
+      progVal == 'passed' ||
+      progVal == 'archived' ||
+      completedStages.contains(stageLabel)) {
+    return 'completed';
+  }
+  if (progVal == 'scheduled' ||
+      progVal == 'ongoing' ||
+      scheduledStages.contains(stageLabel)) {
+    return 'scheduled';
+  }
+  if (progVal == 'ready' ||
+      team['ready_for_stage']?.toString().trim() == stageLabel) {
+    if (!completedStages.contains(stageLabel) &&
+        !scheduledStages.contains(stageLabel)) {
+      return 'ready';
+    }
+  }
+  return 'pending';
+}
+
+bool isTeamStageCompleted(Map<String, dynamic> team, String stageLabel) {
+  return getTeamStageStatus(team, stageLabel) == 'completed';
+}
+
+bool isTeamStageReady(Map<String, dynamic> team, String stageLabel) {
+  return getTeamStageStatus(team, stageLabel) == 'ready';
+}
+
+bool isTeamStageScheduled(Map<String, dynamic> team, String stageLabel) {
+  return getTeamStageStatus(team, stageLabel) == 'scheduled';
+}
+
 class ImportNameMatch {
   const ImportNameMatch({this.id, this.message = ''});
 
   final int? id;
   final String message;
+}
+
+enum ScheduleImportRowType {
+  initialReady,
+  redefenseReady,
+  alreadyPassed,
+  alreadyScheduled,
+  notEndorsed,
+  invalid,
 }
 
 class ScheduleImportPreviewRow {
@@ -162,8 +225,12 @@ class ScheduleImportPreviewRow {
     required this.date,
     required this.room,
     required this.duration,
-    required this.issues,
+    this.stageIssues = const <String>[],
+    this.teamIssues = const <String>[],
+    this.slotIssues = const <String>[],
+    this.issues = const <String>[],
     required this.warnings,
+    this.rowType = ScheduleImportRowType.invalid,
   });
 
   final ParsedScheduleImportRow source;
@@ -180,11 +247,27 @@ class ScheduleImportPreviewRow {
   final String date;
   final String room;
   final int duration;
+  final List<String> stageIssues;
+  final List<String> teamIssues;
+  final List<String> slotIssues;
   final List<String> issues;
   final List<String> warnings;
+  final ScheduleImportRowType rowType;
 
-  bool get ready => issues.isEmpty;
+  bool get hasStageIssue => stageIssues.isNotEmpty;
+  bool get hasTeamIssue => teamIssues.isNotEmpty;
+  bool get hasSlotIssue => slotIssues.isNotEmpty;
+
+  bool get ready =>
+      issues.isEmpty &&
+      (rowType == ScheduleImportRowType.initialReady ||
+          rowType == ScheduleImportRowType.redefenseReady);
   bool get isPit => scope == 'pit';
+  bool get isRedefense => rowType == ScheduleImportRowType.redefenseReady;
+  bool get isAlreadyPassed => rowType == ScheduleImportRowType.alreadyPassed;
+  bool get isAlreadyScheduled =>
+      rowType == ScheduleImportRowType.alreadyScheduled;
+  bool get isNotEndorsed => rowType == ScheduleImportRowType.notEndorsed;
 
   String get timeLabel {
     if (source.startTime.isEmpty) {
@@ -453,7 +536,9 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
 }) {
   final isPit = scope == 'pit';
   return parsed.rows.map((source) {
-    final issues = <String>[];
+    final stageIssues = <String>[];
+    final teamIssues = <String>[];
+    final slotIssues = <String>[];
     final warnings = <String>[];
     final rowDate = normalizeImportDate(source.date).isNotEmpty
         ? normalizeImportDate(source.date)
@@ -477,7 +562,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (!isPit && source.documenter.trim().isNotEmpty) {
       final docMatch = matchDocumenter(source.documenter, state);
       if (docMatch.id == null) {
-        issues.add(docMatch.message);
+        slotIssues.add(docMatch.message);
       } else {
         documenterId = docMatch.id;
       }
@@ -485,52 +570,155 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
 
     if (isPit) {
       if (eventName.trim().isEmpty) {
-        issues.add('Select a PIT event.');
+        stageIssues.add('Select a PIT event.');
       }
       if (panelRubricId == null) {
-        issues.add('Panel rubric is missing.');
+        stageIssues.add('Panel rubric is missing.');
       }
       if (peerRubricId == null) {
-        issues.add('Peer rubric is missing.');
+        stageIssues.add('Peer rubric is missing.');
       }
     } else {
       if (stageId == null) {
-        issues.add('Select a defense stage.');
+        stageIssues.add('Select a defense stage.');
       }
       if (panelRubricId == null ||
           adviserRubricId == null ||
           peerRubricId == null) {
-        issues.add('Stage grading rubrics are incomplete.');
+        stageIssues.add('Stage grading rubrics are incomplete.');
       }
     }
     if (rowDate.isEmpty) {
-      issues.add('Date is missing.');
+      slotIssues.add('Date is missing.');
     }
     if (rowRoom.isEmpty) {
-      issues.add('Room is missing.');
+      slotIssues.add('Room is missing.');
     }
     if (source.startTime.isEmpty) {
-      issues.add('Time could not be parsed.');
+      slotIssues.add('Time could not be parsed.');
     }
     if (duration < 15) {
-      issues.add('Slot duration must be at least 15 minutes.');
+      slotIssues.add('Slot duration must be at least 15 minutes.');
     }
+    var rowType = ScheduleImportRowType.invalid;
+
     if (teamMatch.id == null) {
-      issues.add(teamMatch.message);
-    } else if (teamMatch.message.isNotEmpty) {
-      warnings.add(teamMatch.message);
+      teamIssues.add(teamMatch.message);
+      rowType = ScheduleImportRowType.invalid;
+    } else {
+      if (teamMatch.message.isNotEmpty) {
+        warnings.add(teamMatch.message);
+      }
+      final team = state.teams.firstWhere(
+        (t) => asInt(t['id']) == teamMatch.id,
+        orElse: () => <String, dynamic>{},
+      );
+      final teamName = team['name']?.toString() ?? source.teamName;
+
+      if (!isPit) {
+        final stageObj = state.defenseStages.firstWhere(
+          (s) => asInt(s['id']) == stageId,
+          orElse: () => <String, dynamic>{},
+        );
+        final stageLabel = stageObj['label']?.toString() ?? '';
+        final stageLower = stageLabel.toLowerCase();
+
+        final completedStages = (team['completed_stages'] as List?)
+                ?.map((e) => e.toString().toLowerCase())
+                .toList() ??
+            [];
+        final scheduledStages = (team['scheduled_stages'] as List?)
+                ?.map((e) => e.toString().toLowerCase())
+                .toList() ??
+            [];
+        final redefenseStages = (team['redefense_stages'] as List?)
+                ?.map((e) => e.toString().toLowerCase())
+                .toList() ??
+            [];
+        final readyForStage =
+            (team['ready_for_stage']?.toString() ?? '').toLowerCase();
+
+        final isCompleted = completedStages.contains(stageLower);
+        final isScheduled = scheduledStages.contains(stageLower) ||
+            state.schedules.any((s) =>
+                asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+                asInt(s['defense_stage_id'] ?? s['defense_stage']?['id']) == stageId &&
+                s['status'] == 'scheduled');
+        final isRedefense = redefenseStages.contains(stageLower) ||
+            (team['stage_progress'] is Map &&
+                team['stage_progress'][stageLabel] == 'for_redefense');
+        final isEndorsed = readyForStage == stageLower ||
+            (team['stage_progress'] is Map &&
+                team['stage_progress'][stageLabel] == 'ready');
+
+        if (isCompleted) {
+          rowType = ScheduleImportRowType.alreadyPassed;
+          teamIssues.add('$teamName has already completed and passed "$stageLabel".');
+        } else if (isScheduled) {
+          rowType = ScheduleImportRowType.alreadyScheduled;
+          teamIssues.add('$teamName already has an active scheduled slot for "$stageLabel".');
+        } else if (isRedefense) {
+          rowType = ScheduleImportRowType.redefenseReady;
+        } else if (isEndorsed) {
+          rowType = ScheduleImportRowType.initialReady;
+        } else {
+          rowType = ScheduleImportRowType.notEndorsed;
+          teamIssues.add('$teamName is not endorsed for "$stageLabel".');
+        }
+      } else {
+        final isCompleted = state.schedules.any((s) =>
+            asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+            (s['event_name']?.toString() ?? '').toLowerCase() ==
+                eventName.toLowerCase() &&
+            s['status'] == 'done');
+        final isScheduled = state.schedules.any((s) =>
+            asInt(s['team_id'] ?? s['team']?['id']) == teamMatch.id &&
+            (s['event_name']?.toString() ?? '').toLowerCase() ==
+                eventName.toLowerCase() &&
+            s['status'] == 'scheduled');
+
+        if (isCompleted) {
+          rowType = ScheduleImportRowType.alreadyPassed;
+          teamIssues.add('$teamName has already completed "$eventName".');
+        } else if (isScheduled) {
+          rowType = ScheduleImportRowType.alreadyScheduled;
+          teamIssues.add('$teamName already has an active scheduled slot for "$eventName".');
+        } else {
+          final readyFor =
+              (team['ready_for_stage']?.toString() ?? '').toLowerCase();
+          final pitConfig = state.pitEvents.firstWhere(
+            (e) =>
+                (e['event_name']?.toString() ?? '').toLowerCase() ==
+                eventName.toLowerCase(),
+            orElse: () => <String, dynamic>{},
+          );
+          final hasPre = (pitConfig['deliverables'] as List?)
+                  ?.any((d) => d['deliverable_type'] == 'pre') ??
+              false;
+
+          if (hasPre && readyFor != eventName.toLowerCase()) {
+            rowType = ScheduleImportRowType.notEndorsed;
+            teamIssues.add('$teamName is not endorsed for "$eventName".');
+          } else {
+            rowType = ScheduleImportRowType.initialReady;
+          }
+        }
+      }
     }
+
     final panelistIds = <int>[];
     for (final match in panelistMatches) {
       if (match.id == null) {
-        issues.add(match.message);
+        slotIssues.add(match.message);
       } else if (!panelistIds.contains(match.id)) {
         panelistIds.add(match.id!);
       }
     }
     if (panelistIds.isEmpty) {
-      issues.add('At least one chair or panel member is required.');
+      slotIssues.add('At least one chair or panel member is required.');
     }
+
+    final allIssues = <String>[...stageIssues, ...teamIssues, ...slotIssues];
 
     return ScheduleImportPreviewRow(
       source: source,
@@ -547,8 +735,12 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       date: rowDate,
       room: rowRoom,
       duration: duration,
-      issues: issues,
+      stageIssues: stageIssues,
+      teamIssues: teamIssues,
+      slotIssues: slotIssues,
+      issues: allIssues,
       warnings: warnings,
+      rowType: rowType,
     );
   }).toList();
 }

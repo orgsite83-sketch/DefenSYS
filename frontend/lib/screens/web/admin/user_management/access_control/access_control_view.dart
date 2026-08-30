@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/user_management_provider.dart';
-import 'package:defensys/widgets/dialogs/confirm_dialog.dart';
+import 'package:defensys/widgets/widgets.dart';
 
 /// Access Control & Dynamic Role Assignment page component matching canonical design.
 class AccessControlView extends ConsumerStatefulWidget {
@@ -556,28 +556,14 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                       const SizedBox(height: 20),
                       Align(
                         alignment: Alignment.centerRight,
-                        child: SizedBox(
+                        child: DefensysSaveButton(
                           height: 46,
-                          child: ElevatedButton.icon(
-                            onPressed: widget.state.isSaving ? null : _onSave,
-                            icon: const Icon(
-                              Icons.lock_outline_rounded,
-                              size: 18,
-                            ),
-                            label: const Text('Save Role Configuration'),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: _maroon,
-                              foregroundColor: Colors.white,
-                              elevation: 0,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              textStyle: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                          ),
+                          onPressed: _onSave,
+                          isSaving: widget.state.isSaving,
+                          label: 'Save Role Configuration',
+                          savingLabel: 'Saving Role Configuration…',
+                          isPill: false,
+                          fontSize: 14,
                         ),
                       ),
                     ],

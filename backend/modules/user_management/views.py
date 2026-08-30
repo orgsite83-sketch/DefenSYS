@@ -580,6 +580,9 @@ class BulkImportUsersMixin:
                     if data.get('email') and existing_user.email != data['email']:
                         existing_user.email = data['email']
                         updated_fields.append('email')
+                    if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
+                        existing_user.phone_number = data['phone_number']
+                        updated_fields.append('phone_number')
                     if updated_fields:
                         existing_user.save(update_fields=updated_fields)
                 elif existing_user.role == 'faculty' and not self.force_student_only:
@@ -593,6 +596,9 @@ class BulkImportUsersMixin:
                     if data.get('email') and existing_user.email != data['email']:
                         existing_user.email = data['email']
                         updated_fields.append('email')
+                    if data.get('phone_number') and existing_user.phone_number != data['phone_number']:
+                        existing_user.phone_number = data['phone_number']
+                        updated_fields.append('phone_number')
                     if 'is_panelist' in data and existing_user.is_panelist != data['is_panelist']:
                         existing_user.is_panelist = data['is_panelist']
                         updated_fields.append('is_panelist')
@@ -626,6 +632,7 @@ class BulkImportUsersMixin:
                 first_name=data.get('first_name', ''),
                 last_name=data.get('last_name', ''),
                 email=data.get('email', ''),
+                phone_number=data.get('phone_number', '').strip(),
                 role='student' if self.force_student_only else role,
                 is_panelist=False if self.force_student_only else data.get('is_panelist', False),
                 is_adviser=False if self.force_student_only else data.get('is_adviser', False),
@@ -830,12 +837,14 @@ class PitLeadOfficialClassListImportView(APIView):
                     })
                     continue
 
+                phone_number = _clean_spaces(data.get('phone_number') or data.get('contact') or '')
                 user, was_created = User.objects.get_or_create(
                     username=username,
                     defaults={
                         'first_name': first_name,
                         'last_name': last_name,
                         'email': data.get('email', ''),
+                        'phone_number': phone_number,
                         'role': 'student',
                     },
                 )
@@ -855,6 +864,7 @@ class PitLeadOfficialClassListImportView(APIView):
                     'first_name': first_name,
                     'last_name': last_name,
                     'email': data.get('email', ''),
+                    'phone_number': phone_number,
                 }.items():
                     if value and getattr(user, field) != value:
                         setattr(user, field, value)

@@ -655,6 +655,53 @@ class PasswordManagementTests(APITestCase):
         self.assertIn('verification code', response.data['detail'])
         self.assertIn('masked_email', response.data)
 
+    def test_request_password_reset_sms_success(self):
+        self.user.phone_number = '+639171234567'
+        self.user.save(update_fields=['phone_number'])
+        response = self.client.post(
+            '/api/password-reset/',
+            {'identifier': 'student-test', 'delivery_method': 'sms'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertIn('sent to your mobile phone', response.data['detail'])
+        self.assertEqual(response.data['delivery_method'], 'sms')
+        self.assertTrue(response.data['masked_phone'].startswith('+639'))
+
+    def test_request_password_reset_sms_missing_phone(self):
+        self.user.phone_number = ''
+        self.user.save(update_fields=['phone_number'])
+        response = self.client.post(
+            '/api/password-reset/',
+            {'identifier': 'student-test', 'delivery_method': 'sms'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn('does not have a registered mobile phone', response.data['detail'])
+
+    def test_request_password_reset_sms_failure(self):
+        self.user.phone_number = '+639171234567'
+        self.user.save(update_fields=['phone_number'])
+        with patch('authentication_access_control.password_reset.send_password_reset_otp_sms', return_value=False):
+            response = self.client.post(
+                '/api/password-reset/',
+                {'identifier': 'student-test', 'delivery_method': 'sms'},
+                format='json',
+            )
+            self.assertEqual(response.status_code, status.HTTP_500_INTERNAL_SERVER_ERROR)
+            self.assertIn('Failed to send verification SMS', response.data['detail'])
+
+    def test_request_password_reset_by_phone_number(self):
+        self.user.phone_number = '09171234567'
+        self.user.save(update_fields=['phone_number'])
+        response = self.client.post(
+            '/api/password-reset/',
+            {'identifier': '09171234567', 'delivery_method': 'sms'},
+            format='json',
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data['delivery_method'], 'sms')
+
     def test_request_password_reset_email_failure(self):
         with patch('authentication_access_control.password_reset.send_password_reset_otp_email', return_value=False):
             response = self.client.post(

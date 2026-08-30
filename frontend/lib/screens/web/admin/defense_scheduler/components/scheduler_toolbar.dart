@@ -1,9 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
+import 'package:defensys/navigation/admin_route_paths.dart';
+import 'package:defensys/screens/web/admin/admin_shell.dart';
+import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 
-class SchedulerToolbar extends StatelessWidget {
+class SchedulerToolbar extends ConsumerWidget {
   const SchedulerToolbar({
     super.key,
     required this.state,
@@ -13,8 +19,33 @@ class SchedulerToolbar extends StatelessWidget {
   final DefenseSchedulerState state;
   final VoidCallback? onBack;
 
+  void _handleBack(BuildContext context, WidgetRef ref) {
+    if (onBack != null) {
+      onBack!();
+      return;
+    }
+    if (Navigator.canPop(context)) {
+      Navigator.pop(context);
+      return;
+    }
+    final user = ref.read(authProvider).user;
+    final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+    if (isAdmin) {
+      ref
+          .read(activeAdminSectionProvider.notifier)
+          .setSection(DefensysAdminSection.defenseBoard);
+      try {
+        context.go(AdminRoutes.defenseBoard);
+      } catch (_) {}
+    } else {
+      try {
+        context.go(FacultyRoutes.defenseBoard);
+      } catch (_) {}
+    }
+  }
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final semesterLabel =
         state.activeSemester?['display_name']?.toString() ??
         'No active semester configured';
@@ -57,45 +88,37 @@ class SchedulerToolbar extends StatelessWidget {
             ],
           ),
         ),
-        if (onBack != null || Navigator.canPop(context)) ...[
-          const SizedBox(width: 16),
-          SizedBox(
-            height: 40,
-            child: OutlinedButton.icon(
-              onPressed: () {
-                if (onBack != null) {
-                  onBack!();
-                } else {
-                  Navigator.pop(context);
-                }
-              },
-              style: OutlinedButton.styleFrom(
-                elevation: 0,
-                foregroundColor: const Color(0xFF334155),
-                side: const BorderSide(color: Color(0xFFCBD5E1)),
-                backgroundColor: Colors.white,
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10),
-                ),
+        const SizedBox(width: 16),
+        SizedBox(
+          height: 40,
+          child: OutlinedButton.icon(
+            onPressed: () => _handleBack(context, ref),
+            style: OutlinedButton.styleFrom(
+              elevation: 0,
+              foregroundColor: const Color(0xFF334155),
+              side: const BorderSide(color: Color(0xFFCBD5E1)),
+              backgroundColor: Colors.white,
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 14, vertical: 0),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(10),
               ),
-              icon: const Icon(
-                Icons.arrow_back_rounded,
-                size: 16,
-                color: Color(0xFF64748B),
-              ),
-              label: const Text(
-                'Back to Defense Operations',
-                style: TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 13,
-                  color: Color(0xFF334155),
-                ),
+            ),
+            icon: const Icon(
+              Icons.arrow_back_rounded,
+              size: 16,
+              color: Color(0xFF64748B),
+            ),
+            label: const Text(
+              'Back to Operations',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: Color(0xFF334155),
               ),
             ),
           ),
-        ],
+        ),
       ],
     );
   }

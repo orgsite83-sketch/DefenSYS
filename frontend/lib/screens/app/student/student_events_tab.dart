@@ -93,23 +93,42 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         (widget.studentData?['myPeerSubmissions'] as List? ?? [])
             .cast<Map<String, dynamic>>();
 
-    final activeStageName = delivState.teams.firstOrNull?['current_defense_stage']?.toString() ??
-        delivState.teams.firstOrNull?['ready_for_stage']?.toString() ??
+    final teamData = delivState.teams.firstOrNull;
+    final stagesList = (teamData?['stages'] as List? ?? []).cast<Map<String, dynamic>>();
+
+    final activeStageName = teamData?['current_stage']?.toString() ??
+        teamData?['current_defense_stage']?.toString() ??
+        teamData?['ready_for_stage']?.toString() ??
         (stageOptions.isNotEmpty ? stageOptions.first : '');
 
     String getStageStatusLabel(String stageName) {
       final normStage = stageName.trim().toLowerCase();
       final normActive = activeStageName.trim().toLowerCase();
-      if (normStage == normActive) return 'Current';
+
+      final stageInfo = stagesList.firstWhere(
+        (s) => s['stage_label']?.toString().trim().toLowerCase() == normStage,
+        orElse: () => <String, dynamic>{},
+      );
+
+      final isStageOfficiallyComplete = stageInfo['is_officially_complete'] == true;
+      final isStagePassed = stageInfo['stage_status_detail']?.toString() == 'passed' ||
+          stageInfo['stage_progress_status']?.toString() == 'passed';
+
       final stageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normStage);
       final activeIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normActive);
-      if (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex) {
+
+      if (isStageOfficiallyComplete || isStagePassed || (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex)) {
         return 'Completed';
+      }
+      if (normStage == normActive) {
+        return 'Current';
       }
       return 'Upcoming';
     }
 
     final isSelectedStageActive = selectedStage.trim().toLowerCase() == activeStageName.trim().toLowerCase();
+    final selectedStageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == selectedStage.trim().toLowerCase());
+    final activeStageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase());
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -142,6 +161,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                           selectedStage,
                           activeStageName,
                           isCapstone,
+                          stagesList,
                         ),
                         borderRadius: BorderRadius.circular(12),
                         child: Container(
@@ -244,59 +264,75 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ],
                 ),
 
-                // Contextual Archive Notice Banner (Only shown when viewing past/inactive stages)
+                // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages)
                 if (!isSelectedStageActive && activeStageName.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFBEB),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: const Color(0xFFFDE68A)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.history_rounded, size: 16, color: Color(0xFFB45309)),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Viewing archive for "$selectedStage"',
-                            style: const TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w500,
-                              color: Color(0xFF92400E),
-                            ),
-                            overflow: TextOverflow.ellipsis,
+                  Builder(
+                    builder: (context) {
+                      final isPastStage = selectedStageIndex != -1 && activeStageIndex != -1 && selectedStageIndex < activeStageIndex;
+                      return Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        decoration: BoxDecoration(
+                          color: isPastStage ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: isPastStage ? const Color(0xFFFDE68A) : const Color(0xFFCBD5E1),
                           ),
                         ),
-                        InkWell(
-                          onTap: () {
-                            ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-                                  scope: isCapstone ? 'capstone' : 'pit',
-                                  yearLevel: isCapstone ? null : _studentYearLevel,
-                                  selectedStage: activeStageName,
-                                );
-                          },
-                          borderRadius: BorderRadius.circular(6),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.4)),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isPastStage ? Icons.history_rounded : Icons.lock_clock_rounded,
+                              size: 16,
+                              color: isPastStage ? const Color(0xFFB45309) : const Color(0xFF475569),
                             ),
-                            child: const Text(
-                              'Jump to Current',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFFB45309),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                isPastStage
+                                    ? 'Viewing past milestone archive for "$selectedStage"'
+                                    : 'Upcoming Stage: "$selectedStage" (Deliverables open after $activeStageName)',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w500,
+                                  color: isPastStage ? const Color(0xFF92400E) : const Color(0xFF334155),
+                                ),
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
+                            InkWell(
+                              onTap: () {
+                                ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                                      scope: isCapstone ? 'capstone' : 'pit',
+                                      yearLevel: isCapstone ? null : _studentYearLevel,
+                                      selectedStage: activeStageName,
+                                    );
+                              },
+                              borderRadius: BorderRadius.circular(6),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: isPastStage ? const Color(0xFFFEF3C7) : Colors.white,
+                                  borderRadius: BorderRadius.circular(6),
+                                  border: Border.all(
+                                    color: isPastStage
+                                        ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
+                                        : const Color(0xFF94A3B8).withValues(alpha: 0.4),
+                                  ),
+                                ),
+                                child: Text(
+                                  'Jump to Current',
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.bold,
+                                    color: isPastStage ? const Color(0xFFB45309) : DefensysTokens.maroon,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
-                      ],
-                    ),
+                      );
+                    },
                   ),
                 ],
 
@@ -639,15 +675,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     String selectedStage,
     String activeStageName,
     bool isCapstone,
+    List<Map<String, dynamic>> stagesList,
   ) {
     String getStatus(String stageName) {
       final normStage = stageName.trim().toLowerCase();
       final normActive = activeStageName.trim().toLowerCase();
-      if (normStage == normActive) return 'Current';
+
+      final stageInfo = stagesList.firstWhere(
+        (s) => s['stage_label']?.toString().trim().toLowerCase() == normStage,
+        orElse: () => <String, dynamic>{},
+      );
+
+      final isStageOfficiallyComplete = stageInfo['is_officially_complete'] == true;
+      final isStagePassed = stageInfo['stage_status_detail']?.toString() == 'passed' ||
+          stageInfo['stage_progress_status']?.toString() == 'passed';
+
       final stageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normStage);
       final activeIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normActive);
-      if (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex) {
+
+      if (isStageOfficiallyComplete || isStagePassed || (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex)) {
         return 'Completed';
+      }
+      if (normStage == normActive) {
+        return 'Current';
       }
       return 'Upcoming';
     }

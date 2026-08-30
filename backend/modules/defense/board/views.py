@@ -63,11 +63,57 @@ def stage_options(queryset):
 
 
 
+def adviser_options(queryset):
+    from django.db.models import Count
+    adviser_data = (
+        queryset.filter(team__adviser__isnull=False)
+        .values(
+            'team__adviser__id',
+            'team__adviser__first_name',
+            'team__adviser__last_name',
+            'team__adviser__username',
+        )
+        .annotate(total_schedules=Count('id'))
+        .order_by('team__adviser__first_name', 'team__adviser__last_name')
+    )
+    result = []
+    for item in adviser_data:
+        first = item['team__adviser__first_name'] or ''
+        last = item['team__adviser__last_name'] or ''
+        name = f"{first} {last}".strip() or item['team__adviser__username']
+        result.append({
+            'id': item['team__adviser__id'],
+            'name': name,
+            'count': item['total_schedules'],
+        })
+    return result
+
+
+def section_options(queryset):
+    from django.db.models import Count
+    section_data = (
+        queryset.filter(team__section__isnull=False)
+        .exclude(team__section='')
+        .values('team__section')
+        .annotate(total_schedules=Count('id'))
+        .order_by('team__section')
+    )
+    return [
+        {
+            'name': item['team__section'],
+            'count': item['total_schedules'],
+        }
+        for item in section_data
+    ]
+
+
 def filter_board_queryset(request, queryset):
     search = request.query_params.get('search', '').strip()
     stage = request.query_params.get('stage', '').strip()
     status_filter = request.query_params.get('status', '').strip()
     scope = request.query_params.get('scope', '').strip()
+    adviser = request.query_params.get('adviser', '').strip()
+    section = request.query_params.get('section', '').strip()
 
     if search:
         queryset = queryset.filter(
@@ -79,9 +125,23 @@ def filter_board_queryset(request, queryset):
             | Q(panel_assignments__panelist__first_name__icontains=search)
             | Q(panel_assignments__panelist__last_name__icontains=search)
             | Q(panel_assignments__panelist__username__icontains=search)
+            | Q(team__adviser__first_name__icontains=search)
+            | Q(team__adviser__last_name__icontains=search)
+            | Q(team__section__icontains=search)
         ).distinct()
     if stage:
         queryset = queryset.filter(Q(defense_stage__label=stage) | Q(event_name=stage))
+    if adviser:
+        if adviser.isdigit():
+            queryset = queryset.filter(team__adviser_id=int(adviser))
+        else:
+            queryset = queryset.filter(
+                Q(team__adviser__first_name__icontains=adviser)
+                | Q(team__adviser__last_name__icontains=adviser)
+                | Q(team__adviser__username__icontains=adviser)
+            )
+    if section:
+        queryset = queryset.filter(team__section__iexact=section)
     if status_filter == 'ongoing':
         from django.utils import timezone
         now = timezone.localtime()
@@ -111,6 +171,8 @@ def board_payload(request, queryset=None):
         'schedules': DefenseScheduleSerializer(current, many=True).data,
         'counts': counts_payload(base, current),
         'stage_options': stage_options(base),
+        'advisers': adviser_options(base),
+        'sections': section_options(base),
         'statuses': [
             DefenseSchedule.STATUS_SCHEDULED,
             'ongoing',

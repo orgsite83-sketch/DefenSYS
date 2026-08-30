@@ -1,6 +1,7 @@
 from django.core.exceptions import ValidationError
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
 from rest_framework.response import Response
@@ -1134,3 +1135,106 @@ class GuestPanelistGradeSubmissionView(APIView):
                 {'detail': f'Failed to submit grades: {str(e)}'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+
+class DefenseScheduleVerdictView(APIView):
+    """
+    API endpoint for the panel chair or an administrator to issue the official defense verdict.
+    """
+    permission_classes = [IsAuthenticated]
+
+    def patch(self, request, schedule_id):
+        schedule = get_object_or_404(DefenseSchedule, id=schedule_id)
+
+        is_admin = (
+            request.user.is_staff
+            or request.user.is_superuser
+            or getattr(request.user, 'role', None) == 'admin'
+        )
+        is_chair = schedule.panel_assignments.filter(
+            panelist=request.user,
+            is_chair=True,
+        ).exists()
+
+        if not (is_admin or is_chair):
+            return Response(
+                {'detail': 'Only the panel chair or an administrator can issue defense verdicts.'},
+                status=status.HTTP_403_FORBIDDEN,
+            )
+
+        verdict = request.data.get('verdict')
+        valid_verdicts = [v[0] for v in TeamGrade.VERDICT_CHOICES]
+        if not verdict or verdict not in valid_verdicts:
+            return Response(
+                {
+                    'detail': f'Invalid verdict "{verdict}". Must be one of: {", ".join(valid_verdicts)}.',
+                    'valid_verdicts': valid_verdicts,
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        from grading.grades.services import GradeContextService, _apply_team_result_from_grade
+        from grading.grades.serializers import TeamGradeSerializer
+
+        team_grade = schedule.grade_records.first()
+        if not team_grade:
+            team_grade, _created, _changed = GradeContextService.get_or_create_for_schedule(schedule)
+
+        if team_grade.panel_score is None:
+            return Response(
+                {'detail': 'Panel grading must be submitted before issuing a verdict.'},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        verdict_remarks = (request.data.get('verdict_remarks') or '').strip()
+        revision_deadline = request.data.get('revision_deadline')
+        parsed_deadline = None
+        if revision_deadline:
+            from django.utils.dateparse import parse_date
+            parsed_deadline = parse_date(str(revision_deadline).strip())
+            if not parsed_deadline:
+                return Response(
+                    {'detail': 'Invalid revision_deadline format (YYYY-MM-DD expected).'},
+                    status=status.HTTP_400_BAD_REQUEST,
+                )
+
+        team_grade.verdict = verdict
+        team_grade.verdict_remarks = verdict_remarks
+        team_grade.verdict_by = request.user
+        team_grade.verdict_at = timezone.now()
+        team_grade.revision_deadline = parsed_deadline
+        team_grade.save(update_fields=[
+            'verdict',
+            'verdict_remarks',
+            'verdict_by',
+            'verdict_at',
+            'revision_deadline',
+            'updated_at',
+        ])
+
+        _apply_team_result_from_grade(team_grade)
+
+        from authentication_access_control.models import SystemAuditLog
+        from authentication_access_control.audit import log_high_impact_action
+        log_high_impact_action(
+            category=SystemAuditLog.CATEGORY_GRADE_CENTER,
+            action='defense.verdict_submitted',
+            target=team_grade,
+            target_type='TeamGrade',
+            target_id=team_grade.pk,
+            actor=request.user,
+            new_values={
+                'schedule_id': schedule.id,
+                'team_id': schedule.team_id,
+                'verdict': verdict,
+                'verdict_remarks': verdict_remarks,
+                'revision_deadline': str(parsed_deadline) if parsed_deadline else None,
+            },
+        )
+
+        return Response({
+            'success': True,
+            'message': f'Defense verdict "{verdict}" recorded successfully.',
+            'team_grade': TeamGradeSerializer(team_grade).data,
+        }, status=status.HTTP_200_OK)
+

@@ -5,6 +5,7 @@ from .views import (
     DefenseScheduleDetailView,
     DefenseScheduleGeneratePlanView,
     DefenseScheduleListCreateView,
+    DefenseScheduleVerdictView,
     GuestPanelistAssignmentsView,
     GuestPanelistGradeSubmissionView,
     GuestPanelistResultsView,
@@ -27,4 +28,5 @@ urlpatterns = [
     path('submit-grades/', PanelistGradeSubmissionView.as_view(), name='panelist_grade_submission'),
     path('guest-submit-grades/', GuestPanelistGradeSubmissionView.as_view(), name='guest_panelist_grade_submission'),
     path('<int:schedule_id>/', DefenseScheduleDetailView.as_view(), name='defense_schedule_detail'),
+    path('<int:schedule_id>/verdict/', DefenseScheduleVerdictView.as_view(), name='defense_schedule_verdict'),
 ]

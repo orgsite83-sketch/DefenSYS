@@ -49,7 +49,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'id', 'username', 'email', 'first_name', 'last_name', 'name', 'role',
+            'id', 'username', 'email', 'phone_number', 'first_name', 'last_name', 'name', 'role',
             'team_id', 'is_panelist', 'is_pit_lead', 'pit_lead_year', 'is_adviser',
             'is_documenter', 'is_uploader', 'e_signature', 'avatar', 'facultyRoles',
             'is_project_manager', 'managed_section',

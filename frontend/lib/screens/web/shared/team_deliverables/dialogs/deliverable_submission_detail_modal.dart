@@ -7,6 +7,7 @@ import 'package:defensys/config/api_config.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/progress_upload.dart';
 
 String formatUploadFailureMessage(int statusCode, String responseBody) {
@@ -235,7 +236,7 @@ Future<void> showUploadDialog({
                 : () => Navigator.pop(dialogContext, false),
             child: const Text('Cancel'),
           ),
-          ElevatedButton(
+          FilledButton.icon(
             onPressed: (selectedFileName != null && !isUploading)
                 ? () async {
                     final suggestedName =
@@ -330,7 +331,18 @@ Future<void> showUploadDialog({
                     }
                   }
                 : null,
-            child: const Text('Save Upload'),
+            icon: isUploading
+                ? const SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                    ),
+                  )
+                : const Icon(Icons.save_rounded, size: 16),
+            label: Text(isUploading ? 'Saving...' : 'Save Upload'),
+            style: DefensysTokens.saveButtonStyle(isPill: false),
           ),
         ],
       ),

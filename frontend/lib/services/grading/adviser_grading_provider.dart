@@ -119,16 +119,20 @@ class AdviserGradingNotifier extends Notifier<AdviserGradingState> {
   /// Submits the adviser score (and per-criterion breakdown) for a grade.
   Future<bool> submitGrade({
     required int gradeId,
-    required double adviserScore,
+    double? adviserScore,
     int? rubricId,
     List<Map<String, dynamic>> criteriaScores = const [],
+    List<Map<String, dynamic>> teamCriteriaScores = const [],
+    List<Map<String, dynamic>> studentSubmissions = const [],
   }) async {
     state = state.copyWith(isSaving: true, clearError: true, clearMessage: true);
     try {
       final body = <String, dynamic>{
-        'adviser_score': adviserScore,
+        if (adviserScore != null) 'adviser_score': adviserScore,
         if (rubricId != null) 'rubric_id': rubricId,
         if (criteriaScores.isNotEmpty) 'criteria_scores': criteriaScores,
+        if (teamCriteriaScores.isNotEmpty) 'team_criteria_scores': teamCriteriaScores,
+        if (studentSubmissions.isNotEmpty) 'student_submissions': studentSubmissions,
       };
 
       final response = await _client.post(

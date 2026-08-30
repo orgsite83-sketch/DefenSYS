@@ -19,6 +19,7 @@ import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
 import '../../notifications/notifications_modal.dart';
 import '../../notifications/notifications_provider.dart';
+import '../../widgets/dialogs/prompt_missing_phone_dialog.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -45,6 +46,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('student').notifier).fetchDashboardData();
       ref.read(notificationsProvider.notifier).fetchNotifications();
+      PromptMissingPhoneDialog.maybeShow(context, ref);
     });
   }
 

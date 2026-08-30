@@ -652,71 +652,78 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                       ],
                     ),
                     const SizedBox(width: 20),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Text(
-                              displayName,
-                              style: const TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                                letterSpacing: -0.3,
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 10,
-                                vertical: 4,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.18),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: Colors.white24),
-                              ),
-                              child: Text(
-                                roleLabel,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  displayName,
+                                  style: const TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    letterSpacing: -0.3,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          email.isNotEmpty ? email : 'No email provided',
-                          style: TextStyle(
-                            fontSize: 14,
-                            color: Colors.white.withValues(alpha: 0.85),
-                          ),
-                        ),
-                        const SizedBox(height: 10),
-                        // Additional Capability Tags
-                        Wrap(
-                          spacing: 6,
-                          runSpacing: 6,
-                          children: [
-                            _badgeTag('ID: $username', Icons.badge_outlined),
-                            if (user['team_id'] != null)
-                              _badgeTag(
-                                'Team #${user['team_id']}',
-                                Icons.groups_outlined,
+                              const SizedBox(width: 10),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withValues(alpha: 0.18),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: Colors.white24),
+                                ),
+                                child: Text(
+                                  roleLabel,
+                                  style: const TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: Colors.white,
+                                  ),
+                                ),
                               ),
-                            if (isPitLead)
-                              _badgeTag('PIT Leader', Icons.stars_rounded),
-                            if (isPanelist)
-                              _badgeTag('Panelist', Icons.assignment_ind_outlined),
-                            if (isAdviser)
-                              _badgeTag('Adviser', Icons.school_outlined),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            email.isNotEmpty ? email : 'No email provided',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.white.withValues(alpha: 0.85),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          const SizedBox(height: 10),
+                          // Additional Capability Tags
+                          Wrap(
+                            spacing: 6,
+                            runSpacing: 6,
+                            children: [
+                              _badgeTag('ID: $username', Icons.badge_outlined),
+                              if (user['team_id'] != null)
+                                _badgeTag(
+                                  'Team #${user['team_id']}',
+                                  Icons.groups_outlined,
+                                ),
+                              if (isPitLead)
+                                _badgeTag('PIT Leader', Icons.stars_rounded),
+                              if (isPanelist)
+                                _badgeTag('Panelist', Icons.assignment_ind_outlined),
+                              if (isAdviser)
+                                _badgeTag('Adviser', Icons.school_outlined),
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -2021,8 +2028,11 @@ class _SignatureDrawDialogState extends State<SignatureDrawDialog> {
               const SizedBox(height: 20),
 
               // Action Buttons
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Wrap(
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 8,
+                runSpacing: 10,
                 children: [
                   OutlinedButton.icon(
                     onPressed: hasStrokes ? _clear : null,
@@ -2035,6 +2045,7 @@ class _SignatureDrawDialogState extends State<SignatureDrawDialog> {
                     ),
                   ),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       TextButton(
                         onPressed: () => Navigator.pop(context, null),

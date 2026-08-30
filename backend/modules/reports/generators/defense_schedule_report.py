@@ -2,42 +2,31 @@ from io import BytesIO
 from datetime import datetime, timedelta
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 
 from reports.pdf_styles import (
     defensys_styles,
-    defensys_cover_page,
+    defensys_official_header,
+    defensys_metadata_grid,
+    defensys_signatures_block,
     defensys_table_style,
     NumberedCanvas,
-    MAROON,
-    GOLD,
-    BORDER_GREY,
-    BG_LIGHT,
-    TEXT_DARK
 )
 
 
 def generate_defense_schedule_pdf(semester, schedules, generated_by_user):
     """
-    Generate a PDF summarizing scheduled defense presentations.
-    
-    Args:
-        semester: Semester database object
-        schedules: QuerySet of DefenseSchedule objects
-        generated_by_user: Username of requestor
-        
-    Returns:
-        bytes: PDF binary content
+    Generate an official USTP DIT PDF report summarizing scheduled defense presentations.
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        topMargin=0.85*inch,
-        bottomMargin=0.85*inch,
-        leftMargin=0.5*inch,
-        rightMargin=0.5*inch
+        topMargin=0.4 * inch,
+        bottomMargin=0.55 * inch,
+        leftMargin=0.5 * inch,
+        rightMargin=0.5 * inch,
     )
     
     doc.generated_by = generated_by_user
@@ -46,38 +35,39 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user):
     story = []
     styles = defensys_styles()
     
-    # 1. Cover Page
     total_slots = len(schedules)
-    metadata_rows = [
-        ("Academic Period:", f"{semester.school_year.label} — {semester.label}"),
-        ("Total Scheduled Presentations:", str(total_slots)),
-    ]
     
-    defensys_cover_page(
+    # 1. Official Header Banner & Document Title
+    defensys_official_header(
         story=story,
-        title="Defense Schedule Summary",
-        subtitle=f"Official Defense Schedules List — {semester.school_year.label} {semester.label}",
-        generated_by_user=generated_by_user,
-        metadata_rows=metadata_rows
+        title="Defense Timetable & Presentation Schedule",
+        subtitle=f"Official Defense Sessions & Panel Assignment Registry · {semester.school_year.label if semester else ''} {semester.label if semester else ''}"
     )
     
-    # 2. Main Title
-    story.append(Paragraph(f"Defense Schedule Register", styles['SectionHeader']))
-    story.append(Spacer(1, 0.05*inch))
+    # 2. Metadata Grid
+    metadata_rows = [
+        ("Academic Term / Semester", f"{semester.school_year.label if semester else ''} — {semester.label if semester else ''}"),
+        ("Total Scheduled Presentations", f"{total_slots} Defense Sessions"),
+        ("Defense Venue / Modality", "Department of Information Technology Defense Rooms / Hybrid"),
+    ]
+    story.append(defensys_metadata_grid(metadata_rows, width=7.1*inch))
+    story.append(Spacer(1, 0.12*inch))
     
-    # 3. Schedule Table
+    # 3. Main Schedule Table
+    story.append(Paragraph("Defense Presentation Schedule Register", styles['SectionHeader']))
+    story.append(Spacer(1, 0.04*inch))
+    
     headers = [
         Paragraph("<b>Date & Time</b>", styles['TableHeader']),
-        Paragraph("<b>Room / Venue</b>", styles['TableHeader']),
+        Paragraph("<b>Room / Venue</b>", styles['TableHeaderCenter']),
         Paragraph("<b>Student Team</b>", styles['TableHeader']),
-        Paragraph("<b>Defense Stage</b>", styles['TableHeader']),
+        Paragraph("<b>Defense Stage</b>", styles['TableHeaderCenter']),
         Paragraph("<b>Panel Assignments</b>", styles['TableHeader']),
-        Paragraph("<b>Status</b>", styles['TableHeader'])
+        Paragraph("<b>Status</b>", styles['TableHeaderCenter'])
     ]
     
     table_rows = [headers]
     for sched in schedules:
-        # Time formatting
         time_str = ""
         if sched.scheduled_date:
             date_part = sched.scheduled_date.strftime('%b %d, %Y')
@@ -87,11 +77,10 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user):
                 dummy_dt = datetime.combine(sched.scheduled_date, sched.start_time)
                 end_dt = dummy_dt + timedelta(minutes=sched.slot_duration)
                 end_part = end_dt.time().strftime('%I:%M %p')
-            time_str = f"{date_part}\n{start_part} - {end_part}"
+            time_str = f"{date_part}<br/>{start_part} - {end_part}"
         else:
             time_str = "Unscheduled"
             
-        # Panelists formatting
         panelists = []
         for assign in sched.panel_assignments.all().select_related('panelist'):
             if assign.panelist:
@@ -101,19 +90,27 @@ def generate_defense_schedule_pdf(semester, schedules, generated_by_user):
         status_label = str(sched.status).upper() if getattr(sched, 'status', None) else "SCHEDULED"
         
         table_rows.append([
-            Paragraph(time_str.replace('\n', '<br/>'), styles['TableCellBold']),
-            Paragraph(sched.room or "TBA", styles['TableCell']),
+            Paragraph(time_str, styles['TableCell']),
+            Paragraph(sched.room or "TBA", styles['TableCellCenter']),
             Paragraph(sched.team.name if sched.team else "N/A", styles['TableCellBold']),
-            Paragraph(sched.defense_stage.label if sched.defense_stage else (sched.stage_label or "N/A"), styles['TableCell']),
+            Paragraph(sched.defense_stage.label if sched.defense_stage else (sched.stage_label or "N/A"), styles['TableCellCenter']),
             Paragraph(panel_str, styles['TableCell']),
-            Paragraph(status_label, styles['TableCellBold'])
+            Paragraph(status_label, styles['TableCellBoldCenter'])
         ])
         
-    sched_table = Table(table_rows, colWidths=[1.5*inch, 0.9*inch, 1.3*inch, 1.2*inch, 1.8*inch, 0.8*inch])
+    sched_table = Table(table_rows, colWidths=[1.4*inch, 0.9*inch, 1.3*inch, 1.1*inch, 1.7*inch, 0.7*inch])
     sched_table.setStyle(defensys_table_style())
     story.append(sched_table)
     
-    # 4. Build Document
+    # 4. Signatures Block
+    defensys_signatures_block(
+        story=story,
+        prepared_by=generated_by_user,
+        noted_by="Capstone Defense Coordinator",
+        approved_by="IT Program Chairperson"
+    )
+    
+    # 5. Build Document
     doc.build(story, canvasmaker=NumberedCanvas)
     pdf_content = buffer.getvalue()
     buffer.close()

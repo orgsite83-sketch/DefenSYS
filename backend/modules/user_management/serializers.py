@@ -109,6 +109,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
             'id',
             'username',
             'email',
+            'phone_number',
             'first_name',
             'last_name',
             'name',
@@ -130,6 +131,7 @@ class ManagedUserSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'username': {'required': True},
             'email': {'required': False, 'allow_blank': True},
+            'phone_number': {'required': False, 'allow_blank': True},
             'first_name': {'required': False, 'allow_blank': True},
             'last_name': {'required': False, 'allow_blank': True},
             'pit_lead_year': {'required': False, 'allow_null': True, 'allow_blank': True},
@@ -369,6 +371,8 @@ class BulkUserRowSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    contact = serializers.CharField(required=False, allow_blank=True, max_length=32)
     role = serializers.CharField(required=False, allow_blank=True, default='student')
     raw_role = serializers.CharField(required=False, allow_blank=True, max_length=255)
     is_panelist = serializers.BooleanField(required=False)
@@ -388,6 +392,10 @@ class BulkUserRowSerializer(serializers.Serializer):
         if not id_num:
             raise serializers.ValidationError({'id_number': 'ID number or username is required.'})
         attrs['id_number'] = id_num
+
+        phone = (attrs.get('phone_number') or attrs.get('contact') or '').strip()
+        if phone:
+            attrs['phone_number'] = phone
 
         raw_role_str = (attrs.get('raw_role') or attrs.get('role') or '').strip()
         parsed_role = parse_faculty_roles_dict(raw_role_str)
@@ -431,6 +439,8 @@ class OfficialClassListStudentSerializer(serializers.Serializer):
     first_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     last_name = serializers.CharField(required=False, allow_blank=True, max_length=150)
     email = serializers.EmailField(required=False, allow_blank=True)
+    phone_number = serializers.CharField(required=False, allow_blank=True, max_length=32)
+    contact = serializers.CharField(required=False, allow_blank=True, max_length=32)
     program = serializers.CharField(required=False, allow_blank=True, max_length=80)
     year_level = serializers.CharField(required=False, allow_blank=True, max_length=20)
     section = serializers.CharField(required=False, allow_blank=True, max_length=80)
@@ -443,6 +453,9 @@ class OfficialClassListStudentSerializer(serializers.Serializer):
             raise serializers.ValidationError({
                 'full_name': 'Full name or first/last name is required.',
             })
+        phone = (attrs.get('phone_number') or attrs.get('contact') or '').strip()
+        if phone:
+            attrs['phone_number'] = phone
         return attrs
 
 

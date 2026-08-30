@@ -212,6 +212,22 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
   );
   final levelIndex = findHeader((value) => value == 'level' || value == 'year level' || value == 'year');
   final emailIndex = findHeader((value) => value == 'email' || value == 'email address' || value.contains('email'));
+  final contactIndex = findHeader(
+    (value) =>
+        value == 'contact' ||
+        value == 'contact no' ||
+        value == 'contact no.' ||
+        value == 'contact number' ||
+        value == 'phone' ||
+        value == 'phone no' ||
+        value == 'phone no.' ||
+        value == 'phone number' ||
+        value == 'mobile' ||
+        value == 'mobile no' ||
+        value == 'mobile no.' ||
+        value == 'mobile number' ||
+        value == 'cellphone',
+  );
   final section = metadata['section']?.toString() ?? '';
   final yearLevel = metadata['year_level']?.toString() ?? '';
   final students = <Map<String, dynamic>>[];
@@ -226,11 +242,14 @@ AdminOfficialClassListParseResult parseOfficialClassListRows(List<List<String>> 
     final rowYear = levelIndex != -1
         ? normalizeYearLevel(read(levelIndex))
         : yearLevel;
+    final contact = contactIndex == -1 ? '' : read(contactIndex);
     students.add({
       'id_number': id,
       'first_name': splitName.firstName,
       'last_name': splitName.lastName,
       'email': emailIndex == -1 ? '' : read(emailIndex),
+      if (contact.isNotEmpty) 'phone_number': contact,
+      if (contact.isNotEmpty) 'contact': contact,
       'role': 'student',
       if (rowYear.isNotEmpty) 'year_level': rowYear,
       if (section.isNotEmpty) 'section': section,

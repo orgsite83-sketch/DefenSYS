@@ -58,7 +58,18 @@ class AdminGradeTeamDetailRoute extends StatelessWidget {
     return GradeCenterTeamDetailScreen(
       gradeId: gradeId,
       isLocked: locked,
-      onBack: () => context.pop(),
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          final location = GoRouterState.of(context).uri.path;
+          if (location.startsWith('/faculty/')) {
+            context.go(FacultyRoutes.gradeCenter);
+          } else {
+            context.go(AdminRoutes.gradeCenter);
+          }
+        }
+      },
     );
   }
 }
@@ -275,14 +286,20 @@ class AdminRubricEditorRoute extends ConsumerWidget {
 }
 
 class AdminDefenseStageEditorRoute extends ConsumerWidget {
-  const AdminDefenseStageEditorRoute({super.key, required this.stageId});
+  const AdminDefenseStageEditorRoute({
+    super.key,
+    required this.stageId,
+    this.initialTab = 0,
+  });
 
   final int stageId;
+  final int initialTab;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return DefenseStageEditorScreen(
       stageId: stageId,
+      initialTab: initialTab,
       onBack: () => context.pop(),
     );
   }

@@ -463,6 +463,54 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
     }
   }
 
+  /// Submit defense verdict (approved, approved_with_revisions, for_redefense)
+  Future<bool> submitVerdict(
+    int gradeId, {
+    required String verdict,
+    String? remarks,
+    String? revisionDeadline,
+  }) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+    try {
+      final body = <String, dynamic>{
+        'verdict': verdict,
+        if (remarks != null) 'verdict_remarks': remarks,
+        if (revisionDeadline != null) 'revision_deadline': revisionDeadline,
+      };
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$gradeId/verdict/'),
+        body: jsonEncode(body),
+      );
+      if (response.statusCode == 200) {
+        final payload = Map<String, dynamic>.from(jsonDecode(response.body));
+        if (payload['grade'] is Map) {
+          final updated = Map<String, dynamic>.from(payload['grade'] as Map);
+          state = state.copyWith(
+            isSaving: false,
+            grades: _mergeGradeIntoList(state.grades, updated),
+            message: 'Defense verdict submitted successfully.',
+            clearError: true,
+          );
+        } else {
+          _applyPayload(payload, successMessage: 'Defense verdict submitted successfully.');
+        }
+        return true;
+      }
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 
 

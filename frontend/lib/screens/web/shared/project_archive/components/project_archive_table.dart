@@ -1122,14 +1122,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   Widget _kindBadge(String? kind) {
     final label = switch (kind) {
       'pre' => 'Pre-defense',
-      'post' => 'Repository',
-      'pit' => 'Repository',
+      'post' => 'Post-defense',
+      'pit' => 'Post-defense',
       _ => 'File',
     };
     final color = switch (kind) {
       'pre' => const Color(0xFF2563EB),
-      'post' => const Color(0xFF7C3AED),
-      'pit' => const Color(0xFF7C3AED),
+      'post' => AppColors.maroon,
+      'pit' => AppColors.maroon,
       _ => AppColors.textSecondary,
     };
     return Container(
@@ -1906,7 +1906,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                             if (vaultCount > 0) ...[
                               if (track != 'pit' && preCount > 0)
                                 const SizedBox(width: 4),
-                              _microCountPill('$vaultCount archive', AppColors.maroon),
+                              _microCountPill('$vaultCount post', AppColors.maroon),
                             ],
                           ],
                         ),
@@ -2392,8 +2392,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         preRows,
       );
       addSubsection(
-        'Repository deliverables',
-        const Color(0xFFF5F3FF),
+        'Post-defense deliverables',
+        const Color(0xFFFFF1F2),
         postRows,
       );
       dataChildren.add(const SizedBox(height: 12));
@@ -2489,8 +2489,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         preRows,
       );
       addSubsection(
-        'Repository',
-        const Color(0xFFFFF7ED),
+        'Post-defense deliverables',
+        const Color(0xFFFFF1F2),
         postRows,
       );
 

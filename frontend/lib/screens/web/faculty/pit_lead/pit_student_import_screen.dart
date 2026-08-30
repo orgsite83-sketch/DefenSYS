@@ -815,6 +815,22 @@ class _PitStudentImportScreenState
     final programIndex = findHeader((value) => value == 'program');
     final levelIndex = findHeader((value) => value == 'level');
     final emailIndex = findHeader((value) => value == 'email');
+    final contactIndex = findHeader(
+      (value) =>
+          value == 'contact' ||
+          value == 'contact no' ||
+          value == 'contact no.' ||
+          value == 'contact number' ||
+          value == 'phone' ||
+          value == 'phone no' ||
+          value == 'phone no.' ||
+          value == 'phone number' ||
+          value == 'mobile' ||
+          value == 'mobile no' ||
+          value == 'mobile no.' ||
+          value == 'mobile number' ||
+          value == 'cellphone',
+    );
     final sectionColumnIndex = findHeader((value) => value == 'section' || value == 'class section');
     final blockSection = metadata['section']?.toString() ?? '';
     final blockYearLevel = metadata['year_level']?.toString() ?? '';
@@ -829,6 +845,7 @@ class _PitStudentImportScreenState
       final rowSection = sectionColumnIndex != -1 ? read(sectionColumnIndex) : '';
       final sec = rowSection.isNotEmpty ? rowSection : blockSection;
       final rowLevel = levelIndex != -1 ? _normalizeYearLevel(read(levelIndex)) : blockYearLevel;
+      final contact = contactIndex != -1 ? read(contactIndex) : '';
 
       students.add({
         'id_number': id,
@@ -836,6 +853,8 @@ class _PitStudentImportScreenState
         if (programIndex != -1) 'program': read(programIndex),
         if (rowLevel.isNotEmpty) 'year_level': rowLevel,
         if (emailIndex != -1) 'email': read(emailIndex),
+        if (contact.isNotEmpty) 'phone_number': contact,
+        if (contact.isNotEmpty) 'contact': contact,
         if (sec.isNotEmpty) 'section': sec,
         '_fileMetadata': metadata,
       });

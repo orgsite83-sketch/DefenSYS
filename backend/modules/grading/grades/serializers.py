@@ -1,13 +1,48 @@
 from rest_framework import serializers
 
 from grading.rubrics.models import Rubric
-from .models import GradeBreakdown, StudentStageGrade, TeamGrade
+from .models import GradeAttemptHistory, GradeBreakdown, StudentStageGrade, TeamGrade
 from .services import display_name
+
+
+class GradeAttemptHistorySerializer(serializers.ModelSerializer):
+    verdict_by_name = serializers.SerializerMethodField()
+    scheduled_date = serializers.DateField(source='schedule.scheduled_date', read_only=True, allow_null=True)
+    room = serializers.CharField(source='schedule.room', read_only=True, allow_null=True)
+
+    class Meta:
+        model = GradeAttemptHistory
+        fields = [
+            'id',
+            'attempt_number',
+            'schedule_id',
+            'scheduled_date',
+            'room',
+            'panel_score',
+            'adviser_score',
+            'peer_score',
+            'final_grade',
+            'panel_weight',
+            'adviser_weight',
+            'peer_weight',
+            'verdict',
+            'verdict_remarks',
+            'verdict_by_name',
+            'verdict_at',
+            'revision_deadline',
+            'snapshotted_at',
+        ]
+
+    def get_verdict_by_name(self, obj):
+        return display_name(obj.verdict_by) if obj.verdict_by else None
 
 
 class GradeBreakdownSerializer(serializers.ModelSerializer):
     rubric_name = serializers.CharField(source='rubric.name', read_only=True, allow_null=True)
     normalized_score = serializers.DecimalField(max_digits=5, decimal_places=2, read_only=True)
+    student_id = serializers.IntegerField(source='student.id', read_only=True, allow_null=True)
+    student_username = serializers.CharField(source='student.username', read_only=True, allow_null=True)
+    student_name = serializers.SerializerMethodField()
 
     class Meta:
         model = GradeBreakdown
@@ -21,7 +56,13 @@ class GradeBreakdownSerializer(serializers.ModelSerializer):
             'normalized_score',
             'remarks',
             'display_order',
+            'student_id',
+            'student_username',
+            'student_name',
         ]
+
+    def get_student_name(self, obj):
+        return display_name(obj.student) if obj.student else None
 
 
 class StudentStageGradeSerializer(serializers.ModelSerializer):
@@ -69,6 +110,8 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     breakdowns = GradeBreakdownSerializer(many=True, read_only=True)
     peer_per_student = StudentStageGradeSerializer(source='student_grades', many=True, read_only=True)
     published_by_name = serializers.SerializerMethodField()
+    verdict_by_name = serializers.SerializerMethodField()
+    attempt_history = GradeAttemptHistorySerializer(many=True, read_only=True)
     peer_eval_complete = serializers.SerializerMethodField()
     peer_submissions_submitted = serializers.SerializerMethodField()
     peer_submissions_required = serializers.SerializerMethodField()
@@ -77,9 +120,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     panel_complete = serializers.SerializerMethodField()
     adviser_complete = serializers.SerializerMethodField()
     adviser_required = serializers.SerializerMethodField()
+    is_officially_complete = serializers.SerializerMethodField()
     grading_ready = serializers.SerializerMethodField()
     missing_components = serializers.SerializerMethodField()
     rubric_target_type = serializers.SerializerMethodField()
+    members = serializers.SerializerMethodField()
 
     class Meta:
         model = TeamGrade
@@ -108,11 +153,19 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'peer_score',
             'final_grade',
             'weights',
+            'attempt_count',
+            'verdict',
+            'verdict_remarks',
+            'verdict_by_name',
+            'verdict_at',
+            'revision_deadline',
+            'attempt_history',
             'status',
             'result',
             'panelists',
             'breakdowns',
             'peer_per_student',
+            'members',
             'peer_eval_complete',
             'peer_submissions_submitted',
             'peer_submissions_required',
@@ -121,6 +174,7 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'panel_complete',
             'adviser_complete',
             'adviser_required',
+            'is_officially_complete',
             'grading_ready',
             'missing_components',
             'rubric_target_type',
@@ -131,6 +185,19 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'panel_score_is_override',
             'adviser_score_is_override',
             'peer_score_is_override',
+        ]
+
+    def get_members(self, obj):
+        if not obj.team_id:
+            return []
+        return [
+            {
+                'id': m.student_id,
+                'student_id': m.student_id,
+                'name': display_name(m.student),
+                'is_leader': m.is_leader,
+            }
+            for m in obj.team.memberships.select_related('student').all()
         ]
 
     def get_rubric_target_type(self, obj):
@@ -165,6 +232,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_published_by_name(self, obj):
         return display_name(obj.published_by)
+
+    def get_verdict_by_name(self, obj):
+        return display_name(obj.verdict_by) if obj.verdict_by else None
 
     def get_peer_eval_complete(self, obj):
         from .peer_eval import is_team_peer_eval_complete
@@ -204,6 +274,11 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_adviser_required(self, obj):
         return self._grading_readiness(obj)['adviser_required']
+
+    def get_is_officially_complete(self, obj):
+        from .services import group_settings_for_grade
+
+        return bool(group_settings_for_grade(obj).get('is_officially_complete'))
 
     def get_grading_ready(self, obj):
         return self._grading_readiness(obj)['ready']

@@ -14,6 +14,10 @@ class TeamReadinessTracker extends StatefulWidget {
     required this.onReviewTeamDeliverables,
     required this.onSendReminder,
     required this.isSendingReminder,
+    this.headerAction,
+    this.stageSelector,
+    this.title,
+    this.subtitle,
   });
 
   final DefenseSchedulerState state;
@@ -22,6 +26,10 @@ class TeamReadinessTracker extends StatefulWidget {
   final void Function(Map<String, dynamic> team, String stageLabel) onReviewTeamDeliverables;
   final void Function(dynamic teamId, String stageLabel) onSendReminder;
   final bool isSendingReminder;
+  final Widget? headerAction;
+  final Widget? stageSelector;
+  final String? title;
+  final String? subtitle;
 
   @override
   State<TeamReadinessTracker> createState() => _TeamReadinessTrackerState();
@@ -108,15 +116,19 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                 size: 22,
               ),
               const SizedBox(width: 10),
-              const Text(
-                'Team Readiness Tracker',
-                style: TextStyle(
+              Text(
+                widget.title ?? 'Team Readiness Tracker',
+                style: const TextStyle(
                   fontSize: 17,
                   fontWeight: FontWeight.w900,
                   color: AppColors.textPrimary,
                 ),
               ),
               const Spacer(),
+              if (widget.headerAction != null) ...[
+                widget.headerAction!,
+                const SizedBox(width: 10),
+              ],
               if (widget.scope == 'pit' && pitYearLevels.length > 1) ...[
                 Container(
                   height: 38,
@@ -196,10 +208,15 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
               ),
             ],
           ),
+          if (widget.stageSelector != null) ...[
+            const SizedBox(height: 14),
+            widget.stageSelector!,
+          ],
           const SizedBox(height: 10),
-          const Text(
-            'Monitor team deliverable completeness. Teams must have all required pre-defense deliverables accepted by their instructor before they are ready for scheduling.',
-            style: TextStyle(
+          Text(
+            widget.subtitle ??
+                'Monitor team deliverable completeness. Teams must have all required pre-defense deliverables accepted by their instructor before they are ready for scheduling.',
+            style: const TextStyle(
               color: AppColors.textSecondary,
               fontSize: 13.5,
               height: 1.4,
@@ -259,9 +276,17 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                             return adviser == selectedAdviser;
                           }).toList();
 
+                    final isSectionCompleted = activeStageOrEventName.isNotEmpty &&
+                        sectionTeams.every((team) =>
+                            isTeamStageCompleted(team, activeStageOrEventName));
                     final isSectionReady = activeStageOrEventName.isNotEmpty &&
                         sectionTeams.every((team) =>
-                            team['ready_for_stage'] == activeStageOrEventName);
+                            isTeamStageReady(team, activeStageOrEventName));
+                    final sectionReadyCount = activeStageOrEventName.isNotEmpty
+                        ? sectionTeams
+                            .where((team) => isTeamStageReady(team, activeStageOrEventName))
+                            .length
+                        : 0;
 
                     return Container(
                       margin: const EdgeInsets.only(bottom: 12),
@@ -307,7 +332,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                   ),
                                 ),
                               ),
-                              if (isSectionReady) ...[
+                              if (isSectionCompleted) ...[
                                 const SizedBox(width: 10),
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
@@ -325,8 +350,64 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                       ),
                                       SizedBox(width: 4),
                                       Text(
+                                        'Completed',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: Color(0xFF03543F),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ] else if (isSectionReady) ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDEF7EC),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: const [
+                                      Icon(
+                                        Icons.auto_awesome_rounded,
+                                        color: Color(0xFF03543F),
+                                        size: 13,
+                                      ),
+                                      SizedBox(width: 4),
+                                      Text(
                                         'Ready',
                                         style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: Color(0xFF03543F),
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ] else if (sectionReadyCount > 0) ...[
+                                const SizedBox(width: 10),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFDEF7EC),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.auto_awesome_rounded,
+                                        color: Color(0xFF03543F),
+                                        size: 13,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '$sectionReadyCount Ready',
+                                        style: const TextStyle(
                                           fontSize: 10.5,
                                           color: Color(0xFF03543F),
                                           fontWeight: FontWeight.bold,
@@ -583,13 +664,37 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                     ],
                                   ),
                                   ...displayedTeams.map((team) {
-                                    final isReady = team['ready_for_stage'] == activeStageOrEventName && activeStageOrEventName.isNotEmpty;
-                                    final readyForStage = team['ready_for_stage']?.toString() ?? '';
-                                    final statusText = isReady
-                                        ? 'Ready'
-                                        : (readyForStage.isNotEmpty
-                                            ? 'Endorsed for $readyForStage'
-                                            : 'Awaiting Endorsement');
+                                    final stageStatus = getTeamStageStatus(team, activeStageOrEventName);
+                                    final isCompleted = stageStatus == 'completed';
+                                    final isScheduled = stageStatus == 'scheduled';
+                                    final isReady = stageStatus == 'ready';
+
+                                    Color dotColor;
+                                    Color statusTextColor;
+                                    String statusText;
+                                    IconData statusIcon;
+
+                                    if (isCompleted) {
+                                      dotColor = const Color(0xFF059669);
+                                      statusTextColor = const Color(0xFF047857);
+                                      statusText = 'Completed (Passed)';
+                                      statusIcon = Icons.check_circle_rounded;
+                                    } else if (isScheduled) {
+                                      dotColor = const Color(0xFF2563EB);
+                                      statusTextColor = const Color(0xFF1D4ED8);
+                                      statusText = 'Defense Scheduled';
+                                      statusIcon = Icons.event_available_rounded;
+                                    } else if (isReady) {
+                                      dotColor = const Color(0xFF10B981);
+                                      statusTextColor = const Color(0xFF065F46);
+                                      statusText = 'Ready for Defense';
+                                      statusIcon = Icons.auto_awesome_rounded;
+                                    } else {
+                                      dotColor = const Color(0xFFF59E0B);
+                                      statusTextColor = const Color(0xFFB45309);
+                                      statusText = 'Awaiting Endorsement';
+                                      statusIcon = Icons.hourglass_top_rounded;
+                                    }
 
                                     return TableRow(
                                       decoration: const BoxDecoration(
@@ -700,13 +805,10 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                           padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
                                           child: Row(
                                             children: [
-                                              Container(
-                                                width: 8,
-                                                height: 8,
-                                                decoration: BoxDecoration(
-                                                  color: isReady ? Colors.green : Colors.amber,
-                                                  shape: BoxShape.circle,
-                                                ),
+                                              Icon(
+                                                statusIcon,
+                                                size: 15,
+                                                color: dotColor,
                                               ),
                                               const SizedBox(width: 8),
                                               Expanded(
@@ -714,8 +816,8 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                   statusText,
                                                   style: TextStyle(
                                                     fontSize: 13,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: isReady ? Colors.green.shade800 : Colors.amber.shade900,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: statusTextColor,
                                                   ),
                                                   overflow: TextOverflow.ellipsis,
                                                 ),
@@ -740,7 +842,7 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                                 ),
                                               ),
                                               const SizedBox(width: 8),
-                                              if (!isReady)
+                                              if (!isReady && !isCompleted && !isScheduled)
                                                 TextButton.icon(
                                                   onPressed: widget.isSendingReminder || activeStageOrEventName.isEmpty
                                                       ? null
@@ -762,9 +864,9 @@ class _TeamReadinessTrackerState extends State<TeamReadinessTracker> {
                                 ],
                               ),
                             ),
-                          ],
+                            ],
+                          ),
                         ),
-                      ),
                     );
                   }).toList(),
                 );

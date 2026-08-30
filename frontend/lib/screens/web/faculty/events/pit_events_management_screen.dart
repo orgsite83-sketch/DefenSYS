@@ -3,11 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
-import '../../../../widgets/confirm_dialog.dart';
+import '../../../../widgets/widgets.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
-import '../../../../widgets/feedback/empty_state.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
 class PitEventsManagementScreen extends ConsumerStatefulWidget {
@@ -2606,34 +2605,31 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     onTap: _handleClose,
                   ),
                   const SizedBox(width: 12),
-                  SizedBox(
-                    height: 42,
-                    child: ElevatedButton.icon(
-                      onPressed: (state.isSaving || isLocked) ? null : _save,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: isLocked ? Colors.grey : DefensysTokens.maroon,
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
-                        padding: const EdgeInsets.symmetric(horizontal: 20),
-                        textStyle: const TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          fontFamily: DefensysTokens.fontFamily,
+                  if (isLocked)
+                    SizedBox(
+                      height: 42,
+                      child: ElevatedButton.icon(
+                        onPressed: null,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.grey,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(7)),
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
                         ),
+                        icon: const Icon(Icons.lock_outline_rounded, size: 18, color: Colors.white),
+                        label: const Text('Secured (Read-Only)'),
                       ),
-                      icon: isLocked
-                          ? const Icon(Icons.lock_outline_rounded, size: 18, color: Colors.white)
-                          : (state.isSaving
-                              ? const SizedBox(
-                                  width: 16,
-                                  height: 16,
-                                  child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                                )
-                              : const Icon(Icons.check_circle_outline, size: 18, color: Colors.white)),
-                      label: Text(isLocked ? 'Secured (Read-Only)' : 'Save Configuration'),
+                    )
+                  else
+                    DefensysSaveButton(
+                      height: 42,
+                      onPressed: _save,
+                      isSaving: state.isSaving,
+                      label: 'Save Configuration',
+                      savingLabel: 'Saving Configuration…',
+                      isPill: false,
                     ),
-                  ),
                 ],
               ),
             ],

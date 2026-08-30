@@ -329,6 +329,19 @@ PASSWORD_RESET_TIMEOUT = int(os.environ.get('PASSWORD_RESET_TIMEOUT', '3600'))
 # Base URL shown in emails (no trailing slash). Local default points to Flutter Web dev server port.
 FRONTEND_URL = os.environ.get('FRONTEND_URL', 'http://localhost:57583').rstrip('/')
 
+# SMS Backend Configuration
+# Options: 'console' (default in dev), 'android_gateway', 'semaphore', 'twilio'
+SMS_BACKEND = os.environ.get('SMS_BACKEND', 'console')
+SMS_GATEWAY_URL = os.environ.get('SMS_GATEWAY_URL', '')
+SMS_GATEWAY_USERNAME = os.environ.get('SMS_GATEWAY_USERNAME', '')
+SMS_GATEWAY_PASSWORD = os.environ.get('SMS_GATEWAY_PASSWORD', '')
+SMS_GATEWAY_API_KEY = os.environ.get('SMS_GATEWAY_API_KEY', '')
+SEMAPHORE_API_KEY = os.environ.get('SEMAPHORE_API_KEY', '')
+SEMAPHORE_SENDER_NAME = os.environ.get('SEMAPHORE_SENDER_NAME', 'DefenSYS')
+TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
+TWILIO_AUTH_TOKEN = os.environ.get('TWILIO_AUTH_TOKEN', '')
+TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER', '')
+
 
 # Logging Configuration
 LOGGING = {

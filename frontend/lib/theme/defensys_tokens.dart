@@ -15,6 +15,12 @@ class DefensysTokens {
   static const goldLight = Color(0xFFF59E0B);
   static const darkGold = Color(0xFFB45309); // Compliant AA contrast (>4.5:1) for body/labels on white
 
+  // Action colors (Save / Commit)
+  static const saveActionBg = Color(0xFF1E293B); // Dark Slate 800
+  static const saveActionHoverBg = Color(0xFF0F172A); // Slate 900
+  static const saveActionFg = Colors.white;
+  static const saveActionDisabledBg = Color(0xFF94A3B8); // Slate 400
+
   // Neutrals (Refined Slate Scale)
   static const background = Color(0xFFF8FAFC);
   static const surface = Colors.white;
@@ -201,6 +207,32 @@ class DefensysTokens {
           offset: Offset(0, 4),
         ),
       ],
+    );
+  }
+
+  /// Standardized Dark Slate Save Button style for committing changes
+  static ButtonStyle saveButtonStyle({
+    bool isPill = true,
+    EdgeInsetsGeometry padding = const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+    double fontSize = 13,
+  }) {
+    return FilledButton.styleFrom(
+      backgroundColor: saveActionBg,
+      foregroundColor: saveActionFg,
+      disabledBackgroundColor: saveActionDisabledBg,
+      disabledForegroundColor: Colors.white70,
+      elevation: 0,
+      padding: padding,
+      textStyle: TextStyle(
+        fontFamily: fontFamily,
+        fontWeight: FontWeight.w700,
+        fontSize: fontSize,
+      ),
+      shape: isPill
+          ? const StadiumBorder()
+          : RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(radiusMd),
+            ),
     );
   }
 }

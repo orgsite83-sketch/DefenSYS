@@ -44,8 +44,12 @@ abstract final class AdminRoutes {
 
   static const rubricCreate = '/admin/rubrics/new/edit';
 
-  static String defenseStageEdit(int stageId) =>
-      '/admin/defense-stages/$stageId/edit';
+  static String defenseStageEdit(int stageId, {int? initialTab}) {
+    if (initialTab != null) {
+      return '/admin/defense-stages/$stageId/edit?tab=$initialTab';
+    }
+    return '/admin/defense-stages/$stageId/edit';
+  }
 
   static DefensysAdminSection? sectionForLocation(String location) {
     if (location.startsWith('/admin/overview')) {
@@ -131,6 +135,25 @@ abstract final class FacultyRoutes {
   static const pitEvents = '/faculty/pit-events';
 
   static String teamDetail(int teamId) => '/faculty/student-teams/$teamId';
+
+  static String gradeDetail(int gradeId) =>
+      '/faculty/grade-center/grades/$gradeId';
+
+  static String gradeEventTeams(
+    String groupKey, {
+    required String scope,
+    required String stageLabel,
+    required String title,
+  }) {
+    final params = Uri(
+      queryParameters: {
+        'scope': scope,
+        'stageLabel': stageLabel,
+        'title': title,
+      },
+    );
+    return '/faculty/grade-center/events/$groupKey?${params.query}';
+  }
 
   static String cohortDetail(String sectionName) =>
       '/faculty/cohort/${Uri.encodeComponent(sectionName)}';

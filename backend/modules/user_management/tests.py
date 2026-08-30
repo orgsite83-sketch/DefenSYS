@@ -418,6 +418,59 @@ class UserManagementApiTests(APITestCase):
         self.assertEqual(response.data['skipped_count'], 1)
         self.assertTrue(User.objects.get(username='FAC-0001').check_password('FAC-0001'))
 
+    def test_bulk_import_saves_and_updates_phone_number(self):
+        User.objects.create_user(
+            username='FAC-0099',
+            password='pass',
+            role='faculty',
+            phone_number='',
+        )
+
+        response = self.client.post(
+            '/api/users/bulk-import/',
+            {
+                'users': [
+                    {
+                        'id_number': 'FAC-0099',
+                        'first_name': 'Updated',
+                        'last_name': 'Faculty',
+                        'email': 'updated@example.com',
+                        'phone_number': '09170009999',
+                        'role': 'faculty',
+                    },
+                    {
+                        'id_number': '2024-0100',
+                        'first_name': 'New',
+                        'last_name': 'Student',
+                        'email': 'new@example.com',
+                        'contact': '09170001000',
+                        'role': 'student',
+                    },
+                ],
+            },
+            format='json',
+        )
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(response.data['created_count'], 2)
+
+        updated_faculty = User.objects.get(username='FAC-0099')
+        self.assertEqual(updated_faculty.phone_number, '09170009999')
+
+        new_student = User.objects.get(username='2024-0100')
+        self.assertEqual(new_student.phone_number, '09170001000')
+
+    def test_superuser_creation_with_phone_number(self):
+        superuser = User.objects.create_superuser(
+            username='superadmin',
+            email='admin@defensys.edu',
+            password='superpassword123',
+            phone_number='09179998888',
+        )
+        self.assertTrue(superuser.is_superuser)
+        self.assertEqual(superuser.role, 'admin')
+        self.assertEqual(superuser.phone_number, '09179998888')
+
     def test_bulk_import_faculty_with_multi_roles(self):
         response = self.client.post(
             '/api/users/bulk-import/',

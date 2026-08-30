@@ -7,6 +7,7 @@ import '../../../../services/team_detail_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../utils/pdf_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
+import '../../../../widgets/widgets.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../grade_center_shared.dart';
 
@@ -245,21 +246,11 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             child: const Text('Cancel'),
           ),
           const SizedBox(width: 8),
-          ElevatedButton(
-            onPressed: ref.watch(teamDetailProvider(widget.teamId)).isSaving
-                ? null
-                : _saveOverview,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: _maroon,
-              foregroundColor: _gold,
-            ),
-            child: ref.watch(teamDetailProvider(widget.teamId)).isSaving
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Save Changes'),
+          DefensysSaveButton(
+            onPressed: _saveOverview,
+            isSaving: ref.watch(teamDetailProvider(widget.teamId)).isSaving,
+            label: 'Save Changes',
+            isPill: false,
           ),
           const SizedBox(width: 8),
           OutlinedButton.icon(

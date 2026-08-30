@@ -274,7 +274,8 @@ class _StageItemCardState extends State<_StageItemCard> {
                 ),
                 Switch.adaptive(
                   value: _preUnlocked,
-                  activeColor: AppColors.maroon,
+                  activeTrackColor: AppColors.maroon.withValues(alpha: 0.5),
+                  activeThumbColor: AppColors.maroon,
                   onChanged: _isLoading ? null : (val) => _toggle('pre', val),
                 ),
               ],
@@ -296,7 +297,8 @@ class _StageItemCardState extends State<_StageItemCard> {
                 ),
                 Switch.adaptive(
                   value: _postUnlocked,
-                  activeColor: AppColors.maroon,
+                  activeTrackColor: AppColors.maroon.withValues(alpha: 0.5),
+                  activeThumbColor: AppColors.maroon,
                   onChanged: _isLoading ? null : (val) => _toggle('post', val),
                 ),
               ],

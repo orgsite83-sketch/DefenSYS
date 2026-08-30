@@ -3,6 +3,7 @@ from unittest.mock import patch
 
 from django.core.exceptions import ValidationError as DjangoValidationError
 from django.contrib.auth import get_user_model
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
@@ -2101,4 +2102,326 @@ class GradeCenterApiTests(APITestCase):
         self.assertIn('adviser_score', res.data)
         grade.refresh_from_db()
         self.assertEqual(grade.adviser_score, Decimal('90.00'))  # remains unchanged
+
+    def test_adviser_submit_both_rubric_scores_members_correctly(self):
+        # Create an adviser rubric with target_type = 'both'
+        both_rubric = Rubric.objects.create(
+            name='Capstone Adviser Both Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_ADVISER,
+            target_type=Rubric.TARGET_BOTH,
+            scale=Rubric.SCALE_10,
+            status=Rubric.STATUS_PUBLISHED,
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+        )
+        crit_team = RubricCriterion.objects.create(
+            rubric=both_rubric,
+            name='Technical Competency',
+            target_type=Rubric.TARGET_TEAM,
+            max_score=10,
+            display_order=0,
+        )
+        crit_ind = RubricCriterion.objects.create(
+            rubric=both_rubric,
+            name='Presentation and Delivery',
+            target_type=Rubric.TARGET_INDIVIDUAL,
+            max_score=10,
+            display_order=1,
+        )
+
+        grade = self._capstone_grade()
+        config = get_or_create_stage_grading_config(self.stage, self.semester)
+        config.adviser_rubric = both_rubric
+        config.save(update_fields=['adviser_rubric', 'updated_at'])
+
+        # Team has 2 members: self.student and self.second_student
+        self.client.force_authenticate(user=self.adviser)
+        response = self.client.post(
+            f'/api/grading/grades/adviser-grades/{grade.id}/submit/',
+            {
+                'rubric_id': both_rubric.id,
+                'team_criteria_scores': [
+                    {'criterion_name': 'Technical Competency', 'score': 10.0, 'max_score': 10},
+                ],
+                'student_submissions': [
+                    {
+                        'student_id': self.student.id,
+                        'criteria_scores': [
+                            {'criterion_name': 'Presentation and Delivery', 'score': 10.0, 'max_score': 10},
+                        ],
+                    },
+                    {
+                        'student_id': self.second_student.id,
+                        'criteria_scores': [
+                            {'criterion_name': 'Presentation and Delivery', 'score': 6.0, 'max_score': 10},
+                        ],
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        # Student 1: (10 + 10) / (10 + 10) * 100 = 100.00
+        sg1 = StudentStageGrade.objects.get(team_grade=grade, student=self.student)
+        self.assertEqual(sg1.adviser_score, Decimal('100.00'))
+
+        # Student 2: (10 + 6) / (10 + 10) * 100 = 80.00
+        sg2 = StudentStageGrade.objects.get(team_grade=grade, student=self.second_student)
+        self.assertEqual(sg2.adviser_score, Decimal('80.00'))
+
+        # Team grade adviser score is the average: (100 + 80) / 2 = 90.00
+        grade.refresh_from_db()
+        self.assertEqual(grade.adviser_score, Decimal('90.00'))
+
+        # Check breakdowns
+        breakdowns = GradeBreakdown.objects.filter(team_grade=grade, evaluation_type=GradeBreakdown.EVAL_ADVISER)
+        self.assertEqual(breakdowns.filter(student__isnull=True).count(), 1)
+        self.assertEqual(breakdowns.filter(student=self.student).count(), 1)
+        self.assertEqual(breakdowns.filter(student=self.second_student).count(), 1)
+
+    def test_adviser_submit_individual_rubric_scores_members_correctly(self):
+        ind_rubric = Rubric.objects.create(
+            name='Capstone Adviser Ind Rubric',
+            scope=Rubric.SCOPE_CAPSTONE,
+            semester=self.semester,
+            evaluation_type=Rubric.EVAL_ADVISER,
+            target_type=Rubric.TARGET_INDIVIDUAL,
+            scale=Rubric.SCALE_10,
+            status=Rubric.STATUS_PUBLISHED,
+            panel_weight=50,
+            adviser_weight=30,
+            peer_weight=20,
+        )
+        RubricCriterion.objects.create(
+            rubric=ind_rubric,
+            name='Individual Contribution',
+            target_type=Rubric.TARGET_INDIVIDUAL,
+            max_score=10,
+            display_order=0,
+        )
+
+        grade = self._capstone_grade()
+        config = get_or_create_stage_grading_config(self.stage, self.semester)
+        config.adviser_rubric = ind_rubric
+        config.save(update_fields=['adviser_rubric', 'updated_at'])
+
+        self.client.force_authenticate(user=self.adviser)
+        response = self.client.post(
+            f'/api/grading/grades/adviser-grades/{grade.id}/submit/',
+            {
+                'rubric_id': ind_rubric.id,
+                'student_submissions': [
+                    {
+                        'student_id': self.student.id,
+                        'criteria_scores': [
+                            {'criterion_name': 'Individual Contribution', 'score': 9.0, 'max_score': 10},
+                        ],
+                    },
+                    {
+                        'student_id': self.second_student.id,
+                        'criteria_scores': [
+                            {'criterion_name': 'Individual Contribution', 'score': 7.0, 'max_score': 10},
+                        ],
+                    },
+                ],
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+
+        sg1 = StudentStageGrade.objects.get(team_grade=grade, student=self.student)
+        self.assertEqual(sg1.adviser_score, Decimal('90.00'))
+
+        sg2 = StudentStageGrade.objects.get(team_grade=grade, student=self.second_student)
+        self.assertEqual(sg2.adviser_score, Decimal('70.00'))
+
+        grade.refresh_from_db()
+        self.assertEqual(grade.adviser_score, Decimal('80.00'))
+
+    def test_redefense_schedule_snapshots_attempt_history_and_resets_scores(self):
+        from .models import GradeAttemptHistory
+        from .services import GradeContextService
+        import datetime
+
+        # Attempt 1: Setup schedule 1 with scores and verdict
+        schedule_1 = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(9, 0),
+            room='Room 301',
+            scheduled_date=datetime.date(2026, 6, 18),
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade, _created, _changed = GradeContextService.get_or_create_for_schedule(schedule_1)
+        grade.panel_score = Decimal('68.00')
+        grade.adviser_score = Decimal('70.00')
+        grade.peer_score = Decimal('70.00')
+        grade.final_grade = Decimal('69.00')
+        grade.verdict = TeamGrade.VERDICT_FOR_REDEFENSE
+        grade.verdict_remarks = 'Concept rejected. Propose 3 new titles.'
+        grade.verdict_by = self.panelist
+        grade.verdict_at = timezone.now()
+        grade.status = TeamGrade.STATUS_PENDING
+        grade.save()
+
+        self.assertEqual(grade.attempt_count, 1)
+        self.assertEqual(grade.result, 'for_redefense')
+
+        # Admin schedules Attempt 2 (re-defense)
+        schedule_2 = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(9, 0),
+            room='Room 301',
+            scheduled_date=datetime.date(2026, 6, 25),
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        )
+
+        # Linking grade to schedule 2 must auto-snapshot attempt 1
+        grade_2, created, changed = GradeContextService.get_or_create_for_schedule(schedule_2)
+        self.assertFalse(created)
+        self.assertEqual(grade_2.id, grade.id)
+        self.assertEqual(grade_2.attempt_count, 2)
+        self.assertEqual(grade_2.schedule_id, schedule_2.id)
+
+        # Attempt 1 scores must be reset on the active grade for a clean slate
+        self.assertIsNone(grade_2.panel_score)
+        self.assertIsNone(grade_2.adviser_score)
+        self.assertIsNone(grade_2.peer_score)
+        self.assertIsNone(grade_2.final_grade)
+        self.assertEqual(grade_2.verdict, '')
+        self.assertEqual(grade_2.verdict_remarks, '')
+        self.assertEqual(grade_2.status, TeamGrade.STATUS_PENDING)
+
+        # Verify Attempt 1 history is preserved in GradeAttemptHistory
+        history = GradeAttemptHistory.objects.filter(team_grade=grade_2).first()
+        self.assertIsNotNone(history)
+        self.assertEqual(history.attempt_number, 1)
+        self.assertEqual(history.schedule_id, schedule_1.id)
+        self.assertEqual(history.panel_score, Decimal('68.00'))
+        self.assertEqual(history.adviser_score, Decimal('70.00'))
+        self.assertEqual(history.peer_score, Decimal('70.00'))
+        self.assertEqual(history.final_grade, Decimal('69.00'))
+        self.assertEqual(history.verdict, TeamGrade.VERDICT_FOR_REDEFENSE)
+        self.assertEqual(history.verdict_remarks, 'Concept rejected. Propose 3 new titles.')
+
+    def test_verdict_submission_by_chair_and_admin(self):
+        import datetime
+        from .services import GradeContextService
+
+        schedule = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(9, 0),
+            room='Room 301',
+            scheduled_date=datetime.date(2026, 6, 20),
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        SchedulePanelist.objects.create(
+            schedule=schedule,
+            panelist=self.panelist,
+            is_chair=True,
+            order=0,
+        )
+
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        grade.panel_score = Decimal('82.50')
+        grade.save(update_fields=['panel_score'])
+
+        # Panel chair submits verdict
+        self.client.force_authenticate(user=self.panelist)
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/verdict/',
+            {
+                'verdict': 'approved_with_revisions',
+                'verdict_remarks': 'Approved, satisfy minor revisions by deadline.',
+                'revision_deadline': '2026-10-15',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['team_grade']['verdict'], 'approved_with_revisions')
+        self.assertEqual(response.data['team_grade']['result'], 'passed')
+        self.assertEqual(response.data['team_grade']['revision_deadline'], '2026-10-15')
+
+        grade.refresh_from_db()
+        self.assertEqual(grade.verdict, TeamGrade.VERDICT_APPROVED_WITH_REVISIONS)
+        self.assertEqual(grade.verdict_by, self.panelist)
+
+    def test_verdict_submission_forbidden_for_non_chair(self):
+        import datetime
+        from .services import GradeContextService
+
+        non_chair = User.objects.create_user(
+            username='panel-non-chair',
+            password='pass12345',
+            role='faculty',
+            is_panelist=True,
+        )
+        schedule = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(9, 0),
+            room='Room 301',
+            scheduled_date=datetime.date(2026, 6, 20),
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        SchedulePanelist.objects.create(
+            schedule=schedule,
+            panelist=non_chair,
+            is_chair=False,
+            order=1,
+        )
+
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        grade.panel_score = Decimal('82.50')
+        grade.save(update_fields=['panel_score'])
+
+        self.client.force_authenticate(user=non_chair)
+        response = self.client.patch(
+            f'/api/defense/schedules/{schedule.id}/verdict/',
+            {
+                'verdict': 'approved',
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 403)
+
+    def test_redefense_verdict_bypasses_officially_complete_lock(self):
+        from .services import require_grade_editable, GradeContextService
+        import datetime
+
+        config = get_or_create_stage_grading_config(self.stage, self.semester)
+        config.is_officially_complete = True
+        config.save(update_fields=['is_officially_complete'])
+
+        schedule = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(9, 0),
+            room='Room 301',
+            scheduled_date=datetime.date(2026, 6, 20),
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+
+        # Standard grade is locked by officially complete
+        with self.assertRaises(DjangoValidationError):
+            require_grade_editable(grade)
+
+        # Grade marked for re-defense bypasses the lock
+        grade.verdict = TeamGrade.VERDICT_FOR_REDEFENSE
+        grade.save(update_fields=['verdict'])
+        # Should not raise
+        require_grade_editable(grade)
+
 

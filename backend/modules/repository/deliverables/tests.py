@@ -1,7 +1,6 @@
 from django.contrib.auth import get_user_model
-
 from django.core.files.uploadedfile import SimpleUploadedFile
-
+from django.utils import timezone
 from rest_framework.test import APITestCase
 
 
@@ -1296,6 +1295,188 @@ class CapstoneDeliverablesApiTests(APITestCase):
         post_sub.refresh_from_db()
         self.assertEqual(post_sub.status, DeliverableSubmission.STATUS_ACCEPTED)
         self.assertEqual(post_sub.reviewed_by, self.adviser)
+
+    def test_endorsed_stage_with_approved_team_status_keeps_post_deliverables_locked_until_defense_done(self):
+        from django.utils import timezone
+        from defense.stages.models import DefenseStage
+        from defense.scheduler.models import DefenseSchedule
+        from student_teams.services import mark_stage_ready, mark_stage_result
+        from grading.grades.models import TeamGrade
+
+        # Create next stage 'Project Proposal'
+        stage2, _ = DefenseStage.objects.get_or_create(
+            label='Project Proposal',
+            defaults={'display_order': 2, 'is_active': True},
+        )
+        stage2.deliverables.filter(deliverable_id='POST_D2').delete()
+        stage2.deliverables.create(
+            deliverable_id='POST_D2',
+            label='Project Paper Final',
+            deliverable_type='post',
+            required=True,
+        )
+
+        # Team previously passed Stage 1 (so team.status == 'Approved')
+        self.team.status = StudentTeam.STATUS_APPROVED
+        self.team.save(update_fields=['status', 'updated_at'])
+
+        # Adviser endorses team for Stage 2
+        mark_stage_ready(self.team, stage2, user=self.adviser)
+
+        # Retrieve deliverables for Stage 2
+        self.client.force_authenticate(user=self.student)
+        res = self.client.get('/api/repository/deliverables/', {'stage_label': 'Project Proposal'})
+        self.assertEqual(res.status_code, 200)
+
+        team_data = next(t for t in res.data['teams'] if t['id'] == self.team.id)
+        selected_stage = team_data['selected_stage']
+
+        # Post-defense deliverables MUST remain locked because defense for Stage 2 is not done
+        self.assertFalse(selected_stage['archive_unlocked'])
+        self.assertFalse(selected_stage['vault_unlocked'])
+        post_items = [d for d in selected_stage['deliverables'] if d['type'] == 'post']
+        self.assertTrue(all(d['locked'] for d in post_items))
+
+        # Attempting to upload post-defense deliverable before defense done must fail
+        upload_res = self.client.post(
+            '/api/repository/deliverables/upload/',
+            self.upload_payload(
+                deliverable_id='POST_D2',
+                stage_label='Project Proposal',
+                file_name='Chapter1-3.pdf',
+            ),
+            format='json',
+        )
+        self.assertEqual(upload_res.status_code, 400)
+        self.assertIn('Post-Defense submissions are locked until this defense is done.', upload_res.data['detail'])
+
+        # Now defense happens and is completed
+        DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=stage2,
+            scheduled_date=timezone.now().date(),
+            start_time='10:00:00',
+            room='Room 302',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+
+        # Post-defense deliverables should now be unlocked
+        res2 = self.client.get('/api/repository/deliverables/', {'stage_label': 'Project Proposal'})
+        team_data2 = next(t for t in res2.data['teams'] if t['id'] == self.team.id)
+        selected_stage2 = team_data2['selected_stage']
+        self.assertTrue(selected_stage2['archive_unlocked'])
+        self.assertTrue(selected_stage2['vault_unlocked'])
+
+    def test_endorsement_and_unendorse_flow(self):
+        StageDeliverable.objects.filter(defense_stage=self.stage).delete()
+        self.stage.deliverables.create(
+            deliverable_id='D1',
+            label='Concept Paper Draft',
+            deliverable_type='pre',
+            required=True,
+        )
+
+        # Student uploads pre-defense deliverable
+        self.client.force_authenticate(user=self.student)
+        self.client.post(
+            '/api/repository/deliverables/upload/',
+            self.upload_payload(
+                deliverable_id='D1',
+                stage_label='Concept Proposal',
+                file_name='Manuscript_Draft.pdf',
+            ),
+            format='json',
+        )
+
+        # Faculty adviser accepts deliverable
+        self.client.force_authenticate(user=self.adviser)
+        accept_res = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D1',
+            'status': 'accepted',
+        })
+        self.assertEqual(accept_res.status_code, 200)
+
+        # Faculty adviser can still reject/change review before endorsement
+        reject_res = self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D1',
+            'status': 'rejected',
+            'feedback': 'Needs more details in Section 2',
+        })
+        self.assertEqual(reject_res.status_code, 200)
+
+        # Re-accept deliverable
+        self.client.post('/api/repository/deliverables/review/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+            'deliverable_id': 'D1',
+            'status': 'accepted',
+        })
+
+        # Endorse team
+        endorse_res = self.client.post('/api/repository/deliverables/endorse/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+        self.assertEqual(endorse_res.status_code, 200)
+
+        team_info = next(t for t in endorse_res.data['teams'] if t['id'] == self.team.id)
+        selected_stg = team_info['selected_stage']
+        self.assertTrue(selected_stg['endorsed'])
+        self.assertTrue(selected_stg['can_cancel_endorsement'])
+        self.assertFalse(selected_stg['can_faculty_review_pre'])
+
+        # Students cannot cancel endorsement
+        self.client.force_authenticate(user=self.student)
+        stud_unendorse = self.client.post('/api/repository/deliverables/unendorse/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+        self.assertEqual(stud_unendorse.status_code, 403)
+
+        # Faculty adviser cancels endorsement
+        self.client.force_authenticate(user=self.adviser)
+        unendorse_res = self.client.post('/api/repository/deliverables/unendorse/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+        self.assertEqual(unendorse_res.status_code, 200)
+
+        team_info_unend = next(t for t in unendorse_res.data['teams'] if t['id'] == self.team.id)
+        selected_stg_unend = team_info_unend['selected_stage']
+        self.assertFalse(selected_stg_unend['endorsed'])
+        self.assertTrue(selected_stg_unend['can_faculty_review_pre'])
+
+        # Re-endorse and create a defense schedule
+        self.client.post('/api/repository/deliverables/endorse/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+
+        DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=self.team,
+            defense_stage=self.stage,
+            scheduled_date=timezone.now().date(),
+            start_time='14:00:00',
+            room='Room 101',
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        )
+
+        # Cancelling endorsement should now be blocked because defense is scheduled
+        blocked_unendorse = self.client.post('/api/repository/deliverables/unendorse/', {
+            'team_id': self.team.id,
+            'stage_label': 'Concept Proposal',
+        })
+        self.assertEqual(blocked_unendorse.status_code, 400)
+        self.assertIn('already scheduled', blocked_unendorse.data['detail'])
+
 
 
 

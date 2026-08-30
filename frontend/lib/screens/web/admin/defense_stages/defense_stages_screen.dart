@@ -7,9 +7,11 @@ import '../../../../services/defense_stages_provider.dart';
 import '../../../../services/academic_period_provider.dart';
 import '../../../../services/rubric_engine_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import 'defense_stage_editor_screen.dart';
+import 'widgets/pipeline_position_selector.dart';
 import '../widgets/defensys_admin_shell.dart';
 
 class DefenseStagesScreen extends ConsumerStatefulWidget {
@@ -213,164 +215,117 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final published = _count(state, 'active');
     final locked = state.stages.where((s) => _stageStatus(s) == 'locked').length;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final isCompact = constraints.maxWidth < 800;
-
-        final cards = [
-          _statTile(
-            title: 'Total Academic Stages',
-            value: '$total',
-            subtitle: 'Configured in master pipeline',
-            icon: Icons.layers_outlined,
-            accentColor: AppColors.maroon,
-          ),
-          _statTile(
-            title: 'Published & Active',
-            value: '$published / $total',
-            subtitle: 'Available for scheduler configuration',
-            icon: Icons.check_circle_outline_rounded,
-            accentColor: const Color(0xFF10B981),
-            badgeText: published > 0 ? 'Scheduler Active' : 'Draft Phase',
-            badgeColor: const Color(0xFFECFDF5),
-            badgeTextColor: const Color(0xFF047857),
-          ),
-          _statTile(
-            title: 'Locked Defenses',
-            value: '$locked',
-            subtitle: 'Read-only stages with active defenses',
-            icon: Icons.lock_clock_outlined,
-            accentColor: const Color(0xFF64748B),
-            badgeText: locked > 0 ? 'Protected' : 'Unlocked',
-            badgeColor: const Color(0xFFF1F5F9),
-            badgeTextColor: const Color(0xFF475569),
-          ),
-        ];
-
-        if (isCompact) {
-          return Column(
-            children: cards
-                .map((c) => Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: c,
-                    ))
-                .toList(),
-          );
-        }
-
-        return Row(
-          children: [
-            Expanded(child: cards[0]),
-            const SizedBox(width: 12),
-            Expanded(child: cards[1]),
-            const SizedBox(width: 12),
-            Expanded(child: cards[2]),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _statTile({
-    required String title,
-    required String value,
-    required String subtitle,
-    required IconData icon,
-    required Color accentColor,
-    String? badgeText,
-    Color? badgeColor,
-    Color? badgeTextColor,
-  }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x04000000),
+            color: Color(0x03000000),
             blurRadius: 6,
-            offset: Offset(0, 2),
+            offset: Offset(0, 1),
           ),
         ],
       ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isCompact = constraints.maxWidth < 740;
+
+          final item1 = _executiveStatItem(
+            icon: Icons.account_tree_outlined,
+            iconColor: AppColors.maroon,
+            value: '$total',
+            label: 'Total Academic Stages',
+          );
+
+          final item2 = _executiveStatItem(
+            icon: Icons.check_circle_outline_rounded,
+            iconColor: const Color(0xFF10B981),
+            value: '$published',
+            label: 'Published & Active',
+          );
+
+          final item3 = _executiveStatItem(
+            icon: Icons.task_alt_rounded,
+            iconColor: const Color(0xFF2563EB),
+            value: '$locked',
+            label: 'Completed Stages',
+          );
+
+          if (isCompact) {
+            return Column(
+              children: [
+                item1,
+                const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                item2,
+                const Divider(height: 16, color: Color(0xFFF1F5F9)),
+                item3,
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              Expanded(child: item1),
+              Container(width: 1, height: 34, color: const Color(0xFFE2E8F0)),
+              Expanded(child: item2),
+              Container(width: 1, height: 34, color: const Color(0xFFE2E8F0)),
+              Expanded(child: item3),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _executiveStatItem({
+    required IconData icon,
+    required Color iconColor,
+    required String value,
+    required String label,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: 38,
-            height: 38,
+            width: 36,
+            height: 36,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: accentColor.withValues(alpha: 0.1),
+              color: iconColor.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(8),
             ),
-            child: Icon(icon, color: accentColor, size: 19),
+            child: Icon(icon, color: iconColor, size: 18),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
-              mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      value,
-                      style: const TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.4,
-                        height: 1.1,
-                      ),
-                    ),
-                    if (badgeText != null)
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 7,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: badgeColor ?? const Color(0xFFF1F5F9),
-                          borderRadius: BorderRadius.circular(999),
-                          border: Border.all(
-                            color: accentColor.withValues(alpha: 0.2),
-                          ),
-                        ),
-                        child: Text(
-                          badgeText,
-                          style: TextStyle(
-                            color: badgeTextColor ?? AppColors.textSecondary,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                  ],
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                    height: 1.1,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
-                  title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    height: 1.15,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  subtitle,
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: AppColors.textSecondary,
-                    fontSize: 11,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
                     height: 1.15,
                   ),
                 ),
@@ -385,123 +340,119 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   Widget _buildLifecycleLegend(DefenseStagesState state) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
       decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x03000000),
-            blurRadius: 4,
-            offset: Offset(0, 1),
-          ),
-        ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: const [
-              Icon(Icons.alt_route_rounded, size: 15, color: AppColors.maroon),
-              SizedBox(width: 6),
-              Text(
-                'Stage Lifecycle & Governance Rules',
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isMobile = constraints.maxWidth < 760;
+
+          final badge1 = _lifecycleInlineBadge(
+            step: '1',
+            name: 'Draft',
+            hint: 'Configure rubrics & files',
+            color: const Color(0xFFF59E0B),
+            bgColor: const Color(0xFFFFFBEB),
+          );
+
+          final badge2 = _lifecycleInlineBadge(
+            step: '2',
+            name: 'Published',
+            hint: 'Active in defense scheduler',
+            color: const Color(0xFF10B981),
+            bgColor: const Color(0xFFECFDF5),
+          );
+
+          final badge3 = _lifecycleInlineBadge(
+            step: '3',
+            name: 'Completed',
+            hint: 'Finalized with scheduled defenses',
+            color: const Color(0xFF2563EB),
+            bgColor: const Color(0xFFEFF6FF),
+          );
+
+          if (isMobile) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: const [
+                    Icon(Icons.alt_route_rounded, size: 14, color: AppColors.maroon),
+                    SizedBox(width: 6),
+                    Text(
+                      'Stage Cycle',
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [badge1, badge2, badge3],
+                ),
+              ],
+            );
+          }
+
+          return Row(
+            children: [
+              const Icon(Icons.alt_route_rounded, size: 14, color: AppColors.maroon),
+              const SizedBox(width: 6),
+              const Text(
+                'Stage Cycle: ',
                 style: TextStyle(
                   color: AppColors.textPrimary,
-                  fontSize: 12.5,
+                  fontSize: 11.5,
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              const SizedBox(width: 8),
+              badge1,
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward_rounded, size: 12, color: Color(0xFF94A3B8)),
+              ),
+              badge2,
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 6),
+                child: Icon(Icons.arrow_forward_rounded, size: 12, color: Color(0xFF94A3B8)),
+              ),
+              badge3,
             ],
-          ),
-          const SizedBox(height: 8),
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isMobile = constraints.maxWidth < 650;
-
-              final steps = [
-                _lifecycleStepPill(
-                  step: '1',
-                  label: 'Draft Stage',
-                  description: 'Configure deliverables & rubrics',
-                  color: const Color(0xFFF59E0B),
-                  bgColor: const Color(0xFFFFFBEB),
-                  borderColor: const Color(0xFFFDE68A),
-                ),
-                _lifecycleStepPill(
-                  step: '2',
-                  label: 'Published Stage',
-                  description: 'Active for defense scheduler',
-                  color: const Color(0xFF10B981),
-                  bgColor: const Color(0xFFECFDF5),
-                  borderColor: const Color(0xFFA7F3D0),
-                ),
-                _lifecycleStepPill(
-                  step: '3',
-                  label: 'Locked Stage',
-                  description: 'Read-only once defenses scheduled',
-                  color: const Color(0xFF64748B),
-                  bgColor: const Color(0xFFF1F5F9),
-                  borderColor: const Color(0xFFCBD5E1),
-                ),
-              ];
-
-              if (isMobile) {
-                return Column(
-                  children: steps
-                      .map((s) => Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: s,
-                          ))
-                      .toList(),
-                );
-              }
-
-              return Row(
-                children: [
-                  Expanded(child: steps[0]),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(Icons.arrow_forward_rounded,
-                        size: 14, color: Color(0xFF94A3B8)),
-                  ),
-                  Expanded(child: steps[1]),
-                  const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 6),
-                    child: Icon(Icons.arrow_forward_rounded,
-                        size: 14, color: Color(0xFF94A3B8)),
-                  ),
-                  Expanded(child: steps[2]),
-                ],
-              );
-            },
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  Widget _lifecycleStepPill({
+  Widget _lifecycleInlineBadge({
     required String step,
-    required String label,
-    required String description,
+    required String name,
+    required String hint,
     required Color color,
     required Color bgColor,
-    required Color borderColor,
   }) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: bgColor,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: borderColor),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: color.withValues(alpha: 0.3)),
       ),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: [
           Container(
-            width: 18,
-            height: 18,
+            width: 15,
+            height: 15,
             alignment: Alignment.center,
             decoration: BoxDecoration(
               color: color,
@@ -511,38 +462,26 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               step,
               style: const TextStyle(
                 color: Colors.white,
-                fontSize: 10,
+                fontSize: 9,
                 fontWeight: FontWeight.w900,
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  label,
-                  style: TextStyle(
-                    color: color == const Color(0xFF64748B)
-                        ? AppColors.textPrimary
-                        : color,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                Text(
-                  description,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 10.5,
-                    height: 1.15,
-                  ),
-                ),
-              ],
+          const SizedBox(width: 5),
+          Text(
+            name,
+            style: TextStyle(
+              color: color == const Color(0xFF64748B) ? AppColors.textPrimary : color,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 4),
+          Text(
+            '($hint)',
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 10,
             ),
           ),
         ],
@@ -590,7 +529,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                       ),
                       SizedBox(height: 2),
                       Text(
-                        'Sequential progression of defense milestones',
+                        'Sequential progression of defense milestones & milestone requirements',
                         style: TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
@@ -697,45 +636,407 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }
 
   Widget _buildStagePipelineView(DefenseStagesState state) {
+    final totalStages = state.stages.length;
+
     return Padding(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          for (var i = 0; i < state.stages.length; i++) ...[
-            _stagePipelineNodeCard(state, state.stages[i], i, state.stages.length),
-            if (i < state.stages.length - 1)
-              _pipelineConnectorLine(state.stages[i + 1]['label']?.toString() ?? ''),
+          for (var i = 0; i < totalStages; i++) ...[
+            Stack(
+              children: [
+                // 1. Continuous Timeline Rail Spine (spans full dynamic height of this stage)
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: 0,
+                  width: 36,
+                  child: CustomPaint(
+                    painter: _TimelineRailPainter(
+                      isFirst: i == 0,
+                      isLast: i == totalStages - 1,
+                      nodeTop: 14.0,
+                      nodeSize: 36.0,
+                    ),
+                  ),
+                ),
+                // 2. Stage Content Row
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Step Badge Node
+                    Padding(
+                      padding: const EdgeInsets.only(top: 14),
+                      child: _buildTimelineNode(state.stages[i], i, totalStages),
+                    ),
+                    const SizedBox(width: 14),
+                    // Stage Card + Bridge
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _stagePipelineNodeCard(state, state.stages[i], i, totalStages),
+                          if (i < totalStages - 1)
+                            _milestoneBridge(state.stages[i + 1]['label']?.toString() ?? ''),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
           ],
         ],
       ),
     );
   }
 
-  Widget _pipelineConnectorLine([String nextLabel = '']) {
+  Widget _buildTimelineNode(Map<String, dynamic> stage, int index, int totalStages) {
+    final status = _stageStatus(stage);
+    final isLocked = status == 'locked';
+    final isPublished = status == 'published';
+    final order = stage['display_order']?.toString() ?? '${index + 1}';
+
+    Color borderColor;
+    Color bgColor;
+    Color textColor;
+
+    if (isLocked) {
+      borderColor = const Color(0xFF60A5FA);
+      bgColor = const Color(0xFFEFF6FF);
+      textColor = const Color(0xFF1D4ED8);
+    } else if (isPublished) {
+      borderColor = const Color(0xFF10B981);
+      bgColor = const Color(0xFFECFDF5);
+      textColor = const Color(0xFF047857);
+    } else {
+      borderColor = const Color(0xFFF59E0B);
+      bgColor = const Color(0xFFFFFBEB);
+      textColor = const Color(0xFFB45309);
+    }
+
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 4),
-      height: 24,
-      child: Row(
-        children: [
-          const SizedBox(width: 38),
-          Container(
-            width: 2,
-            color: const Color(0xFFCBD5E1),
+      width: 36,
+      height: 36,
+      decoration: BoxDecoration(
+        color: bgColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: borderColor, width: 2),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x08000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
           ),
-          const SizedBox(width: 10),
-          const Icon(Icons.arrow_downward_rounded, size: 13, color: AppColors.maroon),
-          const SizedBox(width: 5),
-          Text(
-            nextLabel.isNotEmpty
-                ? 'Unlocks Next Academic Milestone: $nextLabel'
-                : 'Unlocks Next Academic Milestone',
-            style: const TextStyle(
-              color: AppColors.maroon,
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.1,
+        ],
+      ),
+      child: Center(
+        child: Text(
+          order.padLeft(2, '0'),
+          style: TextStyle(
+            color: textColor,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.2,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _milestoneBridge(String nextLabel) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 8, bottom: 8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3.5),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.arrow_downward_rounded, size: 12, color: AppColors.maroon),
+            const SizedBox(width: 5),
+            const Text(
+              'Unlocks Next Milestone: ',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+            Text(
+              nextLabel.isNotEmpty ? nextLabel : 'Next Stage',
+              style: const TextStyle(
+                color: AppColors.maroon,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _deliverableCategoryBadge({
+    required String label,
+    required int count,
+    required IconData icon,
+    required Color color,
+    required Color bgColor,
+    required Color borderColor,
+    String? tooltip,
+    bool compact = false,
+    VoidCallback? onTap,
+  }) {
+    final badgeWidget = InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(6),
+      child: Container(
+        padding: EdgeInsets.symmetric(
+          horizontal: compact ? 6 : 8,
+          vertical: compact ? 2 : 4,
+        ),
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(color: borderColor),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: compact ? 11 : 13, color: color),
+            const SizedBox(width: 4),
+            Text(
+              '$label: $count',
+              style: TextStyle(
+                fontSize: compact ? 10.5 : 11.5,
+                fontWeight: FontWeight.w800,
+                color: color,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
+    if (tooltip != null) {
+      return Tooltip(message: tooltip, child: badgeWidget);
+    }
+    return badgeWidget;
+  }
+
+  Widget _buildDeliverablesColumn({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    required Color headerBg,
+    required Color headerBorder,
+    required List<dynamic> deliverables,
+    required bool isPost,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Banner styled header matching Project Archive
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+            decoration: BoxDecoration(
+              color: headerBg,
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: headerBorder),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, size: 15, color: accentColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: headerBorder),
+                  ),
+                  child: Text(
+                    '${deliverables.length}',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w900,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
+          const SizedBox(height: 6),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2),
+            child: Text(
+              subtitle,
+              style: const TextStyle(
+                fontSize: 10.5,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          if (deliverables.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Text(
+                isPost
+                    ? 'No post-defense deliverables configured.'
+                    : 'No pre-defense deliverables configured.',
+                style: const TextStyle(
+                  fontSize: 11,
+                  color: Color(0xFF94A3B8),
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            )
+          else
+            Column(
+              children: deliverables.map<Widget>((item) {
+                final d = Map<String, dynamic>.from(item as Map);
+                final label = d['label']?.toString() ?? d['name']?.toString() ?? 'Deliverable';
+                final isReq = d['required'] == true;
+                final isRestricted = d['is_restricted'] == true;
+                final template = d['archive_file_template']?.toString() ?? '';
+
+                return Container(
+                  margin: const EdgeInsets.only(bottom: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x02000000),
+                        blurRadius: 3,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(
+                            isPost ? Icons.inventory_2_rounded : Icons.folder_open_rounded,
+                            size: 14,
+                            color: accentColor,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              label,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.textPrimary,
+                              ),
+                            ),
+                          ),
+                          if (isReq) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFFECACA)),
+                              ),
+                              child: const Text(
+                                'Required',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFB91C1C),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (isRestricted) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFFDE68A)),
+                              ),
+                              child: const Text(
+                                'Private Vault',
+                                style: TextStyle(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFF92400E),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      if (isPost && template.trim().isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            const Icon(Icons.code_rounded, size: 11, color: Color(0xFF94A3B8)),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                'Archive Pattern: $template',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontFamily: 'monospace',
+                                  color: Color(0xFF64748B),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ],
+                  ),
+                );
+              }).toList(),
+            ),
         ],
       ),
     );
@@ -748,30 +1049,33 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int totalStages,
   ) {
     final stageId = _asInt(stage['id']) ?? index;
-    final status = _stageStatus(stage);
-    final isPublished = status == 'published';
-    final isLocked = status == 'locked';
-    final order = stage['display_order']?.toString() ?? '${index + 1}';
     final isExpanded = _expandedStageIds.contains(stageId);
-
-    Color sideAccentColor;
-    if (isLocked) {
-      sideAccentColor = const Color(0xFF64748B);
-    } else if (isPublished) {
-      sideAccentColor = const Color(0xFF10B981);
-    } else {
-      sideAccentColor = const Color(0xFFF59E0B);
-    }
 
     final delivs = (stage['deliverables'] is List) ? (stage['deliverables'] as List) : [];
     final delivCount = delivs.length;
-    final preCount = delivs.where((d) => (d is Map) && (d['deliverable_type'] == 'pre' || d['type'] == 'pre')).length;
-    final postCount = delivs.where((d) => (d is Map) && (d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post')).length;
+    final preDeliverables = delivs
+        .where((d) => (d is Map) && (d['deliverable_type'] == 'pre' || d['type'] == 'pre'))
+        .toList();
+    final postDeliverables = delivs
+        .where((d) =>
+            (d is Map) &&
+            (d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post'))
+        .toList();
+    final preCount = preDeliverables.length;
+    final postCount = postDeliverables.length;
 
     final previousLabel = stage['previous_stage_label']?.toString();
-    final rubricName = stage['rubric_name']?.toString() ??
+    final description = stage['description']?.toString() ?? '';
+    final rubricInfo = (stage['rubric_info'] is Map)
+        ? (stage['rubric_info'] as Map)
+        : <String, dynamic>{};
+    final hasRubrics = rubricInfo['has_rubrics'] == true ||
+        (stage['rubric_name'] != null && stage['rubric_name'].toString().trim().isNotEmpty) ||
+        (stage['rubric'] is Map && stage['rubric']['name'] != null);
+    final rubricName = rubricInfo['summary']?.toString() ??
+        stage['rubric_name']?.toString() ??
         (stage['rubric'] is Map ? stage['rubric']['name']?.toString() : null) ??
-        'Evaluation Rubric Attached';
+        'None attached';
 
     return Container(
       width: double.infinity,
@@ -782,280 +1086,283 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         boxShadow: const [
           BoxShadow(
             color: Color(0x04000000),
-            blurRadius: 8,
+            blurRadius: 6,
             offset: Offset(0, 2),
           ),
         ],
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(10),
-        child: IntrinsicHeight(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Container(
-                width: 5,
-                color: sideAccentColor,
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header Row
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 32,
-                            height: 32,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: sideAccentColor.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: sideAccentColor.withValues(alpha: 0.3)),
-                            ),
-                            child: Text(
-                              order.padLeft(2, '0'),
-                              style: TextStyle(
-                                color: sideAccentColor,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: [
-                                    Text(
-                                      stage['label']?.toString() ?? 'Stage',
-                                      style: const TextStyle(
-                                        color: AppColors.textPrimary,
-                                        fontSize: 15,
-                                        fontWeight: FontWeight.w900,
-                                        letterSpacing: -0.2,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    _codeTag(stage['code']?.toString() ?? ''),
-                                  ],
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  stage['description']?.toString() ??
-                                      'Academic defense milestone configuration.',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 12,
-                                    height: 1.25,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          _statusChip(stage),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      // Rubric Micro-card
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF8FAFC),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFFE2E8F0)),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.assignment_outlined, size: 13, color: AppColors.maroon),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Stage Rubric: ',
-                              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.textSecondary),
-                            ),
-                            Text(
-                              rubricName,
-                              style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w800, color: AppColors.textPrimary),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Deliverables Accordion Expander
-                      InkWell(
-                        onTap: () {
-                          setState(() {
-                            if (isExpanded) {
-                              _expandedStageIds.remove(stageId);
-                            } else {
-                              _expandedStageIds.add(stageId);
-                            }
-                          });
-                        },
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                          decoration: BoxDecoration(
-                            color: delivCount > 0 ? const Color(0xFFEFF6FF) : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(
-                              color: delivCount > 0 ? const Color(0xFFBFDBFE) : const Color(0xFFE2E8F0),
-                            ),
-                          ),
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Row(
-                                children: [
-                                  Icon(
-                                    Icons.folder_outlined,
-                                    size: 15,
-                                    color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textSecondary,
-                                  ),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    '$delivCount Deliverables Configured ($preCount Pre, $postCount Post)',
-                                    style: TextStyle(
-                                      fontSize: 11.5,
-                                      fontWeight: FontWeight.w700,
-                                      color: delivCount > 0 ? const Color(0xFF1D4ED8) : AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              Icon(
-                                isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                                size: 16,
-                                color: delivCount > 0 ? const Color(0xFF1D4ED8) : const Color(0xFF64748B),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                      if (isExpanded) ...[
-                        const SizedBox(height: 6),
-                        Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF1F5F9),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: delivs.isEmpty
-                              ? const Text(
-                                  'No deliverables configured for this stage.',
-                                  style: TextStyle(fontSize: 11, color: AppColors.textSecondary),
-                                )
-                              : Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: delivs.map<Widget>((item) {
-                                    final d = Map<String, dynamic>.from(item as Map);
-                                    final label = d['label']?.toString() ?? d['name']?.toString() ?? 'Deliverable';
-                                    final isPost = d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post';
-                                    final isReq = d['required'] == true;
-                                    final isRestricted = d['is_restricted'] == true;
-
-                                    return Padding(
-                                      padding: const EdgeInsets.only(bottom: 4),
-                                      child: Row(
-                                        children: [
-                                          Icon(
-                                            isPost ? Icons.archive_outlined : Icons.description_outlined,
-                                            size: 12,
-                                            color: isPost ? const Color(0xFF6366F1) : AppColors.maroon,
-                                          ),
-                                          const SizedBox(width: 5),
-                                          Expanded(
-                                            child: Text(
-                                              label,
-                                              style: const TextStyle(
-                                                fontSize: 11,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.textPrimary,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          if (isReq)
-                                            Container(
-                                              margin: const EdgeInsets.only(left: 4),
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFFEE2E2),
-                                                borderRadius: BorderRadius.circular(3),
-                                              ),
-                                              child: const Text(
-                                                'Req',
-                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: AppColors.maroon),
-                                              ),
-                                            ),
-                                          if (isRestricted)
-                                            Container(
-                                              margin: const EdgeInsets.only(left: 4),
-                                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFFEF3C7),
-                                                borderRadius: BorderRadius.circular(3),
-                                              ),
-                                              child: const Text(
-                                                'Private Archive',
-                                                style: TextStyle(fontSize: 9, fontWeight: FontWeight.w800, color: Color(0xFF92400E)),
-                                              ),
-                                            ),
-                                        ],
-                                      ),
-                                    );
-                                  }).toList(),
-                                ),
-                        ),
-                      ],
-                      const SizedBox(height: 10),
-                      const Divider(height: 1, color: Color(0xFFF1F5F9)),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF8FAFC),
-                              borderRadius: BorderRadius.circular(6),
-                              border: Border.all(color: const Color(0xFFE2E8F0)),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.turn_right_rounded, size: 13, color: AppColors.textSecondary),
-                                const SizedBox(width: 4),
-                                Text(
-                                  previousLabel == null || previousLabel.isEmpty
-                                      ? 'Sequence Start'
-                                      : 'Prerequisite: $previousLabel',
-                                  style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Spacer(),
-                          _buildStageActions(state, stage, index, totalStages),
-                        ],
-                      ),
-                    ],
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header Row: Title, Code, Status, and Action Buttons
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Text(
+                  stage['label']?.toString() ?? 'Stage',
+                  style: const TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
                   ),
                 ),
+                const SizedBox(width: 8),
+                _codeTag(stage['code']?.toString() ?? ''),
+                const SizedBox(width: 8),
+                _statusChip(stage),
+                const Spacer(),
+                _buildStageActions(state, stage, index, totalStages),
+              ],
+            ),
+            // Subtitle & Prerequisite Row
+            if (description.isNotEmpty || (previousLabel != null && previousLabel.isNotEmpty) || index == 0) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  if (description.isNotEmpty)
+                    Expanded(
+                      child: Text(
+                        description,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          height: 1.25,
+                        ),
+                      ),
+                    ),
+                  if (previousLabel != null && previousLabel.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.turn_right_rounded, size: 12, color: AppColors.textSecondary),
+                          const SizedBox(width: 3),
+                          Text(
+                            'Prerequisite: $previousLabel',
+                            style: const TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ] else if (index == 0) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(5),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: const [
+                          Icon(Icons.flag_outlined, size: 11, color: AppColors.textSecondary),
+                          SizedBox(width: 3),
+                          Text(
+                            'Sequence Start',
+                            style: TextStyle(
+                              color: AppColors.textSecondary,
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ],
-          ),
+            const SizedBox(height: 10),
+            // Configuration Strip: Rubric + Explicit Deliverables Section + Expand Button
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  // 1. Rubric Section
+                  Icon(
+                    hasRubrics ? Icons.assignment_turned_in_rounded : Icons.assignment_outlined,
+                    size: 13.5,
+                    color: hasRubrics ? AppColors.maroon : const Color(0xFF94A3B8),
+                  ),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'Rubric: ',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                  ),
+                  Flexible(
+                    child: Text(
+                      hasRubrics ? rubricName : 'None attached',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: hasRubrics ? FontWeight.w800 : FontWeight.w500,
+                        color: hasRubrics ? AppColors.textPrimary : const Color(0xFF64748B),
+                        fontStyle: hasRubrics ? FontStyle.normal : FontStyle.italic,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Container(width: 1, height: 16, color: const Color(0xFFCBD5E1)),
+                  const SizedBox(width: 12),
+                  // 2. Deliverables Section
+                  const Icon(Icons.inventory_2_outlined, size: 13.5, color: Color(0xFF475569)),
+                  const SizedBox(width: 5),
+                  const Text(
+                    'Deliverables: ',
+                    style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: AppColors.textSecondary),
+                  ),
+                  const SizedBox(width: 2),
+                  // Pre-Defense Deliverables Pill (Blue)
+                  _deliverableCategoryBadge(
+                    label: 'Pre-defense',
+                    count: preCount,
+                    icon: Icons.folder_open_rounded,
+                    color: const Color(0xFF2563EB),
+                    bgColor: const Color(0xFFEFF6FF),
+                    borderColor: const Color(0xFFBFDBFE),
+                    tooltip: 'Gatekeeper submissions required before defense scheduling',
+                    onTap: () {
+                      setState(() {
+                        if (_expandedStageIds.contains(stageId)) {
+                          _expandedStageIds.remove(stageId);
+                        } else {
+                          _expandedStageIds.add(stageId);
+                        }
+                      });
+                    },
+                  ),
+                  const SizedBox(width: 6),
+                  // Post-Defense Deliverables Pill (Maroon)
+                  _deliverableCategoryBadge(
+                    label: 'Post-defense',
+                    count: postCount,
+                    icon: Icons.inventory_2_rounded,
+                    color: AppColors.maroon,
+                    bgColor: const Color(0xFFFFF1F2),
+                    borderColor: const Color(0xFFFECDD3),
+                    tooltip: 'Final revisions & post-defense deliverables required after defense',
+                    onTap: () {
+                      setState(() {
+                        if (_expandedStageIds.contains(stageId)) {
+                          _expandedStageIds.remove(stageId);
+                        } else {
+                          _expandedStageIds.add(stageId);
+                        }
+                      });
+                    },
+                  ),
+                  const Spacer(),
+                  // Expand / Collapse Chevron Button
+                  InkWell(
+                    onTap: () {
+                      setState(() {
+                        if (_expandedStageIds.contains(stageId)) {
+                          _expandedStageIds.remove(stageId);
+                        } else {
+                          _expandedStageIds.add(stageId);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            isExpanded ? 'Hide Deliverables' : 'View Deliverables ($delivCount)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              color: isExpanded ? AppColors.maroon : AppColors.textSecondary,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            isExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 16,
+                            color: isExpanded ? AppColors.maroon : AppColors.textSecondary,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Expanded 2-Column Pre-Defense vs Post-Defense Section
+            if (isExpanded) ...[
+              const SizedBox(height: 12),
+              Builder(
+                builder: (context) {
+                  final isMobile = MediaQuery.sizeOf(context).width < 800;
+                  final leftCol = _buildDeliverablesColumn(
+                    title: 'Pre-defense deliverables',
+                    subtitle: 'Required submissions before defense schedule',
+                    icon: Icons.folder_open_rounded,
+                    accentColor: const Color(0xFF2563EB),
+                    headerBg: const Color(0xFFEFF6FF),
+                    headerBorder: const Color(0xFFBFDBFE),
+                    deliverables: preDeliverables,
+                    isPost: false,
+                  );
+
+                  final rightCol = _buildDeliverablesColumn(
+                    title: 'Post-defense deliverables',
+                    subtitle: 'Required outcomes after defense for completion & archive',
+                    icon: Icons.inventory_2_rounded,
+                    accentColor: AppColors.maroon,
+                    headerBg: const Color(0xFFFFF1F2),
+                    headerBorder: const Color(0xFFFECDD3),
+                    deliverables: postDeliverables,
+                    isPost: true,
+                  );
+
+                  if (isMobile) {
+                    return Column(
+                      children: [
+                        leftCol,
+                        const SizedBox(height: 10),
+                        rightCol,
+                      ],
+                    );
+                  }
+
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(child: leftCol),
+                      const SizedBox(width: 12),
+                      Expanded(child: rightCol),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ],
         ),
       ),
     );
@@ -1094,7 +1401,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
   Widget _stageTableHeaderRow() {
     return Container(
-      height: 50,
+      height: 48,
       decoration: BoxDecoration(
         color: const Color(0xFFF0F1F4),
         borderRadius: BorderRadius.circular(6),
@@ -1103,13 +1410,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageThFixed('ORDER', 80, maxLines: 1),
-          Expanded(flex: 24, child: _stageTh('STAGE NAME & CODE')),
-          Expanded(flex: 18, child: _stageTh('PREREQUISITE')),
-          Expanded(flex: 20, child: _stageTh('RUBRIC')),
-          _stageThFixed('DELIVERABLES', 120),
-          _stageThFixed('STATUS', 120),
-          _stageThFixed('ACTIONS', 220),
+          _stageThFixed('ORDER', 65, maxLines: 1),
+          Expanded(flex: 22, child: _stageTh('STAGE NAME & CODE')),
+          Expanded(flex: 16, child: _stageTh('PREREQUISITE')),
+          Expanded(flex: 18, child: _stageTh('EVALUATION RUBRIC')),
+          _stageThFixed('DELIVERABLES', 170),
+          _stageThFixed('STATUS', 130),
+          _stageThFixed('ACTIONS', 115),
         ],
       ),
     );
@@ -1160,12 +1467,28 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int index,
   ) {
     final zebra = index.isOdd;
-    final rubricName = stage['rubric_name']?.toString() ??
+    final delivs = (stage['deliverables'] is List) ? (stage['deliverables'] as List) : [];
+    final preCount = delivs
+        .where((d) => (d is Map) && (d['deliverable_type'] == 'pre' || d['type'] == 'pre'))
+        .length;
+    final postCount = delivs
+        .where((d) =>
+            (d is Map) &&
+            (d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post'))
+        .length;
+    final rubricInfo = (stage['rubric_info'] is Map)
+        ? (stage['rubric_info'] as Map)
+        : <String, dynamic>{};
+    final hasRubrics = rubricInfo['has_rubrics'] == true ||
+        (stage['rubric_name'] != null && stage['rubric_name'].toString().trim().isNotEmpty) ||
+        (stage['rubric'] is Map && stage['rubric']['name'] != null);
+    final rubricName = rubricInfo['summary']?.toString() ??
+        stage['rubric_name']?.toString() ??
         (stage['rubric'] is Map ? stage['rubric']['name']?.toString() : null) ??
-        'Attached';
+        'None attached';
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 58),
+      constraints: const BoxConstraints(minHeight: 56),
       decoration: BoxDecoration(
         color: zebra ? const Color(0xFFFAFAFA) : Colors.white,
         border: index > 0
@@ -1175,49 +1498,89 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _stageTdFixed(80, _orderTableBadge(stage['display_order'])),
+          _stageTdFixed(65, _orderTableBadge(stage['display_order'])),
           Expanded(
-            flex: 24,
+            flex: 22,
             child: _stageTd(
               Row(
                 children: [
                   Expanded(child: _stageNameCell(stage)),
-                  const SizedBox(width: 6),
+                  const SizedBox(width: 8),
                   _codeTag(stage['code']?.toString() ?? ''),
                 ],
               ),
             ),
           ),
           Expanded(
-            flex: 18,
+            flex: 16,
             child: _stageTd(_previousStageCell(stage)),
           ),
           Expanded(
-            flex: 20,
+            flex: 18,
             child: _stageTd(
-              Text(
-                rubricName,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: AppColors.textPrimary),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      hasRubrics ? Icons.assignment_turned_in_rounded : Icons.assignment_outlined,
+                      size: 13,
+                      color: hasRubrics ? AppColors.maroon : const Color(0xFF94A3B8),
+                    ),
+                    const SizedBox(width: 5),
+                    Flexible(
+                      child: Text(
+                        hasRubrics ? rubricName : 'None attached',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: hasRubrics ? FontWeight.w700 : FontWeight.w500,
+                          color: hasRubrics ? AppColors.textPrimary : const Color(0xFF64748B),
+                          fontStyle: hasRubrics ? FontStyle.normal : FontStyle.italic,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
           _stageTdFixed(
-            120,
-            Text(
-              '${_deliverablesCount(stage)} attached',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 12.5,
-                fontWeight: FontWeight.w700,
-              ),
+            170,
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _deliverableCategoryBadge(
+                  label: 'Pre',
+                  count: preCount,
+                  icon: Icons.folder_open_rounded,
+                  color: const Color(0xFF2563EB),
+                  bgColor: const Color(0xFFEFF6FF),
+                  borderColor: const Color(0xFFBFDBFE),
+                  compact: true,
+                ),
+                const SizedBox(width: 4),
+                _deliverableCategoryBadge(
+                  label: 'Post',
+                  count: postCount,
+                  icon: Icons.inventory_2_rounded,
+                  color: AppColors.maroon,
+                  bgColor: const Color(0xFFFFF1F2),
+                  borderColor: const Color(0xFFFECDD3),
+                  compact: true,
+                ),
+              ],
             ),
           ),
-          _stageTdFixed(120, _statusChip(stage)),
-          _stageTdFixedActions(220, _buildStageActions(state, stage, index, state.stages.length)),
+          _stageTdFixed(130, _statusChip(stage)),
+          _stageTdFixedActions(115, _buildStageActions(state, stage, index, state.stages.length)),
         ],
       ),
     );
@@ -1252,20 +1615,22 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }
 
   Widget _orderTableBadge(dynamic value) {
+    final text = value?.toString() ?? '';
+    final formatted = text.length == 1 ? '0$text' : text;
     return Container(
-      width: 30,
-      height: 30,
+      width: 28,
+      height: 28,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: const Color(0xFFF3F4F6),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: _tableLine),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Text(
-        value?.toString() ?? '',
+        formatted,
         style: const TextStyle(
           fontWeight: FontWeight.w800,
-          fontSize: 12,
+          fontSize: 11.5,
           color: AppColors.textPrimary,
         ),
       ),
@@ -1277,48 +1642,83 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       padding: const EdgeInsets.all(16),
       child: Column(
         children: [
-          for (int i = 0; i < state.stages.length; i++)
-            Container(
-              width: double.infinity,
-              margin: const EdgeInsets.only(bottom: 12),
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFCFCFE),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: const Color(0xFFE6E8EF)),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      _orderTableBadge(state.stages[i]['display_order']),
-                      const SizedBox(width: 12),
-                      Expanded(child: _stageNameCell(state.stages[i])),
-                      _statusChip(state.stages[i]),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      _codeTag(state.stages[i]['code']?.toString() ?? ''),
-                      _softChip(
-                        '${_deliverablesCount(state.stages[i])} deliverables',
-                        const Color(0xFFF8FAFC),
-                        AppColors.textPrimary,
-                        const Color(0xFFD7DDE8),
+          for (int i = 0; i < state.stages.length; i++) ...[
+            Builder(
+              builder: (context) {
+                final stage = state.stages[i];
+                final delivs = (stage['deliverables'] is List) ? (stage['deliverables'] as List) : [];
+                final preCount = delivs
+                    .where((d) => (d is Map) && (d['deliverable_type'] == 'pre' || d['type'] == 'pre'))
+                    .length;
+                final postCount = delivs
+                    .where((d) =>
+                        (d is Map) &&
+                        (d['deliverable_type'] == 'post' || d['deliverable_type'] == 'vault' || d['type'] == 'post'))
+                    .length;
+
+                return Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Color(0x04000000),
+                        blurRadius: 6,
+                        offset: Offset(0, 2),
                       ),
                     ],
                   ),
-                  const SizedBox(height: 12),
-                  _previousStageCell(state.stages[i]),
-                  const SizedBox(height: 12),
-                  _buildStageActions(state, state.stages[i], i, state.stages.length),
-                ],
-              ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          _orderTableBadge(stage['display_order']),
+                          const SizedBox(width: 12),
+                          Expanded(child: _stageNameCell(stage)),
+                          _statusChip(stage),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          _codeTag(stage['code']?.toString() ?? ''),
+                          _deliverableCategoryBadge(
+                            label: 'Pre-defense',
+                            count: preCount,
+                            icon: Icons.folder_open_rounded,
+                            color: const Color(0xFF2563EB),
+                            bgColor: const Color(0xFFEFF6FF),
+                            borderColor: const Color(0xFFBFDBFE),
+                            compact: true,
+                          ),
+                          _deliverableCategoryBadge(
+                            label: 'Post-defense',
+                            count: postCount,
+                            icon: Icons.inventory_2_rounded,
+                            color: AppColors.maroon,
+                            bgColor: const Color(0xFFFFF1F2),
+                            borderColor: const Color(0xFFFECDD3),
+                            compact: true,
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      _previousStageCell(stage),
+                      const SizedBox(height: 10),
+                      _buildStageActions(state, stage, i, state.stages.length),
+                    ],
+                  ),
+                );
+              },
             ),
+          ],
         ],
       ),
     );
@@ -1335,21 +1735,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
             color: AppColors.textPrimary,
-            fontSize: 14,
+            fontSize: 13.5,
             fontWeight: FontWeight.w900,
           ),
         ),
-        const SizedBox(height: 4),
-        Text(
-          stage['description']?.toString() ?? 'Defense stage master entry.',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 12,
-            height: 1.25,
+        if (stage['description']?.toString().isNotEmpty == true) ...[
+          const SizedBox(height: 2),
+          Text(
+            stage['description'].toString(),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: AppColors.textSecondary,
+              fontSize: 11,
+              height: 1.2,
+            ),
           ),
-        ),
+        ],
       ],
     );
   }
@@ -1358,41 +1760,183 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final previous = stage['previous_stage_label']?.toString();
 
     if (previous == null || previous.isEmpty) {
-      return const Text(
-        'Start stage',
-        style: TextStyle(
-          color: AppColors.textSecondary,
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF1F5F9),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.flag_outlined, size: 11, color: Color(0xFF64748B)),
+            SizedBox(width: 4),
+            Text(
+              'Initial Stage',
+              style: TextStyle(
+                color: Color(0xFF64748B),
+                fontSize: 10.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
         ),
       );
     }
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      crossAxisAlignment: CrossAxisAlignment.start,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Text(
-          previous,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textPrimary,
-            fontSize: 13,
-            fontWeight: FontWeight.w800,
-          ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          stage['previous_stage_code']?.toString() ?? '',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: AppColors.textSecondary,
-            fontSize: 11.5,
+        const Icon(Icons.subdirectory_arrow_right_rounded, size: 14, color: Color(0xFF94A3B8)),
+        const SizedBox(width: 4),
+        Flexible(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                previous,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              if (stage['previous_stage_code']?.toString().isNotEmpty == true) ...[
+                const SizedBox(height: 1),
+                Text(
+                  stage['previous_stage_code'].toString(),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontFamily: 'monospace',
+                    color: Color(0xFF64748B),
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ],
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildMoreActionsMenu({
+    required DefenseStagesState state,
+    required Map<String, dynamic> stage,
+    required int? stageId,
+    required bool locked,
+    required bool published,
+  }) {
+    return Theme(
+      data: Theme.of(context).copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          elevation: 6,
+          shadowColor: Colors.black.withValues(alpha: 0.1),
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: 'More actions',
+        icon: Container(
+          width: 32,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: const Icon(
+            Icons.more_horiz_rounded,
+            size: 17,
+            color: AppColors.textPrimary,
+          ),
+        ),
+        padding: EdgeInsets.zero,
+        offset: const Offset(0, 36),
+        onSelected: (value) {
+          if (stageId == null) return;
+          switch (value) {
+            case 'view':
+            case 'edit':
+              _openStageEditor(stage);
+              break;
+            case 'publish':
+              ref.read(defenseStagesProvider.notifier).updateStage(stageId, {
+                'label': stage['label'],
+                'display_order': stage['display_order'],
+                'description': stage['description'] ?? '',
+                'is_active': true,
+              });
+              break;
+            case 'delete':
+              _confirmDelete(stageId, stage['label']?.toString() ?? 'stage');
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          if (locked)
+            const PopupMenuItem<String>(
+              value: 'view',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF2563EB)),
+                  SizedBox(width: 9),
+                  Text('View Details', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                ],
+              ),
+            )
+          else ...[
+            const PopupMenuItem<String>(
+              value: 'edit',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.edit_outlined, size: 15, color: AppColors.textPrimary),
+                  SizedBox(width: 9),
+                  Text('Edit Configuration', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
+                ],
+              ),
+            ),
+            if (!published)
+              const PopupMenuItem<String>(
+                value: 'publish',
+                height: 36,
+                child: Row(
+                  children: [
+                    Icon(Icons.send_rounded, size: 15, color: Color(0xFF047857)),
+                    SizedBox(width: 9),
+                    Text('Publish', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: Color(0xFF047857))),
+                  ],
+                ),
+              ),
+            const PopupMenuDivider(height: 1),
+            const PopupMenuItem<String>(
+              value: 'delete',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.delete_outline_rounded, size: 15, color: AppColors.danger),
+                  SizedBox(width: 9),
+                  Text('Delete Stage', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.danger)),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1403,20 +1947,52 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int totalStages,
   ) {
     final stageId = _asInt(stage['id']);
+    if (stageId == null) return const SizedBox.shrink();
+
     final status = _stageStatus(stage);
     final locked = status == 'locked';
     final published = status == 'published';
 
-    return Wrap(
-      spacing: 6,
-      runSpacing: 6,
-      crossAxisAlignment: WrapCrossAlignment.center,
+    final prevStage = index > 0 ? state.stages[index - 1] : null;
+    final prevIsLocked = prevStage != null && _stageStatus(prevStage) == 'locked';
+    final nextStage = index < totalStages - 1 ? state.stages[index + 1] : null;
+    final nextIsLocked = nextStage != null && _stageStatus(nextStage) == 'locked';
+
+    final canMoveUp = index > 0 && !locked && !prevIsLocked && !state.isSaving;
+    final canMoveDown = index < totalStages - 1 && !locked && !nextIsLocked && !state.isSaving;
+
+    String upTooltip;
+    if (locked) {
+      upTooltip = 'Completed stages cannot be reordered';
+    } else if (prevIsLocked) {
+      upTooltip = 'Cannot move before completed milestone (${prevStage['label'] ?? "Completed Stage"})';
+    } else if (index == 0) {
+      upTooltip = 'Already at Start';
+    } else {
+      upTooltip = 'Move Up (▲)';
+    }
+
+    String downTooltip;
+    if (locked) {
+      downTooltip = 'Completed stages cannot be reordered';
+    } else if (nextIsLocked) {
+      downTooltip = 'Cannot move past completed milestone (${nextStage['label'] ?? "Completed Stage"})';
+    } else if (index >= totalStages - 1) {
+      downTooltip = 'Already at End';
+    } else {
+      downTooltip = 'Move Down (▼)';
+    }
+
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         // Reorder quick controls
-        if (totalStages > 1)
+        if (totalStages > 1) ...[
           Container(
+            height: 30,
             decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
+              color: locked ? const Color(0xFFF1F5F9) : const Color(0xFFF8FAFC),
               borderRadius: BorderRadius.circular(8),
               border: Border.all(color: const Color(0xFFE2E8F0)),
             ),
@@ -1424,15 +2000,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               mainAxisSize: MainAxisSize.min,
               children: [
                 IconButton(
-                  tooltip: index > 0 ? 'Move Up in Sequence (▲)' : 'Already at Start',
-                  icon: const Icon(Icons.arrow_upward_rounded, size: 14),
-                  color: index > 0 ? AppColors.textPrimary : const Color(0xFFCBD5E1),
+                  tooltip: upTooltip,
+                  icon: const Icon(Icons.arrow_upward_rounded, size: 13),
+                  color: canMoveUp ? AppColors.textPrimary : const Color(0xFFCBD5E1),
                   style: IconButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: index > 0 && !state.isSaving && stageId != null
+                  onPressed: canMoveUp
                       ? () => _confirmMoveStage(
                             stageId: stageId,
                             stageLabel: stage['label']?.toString() ?? 'Stage',
@@ -1448,15 +2024,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   color: const Color(0xFFE2E8F0),
                 ),
                 IconButton(
-                  tooltip: index < totalStages - 1 ? 'Move Down in Sequence (▼)' : 'Already at End',
-                  icon: const Icon(Icons.arrow_downward_rounded, size: 14),
-                  color: index < totalStages - 1 ? AppColors.textPrimary : const Color(0xFFCBD5E1),
+                  tooltip: downTooltip,
+                  icon: const Icon(Icons.arrow_downward_rounded, size: 13),
+                  color: canMoveDown ? AppColors.textPrimary : const Color(0xFFCBD5E1),
                   style: IconButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 7),
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
                     minimumSize: Size.zero,
                     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                   ),
-                  onPressed: index < totalStages - 1 && !state.isSaving && stageId != null
+                  onPressed: canMoveDown
                       ? () => _confirmMoveStage(
                             stageId: stageId,
                             stageLabel: stage['label']?.toString() ?? 'Stage',
@@ -1469,96 +2045,717 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ],
             ),
           ),
-        if (locked)
-          OutlinedButton.icon(
-            onPressed: stageId == null ? null : () => _openStageEditor(stage),
-            icon: const Icon(Icons.visibility_outlined, size: 15),
-            label: const Text('View Details'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.textPrimary,
-              side: const BorderSide(color: Color(0xFFCBD5E1)),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          )
-        else ...[
-          OutlinedButton.icon(
-            onPressed: state.isSaving || stageId == null
-                ? null
-                : () => _openStageEditor(stage),
-            icon: const Icon(Icons.edit_outlined, size: 15),
-            label: const Text('Edit'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.textPrimary,
-              side: const BorderSide(color: Color(0xFFD7DDE8)),
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(8),
-              ),
-              textStyle: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
+          const SizedBox(width: 6),
+        ],
+        // More Options 3-Dots Button
+        _buildMoreActionsMenu(
+          state: state,
+          stage: stage,
+          stageId: stageId,
+          locked: locked,
+          published: published,
+        ),
+      ],
+    );
+  }
+
+
+  InputDecoration _dialogInputDecoration({
+    required String labelText,
+    String? hintText,
+    String? helperText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      hintText: hintText,
+      helperText: helperText,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+      labelStyle: const TextStyle(
+        fontSize: 13,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textSecondary,
+      ),
+      hintStyle: const TextStyle(
+        fontSize: 13,
+        color: Color(0xFF94A3B8),
+      ),
+      helperStyle: const TextStyle(
+        fontSize: 11,
+        color: AppColors.textSecondary,
+      ),
+      filled: true,
+      fillColor: const Color(0xFFF8FAFC),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: Color(0xFFCBD5E1)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+      ),
+      errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.danger),
+      ),
+      focusedErrorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(8),
+        borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
+      ),
+    );
+  }
+
+  Widget _buildDialogTabBar({
+    required int activeTab,
+    required int deliverableCount,
+    required int totalWeight,
+    required void Function(int) onTabSelected,
+  }) {
+    final hasWeightError = totalWeight != 100;
+    return Container(
+      margin: const EdgeInsets.fromLTRB(24, 12, 24, 6),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        children: [
+          _buildDialogTabItem(
+            index: 0,
+            label: '1. Identity & Flow',
+            icon: Icons.account_tree_rounded,
+            isSelected: activeTab == 0,
+            onTap: () => onTabSelected(0),
           ),
-          if (!published)
-            OutlinedButton.icon(
-              onPressed: state.isSaving || stageId == null
-                  ? null
-                  : () => ref
-                        .read(defenseStagesProvider.notifier)
-                        .updateStage(stageId, {
-                          'label': stage['label'],
-                          'display_order': stage['display_order'],
-                          'description': stage['description'] ?? '',
-                          'is_active': true,
-                        }),
-              icon: const Icon(Icons.send_rounded, size: 15),
-              label: const Text('Publish'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF047857),
-                side: const BorderSide(color: Color(0xFFA7F3D0)),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                textStyle: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ),
-          IconButton(
-            tooltip: 'Delete stage',
-            style: IconButton.styleFrom(
-              foregroundColor: AppColors.danger,
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              minimumSize: Size.zero,
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-            ),
-            onPressed: state.isSaving || stageId == null
-                ? null
-                : () => _confirmDelete(
-                    stageId,
-                    stage['label']?.toString() ?? 'stage',
-                ),
-            icon: const Icon(Icons.delete_outline, size: 19),
+          const SizedBox(width: 4),
+          _buildDialogTabItem(
+            index: 1,
+            label: '2. Grading & Rubrics',
+            icon: Icons.balance_rounded,
+            badge: hasWeightError
+                ? Container(
+                    width: 7,
+                    height: 7,
+                    decoration: const BoxDecoration(
+                      color: AppColors.danger,
+                      shape: BoxShape.circle,
+                    ),
+                  )
+                : null,
+            isSelected: activeTab == 1,
+            onTap: () => onTabSelected(1),
+          ),
+          const SizedBox(width: 4),
+          _buildDialogTabItem(
+            index: 2,
+            label: '3. Deliverables',
+            icon: Icons.inventory_2_rounded,
+            badge: deliverableCount > 0
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: activeTab == 2
+                          ? Colors.white.withValues(alpha: 0.25)
+                          : const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Text(
+                      '$deliverableCount',
+                      style: TextStyle(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.bold,
+                        color: activeTab == 2 ? Colors.white : AppColors.textPrimary,
+                      ),
+                    ),
+                  )
+                : null,
+            isSelected: activeTab == 2,
+            onTap: () => onTabSelected(2),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildDialogTabItem({
+    required int index,
+    required String label,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+    Widget? badge,
+  }) {
+    return Expanded(
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 150),
+          padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+          decoration: BoxDecoration(
+            color: isSelected ? AppColors.maroon : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: AppColors.maroon.withValues(alpha: 0.25),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                icon,
+                size: 15,
+                color: isSelected ? Colors.white : const Color(0xFF64748B),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                    color: isSelected ? Colors.white : const Color(0xFF334155),
+                  ),
+                ),
+              ),
+              if (badge != null) ...[
+                const SizedBox(width: 6),
+                badge,
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildWeightDistributionBar(int panel, int adviser, int peer) {
+    final total = panel + adviser + peer;
+    final isValid = total == 100;
+
+    final pFlex = (panel > 0) ? panel : 0;
+    final aFlex = (adviser > 0) ? adviser : 0;
+    final peFlex = (peer > 0) ? peer : 0;
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: isValid ? const Color(0xFFF8FAFC) : const Color(0xFFFEF2F2),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isValid ? const Color(0xFFE2E8F0) : const Color(0xFFFECACA),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    isValid ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+                    size: 15,
+                    color: isValid ? AppColors.success : AppColors.danger,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    isValid ? 'Balanced Allocation (100%)' : 'Allocation Error: Must Total 100%',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w800,
+                      color: isValid ? AppColors.success : AppColors.danger,
+                    ),
+                  ),
+                ],
+              ),
+              Text(
+                'Total: $total%',
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                  color: isValid ? AppColors.success : AppColors.danger,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(6),
+            child: Container(
+              height: 10,
+              width: double.infinity,
+              color: const Color(0xFFE2E8F0),
+              child: (total > 0)
+                  ? Row(
+                      children: [
+                        if (pFlex > 0)
+                          Flexible(
+                            flex: pFlex,
+                            child: Container(
+                              color: AppColors.maroon,
+                              height: double.infinity,
+                            ),
+                          ),
+                        if (aFlex > 0)
+                          Flexible(
+                            flex: aFlex,
+                            child: Container(
+                              color: const Color(0xFFD97706),
+                              height: double.infinity,
+                            ),
+                          ),
+                        if (peFlex > 0)
+                          Flexible(
+                            flex: peFlex,
+                            child: Container(
+                              color: const Color(0xFF0D9488),
+                              height: double.infinity,
+                            ),
+                          ),
+                      ],
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              _buildLegendItem('Panel', '$panel%', AppColors.maroon),
+              _buildLegendItem('Adviser', '$adviser%', const Color(0xFFD97706)),
+              _buildLegendItem('Peer', '$peer%', const Color(0xFF0D9488)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLegendItem(String label, String value, Color color) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 9,
+          height: 9,
+          decoration: BoxDecoration(
+            color: color,
+            borderRadius: BorderRadius.circular(2.5),
+          ),
+        ),
+        const SizedBox(width: 5),
+        Text(
+          '$label: ',
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: AppColors.textSecondary,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        Text(
+          value,
+          style: const TextStyle(
+            fontSize: 11.5,
+            color: AppColors.textPrimary,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
       ],
+    );
+  }
+
+  Widget _buildDeliverableSection({
+    required String title,
+    required String subtitle,
+    required IconData icon,
+    required Color accentColor,
+    required Color bgHeaderColor,
+    required Color borderColor,
+    required int count,
+    required String buttonText,
+    required VoidCallback onAdd,
+    required String emptyPlaceholderText,
+    required List<Map<String, dynamic>> items,
+    required bool isPost,
+    required List<Map<String, dynamic>> allDeliverables,
+    required void Function(void Function()) setDialogState,
+    required TextEditingController stageLabelCtrl,
+  }) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: borderColor),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: bgHeaderColor,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(11),
+                topRight: Radius.circular(11),
+              ),
+              border: Border(bottom: BorderSide(color: borderColor)),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(5),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(icon, size: 15, color: accentColor),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Text(
+                            title,
+                            style: TextStyle(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w800,
+                              color: accentColor,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                            decoration: BoxDecoration(
+                              color: accentColor,
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              '$count',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        subtitle,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                OutlinedButton.icon(
+                  onPressed: onAdd,
+                  icon: Icon(Icons.add_rounded, size: 14, color: accentColor),
+                  label: Text(buttonText),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: accentColor,
+                    side: BorderSide(color: accentColor.withValues(alpha: 0.4)),
+                    backgroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    textStyle: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: items.isEmpty
+                ? Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Center(
+                      child: Text(
+                        emptyPlaceholderText,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: AppColors.textSecondary,
+                          fontSize: 12,
+                          fontStyle: FontStyle.italic,
+                        ),
+                      ),
+                    ),
+                  )
+                : Column(
+                    children: items.map((item) {
+                      return _buildDeliverableItemCard(
+                        item: item,
+                        isPost: isPost,
+                        allDeliverables: allDeliverables,
+                        setDialogState: setDialogState,
+                        stageLabelCtrl: stageLabelCtrl,
+                      );
+                    }).toList(),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDeliverableItemCard({
+    required Map<String, dynamic> item,
+    required bool isPost,
+    required List<Map<String, dynamic>> allDeliverables,
+    required void Function(void Function()) setDialogState,
+    required TextEditingController stageLabelCtrl,
+  }) {
+    final labelController = item['_labelController'] as TextEditingController? ??
+        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
+    final templateController = item['_templateController'] as TextEditingController? ??
+        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.02),
+            blurRadius: 3,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Expanded(
+                child: TextFormField(
+                  controller: labelController,
+                  decoration: _dialogInputDecoration(
+                    labelText: isPost ? 'Post-Defense Deliverable Name' : 'Pre-Defense Deliverable Name',
+                    hintText: isPost
+                        ? 'e.g. Final Manuscript PDF, Source Code Archive'
+                        : 'e.g. Concept Paper Draft, Similarity Report',
+                  ),
+                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                  onChanged: (value) {
+                    item['label'] = value.trim();
+                    if (isPost) {
+                      setDialogState(() {});
+                    }
+                  },
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Checkbox(
+                      value: item['required'] == true,
+                      activeColor: isPost ? AppColors.maroon : const Color(0xFF2563EB),
+                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      onChanged: (value) {
+                        setDialogState(() {
+                          item['required'] = value == true;
+                        });
+                      },
+                    ),
+                    const SizedBox(width: 2),
+                    const Text(
+                      'Required',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 6),
+              IconButton(
+                onPressed: () {
+                  setDialogState(() {
+                    allDeliverables.remove(item);
+                    (item['_labelController'] as TextEditingController?)?.dispose();
+                    (item['_templateController'] as TextEditingController?)?.dispose();
+                  });
+                },
+                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 18),
+                tooltip: 'Remove Deliverable',
+                style: IconButton.styleFrom(
+                  hoverColor: AppColors.danger.withValues(alpha: 0.08),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.all(8),
+                ),
+              ),
+            ],
+          ),
+          if (isPost) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Checkbox(
+                  value: item['is_restricted'] == true,
+                  activeColor: AppColors.maroon,
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      item['is_restricted'] = value == true;
+                    });
+                  },
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Restricted / Private in Institutional Archive',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Tooltip(
+                  message: 'Restricted deliverables are not publicly searchable in the institutional repository.',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  flex: 3,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      TextFormField(
+                        controller: templateController,
+                        decoration: _dialogInputDecoration(
+                          labelText: 'Archive Naming Template',
+                          hintText: 'e.g. {year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                        ),
+                        style: const TextStyle(fontSize: 12),
+                        onChanged: (value) {
+                          setDialogState(() {
+                            item['archive_file_template'] = value.trim();
+                          });
+                        },
+                      ),
+                      const SizedBox(height: 5),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
+                            .map((varName) => ActionChip(
+                                  label: Text(
+                                    varName,
+                                    style: const TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                  labelStyle: const TextStyle(color: AppColors.maroon),
+                                  backgroundColor: AppColors.maroon.withValues(alpha: 0.05),
+                                  side: BorderSide(color: AppColors.maroon.withValues(alpha: 0.15)),
+                                  padding: EdgeInsets.zero,
+                                  visualDensity: VisualDensity.compact,
+                                  onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
+                                ))
+                            .toList(),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  flex: 2,
+                  child: Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: AppColors.maroon.withValues(alpha: 0.03),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: AppColors.maroon.withValues(alpha: 0.12)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: const [
+                            Icon(Icons.remove_red_eye_outlined, size: 12, color: AppColors.maroon),
+                            SizedBox(width: 4),
+                            Text(
+                              'Filename Preview',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w800,
+                                color: AppColors.maroon,
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(
+                          _resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text),
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.maroon,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -1596,9 +2793,32 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     final existingStages = ref.read(defenseStagesProvider).stages;
     final totalExisting = existingStages.length;
     final currentOrder = stage != null ? _asInt(stage['display_order']) : null;
+    final stageIsLocked = editing && (_stageStatus(stage) == 'locked' || stage['is_locked'] == true);
+    final lockReason = stage?['lock_reason']?.toString();
+
+    // Calculate the highest order of completed stages
+    int lastCompletedOrder = 0;
+    for (int i = 0; i < existingStages.length; i++) {
+      final s = existingStages[i];
+      if (_stageStatus(s) == 'locked') {
+        final order = _asInt(s['display_order']) ?? (i + 1);
+        if (order > lastCompletedOrder) {
+          lastCompletedOrder = order;
+        }
+      }
+    }
+
+    final minPosition = stageIsLocked
+        ? (currentOrder ?? 1)
+        : (lastCompletedOrder + 1);
+
     int selectedPosition = editing
         ? (currentOrder ?? 1).clamp(1, totalExisting > 0 ? totalExisting : 1)
         : (totalExisting + 1);
+
+    if (selectedPosition < minPosition) {
+      selectedPosition = minPosition;
+    }
     final panelCtrl = TextEditingController(text: '50');
     final adviserCtrl = TextEditingController(text: '30');
     final peerCtrl = TextEditingController(text: '20');
@@ -1607,6 +2827,16 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     int? panelRubricId;
     int? adviserRubricId;
     int? peerRubricId;
+
+    if (stage != null) {
+      final gc = (stage['grading_config'] is Map) ? stage['grading_config'] as Map : stage;
+      if (gc['panel_weight'] != null) panelCtrl.text = gc['panel_weight'].toString();
+      if (gc['adviser_weight'] != null) adviserCtrl.text = gc['adviser_weight'].toString();
+      if (gc['peer_weight'] != null) peerCtrl.text = gc['peer_weight'].toString();
+      panelRubricId = _asInt(gc['panel_rubric_id']);
+      adviserRubricId = _asInt(gc['adviser_rubric_id']);
+      peerRubricId = _asInt(gc['peer_rubric_id']);
+    }
 
     final activePeriod = ref.read(academicPeriodProvider).activeSemester;
     int? semesterId = activePeriod != null ? _asInt(activePeriod['id']) : null;
@@ -1625,6 +2855,13 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       }
     }
 
+    int activeTab = 0;
+
+    await ref.read(rubricEngineProvider.notifier).fetchRubrics(
+          scope: 'capstone',
+          status: 'published',
+        );
+
     if (!mounted) return;
     bool? saved;
     try {
@@ -1633,9 +2870,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         builder: (dialogContext) {
           return StatefulBuilder(
             builder: (context, setDialogState) {
-              final total = (int.tryParse(panelCtrl.text.trim()) ?? 0) +
-                  (int.tryParse(adviserCtrl.text.trim()) ?? 0) +
-                  (int.tryParse(peerCtrl.text.trim()) ?? 0);
+              final panelVal = int.tryParse(panelCtrl.text.trim()) ?? 0;
+              final adviserVal = int.tryParse(adviserCtrl.text.trim()) ?? 0;
+              final peerVal = int.tryParse(peerCtrl.text.trim()) ?? 0;
+              final total = panelVal + adviserVal + peerVal;
 
               final activeSemObj = semesters.firstWhere(
                 (s) => _asInt(s['id']) == semesterId,
@@ -1675,6 +2913,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         style: const TextStyle(
                           color: Color(0xFF9CA3AF),
                           fontStyle: FontStyle.italic,
+                          fontSize: 13,
                         ),
                       ),
                     );
@@ -1682,7 +2921,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
                   return DropdownMenuItem<int>(
                     value: id,
-                    child: Text(r['name']?.toString() ?? ''),
+                    child: Text(
+                      r['name']?.toString() ?? '',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        color: AppColors.textPrimary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
                   );
                 }).toList();
 
@@ -1690,445 +2936,672 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   0,
                   const DropdownMenuItem<int>(
                     value: null,
-                    child: Text('None (No Rubric)'),
+                    child: Text(
+                      'None (No Rubric Assigned)',
+                      style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+                    ),
                   ),
                 );
 
                 return items;
               }
 
-              return AlertDialog(
-                title: Text(editing ? 'Edit Defense Stage' : 'Add Defense Stage'),
-                content: SizedBox(
-                  width: 720,
-                  child: SingleChildScrollView(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        TextField(
-                          controller: label,
-                          decoration: const InputDecoration(
-                            labelText: 'Stage Name',
-                          ),
+              final preDeliverables = deliverables.where((d) => d['deliverable_type'] == 'pre').toList();
+              final postDeliverables = deliverables.where((d) => d['deliverable_type'] == 'post').toList();
+
+              return Dialog(
+                backgroundColor: Colors.white,
+                surfaceTintColor: Colors.transparent,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+                clipBehavior: Clip.antiAlias,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 780,
+                    maxHeight: MediaQuery.of(dialogContext).size.height * 0.88,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Dialog Header
+                      Container(
+                        padding: const EdgeInsets.fromLTRB(24, 18, 16, 12),
+                        decoration: const BoxDecoration(
+                          border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
                         ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: codeCtrl,
-                          decoration: const InputDecoration(
-                            labelText: 'Stage code',
-                            helperText: 'Unique system identifier'
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        DropdownButtonFormField<int>(
-                          key: ValueKey(selectedPosition),
-                          initialValue: selectedPosition,
-                          decoration: const InputDecoration(
-                            labelText: 'Sequence Position in Pipeline',
-                            helperText: 'Position sets milestone order. Other stages automatically shift.',
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
-                          items: [
-                            for (int i = 1; i <= (editing ? totalExisting : totalExisting + 1); i++)
-                              DropdownMenuItem<int>(
-                                value: i,
-                                child: Text(
-                                  i == 1
-                                      ? 'Position 1 of ${editing ? totalExisting : totalExisting + 1} (Start of Pipeline)'
-                                      : (i == (editing ? totalExisting : totalExisting + 1) && !editing)
-                                          ? 'Position $i of ${totalExisting + 1} (End of Pipeline)'
-                                          : 'Position $i of ${editing ? totalExisting : totalExisting + 1}${i - 2 >= 0 && i - 2 < existingStages.length ? " (After ${existingStages[i - 2]['label']})" : ""}',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: (editing && currentOrder == i)
-                                        ? FontWeight.w700
-                                        : FontWeight.w500,
-                                  ),
-                                ),
-                              ),
-                          ],
-                          onChanged: (val) {
-                            if (val != null) {
-                              setDialogState(() => selectedPosition = val);
-                            }
-                          },
-                        ),
-                        const SizedBox(height: 12),
-                        TextField(
-                          controller: description,
-                          minLines: 2,
-                          maxLines: 3,
-                          decoration: const InputDecoration(
-                            labelText: 'Description',
-                          ),
-                        ),
-                        if (!editing) ...[
-                          const SizedBox(height: 20),
-                          Row(
-                            children: const [
-                              Icon(Icons.balance, size: 18, color: AppColors.maroon),
-                              SizedBox(width: 8),
-                              Text(
-                                'Grade composition',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w900,
-                                  color: AppColors.textPrimary,
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          const Text(
-                            'How Panel, Adviser, and Peer scores combine for this stage. Defaults are 50 / 30 / 20.',
-                            style: TextStyle(
-                              color: AppColors.textSecondary,
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          InputDecorator(
-                            decoration: const InputDecoration(
-                              labelText: 'Semester',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                            ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Text(
-                                    activeSemesterName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                      fontSize: 14,
-                                      color: AppColors.textPrimary,
-                                    ),
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.maroon.withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: const Text(
-                                    'Active',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: AppColors.maroon,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: panelCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Panel %',
-                                    isDense: true,
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onChanged: (_) {
-                                    setDialogState(() {});
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: adviserCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Advisor %',
-                                    isDense: true,
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onChanged: (_) {
-                                    setDialogState(() {});
-                                  },
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: TextField(
-                                  controller: peerCtrl,
-                                  keyboardType: TextInputType.number,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Peer %',
-                                    isDense: true,
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onChanged: (_) {
-                                    setDialogState(() {});
-                                  },
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            'Total: $total%${total == 100 ? '' : ' — must equal 100%'}',
-                            style: TextStyle(
-                              color: total == 100
-                                  ? AppColors.success
-                                  : AppColors.danger,
-                              fontWeight: FontWeight.w700,
-                              fontSize: 13,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          OutlinedButton.icon(
-                            onPressed: () {
-                              setDialogState(() {
-                                panelCtrl.text = '50';
-                                adviserCtrl.text = '30';
-                                peerCtrl.text = '20';
-                              });
-                            },
-                            icon: const Icon(Icons.restore, size: 16),
-                            label: const Text('Reset to 50 / 30 / 20'),
-                            style: OutlinedButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 12, vertical: 8),
-                              textStyle: const TextStyle(
-                                  fontSize: 12, fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF0F9FF),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: const Color(0xFFBAE6FD)),
-                            ),
-                            child: const Row(
-                              children: [
-                                Icon(Icons.info_outline, size: 16, color: Color(0xFF0284C7)),
-                                SizedBox(width: 8),
-                                Expanded(
-                                  child: Text(
-                                    'Note: Assigning rubrics now is optional. You can leave them as "None" and attach published rubrics later before scheduling defenses.',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: Color(0xFF0369A1),
-                                      fontWeight: FontWeight.w500,
-                                      height: 1.3,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 14),
-                          DropdownButtonFormField<int>(
-                            initialValue: panelRubricId,
-                            decoration: const InputDecoration(
-                              labelText: 'Panel Rubric',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                            ),
-                            items: buildRubricDropdownItems('panel'),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                panelRubricId = value;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          DropdownButtonFormField<int>(
-                            initialValue: adviserRubricId,
-                            decoration: const InputDecoration(
-                              labelText: 'Adviser Rubric',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                            ),
-                            items: buildRubricDropdownItems('adviser'),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                adviserRubricId = value;
-                              });
-                            },
-                          ),
-                          const SizedBox(height: 14),
-                          DropdownButtonFormField<int>(
-                            initialValue: peerRubricId,
-                            decoration: const InputDecoration(
-                              labelText: 'Peer Rubric',
-                              isDense: true,
-                              border: OutlineInputBorder(),
-                            ),
-                            items: buildRubricDropdownItems('peer'),
-                            onChanged: (value) {
-                              setDialogState(() {
-                                peerRubricId = value;
-                              });
-                            },
-                          ),
-                        ],
-                        const SizedBox(height: 20),
-                        // Deliverables Section
-                        Row(
+                        child: Row(
                           children: [
-                            const Icon(Icons.inventory_2,
-                                size: 18, color: AppColors.maroon),
-                            const SizedBox(width: 8),
-                            const Text(
-                              'Deliverables',
-                              style: TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w900,
-                                color: AppColors.textPrimary,
+                            Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: AppColors.maroon.withValues(alpha: 0.1),
+                                shape: BoxShape.circle,
                               ),
+                              child: const Icon(Icons.account_tree_rounded, size: 20, color: AppColors.maroon),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    editing ? 'Edit Defense Stage' : 'Add Defense Stage',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w900,
+                                      color: AppColors.textPrimary,
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 2),
+                                  const Text(
+                                    'Configure lifecycle sequence, role grading weights, and submission requirements.',
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      color: AppColors.textSecondary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            IconButton(
+                              onPressed: () => Navigator.pop(dialogContext, false),
+                              icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF64748B)),
+                              tooltip: 'Close',
+                              style: IconButton.styleFrom(
+                                hoverColor: const Color(0xFFF1F5F9),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                      // Segmented Step Tab Bar
+                      _buildDialogTabBar(
+                        activeTab: activeTab,
+                        deliverableCount: deliverables.length,
+                        totalWeight: total,
+                        onTabSelected: (index) {
+                          setDialogState(() => activeTab = index);
+                        },
+                      ),
+
+                      // Scrollable Tab Content
+                      Flexible(
+                        child: SingleChildScrollView(
+                          padding: const EdgeInsets.fromLTRB(24, 12, 24, 20),
+                          child: IndexedStack(
+                            index: activeTab,
+                            children: [
+                              // TAB 0: Stage Identity & Pipeline Flow
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Row(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: TextField(
+                                          controller: label,
+                                          decoration: _dialogInputDecoration(
+                                            labelText: 'Stage Name',
+                                            hintText: 'e.g. Concept Proposal, Colloquium, Final Defense',
+                                          ),
+                                          onChanged: (_) => setDialogState(() {}),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 12),
+                                      Expanded(
+                                        flex: 2,
+                                        child: TextField(
+                                          controller: codeCtrl,
+                                          decoration: _dialogInputDecoration(
+                                            labelText: 'Stage Code',
+                                            hintText: 'e.g. CAPS101',
+                                            helperText: 'Unique system identifier',
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.all(12),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: PipelinePositionSelector(
+                                      selectedPosition: selectedPosition,
+                                      totalSlots: editing ? totalExisting : totalExisting + 1,
+                                      existingStages: existingStages,
+                                      currentStageName: label.text,
+                                      editing: editing,
+                                      initialOrder: currentOrder,
+                                      isLocked: stageIsLocked,
+                                      minPosition: minPosition,
+                                      lockReason: lockReason,
+                                      onPositionChanged: (val) {
+                                        setDialogState(() => selectedPosition = val);
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  TextField(
+                                    controller: description,
+                                    minLines: 2,
+                                    maxLines: 3,
+                                    decoration: _dialogInputDecoration(
+                                      labelText: 'Stage Description (Optional)',
+                                      hintText: 'Provide brief guidance or objectives for this defense milestone...',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF8FAFC),
+                                      borderRadius: BorderRadius.circular(10),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: SwitchListTile(
+                                      contentPadding: EdgeInsets.zero,
+                                      title: const Text(
+                                        'Published Stage',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.w700,
+                                          fontSize: 13.5,
+                                          color: AppColors.textPrimary,
+                                        ),
+                                      ),
+                                      subtitle: const Text(
+                                        'When active, this stage is part of the live capstone defense sequence.',
+                                        style: TextStyle(fontSize: 12, color: AppColors.textSecondary),
+                                      ),
+                                      activeTrackColor: AppColors.maroon,
+                                      value: isActive,
+                                      onChanged: (value) {
+                                        setDialogState(() {
+                                          isActive = value;
+                                        });
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+
+                              // TAB 1: Grading Composition & Evaluation Rubrics
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // 1. Role Score Distribution Card
+                                  Container(
+                                    padding: const EdgeInsets.all(16),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: BorderRadius.circular(12),
+                                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          children: [
+                                            const Icon(Icons.pie_chart_outline_rounded, size: 18, color: AppColors.maroon),
+                                            const SizedBox(width: 8),
+                                            const Text(
+                                              'Role Weight Distribution',
+                                              style: TextStyle(
+                                                fontSize: 14.5,
+                                                fontWeight: FontWeight.w800,
+                                                color: AppColors.textPrimary,
+                                              ),
+                                            ),
+                                            const Spacer(),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFEFF6FF),
+                                                borderRadius: BorderRadius.circular(6),
+                                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF1D4ED8)),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    activeSemesterName,
+                                                    style: const TextStyle(
+                                                      fontSize: 11.5,
+                                                      fontWeight: FontWeight.w700,
+                                                      color: Color(0xFF1D4ED8),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 6),
+                                        const Text(
+                                          'How Panel, Adviser, and Peer scores combine for this defense milestone. Defaults are 50 / 30 / 20.',
+                                          style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
+                                        ),
+                                        const SizedBox(height: 14),
+                                        _buildWeightDistributionBar(panelVal, adviserVal, peerVal),
+                                        const SizedBox(height: 14),
+                                        Row(
+                                          children: [
+                                            Expanded(
+                                              child: TextField(
+                                                controller: panelCtrl,
+                                                keyboardType: TextInputType.number,
+                                                decoration: _dialogInputDecoration(
+                                                  labelText: 'Panel %',
+                                                  prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                                ),
+                                                onChanged: (_) => setDialogState(() {}),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: adviserCtrl,
+                                                keyboardType: TextInputType.number,
+                                                decoration: _dialogInputDecoration(
+                                                  labelText: 'Adviser %',
+                                                  prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
+                                                ),
+                                                onChanged: (_) => setDialogState(() {}),
+                                              ),
+                                            ),
+                                            const SizedBox(width: 12),
+                                            Expanded(
+                                              child: TextField(
+                                                controller: peerCtrl,
+                                                keyboardType: TextInputType.number,
+                                                decoration: _dialogInputDecoration(
+                                                  labelText: 'Peer %',
+                                                  prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
+                                                ),
+                                                onChanged: (_) => setDialogState(() {}),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                        const SizedBox(height: 8),
+                                        Align(
+                                          alignment: Alignment.centerLeft,
+                                          child: TextButton.icon(
+                                            onPressed: () {
+                                              setDialogState(() {
+                                                panelCtrl.text = '50';
+                                                adviserCtrl.text = '30';
+                                                peerCtrl.text = '20';
+                                              });
+                                            },
+                                            icon: const Icon(Icons.restore_rounded, size: 15),
+                                            label: const Text('Reset to standard 50 / 30 / 20'),
+                                            style: TextButton.styleFrom(
+                                              foregroundColor: const Color(0xFF475569),
+                                              textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  const SizedBox(height: 16),
+
+                                  // 2. Evaluation Rubrics Assignment Card
+                                  Builder(
+                                    builder: (context) {
+                                      final panelOpts = getRubricOptions('panel');
+                                      final adviserOpts = getRubricOptions('adviser');
+                                      final peerOpts = getRubricOptions('peer');
+                                      final hasNoRubricsAtAll = panelOpts.isEmpty &&
+                                          adviserOpts.isEmpty &&
+                                          peerOpts.isEmpty;
+
+                                      return Container(
+                                        padding: const EdgeInsets.all(16),
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(12),
+                                          border: Border.all(color: const Color(0xFFE2E8F0)),
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Row(
+                                              children: [
+                                                const Icon(Icons.assignment_outlined, size: 18, color: AppColors.maroon),
+                                                const SizedBox(width: 8),
+                                                const Text(
+                                                  'Evaluation Rubrics Attachment',
+                                                  style: TextStyle(
+                                                    fontSize: 14.5,
+                                                    fontWeight: FontWeight.w800,
+                                                    color: AppColors.textPrimary,
+                                                  ),
+                                                ),
+                                                const Spacer(),
+                                                OutlinedButton.icon(
+                                                  onPressed: () {
+                                                    Navigator.pop(dialogContext, false);
+                                                    context.push(AdminRoutes.rubrics);
+                                                  },
+                                                  icon: const Icon(Icons.open_in_new_rounded, size: 13),
+                                                  label: const Text('Manage in Rubrics'),
+                                                  style: OutlinedButton.styleFrom(
+                                                    foregroundColor: AppColors.maroon,
+                                                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                                    shape: RoundedRectangleBorder(
+                                                      borderRadius: BorderRadius.circular(6),
+                                                    ),
+                                                    textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                            const SizedBox(height: 6),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                                              decoration: BoxDecoration(
+                                                color: const Color(0xFFF0F9FF),
+                                                borderRadius: BorderRadius.circular(8),
+                                                border: Border.all(color: const Color(0xFFBAE6FD)),
+                                              ),
+                                              child: const Row(
+                                                children: [
+                                                  Icon(Icons.info_outline, size: 15, color: Color(0xFF0284C7)),
+                                                  SizedBox(width: 8),
+                                                  Expanded(
+                                                    child: Text(
+                                                      'Assign published Capstone rubrics to evaluate each role. You can leave as "None" and attach later before scheduling defenses.',
+                                                      style: TextStyle(
+                                                        fontSize: 11.5,
+                                                        color: Color(0xFF0369A1),
+                                                        fontWeight: FontWeight.w500,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                            if (hasNoRubricsAtAll) ...[
+                                              const SizedBox(height: 10),
+                                              Container(
+                                                padding: const EdgeInsets.all(10),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFFFFBEB),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                  border: Border.all(color: const Color(0xFFFDE68A)),
+                                                ),
+                                                child: Row(
+                                                  children: [
+                                                    const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFB45309)),
+                                                    const SizedBox(width: 8),
+                                                    const Expanded(
+                                                      child: Text(
+                                                        'No published Capstone rubrics found for this semester. Create rubrics in Evaluation Rubrics to attach.',
+                                                        style: TextStyle(
+                                                          fontSize: 11.5,
+                                                          color: Color(0xFF92400E),
+                                                          fontWeight: FontWeight.w600,
+                                                        ),
+                                                      ),
+                                                    ),
+                                                    const SizedBox(width: 8),
+                                                    ElevatedButton.icon(
+                                                      onPressed: () {
+                                                        Navigator.pop(dialogContext, false);
+                                                        context.push(AdminRoutes.rubrics);
+                                                      },
+                                                      icon: const Icon(Icons.add_rounded, size: 13),
+                                                      label: const Text('Create Rubric'),
+                                                      style: ElevatedButton.styleFrom(
+                                                        backgroundColor: const Color(0xFFB45309),
+                                                        foregroundColor: Colors.white,
+                                                        elevation: 0,
+                                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                                        textStyle: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                                                        shape: RoundedRectangleBorder(
+                                                          borderRadius: BorderRadius.circular(6),
+                                                        ),
+                                                      ),
+                                                    ),
+                                                  ],
+                                                ),
+                                              ),
+                                            ],
+                                            const SizedBox(height: 14),
+                                            DropdownButtonFormField<int>(
+                                              initialValue: panelRubricId,
+                                              decoration: _dialogInputDecoration(
+                                                labelText: 'Panel Rubric',
+                                                helperText: panelOpts.isEmpty ? 'No published panel rubrics found for this semester' : null,
+                                                prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
+                                              ),
+                                              items: buildRubricDropdownItems('panel'),
+                                              onChanged: (val) => setDialogState(() => panelRubricId = val),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            DropdownButtonFormField<int>(
+                                              initialValue: adviserRubricId,
+                                              decoration: _dialogInputDecoration(
+                                                labelText: 'Adviser Rubric',
+                                                helperText: adviserOpts.isEmpty ? 'No published adviser rubrics found for this semester' : null,
+                                                prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
+                                              ),
+                                              items: buildRubricDropdownItems('adviser'),
+                                              onChanged: (val) => setDialogState(() => adviserRubricId = val),
+                                            ),
+                                            const SizedBox(height: 12),
+                                            DropdownButtonFormField<int>(
+                                              initialValue: peerRubricId,
+                                              decoration: _dialogInputDecoration(
+                                                labelText: 'Peer Rubric',
+                                                helperText: peerOpts.isEmpty ? 'No published peer rubrics found for this semester' : null,
+                                                prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
+                                              ),
+                                              items: buildRubricDropdownItems('peer'),
+                                              onChanged: (val) => setDialogState(() => peerRubricId = val),
+                                            ),
+                                          ],
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ),
+
+                              // TAB 2: Deliverables Split (Pre-Defense vs. Post-Defense)
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Pre-Defense Gatekeepers
+                                  _buildDeliverableSection(
+                                    title: 'Pre-Defense Gatekeepers',
+                                    subtitle: 'Required student submissions before an adviser can endorse and defense can be scheduled.',
+                                    icon: Icons.folder_open_rounded,
+                                    accentColor: const Color(0xFF2563EB),
+                                    bgHeaderColor: const Color(0xFFEFF6FF),
+                                    borderColor: const Color(0xFFBFDBFE),
+                                    count: preDeliverables.length,
+                                    buttonText: 'Add Pre-Defense',
+                                    onAdd: () {
+                                      setDialogState(() {
+                                        deliverables.add({
+                                          'deliverable_id': 'D${deliverables.length + 1}',
+                                          'label': '',
+                                          'deliverable_type': 'pre',
+                                          'required': true,
+                                          'display_order': deliverables.length + 1,
+                                          'archive_note': '',
+                                          'archive_file_template': '',
+                                          'is_restricted': false,
+                                        });
+                                      });
+                                    },
+                                    emptyPlaceholderText: 'No pre-defense gatekeepers configured. Click "+ Add Pre-Defense" to require items (e.g. Proposal Manuscript Draft, Similarity Report).',
+                                    items: preDeliverables,
+                                    isPost: false,
+                                    allDeliverables: deliverables,
+                                    setDialogState: setDialogState,
+                                    stageLabelCtrl: label,
+                                  ),
+
+                                  const SizedBox(height: 16),
+
+                                  // Post-Defense Requirements & Archive
+                                  _buildDeliverableSection(
+                                    title: 'Post-Defense Requirements & Archive',
+                                    subtitle: 'Required deliverables for final stage clearance and repository archiving after defense is completed.',
+                                    icon: Icons.inventory_2_rounded,
+                                    accentColor: AppColors.maroon,
+                                    bgHeaderColor: const Color(0xFFFFF1F2),
+                                    borderColor: const Color(0xFFFECDD3),
+                                    count: postDeliverables.length,
+                                    buttonText: 'Add Post-Defense',
+                                    onAdd: () {
+                                      setDialogState(() {
+                                        deliverables.add({
+                                          'deliverable_id': 'D${deliverables.length + 1}',
+                                          'label': '',
+                                          'deliverable_type': 'post',
+                                          'required': true,
+                                          'display_order': deliverables.length + 1,
+                                          'archive_note': '',
+                                          'archive_file_template': '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                                          'is_restricted': false,
+                                        });
+                                      });
+                                    },
+                                    emptyPlaceholderText: 'No post-defense deliverables configured. Click "+ Add Post-Defense" to add final items (e.g. Final Manuscript PDF, Source Code Zip, Demo Video).',
+                                    items: postDeliverables,
+                                    isPost: true,
+                                    allDeliverables: deliverables,
+                                    setDialogState: setDialogState,
+                                    stageLabelCtrl: label,
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+
+                      // Footer Actions Bar
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFF8FAFC),
+                          border: Border(top: BorderSide(color: Color(0xFFE2E8F0))),
+                        ),
+                        child: Row(
+                          children: [
+                            TextButton(
+                              onPressed: () => Navigator.pop(dialogContext, false),
+                              style: TextButton.styleFrom(
+                                foregroundColor: const Color(0xFF64748B),
+                                textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                              ),
+                              child: const Text('Cancel'),
                             ),
                             const Spacer(),
-                            OutlinedButton.icon(
-                              onPressed: () {
-                                setDialogState(() {
-                                  deliverables.add({
-                                    'deliverable_id':
-                                        'D${deliverables.length + 1}',
-                                    'label': '',
-                                    'deliverable_type': 'pre',
-                                    'required': true,
-                                    'display_order': deliverables.length + 1,
-                                    'archive_note': '',
-                                    'archive_file_template': '',
-                                    'is_restricted': false,
-                                  });
-                                });
-                              },
-                              icon: const Icon(Icons.add, size: 16),
-                              label: const Text('Add Deliverable'),
-                              style: OutlinedButton.styleFrom(
-                                padding: const EdgeInsets.symmetric(
-                                    horizontal: 12, vertical: 8),
-                                textStyle: const TextStyle(
-                                    fontSize: 13, fontWeight: FontWeight.w700),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFF0F9FF),
-                            borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFFBAE6FD)),
-                          ),
-                          child: const Row(
-                            children: [
-                              Icon(Icons.info_outline,
-                                  size: 16, color: Color(0xFF0369A1)),
-                              SizedBox(width: 8),
-                              Expanded(
-                                child: Text(
-                                  'Pre-Defense items gate endorsement. Post-Defense items unlock after defense is officially complete.',
-                                  style: TextStyle(
-                                    color: Color(0xFF0369A1),
-                                    fontSize: 12,
-                                  ),
+                            if (activeTab > 0) ...[
+                              OutlinedButton.icon(
+                                onPressed: () {
+                                  setDialogState(() => activeTab--);
+                                },
+                                icon: const Icon(Icons.arrow_back_rounded, size: 16),
+                                label: const Text('Back'),
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: AppColors.textPrimary,
+                                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
                               ),
+                              const SizedBox(width: 10),
                             ],
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        deliverables.isEmpty
-                            ? Container(
-                                padding: const EdgeInsets.all(20),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF9FAFB),
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                                ),
-                                child: const Center(
-                                  child: Text(
-                                    'No deliverables yet. Click "Add Deliverable" to create one.',
-                                    style: TextStyle(
-                                      color: AppColors.textSecondary,
-                                      fontSize: 13,
-                                    ),
-                                  ),
+                            if (activeTab < 2)
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  if (activeTab == 0 && label.text.trim().isEmpty) {
+                                    showValidationToast(context, 'Please enter a stage name before proceeding.');
+                                    return;
+                                  }
+                                  if (activeTab == 1 && !editing && total != 100) {
+                                    showValidationToast(context, 'Panel, Adviser, and Peer weights must total 100%.');
+                                    return;
+                                  }
+                                  setDialogState(() => activeTab++);
+                                },
+                                icon: const Icon(Icons.arrow_forward_rounded, size: 16),
+                                label: Text(activeTab == 0 ? 'Next: Grading & Rubrics' : 'Next: Deliverables'),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.maroon,
+                                  foregroundColor: Colors.white,
+                                  padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
+                                  textStyle: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                                 ),
                               )
-                            : Column(
-                                children: deliverables.asMap().entries.map((entry) {
-                                  return _buildDeliverableRow(
-                                    entry.value,
-                                    entry.key,
-                                    deliverables,
-                                    setDialogState,
-                                    label,
-                                  );
-                                }).toList(),
+                            else
+                              ElevatedButton.icon(
+                                onPressed: () {
+                                  final stageName = label.text.trim();
+                                  if (stageName.isEmpty) {
+                                    setDialogState(() => activeTab = 0);
+                                    showValidationToast(context, 'Enter a stage name.');
+                                    return;
+                                  }
+                                  if (!editing) {
+                                    if (semesterId == null) {
+                                      setDialogState(() => activeTab = 1);
+                                      showValidationToast(context, 'Select a semester.');
+                                      return;
+                                    }
+                                    if (total != 100) {
+                                      setDialogState(() => activeTab = 1);
+                                      showValidationToast(context, 'Panel, Adviser, and Peer weights must total 100%.');
+                                      return;
+                                    }
+                                  }
+                                  for (int i = 0; i < deliverables.length; i++) {
+                                    final dLabel = deliverables[i]['label']?.toString().trim() ?? '';
+                                    if (dLabel.isEmpty) {
+                                      setDialogState(() => activeTab = 2);
+                                      showValidationToast(context, 'Deliverable name cannot be empty (item ${i + 1}).');
+                                      return;
+                                    }
+                                  }
+                                  Navigator.pop(dialogContext, true);
+                                },
+                                icon: const Icon(Icons.save_rounded, size: 16),
+                                label: Text(editing ? 'Save Changes' : 'Add Stage'),
+                                style: DefensysTokens.saveButtonStyle(
+                                  isPill: false,
+                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                                ),
                               ),
-                        const SizedBox(height: 20),
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: const Text('Published stage'),
-                          value: isActive,
-                          onChanged: (value) {
-                            setDialogState(() {
-                              isActive = value;
-                            });
-                          },
+                          ],
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
                 ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(dialogContext, false),
-                    child: const Text('Cancel'),
-                  ),
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      final stageName = label.text.trim();
-                      if (stageName.isEmpty) {
-                        showValidationToast(context, 'Enter a stage name.');
-                        return;
-                      }
-                      if (!editing) {
-                        if (semesterId == null) {
-                          showValidationToast(context, 'Select a semester.');
-                          return;
-                        }
-                        if (total != 100) {
-                          showValidationToast(context, 'Panel, Adviser, and Peer weights must total 100%.');
-                          return;
-                        }
-                      }
-                      // Validate deliverables labels
-                      for (int i = 0; i < deliverables.length; i++) {
-                        final dLabel = deliverables[i]['label']?.toString().trim() ?? '';
-                        if (dLabel.isEmpty) {
-                          showValidationToast(context, 'Deliverable label cannot be empty (item ${i + 1}).');
-                          return;
-                        }
-                      }
-                      Navigator.pop(dialogContext, true);
-                    },
-                    icon: const Icon(Icons.save, size: 18),
-                    label: Text(editing ? 'Save Changes' : 'Add Stage'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.maroon,
-                      foregroundColor: AppColors.gold,
-                    ),
-                  ),
-                ],
               );
             },
           );
@@ -2197,347 +3670,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     }
   }
 
-  Widget _buildDeliverableRow(
-    Map<String, dynamic> item,
-    int index,
-    List<Map<String, dynamic>> deliverables,
-    void Function(void Function()) setDialogState,
-    TextEditingController stageLabelCtrl,
-  ) {
-    final labelController = item['_labelController'] as TextEditingController? ??
-        (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
-    final templateController = item['_templateController'] as TextEditingController? ??
-        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
-
-    final isPost = item['deliverable_type'] == 'post';
-
-    InputDecoration dialogInputDecoration({
-      required String labelText,
-      String? hintText,
-    }) {
-      return InputDecoration(
-        labelText: labelText,
-        hintText: hintText,
-        labelStyle: const TextStyle(
-          fontSize: 13,
-          fontWeight: FontWeight.w500,
-          color: AppColors.textSecondary,
-        ),
-        hintStyle: const TextStyle(
-          fontSize: 13,
-          color: Colors.grey,
-        ),
-        filled: true,
-        fillColor: const Color(0xFFF9FAFB),
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-        focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
-        ),
-        errorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.danger),
-        ),
-        focusedErrorBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
-        ),
-      );
-    }
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE5E7EB)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.03),
-            blurRadius: 4,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 4,
-                child: TextFormField(
-                  controller: labelController,
-                  decoration: dialogInputDecoration(
-                    labelText: 'Name / Label',
-                    hintText: 'e.g. Concept Paper PDF',
-                  ),
-                  style: const TextStyle(fontSize: 14),
-                  onChanged: (value) {
-                    item['label'] = value.trim();
-                    if (isPost) {
-                      setDialogState(() {});
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                flex: 2,
-                child: DropdownButtonFormField<String>(
-                  key: ValueKey(
-                    'deliverable_type_${index}_${item['deliverable_type']}',
-                  ),
-                  initialValue: item['deliverable_type']?.toString() ?? 'pre',
-                  decoration: dialogInputDecoration(labelText: 'Type'),
-                  style: const TextStyle(fontSize: 13, color: AppColors.textPrimary),
-                  items: const [
-                    DropdownMenuItem(value: 'pre', child: Text('Pre-Defense', style: TextStyle(fontSize: 13))),
-                    DropdownMenuItem(value: 'post', child: Text('Post-Defense', style: TextStyle(fontSize: 13))),
-                  ],
-                  onChanged: (value) {
-                    if (value != null) {
-                      setDialogState(() {
-                        item['deliverable_type'] = value;
-                        if (value == 'post' || value == 'pre') {
-                          item['required'] = true;
-                        }
-                      });
-                    }
-                  },
-                ),
-              ),
-              const SizedBox(width: 12),
-              Container(
-                height: 48,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF9FAFB),
-                  border: Border.all(color: const Color(0xFFE5E7EB)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: item['required'] == true,
-                      activeColor: AppColors.maroon,
-                      onChanged: (value) {
-                        setDialogState(() {
-                          item['required'] = value == true;
-                        });
-                      },
-                    ),
-                    const Text(
-                      'Required',
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.textPrimary,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              IconButton(
-                onPressed: () {
-                  setDialogState(() {
-                    final removed = deliverables.removeAt(index);
-                    (removed['_labelController'] as TextEditingController?)?.dispose();
-                    (removed['_templateController'] as TextEditingController?)?.dispose();
-                  });
-                },
-                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger),
-                style: IconButton.styleFrom(
-                  hoverColor: AppColors.danger.withValues(alpha: 0.08),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.all(12),
-                ),
-              ),
-            ],
-          ),
-          if (isPost) ...[
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Checkbox(
-                  value: item['is_restricted'] == true,
-                  activeColor: AppColors.maroon,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      item['is_restricted'] = value == true;
-                    });
-                  },
-                ),
-                const Text(
-                  'Restricted (Private in Archive)',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: templateController,
-                        decoration: dialogInputDecoration(
-                          labelText: 'Archive Naming Template',
-                          hintText: 'e.g. {year}.{course}.{project}.{stage}.{deliverable}.{semester}',
-                        ),
-                        style: const TextStyle(fontSize: 13),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            item['archive_file_template'] = value.trim();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Note: If left blank, the project title will be used as default.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
-                            .map((varName) => ActionChip(
-                                  label: Text(
-                                    varName,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  labelStyle: const TextStyle(color: AppColors.maroon),
-                                  backgroundColor: AppColors.maroon.withValues(alpha: 0.05),
-                                  side: BorderSide(color: AppColors.maroon.withValues(alpha: 0.15)),
-                                  padding: EdgeInsets.zero,
-                                  onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
-                                ))
-                            .toList(),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: AppColors.maroon.withValues(alpha: 0.03),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.maroon.withValues(alpha: 0.1)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const Icon(Icons.remove_red_eye_outlined, size: 14, color: AppColors.maroon),
-                            const SizedBox(width: 6),
-                            const Text(
-                              'Filename Preview',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.maroon,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        SelectableText(
-                          _resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.maroon,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-
-  String _resolvePreview(String template, String deliverableLabel, String stageLabel) {
-    final cleanTemplate = template.trim();
-    final finalTemplate = cleanTemplate.isEmpty 
-        ? '{project}.pdf'
-        : cleanTemplate;
-
-    String slugify(String val) {
-      return val.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-    }
-
-    String deliverableSlug(String val) {
-      if (val.trim().isEmpty) return 'DeliverableLabel';
-      final words = val.trim().split(RegExp(r'\s+'));
-      final capitalized = words.map((w) {
-        if (w.isEmpty) return '';
-        return w[0].toUpperCase() + w.substring(1).toLowerCase();
-      }).join('');
-      return slugify(capitalized);
-    }
-
-    final year = '3rdYear';
-    final course = 'CAP301';
-    final project = 'ProjectTitle';
-    final stage = slugify(stageLabel.trim().isEmpty ? 'StageLabel' : stageLabel.trim());
-    final deliverable = deliverableSlug(deliverableLabel);
-    final semester = '2ndSemester';
-
-    var resolved = finalTemplate
-        .replaceAll('{year}', year)
-        .replaceAll('{course}', course)
-        .replaceAll('{project}', project)
-        .replaceAll('{stage}', stage)
-        .replaceAll('{deliverable}', deliverable)
-        .replaceAll('{semester}', semester);
-
-    if (!resolved.toLowerCase().endsWith('.pdf')) {
-      resolved += '.pdf';
-    }
-
-    return resolved;
-  }
-
-
   void _insertVariable(
     Map<String, dynamic> item,
     TextEditingController controller,
@@ -2567,6 +3699,48 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     });
   }
 
+  String _resolvePreview(String template, String deliverableLabel, String stageLabel) {
+    final cleanTemplate = template.trim();
+    final finalTemplate = cleanTemplate.isEmpty 
+        ? '{project}.pdf'
+        : cleanTemplate;
+
+    String slugify(String val) {
+      return val.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
+    }
+
+    String deliverableSlug(String val) {
+      if (val.trim().isEmpty) return 'DeliverableLabel';
+      final words = val.trim().split(RegExp(r'\s+'));
+      final capitalized = words.map((w) {
+        if (w.isEmpty) return '';
+        return w[0].toUpperCase() + w.substring(1).toLowerCase();
+      }).join('');
+      return slugify(capitalized);
+    }
+
+    const year = '3rdYear';
+    const course = 'CAP301';
+    const project = 'ProjectTitle';
+    final stage = slugify(stageLabel.trim().isEmpty ? 'StageLabel' : stageLabel.trim());
+    final deliverable = deliverableSlug(deliverableLabel);
+    const semester = '2ndSemester';
+
+    var resolved = finalTemplate
+        .replaceAll('{year}', year)
+        .replaceAll('{course}', course)
+        .replaceAll('{project}', project)
+        .replaceAll('{stage}', stage)
+        .replaceAll('{deliverable}', deliverable)
+        .replaceAll('{semester}', semester);
+
+    if (!resolved.toLowerCase().endsWith('.pdf')) {
+      resolved += '.pdf';
+    }
+
+    return resolved;
+  }
+
   Future<void> _confirmMoveStage({
     required int stageId,
     required String stageLabel,
@@ -2576,6 +3750,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }) async {
     final targetIndex = currentIndex + delta;
     if (targetIndex < 0 || targetIndex >= allStages.length) return;
+
+    final movingStage = allStages[currentIndex];
+    final targetStage = allStages[targetIndex];
+
+    if (_stageStatus(movingStage) == 'locked' || _stageStatus(targetStage) == 'locked') {
+      showErrorToast(context, 'Completed stages cannot be reordered.');
+      return;
+    }
 
     final targetStageName = allStages[targetIndex]['label']?.toString() ?? 'the adjacent stage';
     final movingUp = delta < 0;
@@ -2699,11 +3881,11 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     if (status == 'locked') {
       return _softChip(
-        'Locked',
-        const Color(0xFFDCEAFE),
+        'Completed',
+        const Color(0xFFEFF6FF),
         const Color(0xFF1D4ED8),
         const Color(0xFFBFDBFE),
-        icon: Icons.lock,
+        icon: Icons.task_alt_rounded,
       );
     }
 
@@ -2732,23 +3914,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     Color foreground,
     Color border, {
     IconData? icon,
-    double? chipMaxWidth = 120,
+    double? chipMaxWidth,
   }) {
     return Container(
       constraints: chipMaxWidth != null
           ? BoxConstraints(maxWidth: chipMaxWidth)
           : const BoxConstraints(),
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
         border: Border.all(color: border),
       ),
       child: Row(
-        mainAxisSize: MainAxisSize.max,
+        mainAxisSize: MainAxisSize.min,
         children: [
           if (icon != null) ...[
-            Icon(icon, size: 12, color: foreground),
+            Icon(icon, size: 12.5, color: foreground),
             const SizedBox(width: 4),
           ],
           Flexible(
@@ -2758,8 +3940,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 color: foreground,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ),
@@ -2823,23 +4005,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     return 'draft';
   }
 
-  int _deliverablesCount(Map<String, dynamic> stage) {
-    final possible = [
-      stage['deliverables_count'],
-      stage['deliverable_count'],
-      stage['deliverables'],
-    ];
-
-    for (final value in possible) {
-      if (value is int) return value;
-      if (value is num) return value.toInt();
-      final parsed = int.tryParse(value?.toString() ?? '');
-      if (parsed != null) return parsed;
-    }
-
-    return 0;
-  }
-
   int _count(DefenseStagesState state, String key) {
     final value = state.counts[key];
 
@@ -2855,4 +4020,49 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     return int.tryParse(value?.toString() ?? '');
   }
+}
+
+class _TimelineRailPainter extends CustomPainter {
+  final bool isFirst;
+  final bool isLast;
+  final double nodeTop;
+  final double nodeSize;
+
+  static const Color _lineColor = Color(0xFFCBD5E1);
+
+  _TimelineRailPainter({
+    required this.isFirst,
+    required this.isLast,
+    this.nodeTop = 14.0,
+    this.nodeSize = 36.0,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = _lineColor
+      ..strokeWidth = 2.0
+      ..style = PaintingStyle.stroke;
+
+    final centerX = size.width / 2;
+
+    if (!isFirst) {
+      canvas.drawLine(Offset(centerX, 0), Offset(centerX, nodeTop), paint);
+    }
+
+    if (!isLast) {
+      canvas.drawLine(
+        Offset(centerX, nodeTop + nodeSize),
+        Offset(centerX, size.height),
+        paint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _TimelineRailPainter oldDelegate) =>
+      oldDelegate.isFirst != isFirst ||
+      oldDelegate.isLast != isLast ||
+      oldDelegate.nodeTop != nodeTop ||
+      oldDelegate.nodeSize != nodeSize;
 }

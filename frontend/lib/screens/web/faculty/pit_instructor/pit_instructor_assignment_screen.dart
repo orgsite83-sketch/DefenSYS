@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../../services/pit_instructor_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
+import '../../../../widgets/widgets.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 
 class PitInstructorAssignmentScreen extends ConsumerStatefulWidget {
@@ -138,19 +139,13 @@ class _PitInstructorAssignmentScreenState
                   border: OutlineInputBorder(),
                 ),
               );
-              final assignButton = SizedBox(
+              final assignButton = DefensysSaveButton(
                 height: 48,
-                child: ElevatedButton.icon(
-                  icon: state.isSaving
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.save_outlined, size: 18),
-                  label: const Text('Assign'),
-                  onPressed: state.isSaving ? null : _assignInstructor,
-                ),
+                label: 'Assign Instructor',
+                savingLabel: 'Assigning…',
+                isSaving: state.isSaving,
+                onPressed: _assignInstructor,
+                isPill: false,
               );
 
               if (narrow) {

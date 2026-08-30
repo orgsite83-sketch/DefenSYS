@@ -700,13 +700,17 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          Text(
-                            e.stage,
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          Flexible(
+                            child: Text(
+                              e.stage,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                            ),
                           ),
                         ],
                         if (e.academicYear != '—' && e.academicYear.isNotEmpty) ...[
-                          const Spacer(),
+                          const SizedBox(width: 8),
                           Text(
                             'SY ${e.academicYear}',
                             style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
@@ -1079,19 +1083,23 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
       children: [
         Icon(icon, size: 16, color: Colors.grey.shade600),
         const SizedBox(width: 10),
-        Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              label,
-              style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
-            ),
-            const SizedBox(height: 1),
-            Text(
-              value,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
-            ),
-          ],
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                label,
+                style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 1),
+              Text(
+                value,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
+              ),
+            ],
+          ),
         ),
       ],
     );

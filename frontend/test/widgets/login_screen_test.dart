@@ -28,7 +28,24 @@ void main() {
     // Verify Step 1: Verification Dialog with 6-digit OTP prompt
     expect(find.text('Reset Password'), findsOneWidget);
     expect(find.text('Step 1 of 3: Verification'), findsOneWidget);
+    expect(find.text('Gmail / Email'), findsOneWidget);
+    expect(find.text('SMS / Text'), findsOneWidget);
+    expect(find.text('ID or Email Address'), findsOneWidget);
     expect(find.text('Send Code'), findsOneWidget);
+
+    // Switch to SMS tab
+    await tester.tap(find.text('SMS / Text'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ID or Mobile Number'), findsOneWidget);
+    expect(find.textContaining('SMS text message'), findsOneWidget);
+
+    // Switch back to Email tab
+    await tester.tap(find.text('Gmail / Email'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('ID or Email Address'), findsOneWidget);
+    expect(find.textContaining('Gmail inbox'), findsOneWidget);
   });
 }
 

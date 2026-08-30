@@ -272,18 +272,14 @@ class _BulkImportViewState extends State<BulkImportView> {
                 tooltip: 'Discard & Leave',
               ),
               const Spacer(),
-              ElevatedButton.icon(
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _maroon,
-                  foregroundColor: Colors.white,
+              FilledButton.icon(
+                style: DefensysTokens.saveButtonStyle(
+                  isPill: false,
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                  ),
                 ),
                 onPressed: () => Navigator.of(dialogCtx).pop('save'),
-                icon: const Icon(Icons.save_outlined, size: 16),
-                label: const Text('Save'),
+                icon: const Icon(Icons.save_rounded, size: 16),
+                label: const Text('Save Draft'),
               ),
             ],
           ),

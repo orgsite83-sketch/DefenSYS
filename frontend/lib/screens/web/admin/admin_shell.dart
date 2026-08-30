@@ -19,7 +19,6 @@ import 'defense_scheduler/defense_scheduler_screen.dart';
 import 'defense_stages_screen.dart';
 import 'grade_center_screen.dart';
 import 'rubric_engine_screen.dart';
-import 'student_academic_records_screen.dart';
 import 'student_teams_screen.dart';
 import 'user_management_screen.dart';
 import '../shared/project_archive/project_archive_screen.dart';
@@ -169,7 +168,9 @@ class _AdminShellState extends ConsumerState<AdminShell> {
       case DefensysAdminSection.auditCompliance:
         return const AuditComplianceScreen();
       case DefensysAdminSection.scheduling:
-        return const DefenseSchedulerScreen();
+        return DefenseSchedulerScreen(
+          onBack: () => _goToSection(DefensysAdminSection.defenseBoard),
+        );
       case DefensysAdminSection.defenseBoard:
         return const DefenseBoardScreen();
       case DefensysAdminSection.defenseStages:

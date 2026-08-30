@@ -4,8 +4,10 @@ from django.db import models
 
 
 class DefenSysUserManager(UserManager):
-    def create_superuser(self, username, email=None, password=None, **extra_fields):
+    def create_superuser(self, username, email=None, password=None, phone_number='', **extra_fields):
         extra_fields.setdefault('role', 'admin')
+        if phone_number:
+            extra_fields['phone_number'] = phone_number
         return super().create_superuser(username, email, password, **extra_fields)
 
 
@@ -15,6 +17,8 @@ class User(AbstractUser):
         ('faculty', 'Faculty'),
         ('student', 'Student'),
     )
+
+    REQUIRED_FIELDS = ['email', 'phone_number']
 
     objects = DefenSysUserManager()
 
@@ -38,6 +42,12 @@ class User(AbstractUser):
         null=True,
         blank=True,
         help_text='User profile picture.',
+    )
+    phone_number = models.CharField(
+        max_length=32,
+        blank=True,
+        default='',
+        help_text="User's mobile phone number for SMS notifications.",
     )
 
     def __str__(self):

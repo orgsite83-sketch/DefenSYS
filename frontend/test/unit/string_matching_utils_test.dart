@@ -15,7 +15,7 @@ void main() {
     test('standardizes capstone stages and abbreviations', () {
       expect(
         canonicalizeEventOrStageName('REDEFENSE - Capstone Project and Research 1'),
-        equals('redefense capstone 1'),
+        equals('capstone 1'),
       );
       expect(
         canonicalizeEventOrStageName('Concept Proposal'),

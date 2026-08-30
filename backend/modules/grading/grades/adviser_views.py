@@ -9,7 +9,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from grading.rubrics.models import Rubric
-from .models import GradeBreakdown, TeamGrade
+from .models import GradeBreakdown, StudentStageGrade, TeamGrade
+from .peer_eval import recalculate_student_grade
 from .serializers import TeamGradeSerializer
 from .services import (
     GradeContextService,
@@ -24,10 +25,20 @@ from .services import (
 
 class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
     adviser_score = drf_serializers.DecimalField(
-        max_digits=5, decimal_places=2, min_value=0, max_value=100
+        max_digits=5, decimal_places=2, min_value=0, max_value=100, required=False, allow_null=True
     )
     rubric_id = drf_serializers.IntegerField(required=False, allow_null=True)
     criteria_scores = drf_serializers.ListField(
+        child=drf_serializers.DictField(),
+        required=False,
+        default=list,
+    )
+    team_criteria_scores = drf_serializers.ListField(
+        child=drf_serializers.DictField(),
+        required=False,
+        default=list,
+    )
+    student_submissions = drf_serializers.ListField(
         child=drf_serializers.DictField(),
         required=False,
         default=list,
@@ -43,53 +54,189 @@ class _AdviserGradeSubmitSerializer(drf_serializers.Serializer):
                 exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}
             ) from exc
 
-        criteria_scores = self.validated_data.get('criteria_scores') or []
-        if not criteria_scores:
-            raise drf_serializers.ValidationError(
-                {'criteria_scores': 'Criteria scores are required for adviser grading.'}
-            )
-
-        grade.adviser_score = self.validated_data['adviser_score']
         rubric_id = self.validated_data.get('rubric_id') or assigned.pk
         if rubric_id and assigned and rubric_id != assigned.pk:
             raise drf_serializers.ValidationError(
                 {'rubric_id': 'Use the adviser rubric assigned for this defense stage.'}
             )
 
-        if rubric_id and criteria_scores:
-            try:
-                rubric = Rubric.objects.prefetch_related('criteria').get(
-                    pk=rubric_id, evaluation_type=Rubric.EVAL_ADVISER
+        try:
+            rubric = Rubric.objects.prefetch_related('criteria').get(
+                pk=rubric_id, evaluation_type=Rubric.EVAL_ADVISER
+            )
+        except Rubric.DoesNotExist as exc:
+            raise drf_serializers.ValidationError(
+                {'rubric_id': 'Adviser rubric does not exist.'}
+            ) from exc
+
+        target_type = rubric.target_type
+        criteria_scores = self.validated_data.get('criteria_scores') or []
+        team_criteria_scores = self.validated_data.get('team_criteria_scores') or []
+        student_submissions = self.validated_data.get('student_submissions') or []
+
+        if not team_criteria_scores and criteria_scores:
+            team_criteria_scores = criteria_scores
+
+        memberships = list(grade.team.memberships.select_related('student').all())
+        student_map = {m.student_id: m.student for m in memberships}
+
+        GradeBreakdown.objects.filter(
+            team_grade=grade, evaluation_type=GradeBreakdown.EVAL_ADVISER
+        ).delete()
+
+        breakdowns = []
+        student_adviser_scores = {}
+
+        if target_type == Rubric.TARGET_INDIVIDUAL:
+            if not student_submissions:
+                raise drf_serializers.ValidationError(
+                    {'student_submissions': 'Student submissions are required for individual adviser rubrics.'}
                 )
-                GradeBreakdown.objects.filter(
-                    team_grade=grade, evaluation_type=GradeBreakdown.EVAL_ADVISER
-                ).delete()
-                breakdowns = []
-                for idx, cs in enumerate(criteria_scores):
-                    score_val = cs.get('score', 0)
-                    max_val = cs.get('max_score', 10)
+            for sub in student_submissions:
+                s_id = sub.get('student_id')
+                student_user = student_map.get(s_id)
+                if not student_user:
+                    continue
+                s_scores = sub.get('criteria_scores', [])
+                total_s = Decimal('0')
+                max_s = Decimal('0')
+                for idx, cs in enumerate(s_scores):
                     try:
-                        score_val = Decimal(str(score_val))
-                        max_val = Decimal(str(max_val))
+                        s_val = Decimal(str(cs.get('score', 0)))
+                        m_val = Decimal(str(cs.get('max_score', 10)))
                     except Exception:
-                        score_val = Decimal('0')
-                        max_val = Decimal('10')
+                        s_val = Decimal('0')
+                        m_val = Decimal('10')
+                    total_s += s_val
+                    max_s += m_val
                     breakdowns.append(
                         GradeBreakdown(
                             team_grade=grade,
+                            student=student_user,
                             rubric=rubric,
                             evaluation_type=GradeBreakdown.EVAL_ADVISER,
                             criterion_name=str(cs.get('criterion_name', '')),
-                            score=score_val,
-                            max_score=max_val,
+                            score=s_val,
+                            max_score=m_val,
                             display_order=int(cs.get('display_order', idx)),
                         )
                     )
-                GradeBreakdown.objects.bulk_create(breakdowns)
-            except Rubric.DoesNotExist as exc:
+                if max_s > 0:
+                    student_adviser_scores[s_id] = (total_s / max_s * Decimal('100')).quantize(Decimal('0.01'))
+                else:
+                    student_adviser_scores[s_id] = Decimal('0.00')
+
+        elif target_type == Rubric.TARGET_BOTH:
+            team_total = Decimal('0')
+            team_max = Decimal('0')
+            for idx, cs in enumerate(team_criteria_scores):
+                try:
+                    s_val = Decimal(str(cs.get('score', 0)))
+                    m_val = Decimal(str(cs.get('max_score', 10)))
+                except Exception:
+                    s_val = Decimal('0')
+                    m_val = Decimal('10')
+                team_total += s_val
+                team_max += m_val
+                breakdowns.append(
+                    GradeBreakdown(
+                        team_grade=grade,
+                        student=None,
+                        rubric=rubric,
+                        evaluation_type=GradeBreakdown.EVAL_ADVISER,
+                        criterion_name=str(cs.get('criterion_name', '')),
+                        score=s_val,
+                        max_score=m_val,
+                        display_order=int(cs.get('display_order', idx)),
+                    )
+                )
+
+            sub_map = {s.get('student_id'): s.get('criteria_scores', []) for s in student_submissions}
+            for m in memberships:
+                s_id = m.student_id
+                s_scores = sub_map.get(s_id, [])
+                ind_total = Decimal('0')
+                ind_max = Decimal('0')
+                for idx, cs in enumerate(s_scores):
+                    try:
+                        s_val = Decimal(str(cs.get('score', 0)))
+                        m_val = Decimal(str(cs.get('max_score', 10)))
+                    except Exception:
+                        s_val = Decimal('0')
+                        m_val = Decimal('10')
+                    ind_total += s_val
+                    ind_max += m_val
+                    breakdowns.append(
+                        GradeBreakdown(
+                            team_grade=grade,
+                            student=m.student,
+                            rubric=rubric,
+                            evaluation_type=GradeBreakdown.EVAL_ADVISER,
+                            criterion_name=str(cs.get('criterion_name', '')),
+                            score=s_val,
+                            max_score=m_val,
+                            display_order=int(cs.get('display_order', idx)),
+                        )
+                    )
+                combined_total = team_total + ind_total
+                combined_max = team_max + ind_max
+                if combined_max > 0:
+                    student_adviser_scores[s_id] = (combined_total / combined_max * Decimal('100')).quantize(Decimal('0.01'))
+                else:
+                    student_adviser_scores[s_id] = Decimal('0.00')
+
+        else:  # Rubric.TARGET_TEAM
+            if not team_criteria_scores:
                 raise drf_serializers.ValidationError(
-                    {'rubric_id': 'Adviser rubric does not exist.'}
-                ) from exc
+                    {'criteria_scores': 'Criteria scores are required for adviser grading.'}
+                )
+            team_total = Decimal('0')
+            team_max = Decimal('0')
+            for idx, cs in enumerate(team_criteria_scores):
+                try:
+                    s_val = Decimal(str(cs.get('score', 0)))
+                    m_val = Decimal(str(cs.get('max_score', 10)))
+                except Exception:
+                    s_val = Decimal('0')
+                    m_val = Decimal('10')
+                team_total += s_val
+                team_max += m_val
+                breakdowns.append(
+                    GradeBreakdown(
+                        team_grade=grade,
+                        student=None,
+                        rubric=rubric,
+                        evaluation_type=GradeBreakdown.EVAL_ADVISER,
+                        criterion_name=str(cs.get('criterion_name', '')),
+                        score=s_val,
+                        max_score=m_val,
+                        display_order=int(cs.get('display_order', idx)),
+                    )
+                )
+            if team_max > 0:
+                team_score = (team_total / team_max * Decimal('100')).quantize(Decimal('0.01'))
+            else:
+                team_score = self.validated_data.get('adviser_score') or Decimal('0.00')
+            for m in memberships:
+                student_adviser_scores[m.student_id] = team_score
+
+        if breakdowns:
+            GradeBreakdown.objects.bulk_create(breakdowns)
+
+        all_student_scores = []
+        for m in memberships:
+            sg, _ = StudentStageGrade.objects.get_or_create(team_grade=grade, student=m.student)
+            s_score = student_adviser_scores.get(m.student_id)
+            sg.adviser_score = s_score
+            sg.save()
+            recalculate_student_grade(sg)
+            if s_score is not None:
+                all_student_scores.append(s_score)
+
+        if all_student_scores:
+            grade.adviser_score = (sum(all_student_scores) / Decimal(len(all_student_scores))).quantize(Decimal('0.01'))
+        elif self.validated_data.get('adviser_score') is not None:
+            grade.adviser_score = self.validated_data['adviser_score']
 
         grade.save()
         return grade
@@ -149,20 +296,6 @@ class AdviserSubmitGradeView(APIView):
             pk=grade_id,
         )
         grade = GradeContextService.get_for_adviser_context(request.user, grade)
-
-        if not grade.schedule:
-            return Response(
-                {'detail': "Adviser grading is locked because this team's defense has not been scheduled yet."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
-        from django.utils import timezone
-        current_date = timezone.localtime(timezone.now()).date()
-        if grade.schedule.scheduled_date > current_date:
-            return Response(
-                {'detail': f"Adviser grading is locked until the scheduled date: {grade.schedule.scheduled_date.strftime('%B %d, %Y')}."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
 
         if grade.status in TeamGrade.LOCKED_STATUSES:
             return Response(

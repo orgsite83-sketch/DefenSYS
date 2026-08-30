@@ -5,7 +5,7 @@ import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'package:defensys/services/academic/student_academic_records_provider.dart';
 import 'package:defensys/services/admin/user_management_provider.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
-import 'package:defensys/widgets/confirm_dialog.dart';
+import 'package:defensys/widgets/widgets.dart';
 
 /// Unified Dialog for viewing and editing a student's personal details,
 /// current academic enrollment, and historical semester records in place.
@@ -80,6 +80,7 @@ class _StudentProfileDetailsDialogState
   late final TextEditingController _firstNameCtrl;
   late final TextEditingController _lastNameCtrl;
   late final TextEditingController _emailCtrl;
+  late final TextEditingController _phoneCtrl;
 
   late bool _isActive;
   String? _selectedSchoolYear;
@@ -135,6 +136,12 @@ class _StudentProfileDetailsDialogState
     _emailCtrl = TextEditingController(
       text: _studentUser['email']?.toString() ?? studentEmail,
     );
+    _phoneCtrl = TextEditingController(
+      text: _studentUser['phone_number']?.toString() ??
+          _currentRecord['phone_number']?.toString() ??
+          _currentRecord['contact']?.toString() ??
+          '',
+    );
 
     _isActive = _studentUser['is_active'] != false;
     _selectedSchoolYear = _currentRecord['school_year']?.toString() ??
@@ -177,6 +184,7 @@ class _StudentProfileDetailsDialogState
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     super.dispose();
   }
 
@@ -335,6 +343,9 @@ class _StudentProfileDetailsDialogState
     _firstNameCtrl.text = _studentUser['first_name']?.toString() ?? '';
     _lastNameCtrl.text = _studentUser['last_name']?.toString() ?? '';
     _emailCtrl.text = _studentUser['email']?.toString() ?? '';
+    _phoneCtrl.text = _studentUser['phone_number']?.toString() ??
+        _currentRecord['phone_number']?.toString() ??
+        '';
     _isActive = _studentUser['is_active'] != false;
     _selectedSchoolYear = _currentRecord['school_year']?.toString();
     _selectedSemesterId = _asInt(_currentRecord['semester_id']);
@@ -461,12 +472,15 @@ class _StudentProfileDetailsDialogState
         '';
     final studentId = _studentUser['id'] ?? _currentRecord['student_id'];
 
+    final phone = _phoneCtrl.text.trim();
+
     // 1. Update personal details
     final userPayload = {
       'username': username,
       'first_name': firstName,
       'last_name': lastName,
       'email': email,
+      'phone_number': phone,
       'role': _studentUser['role']?.toString() ?? 'student',
       'is_active': _isActive,
     };
@@ -509,12 +523,14 @@ class _StudentProfileDetailsDialogState
         _studentUser['last_name'] = lastName;
         _studentUser['name'] = '$firstName $lastName'.trim();
         _studentUser['email'] = email;
+        _studentUser['phone_number'] = phone;
         _studentUser['is_active'] = _isActive;
 
         _currentRecord['first_name'] = firstName;
         _currentRecord['last_name'] = lastName;
         _currentRecord['student_name'] = '$firstName $lastName'.trim();
         _currentRecord['student_email'] = email;
+        _currentRecord['phone_number'] = phone;
         _currentRecord['year_level'] = _selectedYearLevel;
         _currentRecord['section'] = section;
         _currentRecord['school_year'] = _selectedSchoolYear;
@@ -949,6 +965,15 @@ class _StudentProfileDetailsDialogState
           _buildInfoRow('Last Name', lastName),
           const SizedBox(height: 8),
           _buildInfoRow(
+            'Contact No.',
+            (_studentUser['phone_number']?.toString().trim().isNotEmpty == true)
+                ? _studentUser['phone_number']!.toString().trim()
+                : ((_currentRecord['phone_number']?.toString().trim().isNotEmpty == true)
+                    ? _currentRecord['phone_number']!.toString().trim()
+                    : 'Not Set'),
+          ),
+          const SizedBox(height: 8),
+          _buildInfoRow(
             'Account Role',
             'Student',
             badgeColor: const Color(0xFFEFF6FF),
@@ -1271,6 +1296,13 @@ class _StudentProfileDetailsDialogState
           controller: _emailCtrl,
           label: 'USTP Email Address',
           icon: Icons.alternate_email_rounded,
+        ),
+        const SizedBox(height: 12),
+
+        _buildFormField(
+          controller: _phoneCtrl,
+          label: 'Mobile / Contact Number',
+          icon: Icons.phone_outlined,
         ),
         const SizedBox(height: 12),
 
@@ -1618,29 +1650,11 @@ class _StudentProfileDetailsDialogState
                         style: TextStyle(fontWeight: FontWeight.w700)),
                   ),
                   const SizedBox(width: 10),
-                  FilledButton.icon(
-                    onPressed: _isSaving ? null : _handleSave,
-                    icon: _isSaving
-                        ? const SizedBox(
-                            width: 14,
-                            height: 14,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              valueColor:
-                                  AlwaysStoppedAnimation<Color>(Colors.white),
-                            ),
-                          )
-                        : const Icon(Icons.check_rounded, size: 16),
-                    label: Text(_isSaving ? 'Saving...' : 'Save Changes',
-                        style: const TextStyle(fontWeight: FontWeight.w700)),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: _maroon,
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 18, vertical: 11),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
+                  DefensysSaveButton(
+                    onPressed: _handleSave,
+                    isSaving: _isSaving,
+                    label: 'Save Changes',
+                    isPill: false,
                   ),
                 ],
               ),

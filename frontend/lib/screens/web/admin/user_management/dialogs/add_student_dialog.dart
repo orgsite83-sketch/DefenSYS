@@ -73,6 +73,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
   final _firstNameCtrl = TextEditingController();
   final _lastNameCtrl = TextEditingController();
   final _emailCtrl = TextEditingController();
+  final _phoneCtrl = TextEditingController();
   final _sectionCtrl = TextEditingController();
 
   String? _errorMessage;
@@ -110,6 +111,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _emailCtrl.dispose();
+    _phoneCtrl.dispose();
     _sectionCtrl.dispose();
     super.dispose();
   }
@@ -283,6 +285,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
       final firstName = _firstNameCtrl.text.trim();
       final lastName = _lastNameCtrl.text.trim();
       final email = _emailCtrl.text.trim();
+      final phone = _phoneCtrl.text.trim();
 
       if (username.isEmpty) {
         setState(() => _errorMessage = 'Student ID Number is required.');
@@ -298,6 +301,7 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
         'first_name': firstName,
         'last_name': lastName,
         'email': email.isNotEmpty ? email : '$username@ustp.edu.ph',
+        'phone_number': phone,
         'semester_id': _selectedSemesterId,
         'year_level': _selectedYearLevel,
         'section': section,
@@ -733,6 +737,15 @@ class _AddStudentDialogState extends ConsumerState<AddStudentDialog> {
                       'Email Address (Optional)',
                       hint: 'Leave blank to auto-set as ID@ustp.edu.ph',
                       icon: Icons.email_outlined,
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _phoneCtrl,
+                    decoration: _inputDec(
+                      'Mobile / Phone Number (Optional)',
+                      hint: 'e.g. 0917 123 4567',
+                      icon: Icons.phone_outlined,
                     ),
                   ),
                   const SizedBox(height: 18),

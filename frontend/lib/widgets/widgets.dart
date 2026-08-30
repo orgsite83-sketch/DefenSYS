@@ -3,6 +3,7 @@ export 'branding/defensys_logo_mark.dart';
 export 'branding/status_badge.dart';
 
 // Buttons Widgets
+export 'buttons/save_button.dart';
 export 'buttons/tactile_button.dart';
 
 // Dialogs Widgets

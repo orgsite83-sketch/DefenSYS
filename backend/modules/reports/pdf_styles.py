@@ -3,28 +3,97 @@ from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, Image, PageBreak
+from reportlab.platypus import Paragraph, Spacer, Table, TableStyle, Image, PageBreak, HRFlowable, KeepTogether
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.pdfgen import canvas
 
-# System Branding Colors
-MAROON = colors.HexColor('#7F1D1D')
+# Institutional Branding Colors
+MAROON = colors.HexColor('#7A110A')
+MAROON_DARK = colors.HexColor('#540B06')
 MAROON_LIGHT = colors.HexColor('#991B1B')
 GOLD = colors.HexColor('#D4A843')
-TEXT_DARK = colors.HexColor('#1F2937')
-TEXT_MUTED = colors.HexColor('#4B5563')
-BG_LIGHT = colors.HexColor('#F9FAFB')
-BORDER_GREY = colors.HexColor('#E5E7EB')
+GOLD_DARK = colors.HexColor('#B8860B')
+TEXT_DARK = colors.HexColor('#1E293B')
+TEXT_MUTED = colors.HexColor('#64748B')
+BG_LIGHT = colors.HexColor('#F8FAFC')
+BORDER_GREY = colors.HexColor('#E2E8F0')
 RED_WARNING_BG = colors.HexColor('#FEF2F2')
 RED_WARNING_BORDER = colors.HexColor('#FCA5A5')
 RED_WARNING_TEXT = colors.HexColor('#991B1B')
 
 
+def _find_asset_path(filename):
+    """
+    Search multiple candidate locations for an asset file.
+    """
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    candidates = [
+        os.path.join(base_dir, 'modules', 'reports', 'assets', filename),
+        os.path.join(base_dir, 'static', 'template', filename),
+        os.path.join(base_dir, '..', 'frontend', 'assets', 'template', 'Minutes-Defense-TEMPLATE_files', filename),
+        os.path.join(base_dir, '..', 'frontend', 'assets', filename),
+    ]
+    for p in candidates:
+        abs_p = os.path.abspath(p)
+        if os.path.exists(abs_p):
+            return abs_p
+    return None
+
+
+def get_official_header_image(width=6.9*inch, height=1.28*inch):
+    """
+    Returns the official USTP Department of Information Technology Header Banner (image003.png).
+    """
+    header_path = _find_asset_path('image003.png')
+    if header_path:
+        try:
+            img = Image(header_path, width=width, height=height)
+            img.hAlign = 'CENTER'
+            return img
+        except Exception:
+            pass
+
+    # Fallback institutional header block
+    fallback_data = [
+        [
+            Paragraph(
+                "<font size=8 color='#64748B'>REPUBLIC OF THE PHILIPPINES</font><br/>"
+                "<font size=11 color='#7A110A'><b>UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES</b></font><br/>"
+                "<font size=12 color='#1E293B'><b>Department of Information Technology</b></font><br/>"
+                "<font size=7.5 color='#64748B'>P-6, Mobod, Oroquieta City, Misamis Occidental 7207 • ustporoquieta.bsit@ustp.edu.ph</font>",
+                ParagraphStyle('FallbackHdr', alignment=TA_CENTER, leading=13)
+            )
+        ]
+    ]
+    fb_table = Table(fallback_data, colWidths=[width])
+    fb_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+        ('LINEBELOW', (0, 0), (-1, -1), 1.8, GOLD),
+    ]))
+    return fb_table
+
+
+def get_official_footer_image(width=1.2*inch, height=0.56*inch):
+    """
+    Returns the official OROQUIETA Campus footer badge (image005.png).
+    """
+    footer_path = _find_asset_path('image005.png')
+    if footer_path:
+        try:
+            return Image(footer_path, width=width, height=height)
+        except Exception:
+            pass
+    return None
+
+
 class NumberedCanvas(canvas.Canvas):
     """
     Two-pass canvas to dynamically compute and draw 'Page X of Y' 
-    along with user attribution and timestamp footers on every page.
+    along with official campus footer branding and user attribution.
     """
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -43,136 +112,215 @@ class NumberedCanvas(canvas.Canvas):
         super().save()
 
     def draw_page_decorations(self, page_count):
-        # Skip header and footer on the cover page (Page 1)
-        if self._pageNumber == 1:
-            return
-
         self.saveState()
         
-        # Header
-        self.setFont("Helvetica-Bold", 8)
-        self.setFillColor(MAROON)
-        self.drawString(54, 750, "DefenSYS Academic Management Portal")
-        
-        self.setStrokeColor(BORDER_GREY)
-        self.setLineWidth(0.5)
-        self.line(54, 742, 612 - 54, 742)
-        
-        # Footer
+        # 1. Top Header on subsequent pages (Page 2+)
+        if self._pageNumber > 1:
+            self.setFont("Helvetica-Bold", 7)
+            self.setFillColor(MAROON)
+            self.drawString(45, 762, "UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES")
+            self.setFont("Helvetica", 7)
+            self.setFillColor(TEXT_MUTED)
+            self.drawRightString(612 - 45, 762, "Department of Information Technology — Oroquieta Campus")
+            
+            self.setStrokeColor(BORDER_GREY)
+            self.setLineWidth(0.5)
+            self.line(45, 755, 612 - 45, 755)
+
+        # 2. Bottom Footer on all pages
         doc = getattr(self, '_doctemplate', None)
-        generated_by = getattr(doc, 'generated_by', 'System')
+        generated_by = getattr(doc, 'generated_by', 'System Administrator')
         generated_at = getattr(doc, 'generated_at', datetime.now().strftime('%Y-%m-%d %I:%M %p'))
         
-        self.setFont("Helvetica", 8)
+        # Gold rule line above footer
+        self.setStrokeColor(GOLD)
+        self.setLineWidth(0.8)
+        self.line(45, 42, 612 - 45, 42)
+        
+        # Campus badge on bottom left
+        footer_img_path = _find_asset_path('image005.png')
+        if footer_img_path:
+            try:
+                self.drawImage(footer_img_path, 45, 14, width=58, height=25, preserveAspectRatio=True, mask='auto')
+            except Exception:
+                self.setFont("Helvetica-Bold", 7.5)
+                self.setFillColor(MAROON)
+                self.drawString(45, 24, "USTP OROQUIETA CAMPUS")
+        else:
+            self.setFont("Helvetica-Bold", 7.5)
+            self.setFillColor(MAROON)
+            self.drawString(45, 24, "USTP OROQUIETA CAMPUS")
+            
+        # Accountability text in center
+        self.setFont("Helvetica", 7)
         self.setFillColor(TEXT_MUTED)
-        self.drawString(54, 40, f"Generated by: {generated_by}  |  Date: {generated_at}")
+        self.drawCentredString(306, 23, f"Official Record · Generated by: {generated_by} · {generated_at}")
         
+        # Page count on bottom right
         page_str = f"Page {self._pageNumber} of {page_count}"
-        self.drawRightString(612 - 54, 40, page_str)
-        
-        self.line(54, 52, 612 - 54, 52)
+        self.setFont("Helvetica-Bold", 7.5)
+        self.setFillColor(TEXT_DARK)
+        self.drawRightString(612 - 45, 23, page_str)
         
         self.restoreState()
 
 
 def defensys_styles():
     """
-    Return custom stylesheet extensions for DefenSYS report layout.
+    Return custom stylesheet extensions for official DefenSYS institutional report layout.
     """
     styles = getSampleStyleSheet()
     
-    # Custom styles definitions
     report_styles = {
         'ReportTitle': ParagraphStyle(
             'ReportTitle',
             parent=styles['Heading1'],
             fontName='Helvetica-Bold',
-            fontSize=22,
+            fontSize=13,
             textColor=MAROON,
             alignment=TA_CENTER,
-            spaceAfter=15,
+            spaceBefore=4,
+            spaceAfter=2,
+            leading=16,
         ),
         'ReportSubtitle': ParagraphStyle(
             'ReportSubtitle',
             parent=styles['Normal'],
             fontName='Helvetica',
-            fontSize=11,
+            fontSize=9,
             textColor=TEXT_MUTED,
             alignment=TA_CENTER,
-            spaceAfter=25,
+            spaceAfter=8,
         ),
         'SectionHeader': ParagraphStyle(
             'SectionHeader',
             parent=styles['Heading2'],
             fontName='Helvetica-Bold',
-            fontSize=14,
+            fontSize=10,
             textColor=MAROON,
-            spaceBefore=15,
-            spaceAfter=8,
+            spaceBefore=8,
+            spaceAfter=3,
             keepWithNext=True,
         ),
         'SubSectionHeader': ParagraphStyle(
             'SubSectionHeader',
             parent=styles['Heading3'],
             fontName='Helvetica-Bold',
-            fontSize=11,
+            fontSize=9,
             textColor=TEXT_DARK,
-            spaceBefore=10,
-            spaceAfter=4,
+            spaceBefore=6,
+            spaceAfter=2,
             keepWithNext=True,
         ),
         'BodyDark': ParagraphStyle(
             'BodyDark',
             parent=styles['Normal'],
             fontName='Helvetica',
-            fontSize=9.5,
+            fontSize=8,
             textColor=TEXT_DARK,
-            leading=13,
+            leading=10.5,
         ),
         'BodyDarkBold': ParagraphStyle(
             'BodyDarkBold',
             parent=styles['Normal'],
             fontName='Helvetica-Bold',
-            fontSize=9.5,
+            fontSize=8,
             textColor=TEXT_DARK,
-            leading=13,
+            leading=10.5,
         ),
         'BodyMuted': ParagraphStyle(
             'BodyMuted',
             parent=styles['Normal'],
             fontName='Helvetica-Oblique',
-            fontSize=9,
+            fontSize=7.5,
             textColor=TEXT_MUTED,
-            leading=12,
+            leading=9.5,
         ),
         'TableHeader': ParagraphStyle(
             'TableHeader',
             parent=styles['Normal'],
             fontName='Helvetica-Bold',
-            fontSize=9.5,
+            fontSize=8,
             textColor=colors.whitesmoke,
+            alignment=TA_LEFT,
+        ),
+        'TableHeaderCenter': ParagraphStyle(
+            'TableHeaderCenter',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            textColor=colors.whitesmoke,
+            alignment=TA_CENTER,
         ),
         'TableCell': ParagraphStyle(
             'TableCell',
             parent=styles['Normal'],
             fontName='Helvetica',
-            fontSize=9,
+            fontSize=7.5,
             textColor=TEXT_DARK,
-            leading=12,
+            leading=9.5,
+        ),
+        'TableCellCenter': ParagraphStyle(
+            'TableCellCenter',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=7.5,
+            textColor=TEXT_DARK,
+            alignment=TA_CENTER,
+            leading=9.5,
         ),
         'TableCellBold': ParagraphStyle(
             'TableCellBold',
             parent=styles['Normal'],
             fontName='Helvetica-Bold',
-            fontSize=9,
+            fontSize=7.5,
             textColor=TEXT_DARK,
-            leading=12,
+            leading=9.5,
+        ),
+        'TableCellBoldCenter': ParagraphStyle(
+            'TableCellBoldCenter',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=7.5,
+            textColor=TEXT_DARK,
+            alignment=TA_CENTER,
+            leading=9.5,
+        ),
+        'MetaLabel': ParagraphStyle(
+            'MetaLabel',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8,
+            textColor=TEXT_DARK,
+        ),
+        'MetaVal': ParagraphStyle(
+            'MetaVal',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=8,
+            textColor=TEXT_DARK,
+        ),
+        'SigName': ParagraphStyle(
+            'SigName',
+            parent=styles['Normal'],
+            fontName='Helvetica-Bold',
+            fontSize=8.5,
+            textColor=TEXT_DARK,
+            alignment=TA_CENTER,
+        ),
+        'SigRole': ParagraphStyle(
+            'SigRole',
+            parent=styles['Normal'],
+            fontName='Helvetica',
+            fontSize=7.5,
+            textColor=TEXT_MUTED,
+            alignment=TA_CENTER,
         ),
         'WarningText': ParagraphStyle(
             'WarningText',
             parent=styles['Normal'],
             fontName='Helvetica-Bold',
-            fontSize=10,
+            fontSize=8.5,
             textColor=RED_WARNING_TEXT,
             alignment=TA_CENTER,
         ),
@@ -180,10 +328,10 @@ def defensys_styles():
             'WarningSubtext',
             parent=styles['Normal'],
             fontName='Helvetica',
-            fontSize=8.5,
+            fontSize=7,
             textColor=RED_WARNING_TEXT,
             alignment=TA_CENTER,
-            spaceBefore=3,
+            spaceBefore=1.5,
         ),
     }
     
@@ -194,135 +342,158 @@ def defensys_styles():
     return styles
 
 
+def defensys_official_header(story, title, subtitle=None):
+    """
+    Renders the official school header banner (image003.png) followed by the centered document title.
+    """
+    styles = defensys_styles()
+    
+    # 1. Official Header Banner Image
+    header_img = get_official_header_image(width=6.9*inch, height=1.28*inch)
+    story.append(header_img)
+    story.append(Spacer(1, 0.05*inch))
+    
+    # 2. Document Title
+    story.append(Paragraph(title.upper(), styles['ReportTitle']))
+    if subtitle:
+        story.append(Paragraph(subtitle, styles['ReportSubtitle']))
+    else:
+        story.append(Spacer(1, 0.04*inch))
+
+
+def defensys_metadata_grid(metadata_pairs, width=6.9*inch):
+    """
+    Renders a clean 2-column key-value metadata block matching the official university template.
+    """
+    styles = defensys_styles()
+    table_data = []
+    
+    for item in metadata_pairs:
+        label = item[0]
+        val = item[1]
+        table_data.append([
+            Paragraph(f"<b>{label}</b>", styles['MetaLabel']),
+            Paragraph(f": {val}", styles['MetaVal'])
+        ])
+        
+    t = Table(table_data, colWidths=[2.0*inch, width - 2.0*inch])
+    t.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('TOPPADDING', (0, 0), (-1, -1), 2),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3.5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3.5),
+        ('BACKGROUND', (0, 0), (-1, -1), BG_LIGHT),
+        ('BOX', (0, 0), (-1, -1), 0.5, BORDER_GREY),
+        ('INNERGRID', (0, 0), (-1, -1), 0.3, BORDER_GREY),
+    ]))
+    return t
+
+
+def defensys_signatures_block(story, prepared_by="System Administrator", noted_by="Capstone Adviser / Panel Chair", approved_by="IT Program Chairperson"):
+    """
+    Renders the official university 3-column signature block at the bottom of the report.
+    """
+    styles = defensys_styles()
+    
+    sig_elements = []
+    sig_elements.append(Spacer(1, 0.10*inch))
+    
+    # Institutional Certification Box
+    cert_text = Paragraph(
+        "<i>I hereby certify that the above statements and computational evaluation scores are true and correct to the best of my ability, and I further certify the official accuracy of the foregoing academic defense records.</i>",
+        styles['BodyDark']
+    )
+    cert_table = Table([[cert_text]], colWidths=[6.9*inch])
+    cert_table.setStyle(TableStyle([
+        ('BOX', (0, 0), (-1, -1), 0.7, TEXT_DARK),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
+        ('BACKGROUND', (0, 0), (-1, -1), BG_LIGHT),
+    ]))
+    sig_elements.append(cert_table)
+    sig_elements.append(Spacer(1, 0.12*inch))
+    
+    # 3 Signatures: Prepared by, Noted by, Approved by
+    sig_data = [
+        [
+            Paragraph("Prepared by:", styles['BodyDark']),
+            Paragraph("Noted by:", styles['BodyDark']),
+            Paragraph("Approved by:", styles['BodyDark']),
+        ],
+        [
+            Spacer(1, 0.30*inch),
+            Spacer(1, 0.30*inch),
+            Spacer(1, 0.30*inch),
+        ],
+        [
+            Paragraph(f"<b>{prepared_by}</b>", styles['SigName']),
+            Paragraph(f"<b>{noted_by}</b>", styles['SigName']),
+            Paragraph(f"<b>{approved_by}</b>", styles['SigName']),
+        ],
+        [
+            Paragraph("Documenter / Evaluator", styles['SigRole']),
+            Paragraph("Capstone Adviser / Panel Chair", styles['SigRole']),
+            Paragraph("IT Program Chairperson", styles['SigRole']),
+        ]
+    ]
+    
+    sig_table = Table(sig_data, colWidths=[2.3*inch, 2.3*inch, 2.3*inch])
+    sig_table.setStyle(TableStyle([
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('LINEBELOW', (0, 1), (0, 1), 0.7, TEXT_DARK),
+        ('LINEBELOW', (1, 1), (1, 1), 0.7, TEXT_DARK),
+        ('LINEBELOW', (2, 1), (2, 1), 0.7, TEXT_DARK),
+        ('TOPPADDING', (0, 0), (-1, -1), 1.5),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5),
+        ('LEFTPADDING', (0, 0), (-1, -1), 3),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+    ]))
+    sig_elements.append(sig_table)
+    
+    story.append(KeepTogether(sig_elements))
+
+
 def defensys_confidential_callout():
     """
-    Renders a warning notice banner to display at the top of confidential documents.
+    Renders a compact confidential notice banner.
     """
     styles = defensys_styles()
     
     content = [
-        Paragraph("CONFIDENTIAL: INTERNAL ACADEMIC RECORD", styles['WarningText']),
-        Paragraph("This document contains sensitive academic assessment data. Dissemination or reproduction is strictly restricted.", styles['WarningSubtext'])
+        Paragraph("CONFIDENTIAL: OFFICIAL ACADEMIC EVALUATION RECORD", styles['WarningText']),
+        Paragraph("This document contains certified academic evaluation data. Unauthorized reproduction is strictly prohibited.", styles['WarningSubtext'])
     ]
     
-    # Table containing the warning
-    callout_table = Table([[content]], colWidths=[6.5*inch])
+    callout_table = Table([[content]], colWidths=[6.9*inch])
     callout_table.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, -1), RED_WARNING_BG),
-        ('BOX', (0, 0), (-1, -1), 1, RED_WARNING_BORDER),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('LEFTPADDING', (0, 0), (-1, -1), 15),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 15),
+        ('BOX', (0, 0), (-1, -1), 0.7, RED_WARNING_BORDER),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('LEFTPADDING', (0, 0), (-1, -1), 7),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 7),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
     ]))
     return callout_table
 
 
-def get_logo_element(width=1.2*inch, height=1.2*inch):
-    """
-    Safe loader for university logo. Returns an Image flowable if found, 
-    otherwise returns a safe text-based placeholder to prevent generation crashes.
-    """
-    # Relative path from backend/modules/reports/ to frontend/assets/logo.png
-    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    logo_path = os.path.abspath(os.path.join(base_dir, '..', 'frontend', 'assets', 'logo.png'))
-    
-    if os.path.exists(logo_path):
-        try:
-            return Image(logo_path, width=width, height=height)
-        except Exception:
-            pass
-            
-    # Text-based fallback representing a shield emblem
-    fallback_data = [["DEFENSYS"]]
-    fallback_table = Table(fallback_data, colWidths=[width])
-    fallback_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), MAROON),
-        ('TEXTCOLOR', (0, 0), (-1, -1), GOLD),
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 12),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 20),
-        ('TOPPADDING', (0, 0), (-1, -1), 20),
-        ('BOX', (0, 0), (-1, -1), 2, GOLD),
-    ]))
-    return fallback_table
-
-
-def defensys_cover_page(story, title, subtitle, generated_by_user, metadata_rows=None):
-    """
-    Common cover page layout with a university logo, maroon header bars,
-    a metadata box, and accountability timestamps.
-    """
-    # Spacer to center the logo and title
-    story.append(Spacer(1, 1.0*inch))
-    
-    # 1. Logo
-    logo = get_logo_element(width=1.3*inch, height=1.3*inch)
-    story.append(logo)
-    story.append(Spacer(1, 0.4*inch))
-    
-    # 2. Main titles
-    styles = defensys_styles()
-    story.append(Paragraph(title.upper(), styles['ReportTitle']))
-    if subtitle:
-        story.append(Paragraph(subtitle, styles['ReportSubtitle']))
-    
-    # Ornamental Gold & Maroon bars
-    bar_data = [['']]
-    bar_table = Table(bar_data, colWidths=[7.0*inch])
-    bar_table.setStyle(TableStyle([
-        ('LINEABOVE', (0, 0), (-1, -1), 3, MAROON),
-        ('LINEBELOW', (0, 0), (-1, -1), 1.5, GOLD),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-        ('TOPPADDING', (0, 0), (-1, -1), 0),
-    ]))
-    story.append(bar_table)
-    story.append(Spacer(1, 0.5*inch))
-    
-    # 3. Metadata Table
-    cover_data = []
-    if metadata_rows:
-        for label, val in metadata_rows:
-            cover_data.append([Paragraph(f"<b>{label}</b>", styles['BodyDarkBold']), Paragraph(str(val), styles['BodyDark'])])
-            
-    # Add generation metadata
-    cover_data.append([
-        Paragraph("<b>Generated By:</b>", styles['BodyDarkBold']),
-        Paragraph(generated_by_user, styles['BodyDark'])
-    ])
-    cover_data.append([
-        Paragraph("<b>Date of Export:</b>", styles['BodyDarkBold']),
-        Paragraph(datetime.now().strftime('%B %d, %Y at %I:%M %p'), styles['BodyDark'])
-    ])
-    
-    meta_table = Table(cover_data, colWidths=[2.2*inch, 4.3*inch])
-    meta_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-        ('LINEBELOW', (0, 0), (-1, -1), 0.5, BORDER_GREY),
-    ]))
-    story.append(meta_table)
-    
-    # End page
-    story.append(PageBreak())
-
-
 def defensys_table_style():
     """
-    Standard tabular layout theme for DefenSYS grid lists.
+    Standard tabular layout theme with maroon headers and clean borders.
     """
     return TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), MAROON),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, -1), 6),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
-        ('LEFTPADDING', (0, 0), (-1, -1), 8),
-        ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+        ('LEFTPADDING', (0, 0), (-1, -1), 4.5),
+        ('RIGHTPADDING', (0, 0), (-1, -1), 4.5),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, BG_LIGHT]),
-        ('GRID', (0, 0), (-1, -1), 0.5, BORDER_GREY),
+        ('GRID', (0, 0), (-1, -1), 0.4, BORDER_GREY),
     ])

@@ -1047,7 +1047,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   color: DefensysUi.primaryMaroon,
                 ),
                 label: Text(
-                  'Back to Rubric Engine',
+                  'Back to Evaluation Rubrics',
                   style: TextStyle(
                     fontFamily: DefensysUi.fontFamily,
                     fontWeight: FontWeight.w600,

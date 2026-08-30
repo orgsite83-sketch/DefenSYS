@@ -6,32 +6,60 @@ from .models import StudentTeam, TeamStageProgress
 
 
 def get_ready_teams(semester, stage):
+    from defense.scheduler.models import DefenseSchedule
+    from grading.grades.models import TeamGrade
+
     scheduled_progress = TeamStageProgress.objects.filter(
         semester=semester,
         defense_stage=stage,
         status=TeamStageProgress.STATUS_SCHEDULED,
     )
     if scheduled_progress.exists():
-        from defense.scheduler.models import DefenseSchedule
         active_scheduled_team_ids = set(
             DefenseSchedule.objects.filter(
                 scope=DefenseSchedule.SCOPE_CAPSTONE,
                 semester=semester,
                 defense_stage=stage,
-                status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+                status=DefenseSchedule.STATUS_SCHEDULED,
             ).values_list('team_id', flat=True)
         )
         for progress in scheduled_progress:
             if progress.team_id not in active_scheduled_team_ids:
-                progress.status = TeamStageProgress.STATUS_READY
-                progress.save(update_fields=['status', 'updated_at'])
+                grade = TeamGrade.objects.filter(
+                    team=progress.team,
+                    semester=semester,
+                    defense_stage=stage,
+                ).first()
+                if not (grade and grade.result == 'passed'):
+                    progress.status = TeamStageProgress.STATUS_READY
+                    progress.save(update_fields=['status', 'updated_at'])
 
-    ready_ids = TeamStageProgress.objects.filter(
-        semester=semester,
-        defense_stage=stage,
-        status=TeamStageProgress.STATUS_READY,
-    ).values_list('team_id', flat=True)
-    return StudentTeam.objects.filter(pk__in=ready_ids)
+    ready_ids = set(
+        TeamStageProgress.objects.filter(
+            semester=semester,
+            defense_stage=stage,
+            status=TeamStageProgress.STATUS_READY,
+        ).values_list('team_id', flat=True)
+    )
+
+    active_scheduled_ids = set(
+        DefenseSchedule.objects.filter(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=semester,
+            defense_stage=stage,
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        ).values_list('team_id', flat=True)
+    )
+    redefense_team_ids = set(
+        TeamGrade.objects.filter(
+            semester=semester,
+            defense_stage=stage,
+            verdict=TeamGrade.VERDICT_FOR_REDEFENSE,
+        ).exclude(team_id__in=active_scheduled_ids)
+        .values_list('team_id', flat=True)
+    )
+    all_ready_ids = ready_ids | redefense_team_ids
+    return StudentTeam.objects.filter(pk__in=all_ready_ids)
 
 
 def get_stage_progress(team, stage):
@@ -50,15 +78,34 @@ def is_stage_ready(team, stage):
         return False
     if progress.status == TeamStageProgress.STATUS_READY:
         return True
-    if progress.status == TeamStageProgress.STATUS_SCHEDULED:
-        from defense.scheduler.models import DefenseSchedule
+
+    from grading.grades.models import TeamGrade
+    from defense.scheduler.models import DefenseSchedule
+
+    grade = TeamGrade.objects.filter(
+        team=team,
+        semester=team.semester,
+        defense_stage=stage,
+    ).first()
+    if grade and getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
         has_active = DefenseSchedule.objects.filter(
             scope=DefenseSchedule.SCOPE_CAPSTONE,
             team=team,
             defense_stage=stage,
-            status__in=[DefenseSchedule.STATUS_SCHEDULED, DefenseSchedule.STATUS_DONE]
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        ).exists()
+        return not has_active
+
+    if progress.status == TeamStageProgress.STATUS_SCHEDULED:
+        has_active = DefenseSchedule.objects.filter(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=team,
+            defense_stage=stage,
+            status=DefenseSchedule.STATUS_SCHEDULED,
         ).exists()
         if not has_active:
+            if grade and grade.result == 'passed':
+                return False
             progress.status = TeamStageProgress.STATUS_READY
             progress.save(update_fields=['status', 'updated_at'])
             return True
@@ -149,12 +196,39 @@ def mark_stage_result(grade, user=None):
         return None
 
     progress, _ = _progress_for(grade.team, grade.defense_stage, user=user)
-    if grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD:
+    verdict = getattr(grade, 'verdict', '')
+    if verdict:
+        is_passed = verdict in ('approved', 'approved_with_revisions')
+    else:
+        is_passed = grade.final_grade is not None and grade.final_grade >= PASS_GRADE_THRESHOLD
+
+    if is_passed:
         progress.status = TeamStageProgress.STATUS_PASSED
         team_status = StudentTeam.STATUS_APPROVED
+        from defense.stages.models import DefenseStage
+        active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
+        curr_idx = -1
+        for i, stg in enumerate(active_stages):
+            if stg.id == grade.defense_stage_id:
+                curr_idx = i
+                break
+        if curr_idx != -1 and curr_idx + 1 < len(active_stages):
+            next_stage = active_stages[curr_idx + 1]
+            grade.team.current_defense_stage = next_stage.label
+        else:
+            grade.team.current_defense_stage = grade.defense_stage.label
+
+        team_update_fields = ['current_defense_stage', 'updated_at']
+        if grade.team.ready_for_stage == grade.defense_stage.label:
+            grade.team.ready_for_stage = None
+            team_update_fields.append('ready_for_stage')
+        grade.team.save(update_fields=team_update_fields)
     else:
         progress.status = TeamStageProgress.STATUS_FAILED
-        team_status = StudentTeam.STATUS_FAILED
+        if verdict == 'for_redefense':
+            team_status = grade.team.status or StudentTeam.STATUS_APPROVED
+        else:
+            team_status = StudentTeam.STATUS_FAILED
 
     progress.grade = grade
     progress.graded_at = progress.graded_at or timezone.now()

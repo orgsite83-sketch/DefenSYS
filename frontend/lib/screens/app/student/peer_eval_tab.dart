@@ -308,10 +308,12 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
           ),
           child: Row(
             children: [
-              Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
+              const Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
               const SizedBox(width: 8),
-              Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
-                  style: TextStyle(fontSize: 12, color: DefensysTokens.gold)),
+              Expanded(
+                child: Text('Peer evaluation weight: ${widget.peerWeight}% of final grade.',
+                    style: const TextStyle(fontSize: 12, color: DefensysTokens.gold)),
+              ),
             ],
           ),
         ),
@@ -422,17 +424,27 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Row(
-                  children: [
-                    CircleAvatar(
-                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
-                      child: Text(name[0].toUpperCase(),
-                          style: const TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold)),
-                    ),
-                    const SizedBox(width: 12),
-                    Text(name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                  ],
+                Expanded(
+                  child: Row(
+                    children: [
+                      CircleAvatar(
+                        backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
+                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
+                            style: const TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold)),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          name,
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
+                const SizedBox(width: 8),
                 if (isPosted)
                   const StatusBadge.success(label: 'Submitted & Locked')
                 else

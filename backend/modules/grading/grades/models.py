@@ -26,6 +26,7 @@ class TeamGradeQuerySet(models.QuerySet):
             'semester',
             'semester__school_year',
             'published_by',
+            'verdict_by',
         ).prefetch_related(
             'breakdowns',
             'breakdowns__rubric',
@@ -35,6 +36,7 @@ class TeamGradeQuerySet(models.QuerySet):
             'team__memberships__student',
             'schedule__panel_assignments',
             'schedule__panel_assignments__panelist',
+            'attempt_history',
         )
 
 
@@ -58,6 +60,18 @@ class TeamGrade(models.Model):
     )
 
     LOCKED_STATUSES = frozenset({STATUS_PUBLISHED})
+
+    VERDICT_APPROVED = 'approved'
+    VERDICT_APPROVED_WITH_REVISIONS = 'approved_with_revisions'
+    VERDICT_FOR_REDEFENSE = 'for_redefense'
+
+    VERDICT_CHOICES = (
+        (VERDICT_APPROVED, 'Approved'),
+        (VERDICT_APPROVED_WITH_REVISIONS, 'Approved with Revisions'),
+        (VERDICT_FOR_REDEFENSE, 'For Re-defense'),
+    )
+
+    PASSING_VERDICTS = frozenset({VERDICT_APPROVED, VERDICT_APPROVED_WITH_REVISIONS})
 
     schedule = models.ForeignKey(
         'defense.DefenseSchedule',
@@ -102,6 +116,18 @@ class TeamGrade(models.Model):
     panel_weight = models.PositiveSmallIntegerField(default=50)
     adviser_weight = models.PositiveSmallIntegerField(default=30)
     peer_weight = models.PositiveSmallIntegerField(default=20)
+    attempt_count = models.PositiveSmallIntegerField(default=1)
+    verdict = models.CharField(max_length=30, choices=VERDICT_CHOICES, blank=True)
+    verdict_remarks = models.TextField(blank=True)
+    verdict_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='issued_verdicts',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+    )
+    verdict_at = models.DateTimeField(null=True, blank=True)
+    revision_deadline = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     published_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -174,6 +200,11 @@ class TeamGrade(models.Model):
 
     @property
     def result(self):
+        if self.verdict:
+            if self.verdict in self.PASSING_VERDICTS:
+                return 'passed'
+            if self.verdict == self.VERDICT_FOR_REDEFENSE:
+                return 'for_redefense'
         if self.final_grade is None:
             return 'pending'
         return 'passed' if self.final_grade >= Decimal('75.00') else 'failed'
@@ -246,10 +277,15 @@ class TeamGrade(models.Model):
 
         try:
             from .peer_eval import recalculate_student_grade
+            from .services import find_matching_rubric
+            from grading.rubrics.models import Rubric
+            adviser_rubric = find_matching_rubric(self, Rubric.EVAL_ADVISER)
+            adviser_is_individual = adviser_rubric and (adviser_rubric.target_type in ('individual', 'both'))
             memberships = list(self.team.memberships.select_related('student').all())
             for membership in memberships:
                 sg, _ = StudentStageGrade.objects.get_or_create(team_grade=self, student=membership.student)
-                sg.adviser_score = self.adviser_score
+                if not adviser_is_individual:
+                    sg.adviser_score = self.adviser_score
                 is_student_specific = False
                 if self.schedule and self.schedule.rubric:
                     is_student_specific = (self.schedule.rubric.target_type in ('individual', 'both'))
@@ -538,3 +574,68 @@ class PeerEvaluationSubmission(models.Model):
 
     def __str__(self):
         return f'{self.evaluator} → {self.evaluatee} ({self.team_grade})'
+
+
+class GradeAttemptHistory(models.Model):
+    """Immutable snapshot of scores and verdict from a completed defense attempt."""
+    team_grade = models.ForeignKey(
+        TeamGrade,
+        related_name='attempt_history',
+        on_delete=models.CASCADE,
+    )
+    attempt_number = models.PositiveSmallIntegerField()
+    schedule = models.ForeignKey(
+        'defense.DefenseSchedule',
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='attempt_grade_snapshots',
+        help_text='The defense schedule this attempt was graded under.',
+    )
+
+    # Score snapshot
+    panel_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    adviser_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    peer_score = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    final_grade = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    panel_weight = models.PositiveSmallIntegerField(default=50)
+    adviser_weight = models.PositiveSmallIntegerField(default=30)
+    peer_weight = models.PositiveSmallIntegerField(default=20)
+
+    # Verdict snapshot
+    verdict = models.CharField(max_length=30, blank=True)
+    verdict_remarks = models.TextField(blank=True)
+    verdict_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='verdict_snapshots',
+    )
+    verdict_at = models.DateTimeField(null=True, blank=True)
+    revision_deadline = models.DateField(null=True, blank=True)
+
+    # Metadata
+    snapshotted_at = models.DateTimeField(auto_now_add=True)
+    snapshotted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='snapshotted_grades',
+    )
+
+    class Meta:
+        app_label = 'grading'
+        db_table = 'grade_center_gradeattempthistory'
+        ordering = ['attempt_number', 'id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['team_grade', 'attempt_number'],
+                name='unique_attempt_per_grade',
+            ),
+        ]
+
+    def __str__(self):
+        return f'{self.team_grade} - Attempt #{self.attempt_number} ({self.final_grade}%)'
+

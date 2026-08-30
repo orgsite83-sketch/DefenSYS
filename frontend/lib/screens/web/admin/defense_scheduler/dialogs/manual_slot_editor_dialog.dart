@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
+import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 
@@ -432,9 +433,11 @@ class ManualSlotEditorDialog {
                   onPressed: () => Navigator.pop(dialogContext, false),
                   child: const Text('Cancel'),
                 ),
-                ElevatedButton(
+                FilledButton.icon(
                   onPressed: () => Navigator.pop(dialogContext, true),
-                  child: const Text('Save Schedule'),
+                  icon: const Icon(Icons.save_rounded, size: 16),
+                  label: const Text('Save Schedule'),
+                  style: DefensysTokens.saveButtonStyle(isPill: false),
                 ),
               ],
             );

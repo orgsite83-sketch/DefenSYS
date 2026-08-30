@@ -51,6 +51,9 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     is_officially_complete = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
     lock_reason = serializers.SerializerMethodField()
+    rubric_name = serializers.SerializerMethodField()
+    rubric_info = serializers.SerializerMethodField()
+    rubrics_count = serializers.SerializerMethodField()
 
     class Meta:
         model = DefenseStage
@@ -66,6 +69,9 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'previous_stage_code',
             'deliverables',
             'deliverables_count',
+            'rubric_name',
+            'rubric_info',
+            'rubrics_count',
             'is_officially_complete',
             'is_locked',
             'lock_reason',
@@ -79,10 +85,97 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'previous_stage_code',
             'deliverables',
             'deliverables_count',
+            'rubric_name',
+            'rubric_info',
+            'rubrics_count',
             'is_officially_complete',
             'is_locked',
             'lock_reason',
         ]
+
+    def _get_stage_grading_config(self, obj):
+        semester = self.context.get('semester')
+        if not semester:
+            from academic_period_management.models import Semester
+            semester = Semester.objects.filter(is_active=True).first()
+        if not semester:
+            return None
+        return obj.grading_configs.filter(semester=semester).select_related(
+            'panel_rubric', 'adviser_rubric', 'peer_rubric'
+        ).first()
+
+    def get_rubrics_count(self, obj):
+        config = self._get_stage_grading_config(obj)
+        if not config:
+            return 0
+        count = 0
+        if config.panel_rubric_id:
+            count += 1
+        if config.adviser_rubric_id:
+            count += 1
+        if config.peer_rubric_id:
+            count += 1
+        return count
+
+    def get_rubric_name(self, obj):
+        config = self._get_stage_grading_config(obj)
+        if not config:
+            return None
+        attached = []
+        if config.panel_rubric:
+            attached.append(f'Panel: {config.panel_rubric.name}')
+        if config.adviser_rubric:
+            attached.append(f'Adviser: {config.adviser_rubric.name}')
+        if config.peer_rubric:
+            attached.append(f'Peer: {config.peer_rubric.name}')
+        
+        if not attached:
+            return None
+        if len(attached) == 1:
+            return attached[0]
+        if len(attached) == 3:
+            return 'All 3 Rubrics Attached'
+        return f'{len(attached)}/3 Rubrics Attached'
+
+    def get_rubric_info(self, obj):
+        config = self._get_stage_grading_config(obj)
+        if not config:
+            return {
+                'count': 0,
+                'has_rubrics': False,
+                'summary': 'None attached',
+                'panel_rubric_name': None,
+                'adviser_rubric_name': None,
+                'peer_rubric_name': None,
+            }
+
+        panel_name = config.panel_rubric.name if config.panel_rubric else None
+        adviser_name = config.adviser_rubric.name if config.adviser_rubric else None
+        peer_name = config.peer_rubric.name if config.peer_rubric else None
+
+        count = sum(1 for x in [panel_name, adviser_name, peer_name] if x is not None)
+
+        if count == 0:
+            summary = 'None attached'
+        elif count == 3:
+            summary = 'All 3 Rubrics Attached'
+        elif count == 1 and panel_name:
+            summary = f'Panel: {panel_name}'
+        elif count == 1 and adviser_name:
+            summary = f'Adviser: {adviser_name}'
+        elif count == 1 and peer_name:
+            summary = f'Peer: {peer_name}'
+        else:
+            summary = f'{count}/3 Rubrics Attached'
+
+        return {
+            'count': count,
+            'has_rubrics': count > 0,
+            'summary': summary,
+            'panel_rubric_name': panel_name,
+            'adviser_rubric_name': adviser_name,
+            'peer_rubric_name': peer_name,
+        }
 
     def get_deliverables_count(self, obj):
         return obj.deliverables.count()

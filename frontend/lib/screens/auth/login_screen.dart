@@ -827,9 +827,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                               ),
                             ],
                           ),
-                          // Flexible spacing to position the form card lower into thumb zone
-                          const Spacer(),
-                          const SizedBox(height: 20),
+                          const SizedBox(height: 28),
                           // WHITE CARD CONTAINER (Floating sheet)
                           Container(
                             decoration: BoxDecoration(
@@ -2000,16 +1998,17 @@ class _ForgotPasswordDialog extends StatefulWidget {
 class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   _ResetStep _step = _ResetStep.request;
 
-  // Step 1: Identifier
+  // Step 1: Identifier & Delivery Method
   late final TextEditingController _identifierCtrl;
   final _requestFormKey = GlobalKey<FormState>();
+  String _deliveryMethod = 'email'; // 'email' or 'sms'
 
   // Step 2: 6-Digit OTP
   late final List<TextEditingController> _otpCtrls;
   late final List<FocusNode> _otpFocusNodes;
   Timer? _resendTimer;
   int _resendCountdown = 0;
-  String _maskedEmail = '';
+  String _maskedTarget = '';
 
   // Step 3: Password Update
   late final TextEditingController _newPassCtrl;
@@ -2082,6 +2081,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         headers: {'Content-Type': 'application/json'},
         body: jsonEncode({
           'identifier': _identifierCtrl.text.trim(),
+          'delivery_method': _deliveryMethod,
         }),
       );
 
@@ -2095,11 +2095,15 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
       if (!mounted) return;
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
-        final masked = (data is Map && data['masked_email'] != null)
-            ? data['masked_email'].toString()
-            : '';
+        final masked = (data is Map && data['masked_target'] != null)
+            ? data['masked_target'].toString()
+            : (data is Map && data['masked_phone'] != null && data['masked_phone'].toString().isNotEmpty)
+                ? data['masked_phone'].toString()
+                : (data is Map && data['masked_email'] != null)
+                    ? data['masked_email'].toString()
+                    : '';
         setState(() {
-          _maskedEmail = masked.isNotEmpty ? masked : _identifierCtrl.text.trim();
+          _maskedTarget = masked.isNotEmpty ? masked : _identifierCtrl.text.trim();
           _step = _ResetStep.verifyOtp;
           _errorMessage = null;
         });
@@ -2276,6 +2280,8 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
 
   // ── 1. Request Step View ──────────────────────────────────────────
   Widget _buildRequestStep() {
+    final isSms = _deliveryMethod == 'sms';
+
     return Form(
       key: _requestFormKey,
       child: Column(
@@ -2326,17 +2332,46 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
               ),
             ],
           ),
-          const SizedBox(height: 18),
-          const Text(
-            'Enter your Student ID, Faculty ID, or email address. We will send you a 6-digit verification code.',
-            style: TextStyle(
+          const SizedBox(height: 16),
+          // Delivery Method Selection Segmented Tabs
+          Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(12),
+            ),
+            padding: const EdgeInsets.all(4),
+            child: Row(
+              children: [
+                Expanded(
+                  child: _buildDeliveryMethodTab(
+                    method: 'email',
+                    label: 'Gmail / Email',
+                    icon: Icons.mark_email_read_outlined,
+                  ),
+                ),
+                Expanded(
+                  child: _buildDeliveryMethodTab(
+                    method: 'sms',
+                    label: 'SMS / Text',
+                    icon: Icons.phone_android_rounded,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            isSms
+                ? 'Enter your Student ID, Faculty ID, or registered mobile phone number. We will send you a 6-digit verification code via SMS text message.'
+                : 'Enter your Student ID, Faculty ID, or email address. We will send you a 6-digit verification code to your Gmail inbox.',
+            style: const TextStyle(
               fontFamily: 'Poppins',
               fontSize: 13,
               color: Color(0xFF475569),
               height: 1.5,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
           if (_errorMessage != null) ...[
             _buildErrorBadge(_errorMessage!),
             const SizedBox(height: 14),
@@ -2345,9 +2380,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             controller: _identifierCtrl,
             autofocus: true,
             decoration: InputDecoration(
-              labelText: 'ID or Email Address',
-              hintText: 'e.g. 2023-10042 or user@email.com',
-              prefixIcon: const Icon(Icons.person_outline, size: 20),
+              labelText: isSms ? 'ID or Mobile Number' : 'ID or Email Address',
+              hintText: isSms ? 'e.g. 2023-10042 or 09171234567' : 'e.g. 2023-10042 or user@email.com',
+              prefixIcon: Icon(isSms ? Icons.phone_outlined : Icons.person_outline, size: 20),
               filled: true,
               fillColor: const Color(0xFFF8FAFC),
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
@@ -2356,7 +2391,9 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 borderSide: const BorderSide(color: DefensysTokens.maroon, width: 2),
               ),
             ),
-            validator: (v) => v == null || v.trim().isEmpty ? 'Please enter your ID or email' : null,
+            validator: (v) => v == null || v.trim().isEmpty
+                ? (isSms ? 'Please enter your ID or mobile number' : 'Please enter your ID or email')
+                : null,
             onFieldSubmitted: (_) => _isSubmitting ? null : _submitRequest(),
           ),
           const SizedBox(height: 24),
@@ -2391,8 +2428,71 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
     );
   }
 
+  Widget _buildDeliveryMethodTab({
+    required String method,
+    required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _deliveryMethod == method;
+    return InkWell(
+      onTap: _isSubmitting
+          ? null
+          : () {
+              setState(() {
+                _deliveryMethod = method;
+                _errorMessage = null;
+              });
+            },
+      borderRadius: BorderRadius.circular(10),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(10),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.06),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 15,
+              color: isSelected ? DefensysTokens.maroon : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontFamily: 'Poppins',
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                  color: isSelected ? DefensysTokens.maroon : const Color(0xFF64748B),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   // ── 2. OTP Code Verification Step ─────────────────────────────────
   Widget _buildVerifyOtpStep() {
+    final isSms = _deliveryMethod == 'sms';
+
     return Column(
       key: const ValueKey('step_otp'),
       mainAxisSize: MainAxisSize.min,
@@ -2406,7 +2506,11 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                 color: DefensysTokens.maroon.withValues(alpha: 0.08),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(Icons.mark_email_read_outlined, color: DefensysTokens.maroon, size: 24),
+              child: Icon(
+                isSms ? Icons.phone_android_rounded : Icons.mark_email_read_outlined,
+                color: DefensysTokens.maroon,
+                size: 24,
+              ),
             ),
             const SizedBox(width: 14),
             const Expanded(
@@ -2447,10 +2551,14 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
             text: 'We sent a 6-digit verification code to ',
             children: [
               TextSpan(
-                text: _maskedEmail,
+                text: _maskedTarget,
                 style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFF0F172A)),
               ),
-              const TextSpan(text: '. Enter the code below:'),
+              TextSpan(
+                text: isSms
+                    ? ' via SMS text message. Enter the code below:'
+                    : ' via email. Enter the code below:',
+              ),
             ],
           ),
           style: const TextStyle(
@@ -2468,7 +2576,15 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
         // 6 Digit Input Boxes Row
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: List.generate(6, (index) => _buildOtpBox(index)),
+          children: List.generate(
+            6,
+            (index) => Flexible(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2.5),
+                child: _buildOtpBox(index),
+              ),
+            ),
+          ),
         ),
         const SizedBox(height: 18),
         // Resend Timer Row
@@ -2485,7 +2601,10 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
                       });
                     },
               icon: const Icon(Icons.arrow_back, size: 16),
-              label: const Text('Change ID / Email', style: TextStyle(fontSize: 12)),
+              label: Text(
+                isSms ? 'Change ID / Number' : 'Change ID / Email',
+                style: const TextStyle(fontSize: 12),
+              ),
               style: TextButton.styleFrom(
                 foregroundColor: const Color(0xFF64748B),
                 padding: EdgeInsets.zero,
@@ -2534,10 +2653,11 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
   }
 
   Widget _buildOtpBox(int index) {
-    return SizedBox(
-      width: 48,
-      height: 54,
-      child: TextFormField(
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 48, minWidth: 36),
+      child: SizedBox(
+        height: 54,
+        child: TextFormField(
         controller: _otpCtrls[index],
         focusNode: _otpFocusNodes[index],
         keyboardType: TextInputType.number,
@@ -2598,6 +2718,7 @@ class _ForgotPasswordDialogState extends State<_ForgotPasswordDialog> {
           }
           setState(() {});
         },
+        ),
       ),
     );
   }

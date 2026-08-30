@@ -19,8 +19,17 @@ import 'models/schedule_import_models.dart';
 
 class DefenseSchedulerScreen extends ConsumerStatefulWidget {
   final VoidCallback? onBack;
+  final String? initialScope;
+  final int? initialStageId;
+  final String? initialEventName;
 
-  const DefenseSchedulerScreen({super.key, this.onBack});
+  const DefenseSchedulerScreen({
+    super.key,
+    this.onBack,
+    this.initialScope,
+    this.initialStageId,
+    this.initialEventName,
+  });
 
   @override
   ConsumerState<DefenseSchedulerScreen> createState() =>
@@ -74,8 +83,23 @@ class _DefenseSchedulerScreenState
   void initState() {
     super.initState();
     _dateController.text = DateTime.now().toIso8601String().substring(0, 10);
+    if (widget.initialScope != null) {
+      _scope = widget.initialScope!;
+      _scopeInitializedFromState = true;
+    }
+    if (widget.initialStageId != null) {
+      _stageId = widget.initialStageId;
+    }
+    if (widget.initialEventName != null && widget.initialEventName!.isNotEmpty) {
+      _eventController.text = widget.initialEventName!;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+      if (_scope == 'capstone' && _stageId != null) {
+        _prefillCapstoneStageRubrics();
+      } else if (_scope == 'pit' && _eventController.text.isNotEmpty) {
+        _prefillPitEventConfig();
+      }
     });
   }
 

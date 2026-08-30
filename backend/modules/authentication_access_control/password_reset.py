@@ -30,6 +30,11 @@ from notifications.email_service import (
     send_password_changed_email,
     send_password_reset_otp_email,
 )
+from notifications.sms_service import (
+    clean_phone_number,
+    mask_phone_number,
+    send_password_reset_otp_sms,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -68,43 +73,107 @@ class PasswordResetConfirmThrottle(AnonRateThrottle):
 class RequestPasswordResetView(APIView):
     """
     POST /api/password-reset/
-    Body: { "identifier": "<username or email>" }
+    Body: { "identifier": "<username, email, or phone>", "delivery_method": "email" | "sms" }
 
-    Generates a 6-digit verification code and emails it to the user.
-    Always returns 200 to prevent user enumeration.
+    Generates a 6-digit verification code and dispatches it via email or SMS.
+    Always returns 200 on non-existent accounts to prevent user enumeration.
     """
     permission_classes = [AllowAny]
     throttle_classes = [PasswordResetThrottle]
 
     def post(self, request):
         identifier = (request.data.get('identifier') or '').strip()
+        delivery_method = (request.data.get('delivery_method') or 'email').strip().lower()
+        if delivery_method not in ('email', 'sms'):
+            delivery_method = 'email'
+
         if not identifier:
             return Response(
-                {'detail': 'Please provide your student/employee ID or email address.'},
+                {'detail': 'Please provide your student/employee ID, email address, or phone number.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        # Look up by username OR email (case-insensitive email).
-        user = User.objects.filter(
-            Q(username=identifier) | Q(email__iexact=identifier),
-            is_active=True,
-        ).first()
+        # Look up by username, email, or phone number
+        user_q = Q(username=identifier) | Q(email__iexact=identifier)
+        cleaned_phone = clean_phone_number(identifier)
+        if cleaned_phone:
+            user_q |= Q(phone_number=cleaned_phone)
 
-        masked_email = ''
+        user = User.objects.filter(user_q, is_active=True).first()
+
+        expiry_seconds = getattr(settings, 'PASSWORD_RESET_OTP_TIMEOUT', 600)
+        expires_at = timezone.now() + timedelta(seconds=expiry_seconds)
+
+        if delivery_method == 'sms':
+            if user:
+                if not getattr(user, 'phone_number', '').strip():
+                    return Response(
+                        {
+                            'detail': (
+                                'This account does not have a registered mobile phone number. '
+                                'Please choose Email verification instead.'
+                            )
+                        },
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+
+                # Invalidate previous unverified/unused OTPs for this user
+                PasswordResetOTP.objects.filter(
+                    user=user,
+                    is_used=False,
+                ).update(is_used=True)
+
+                otp_code = f'{secrets.randbelow(1000000):06d}'
+                hashed_otp = make_password(otp_code)
+                PasswordResetOTP.objects.create(
+                    user=user,
+                    otp_code_hash=hashed_otp,
+                    expires_at=expires_at,
+                )
+
+                sms_sent = send_password_reset_otp_sms(user, otp_code)
+                if not sms_sent:
+                    logger.error(
+                        'password_reset: Failed to send OTP SMS to user_id=%s phone=%s',
+                        user.pk,
+                        user.phone_number,
+                    )
+                    return Response(
+                        {
+                            'detail': (
+                                'Failed to send verification SMS due to a carrier delivery error. '
+                                'Please try again later or choose Email verification.'
+                            )
+                        },
+                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    )
+                logger.info('password_reset: 6-digit OTP sent via SMS to user_id=%s', user.pk)
+                masked_phone = mask_phone_number(user.phone_number)
+                return Response({
+                    'detail': 'A 6-digit verification code has been sent to your mobile phone.',
+                    'delivery_method': 'sms',
+                    'masked_target': masked_phone,
+                    'masked_phone': masked_phone,
+                })
+            else:
+                logger.info('password_reset (sms): no action for identifier=%r', identifier)
+                return Response({
+                    'detail': 'A 6-digit verification code has been sent to your mobile phone.',
+                    'delivery_method': 'sms',
+                    'masked_target': '',
+                    'masked_phone': '',
+                })
+
+        # Default Email flow
         if user and user.email:
             masked_email = _mask_email(user.email)
-            # Invalidate previous unverified/unused OTPs for this user
             PasswordResetOTP.objects.filter(
                 user=user,
                 is_used=False,
             ).update(is_used=True)
 
-            # Generate 6-digit numeric OTP
             otp_code = f'{secrets.randbelow(1000000):06d}'
             hashed_otp = make_password(otp_code)
-            expiry_seconds = getattr(settings, 'PASSWORD_RESET_OTP_TIMEOUT', 600)
-            expires_at = timezone.now() + timedelta(seconds=expiry_seconds)
-
             PasswordResetOTP.objects.create(
                 user=user,
                 otp_code_hash=hashed_otp,
@@ -127,15 +196,21 @@ class RequestPasswordResetView(APIView):
                     },
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-            logger.info('password_reset: 6-digit OTP sent to user_id=%s', user.pk)
+            logger.info('password_reset: 6-digit OTP sent to user_id=%s via email', user.pk)
+            return Response({
+                'detail': 'A 6-digit verification code has been sent to your email address.',
+                'delivery_method': 'email',
+                'masked_target': masked_email,
+                'masked_email': masked_email,
+            })
         else:
-            logger.info('password_reset: no action for identifier=%r', identifier)
-
-        # Generic response preventing user enumeration
-        return Response({
-            'detail': 'A 6-digit verification code has been sent to your email address.',
-            'masked_email': masked_email,
-        })
+            logger.info('password_reset (email): no action for identifier=%r', identifier)
+            return Response({
+                'detail': 'A 6-digit verification code has been sent to your email address.',
+                'delivery_method': 'email',
+                'masked_target': '',
+                'masked_email': '',
+            })
 
 
 # ── Step 2: Verify 6-digit OTP ────────────────────────────────────────
@@ -143,7 +218,7 @@ class RequestPasswordResetView(APIView):
 class VerifyPasswordResetOTPView(APIView):
     """
     POST /api/password-reset/verify-otp/
-    Body: { "identifier": "<username or email>", "otp_code": "123456" }
+    Body: { "identifier": "<username, email, or phone>", "otp_code": "123456" }
 
     Validates the 6-digit OTP code. If valid, generates and returns a single-use reset_token.
     """
@@ -156,7 +231,7 @@ class VerifyPasswordResetOTPView(APIView):
 
         if not identifier or not otp_code:
             return Response(
-                {'detail': 'Please provide your ID/email and 6-digit verification code.'},
+                {'detail': 'Please provide your ID/email/phone and 6-digit verification code.'},
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
@@ -166,10 +241,12 @@ class VerifyPasswordResetOTPView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        user = User.objects.filter(
-            Q(username=identifier) | Q(email__iexact=identifier),
-            is_active=True,
-        ).first()
+        user_q = Q(username=identifier) | Q(email__iexact=identifier)
+        cleaned_phone = clean_phone_number(identifier)
+        if cleaned_phone:
+            user_q |= Q(phone_number=cleaned_phone)
+
+        user = User.objects.filter(user_q, is_active=True).first()
 
         if not user:
             return Response(

@@ -13,6 +13,7 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../notifications/notifications_modal.dart';
 import '../../../notifications/notifications_provider.dart';
+import '../../../widgets/dialogs/prompt_missing_phone_dialog.dart';
 import '../shared/team_deliverables/team_deliverables_screen.dart';
 import '../shared/project_archive/project_archive_screen.dart';
 import '../admin/audit_compliance_screen.dart';
@@ -366,6 +367,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   }
 
   Widget _buildTopBar({required bool showMenuButton}) {
+    PromptMissingPhoneDialog.maybeShow(context, ref);
     return Container(
       height: DefensysTokens.topNavHeight,
       padding: EdgeInsets.symmetric(horizontal: showMenuButton ? 8 : 24),
@@ -1071,7 +1073,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         }
         return Container(
           color: Colors.white,
-          child: const DefenseSchedulerScreen(),
+          child: DefenseSchedulerScreen(
+            onBack: () => _goToSection('defense_board'),
+          ),
         );
       case 'defense_board':
         return Container(

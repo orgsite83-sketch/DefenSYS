@@ -10,7 +10,7 @@ from defense.stages.grading_config import get_or_create_stage_grading_config
 from grading.grades.services import weights_for_schedule
 from grading.rubrics.models import Rubric
 from student_teams.models import StudentTeam
-from .models import DefenseStage, StageGradingConfig
+from defense.stages.models import DefenseStage, StageGradingConfig
 
 
 User = get_user_model()
@@ -601,3 +601,51 @@ class StageGradingConfigApiTests(APITestCase):
             format='json',
         )
         self.assertEqual(res_config.status_code, 400)
+
+    def test_locked_stage_cannot_change_display_order(self):
+        stage = DefenseStage.objects.get(label='Concept Proposal')
+        config = get_or_create_stage_grading_config(stage, self.semester)
+        config.is_officially_complete = True
+        config.save()
+
+        res_patch = self.client.patch(
+            f'/api/defense/stages/{stage.id}/',
+            {'display_order': 2},
+            format='json',
+        )
+        self.assertIn(res_patch.status_code, [400, 409])
+
+    def test_cannot_insert_new_stage_before_locked_stage(self):
+        stage = DefenseStage.objects.get(label='Concept Proposal')
+        config = get_or_create_stage_grading_config(stage, self.semester)
+        config.is_officially_complete = True
+        config.save()
+
+        res_post = self.client.post(
+            '/api/defense/stages/',
+            {
+                'label': 'Brand New Milestone',
+                'display_order': 1,
+            },
+            format='json',
+        )
+        self.assertEqual(res_post.status_code, 400)
+        self.assertIn('display_order', res_post.data)
+
+    def test_reorder_endpoint_rejects_reordering_locked_stages(self):
+        stage1 = DefenseStage.objects.get(label='Concept Proposal')
+        stage2 = DefenseStage.objects.get(label='Project Proposal')
+        stage3 = DefenseStage.objects.get(label='Final Defense')
+
+        config = get_or_create_stage_grading_config(stage1, self.semester)
+        config.is_officially_complete = True
+        config.save()
+
+        # Attempt to swap Stage 2 and Stage 1
+        res_reorder = self.client.post(
+            '/api/defense/stages/reorder/',
+            {'stage_ids': [stage2.id, stage1.id, stage3.id]},
+            format='json',
+        )
+        self.assertEqual(res_reorder.status_code, 400)
+        self.assertIn('stage_ids', res_reorder.data)

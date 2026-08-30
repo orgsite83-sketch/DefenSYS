@@ -2,41 +2,31 @@ from io import BytesIO
 from datetime import datetime
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib import colors
 
 from reports.pdf_styles import (
     defensys_styles,
-    defensys_cover_page,
+    defensys_official_header,
+    defensys_metadata_grid,
+    defensys_signatures_block,
     defensys_table_style,
     NumberedCanvas,
-    MAROON,
-    GOLD,
-    BORDER_GREY,
-    BG_LIGHT,
-    TEXT_DARK
 )
 
 
 def generate_user_directory_pdf(users, generated_by_user):
     """
-    Generate a PDF user account directory.
-    
-    Args:
-        users: QuerySet of User objects
-        generated_by_user: Username of requestor
-        
-    Returns:
-        bytes: PDF binary content
+    Generate an official USTP DIT PDF user account directory.
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(
         buffer,
         pagesize=letter,
-        topMargin=0.85*inch,
-        bottomMargin=0.85*inch,
-        leftMargin=0.5*inch,
-        rightMargin=0.5*inch
+        topMargin=0.4 * inch,
+        bottomMargin=0.55 * inch,
+        leftMargin=0.5 * inch,
+        rightMargin=0.5 * inch,
     )
     
     doc.generated_by = generated_by_user
@@ -45,31 +35,34 @@ def generate_user_directory_pdf(users, generated_by_user):
     story = []
     styles = defensys_styles()
     
-    # 1. Cover Page
     total_users = len(users)
-    metadata_rows = [
-        ("Total Registered Users:", str(total_users)),
-    ]
     
-    defensys_cover_page(
+    # 1. Official Header Banner & Document Title
+    defensys_official_header(
         story=story,
-        title="User Account Directory",
-        subtitle="Active DefenSYS Portal Accounts List",
-        generated_by_user=generated_by_user,
-        metadata_rows=metadata_rows
+        title="Department User Directory & Account Registry",
+        subtitle="Official Department of Information Technology System Users and Stakeholders Registry"
     )
     
-    # 2. Main Title
-    story.append(Paragraph("DefenSYS Portal User Accounts", styles['SectionHeader']))
-    story.append(Spacer(1, 0.05*inch))
+    # 2. Metadata Grid
+    metadata_rows = [
+        ("Institutional Department", "Department of Information Technology — USTP Oroquieta"),
+        ("Total Registered Users", f"{total_users} Active System Accounts"),
+        ("Registry Purpose", "Academic Governance, Defense Evaluations, and Role Administration"),
+    ]
+    story.append(defensys_metadata_grid(metadata_rows, width=7.1*inch))
+    story.append(Spacer(1, 0.12*inch))
     
-    # 3. Directory Table
+    # 3. Main Directory Table
+    story.append(Paragraph("System User Accounts Register", styles['SectionHeader']))
+    story.append(Spacer(1, 0.04*inch))
+    
     headers = [
-        Paragraph("<b>Username</b>", styles['TableHeader']),
-        Paragraph("<b>Full Name</b>", styles['TableHeader']),
-        Paragraph("<b>Email Address</b>", styles['TableHeader']),
-        Paragraph("<b>Role / Type</b>", styles['TableHeader']),
-        Paragraph("<b>Status</b>", styles['TableHeader']),
+        Paragraph("<b>Username / ID</b>", styles['TableHeader']),
+        Paragraph("<b>Full Legal Name</b>", styles['TableHeader']),
+        Paragraph("<b>Official Email Address</b>", styles['TableHeader']),
+        Paragraph("<b>System Role / Designation</b>", styles['TableHeader']),
+        Paragraph("<b>Account Status</b>", styles['TableHeaderCenter']),
     ]
     
     table_rows = [headers]
@@ -80,7 +73,6 @@ def generate_user_directory_pdf(users, generated_by_user):
             
         role_label = str(user.role).capitalize() if getattr(user, 'role', None) else "User"
         
-        # Display other sub-roles
         sub_roles = []
         if getattr(user, 'is_pit_lead', False):
             sub_roles.append("PIT Lead")
@@ -99,14 +91,22 @@ def generate_user_directory_pdf(users, generated_by_user):
             Paragraph(fullname, styles['TableCell']),
             Paragraph(user.email or "No Email", styles['TableCell']),
             Paragraph(role_label, styles['TableCell']),
-            Paragraph(status_label, styles['TableCellBold'])
+            Paragraph(status_label, styles['TableCellBoldCenter'])
         ])
         
-    dir_table = Table(table_rows, colWidths=[1.3*inch, 1.8*inch, 2.2*inch, 1.4*inch, 0.8*inch])
+    dir_table = Table(table_rows, colWidths=[1.2*inch, 1.8*inch, 2.1*inch, 1.2*inch, 0.8*inch])
     dir_table.setStyle(defensys_table_style())
     story.append(dir_table)
     
-    # 4. Build Document
+    # 4. Signatures Block
+    defensys_signatures_block(
+        story=story,
+        prepared_by=generated_by_user,
+        noted_by="System Administrator / Lead Developer",
+        approved_by="IT Program Chairperson"
+    )
+    
+    # 5. Build Document
     doc.build(story, canvasmaker=NumberedCanvas)
     pdf_content = buffer.getvalue()
     buffer.close()

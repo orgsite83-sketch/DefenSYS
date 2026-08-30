@@ -4,6 +4,7 @@ import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
+import 'package:defensys/widgets/widgets.dart';
 
 int parseAsInt(dynamic value) {
   if (value == null) return 0;
@@ -501,7 +502,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     );
   }
 
-  Widget _buildCriteriaTableForTeam(int teamId, String stageLabel, Map<String, dynamic> rubric) {
+  Widget _buildCriteriaTableForTeam(int teamId, String stageLabel, Map<String, dynamic> rubric, {bool isReadOnly = false}) {
     final criteria = (rubric['criteria'] as List? ?? []);
     if (criteria.isEmpty) {
       return const Text(
@@ -561,19 +562,37 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 const SizedBox(width: 12),
                 SizedBox(
                   width: 80,
-                  child: TextField(
-                    controller: ctrl,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    textAlign: TextAlign.center,
-                    decoration: InputDecoration(
-                      hintText: 'Score',
-                      hintStyle: const TextStyle(fontSize: 11),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-                      isDense: true,
-                    ),
-                    onChanged: (_) => setState(() {}),
-                  ),
+                  child: isReadOnly
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFF1F5F9),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            ctrl.text.isNotEmpty ? ctrl.text : '-',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        )
+                      : TextField(
+                          controller: ctrl,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          textAlign: TextAlign.center,
+                          decoration: InputDecoration(
+                            hintText: 'Score',
+                            hintStyle: const TextStyle(fontSize: 11),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
+                            isDense: true,
+                          ),
+                          onChanged: (_) => setState(() {}),
+                        ),
                 ),
               ],
             ),
@@ -602,29 +621,14 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final finalGrade = gradeRecord['final_grade'];
     final result = gradeRecord['result']?.toString() ?? 'pending';
 
-    final scheduleId = gradeRecord['schedule_id'];
-    final rawScheduledDate = gradeRecord['scheduled_date'];
-
-    DateTime? scheduledDate;
-    if (rawScheduledDate != null) {
-      scheduledDate = DateTime.tryParse(rawScheduledDate.toString());
-    }
-
-    bool isLockedBySchedule = false;
-    String lockReason = '';
-
-    if (scheduleId == null) {
-      isLockedBySchedule = true;
-      lockReason = "Adviser grading is locked because this team's defense has not been scheduled yet.";
-    } else {
-      final now = DateTime.now();
-      final today = DateTime(now.year, now.month, now.day);
-      if (scheduledDate != null && today.isBefore(scheduledDate)) {
-        final formattedDate = "${scheduledDate.year}-${scheduledDate.month.toString().padLeft(2, '0')}-${scheduledDate.day.toString().padLeft(2, '0')}";
-        isLockedBySchedule = true;
-        lockReason = "Adviser grading is locked until the scheduled defense date: $formattedDate.";
-      }
-    }
+    final isOfficiallyComplete = gradeRecord['is_officially_complete'] == true ||
+        (widget.team['stages'] is List &&
+            (widget.team['stages'] as List).any((s) =>
+                s is Map &&
+                s['stage_label']?.toString() == widget.selectedStage &&
+                s['is_officially_complete'] == true));
+    final isPublished = status == 'published';
+    final isGradingLocked = isOfficiallyComplete || isPublished;
 
     Color statusBg = const Color(0xFFFEF3C7);
     Color statusText = const Color(0xFFD97706);
@@ -651,9 +655,9 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            const Text(
-              'Grade Overview',
-              style: TextStyle(
+            Text(
+              'Grade Overview · ${widget.selectedStage}',
+              style: const TextStyle(
                 fontWeight: FontWeight.bold,
                 fontSize: 14,
                 color: AppColors.textPrimary,
@@ -719,31 +723,6 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                 ],
               ),
             ),
-          ] else if (isLockedBySchedule) ...[
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF9FAFB),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFE5E7EB)),
-              ),
-              child: Column(
-                children: [
-                  const Icon(Icons.lock_outline_rounded, size: 48, color: AppColors.textSecondary),
-                  const SizedBox(height: 12),
-                  const Text(
-                    'Adviser Grading is Locked',
-                    style: TextStyle(fontWeight: FontWeight.bold, color: AppColors.textPrimary),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    lockReason,
-                    textAlign: TextAlign.center,
-                    style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
-                  ),
-                ],
-              ),
-            ),
           ] else if (assignedRubric == null) ...[
             Container(
               padding: const EdgeInsets.all(16),
@@ -766,6 +745,35 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
               ),
             ),
           ] else ...[
+            if (isGradingLocked) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                margin: const EdgeInsets.only(bottom: 14),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.lock_outline_rounded, size: 20, color: AppColors.textSecondary),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        isOfficiallyComplete
+                            ? 'This defense stage is officially complete. Adviser grades are locked and cannot be edited.'
+                            : 'Grades for this stage have been finalized and published. Modifications are locked.',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             Row(
               children: [
                 _sectionTitle('Rubric: ${assignedRubric['name']} (${assignedRubric['scale'] ?? ''})'),
@@ -795,7 +803,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
               ],
             ),
             const SizedBox(height: 10),
-            _buildCriteriaTableForTeam(teamId, widget.selectedStage, assignedRubric),
+            _buildCriteriaTableForTeam(teamId, widget.selectedStage, assignedRubric, isReadOnly: isGradingLocked),
             const SizedBox(height: 16),
             // Computed score
             Container(
@@ -823,32 +831,43 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             const SizedBox(height: 16),
             // Submit Button
             Builder(builder: (_) {
+              if (isGradingLocked) {
+                return SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: null,
+                    icon: const Icon(Icons.lock_rounded, size: 14),
+                    label: Text(
+                      isOfficiallyComplete
+                          ? 'Stage Officially Complete (Grades Locked)'
+                          : 'Grade Finalized (Locked)',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      disabledBackgroundColor: const Color(0xFFE2E8F0),
+                      disabledForegroundColor: AppColors.textSecondary,
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      elevation: 0,
+                    ),
+                  ),
+                );
+              }
               final canSubmit = _allCriteriaFilledForTeam(teamId, widget.selectedStage);
               return SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: (gradingState.isSaving || !canSubmit)
-                      ? null
-                      : () => _submitAdviserGrade(
+                child: DefensysSaveButton(
+                  onPressed: canSubmit
+                      ? () => _submitAdviserGrade(
                             teamId: teamId,
                             stageLabel: widget.selectedStage,
                             gradeRecord: gradeRecord,
-                          ),
-                  icon: gradingState.isSaving
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                        )
-                      : const Icon(Icons.save_rounded, size: 14),
-                  label: Text(isAlreadyGraded ? 'Update Adviser Grade' : 'Submit Adviser Grade'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: canSubmit ? AppColors.maroon : Colors.grey.shade300,
-                    foregroundColor: canSubmit ? Colors.white : Colors.grey.shade500,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                    elevation: 0,
-                  ),
+                          )
+                      : null,
+                  isSaving: gradingState.isSaving,
+                  label: isAlreadyGraded ? 'Update Adviser Grade' : 'Submit Adviser Grade',
+                  savingLabel: 'Submitting Grade…',
+                  isPill: false,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
                 ),
               );
             }),

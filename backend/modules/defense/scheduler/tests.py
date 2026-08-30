@@ -1181,6 +1181,82 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('panelist_ids', response.data)
 
+    def test_redefense_schedule_creation_allowed_when_verdict_for_redefense(self):
+        from decimal import Decimal
+        from grading.grades.models import TeamGrade, GradeAttemptHistory
+        from grading.grades.services import GradeContextService
+        from student_teams.services import mark_stage_ready, mark_stage_result
+
+        # 1. Team is ready and scheduled for Attempt 1
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        schedule_1 = self.create_scheduled_defense()
+
+        # 2. Complete Attempt 1 with verdict 'for_redefense'
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule_1)
+        grade.panel_score = Decimal('65.00')
+        grade.final_grade = Decimal('65.00')
+        grade.verdict = TeamGrade.VERDICT_FOR_REDEFENSE
+        grade.verdict_remarks = 'Needs rework'
+        grade.save()
+        schedule_1.status = DefenseSchedule.STATUS_DONE
+        schedule_1.save()
+        mark_stage_result(grade, user=self.admin)
+
+        # 3. Schedule Attempt 2 (redefense)
+        self.client.force_authenticate(user=self.admin)
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            scheduled_date='2026-06-25',
+            start_time='09:00:00',
+            room='Room 302',
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+
+        # 4. Verify snapshot was created for Attempt 1 and grade reset for Attempt 2
+        grade.refresh_from_db()
+        self.assertEqual(grade.attempt_count, 2)
+        self.assertEqual(grade.status, TeamGrade.STATUS_PENDING)
+        self.assertIsNone(grade.panel_score)
+        self.assertEqual(grade.verdict, '')
+
+        history = GradeAttemptHistory.objects.filter(team_grade=grade)
+        self.assertEqual(history.count(), 1)
+        self.assertEqual(history.first().attempt_number, 1)
+        self.assertEqual(history.first().verdict, TeamGrade.VERDICT_FOR_REDEFENSE)
+
+    def test_schedule_creation_blocked_when_already_passed(self):
+        from decimal import Decimal
+        from grading.grades.models import TeamGrade
+        from grading.grades.services import GradeContextService
+        from student_teams.services import mark_stage_ready, mark_stage_result
+
+        # 1. Team is ready and scheduled for Attempt 1
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        schedule_1 = self.create_scheduled_defense()
+
+        # 2. Complete Attempt 1 with verdict 'approved' (passed)
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule_1)
+        grade.panel_score = Decimal('88.00')
+        grade.final_grade = Decimal('88.00')
+        grade.verdict = TeamGrade.VERDICT_APPROVED
+        grade.save()
+        schedule_1.status = DefenseSchedule.STATUS_DONE
+        schedule_1.save()
+        mark_stage_result(grade, user=self.admin)
+
+        # 3. Attempting to schedule again should be rejected
+        self.client.force_authenticate(user=self.admin)
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            scheduled_date='2026-06-25',
+            start_time='09:00:00',
+            room='Room 302',
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('already completed and passed this stage', str(response.data))
+
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):

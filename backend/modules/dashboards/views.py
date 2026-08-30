@@ -16,6 +16,7 @@ from user_management.permissions import (
 from academic_period_management.models import SchoolYear, Semester
 from academic_period_management.serializers import SemesterSerializer
 from academic_period_management.services import active_semester
+from authentication_access_control.models import SystemAuditLog
 from repository.deliverables.models import DeliverableSubmission
 from curriculum_analytics.services import (
     analytics_academic_year_count,
@@ -57,6 +58,13 @@ def _next_school_year_label(label):
     except (TypeError, ValueError):
         return ''
     return f'{start + 1}-{end + 1}'
+
+
+def _humanize_action(action):
+    if not action:
+        return 'Activity logged'
+    parts = action.replace('.', ' ').replace('_', ' ').split()
+    return ' '.join(parts).capitalize()
 
 
 def _display_name(user):
@@ -682,6 +690,128 @@ class AdminDashboardView(APIView):
         active_label = _active_semester_label(active_sem)
         period_configured = active_label != 'Not configured'
 
+        # Upcoming scheduled defenses (next 5)
+        upcoming_schedules = (
+            DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_SCHEDULED)
+            .select_related('team', 'defense_stage', 'semester', 'documenter')
+            .prefetch_related('panelists')
+            .order_by('scheduled_date', 'start_time')[:5]
+        )
+        upcoming_defenses_list = [
+            {
+                'id': s.id,
+                'team_name': s.team.name if s.team else 'Unknown Team',
+                'project_title': s.team.project_title if s.team else '',
+                'stage_label': s.stage_label,
+                'scope': s.scope,
+                'date': s.scheduled_date.isoformat() if s.scheduled_date else '',
+                'start_time': s.start_time.strftime('%I:%M %p') if s.start_time else '',
+                'slot_duration': s.slot_duration,
+                'room': s.room,
+                'panelist_count': s.panelists.count(),
+                'has_documenter': bool(s.documenter),
+            }
+            for s in upcoming_schedules
+        ]
+
+        # Stage readiness & pipeline distribution
+        active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
+        stage_distribution = []
+        for stage in active_stages:
+            count = StudentTeam.objects.filter(
+                Q(current_defense_stage=stage.label) | Q(ready_for_stage=stage.label)
+            ).count()
+            stage_distribution.append({
+                'label': stage.label,
+                'code': stage.code,
+                'count': count,
+            })
+
+        teams_with_adviser = StudentTeam.objects.filter(adviser__isnull=False).count()
+        teams_without_adviser = StudentTeam.objects.filter(adviser__isnull=True).count()
+        capstone_teams_count = StudentTeam.objects.filter(level__icontains='Capstone').count()
+        pit_teams_count = StudentTeam.objects.filter(level__icontains='PIT').count()
+
+        team_pipeline = {
+            'total_teams': team_count,
+            'ready_for_defense': ready_capstone_count,
+            'teams_with_adviser': teams_with_adviser,
+            'teams_without_adviser': teams_without_adviser,
+            'capstone_teams': capstone_teams_count,
+            'pit_teams': pit_teams_count,
+            'stage_distribution': stage_distribution,
+        }
+
+        # Action items for Admin
+        action_items = []
+        if teams_without_adviser > 0:
+            action_items.append({
+                'id': 'unassigned_advisers',
+                'title': f'{teams_without_adviser} {"Team needs" if teams_without_adviser == 1 else "Teams need"} an Adviser',
+                'description': 'Assign project advisers in Student Teams.',
+                'severity': 'warning',
+                'target_section': 'studentTeams',
+                'button_label': 'Assign',
+            })
+
+        scheduled_team_ids = set(
+            DefenseSchedule.objects.filter(
+                status=DefenseSchedule.STATUS_SCHEDULED
+            ).values_list('team_id', flat=True)
+        )
+        unscheduled_ready_count = StudentTeam.objects.filter(
+            ready_for_stage__isnull=False
+        ).exclude(ready_for_stage='').exclude(id__in=scheduled_team_ids).count()
+        if unscheduled_ready_count > 0:
+            action_items.append({
+                'id': 'unscheduled_ready_teams',
+                'title': f'{unscheduled_ready_count} {"Team" if unscheduled_ready_count == 1 else "Teams"} Ready for Defense',
+                'description': 'Deliverables verified. Review readiness queue to schedule.',
+                'severity': 'action',
+                'target_section': 'defenseBoardReadiness',
+                'button_label': 'Review Queue',
+            })
+
+        if pending_grade_count > 0:
+            action_items.append({
+                'id': 'pending_grades',
+                'title': f'{pending_grade_count} Unpublished Defense {"Grade" if pending_grade_count == 1 else "Grades"}',
+                'description': 'Review and publish panel scores in Grade Center.',
+                'severity': 'warning',
+                'target_section': 'gradeCenter',
+                'button_label': 'Review',
+            })
+
+        if not period_configured:
+            action_items.append({
+                'id': 'no_active_period',
+                'title': 'No Active Academic Period',
+                'description': 'Activate an academic period in Academic Periods.',
+                'severity': 'danger',
+                'target_section': 'academicPeriods',
+                'button_label': 'Configure',
+            })
+
+        # Recent audit logs (last 8)
+        recent_logs = (
+            SystemAuditLog.objects.select_related('actor')
+            .order_by('-created_at', '-id')[:8]
+        )
+        recent_activity = [
+            {
+                'id': log.id,
+                'actor_name': _display_name(log.actor) if log.actor else 'System',
+                'action': log.action,
+                'action_label': _humanize_action(log.action),
+                'category': log.category,
+                'target_type': log.target_type,
+                'target_id': log.target_id,
+                'timestamp': log.created_at.isoformat() if log.created_at else '',
+                'review_status': log.review_status,
+            }
+            for log in recent_logs
+        ]
+
         return Response({
             'stats': {
                 'total_students': student_count,
@@ -703,6 +833,10 @@ class AdminDashboardView(APIView):
                 'analytics_top_tech': analytics_top_technology,
                 'ready_capstone_teams': ready_capstone_count,
             },
+            'upcoming_defenses_list': upcoming_defenses_list,
+            'team_pipeline': team_pipeline,
+            'action_items': action_items,
+            'recent_activity': recent_activity,
             'active_semester': active_label,
             'alerts': [
                 {

@@ -68,6 +68,29 @@ class TactileButton extends StatefulWidget {
     );
   }
 
+  /// Standard Dark Slate Navy Save Action Button with Tactile Feedback
+  factory TactileButton.save({
+    Key? key,
+    String label = 'Save changes',
+    required VoidCallback? onPressed,
+    Widget? icon,
+    bool isLoading = false,
+    bool isPill = true,
+    double? width,
+    double height = DefensysTokens.buttonHeightSecondary,
+  }) {
+    return _SaveTactileButton(
+      key: key,
+      label: label,
+      onPressed: onPressed,
+      icon: icon,
+      isLoading: isLoading,
+      isPill: isPill,
+      width: width,
+      height: height,
+    );
+  }
+
   @override
   State<TactileButton> createState() => _TactileButtonState();
 }
@@ -239,3 +262,64 @@ class _SecondaryTactileButton extends TactileButton {
           ),
         );
 }
+
+class _SaveTactileButton extends TactileButton {
+  _SaveTactileButton({
+    super.key,
+    required String label,
+    required super.onPressed,
+    Widget? icon,
+    bool isLoading = false,
+    bool isPill = true,
+    double? width,
+    double height = DefensysTokens.buttonHeightSecondary,
+  }) : super(
+          enabled: !isLoading && onPressed != null,
+          hoverColor: DefensysTokens.saveActionHoverBg,
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 18),
+              decoration: BoxDecoration(
+                color: onPressed != null && !isLoading
+                    ? DefensysTokens.saveActionBg
+                    : DefensysTokens.saveActionDisabledBg,
+                borderRadius: BorderRadius.circular(
+                  isPill ? DefensysTokens.radiusPill : DefensysTokens.radiusMd,
+                ),
+              ),
+              child: Center(
+                child: isLoading
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                        ),
+                      )
+                    : Row(
+                        mainAxisSize: MainAxisSize.min,
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          icon ?? const Icon(Icons.save_rounded, size: 16, color: Colors.white),
+                          const SizedBox(width: 6),
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              fontFamily: DefensysTokens.fontFamily,
+                              color: DefensysTokens.saveActionFg,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                              height: 1.2,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ),
+        );
+}
+
