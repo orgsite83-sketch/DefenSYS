@@ -9,11 +9,13 @@ import 'student_deliverables_tab.dart';
 class StudentEventsTab extends ConsumerStatefulWidget {
   final bool isCapstone;
   final Map<String, dynamic>? studentData;
+  final ValueNotifier<int>? subTabNotifier;
 
   const StudentEventsTab({
     super.key,
     required this.isCapstone,
     required this.studentData,
+    this.subTabNotifier,
   });
 
   @override
@@ -33,14 +35,22 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void initState() {
     super.initState();
-    _subTabController = TabController(length: 3, vsync: this);
+    final initialIdx = (widget.subTabNotifier?.value ?? 0).clamp(0, 2);
+    _subTabController = TabController(
+      length: 3,
+      vsync: this,
+      initialIndex: initialIdx,
+    );
+    _activeSubIndex = initialIdx;
     _subTabController.addListener(() {
-      if (_subTabController.indexIsChanging) {
+      if (_subTabController.index != _activeSubIndex) {
         setState(() {
           _activeSubIndex = _subTabController.index;
         });
       }
     });
+
+    widget.subTabNotifier?.addListener(_onSubTabNotifierChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
@@ -50,8 +60,28 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     });
   }
 
+  void _onSubTabNotifierChanged() {
+    final target = widget.subTabNotifier?.value;
+    if (target != null && target >= 0 && target < 3 && _subTabController.index != target) {
+      _subTabController.animateTo(target);
+      setState(() {
+        _activeSubIndex = target;
+      });
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant StudentEventsTab oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.subTabNotifier != widget.subTabNotifier) {
+      oldWidget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);
+      widget.subTabNotifier?.addListener(_onSubTabNotifierChanged);
+    }
+  }
+
   @override
   void dispose() {
+    widget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);
     _subTabController.dispose();
     super.dispose();
   }
@@ -353,6 +383,13 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     ),
                     child: TabBar(
                       controller: _subTabController,
+                      onTap: (index) {
+                        if (_activeSubIndex != index) {
+                          setState(() {
+                            _activeSubIndex = index;
+                          });
+                        }
+                      },
                       isScrollable: false,
                       indicatorSize: TabBarIndicatorSize.tab,
                       labelPadding: EdgeInsets.zero,
@@ -430,36 +467,37 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               const SizedBox(height: 16),
 
               // Active Sub-Tab View
-              IndexedStack(
-                index: _activeSubIndex,
-                children: [
-                  // 1. Schedule & Info Card
-                  _buildScheduleTab(scheduleData, selectedStage, team),
-
-                  // 2. Deliverables View
-                  StudentDeliverablesTab(
-                    isCapstone: isCapstone,
-                    studentData: widget.studentData,
-                    isEmbedded: true,
-                    hideHeader: true,
-                  ),
-
-                  // 3. Peer Eval View
-                  PeerEvalTab(
-                    isCapstone: isCapstone,
-                    peerEvalAllowed: peerEvalAllowed,
-                    teammates: teammates,
-                    peerCriteria: peerCriteria,
-                    myPeerSubmissions: myPeerSubmissions,
-                    studentId: widget.studentData?['student']?['id']?.toString() ?? '',
-                    teamId: team?['id']?.toString() ?? '',
-                    peerWeight: (widget.studentData?['weights']?['peer'] as num?)?.toInt() ?? 20,
-                    onPeerSubmitted: _refreshAll,
-                    onRefresh: _refreshAll,
-                    isEmbedded: true,
-                    hideHistory: !isSelectedStageActive,
-                  ),
-                ],
+              Builder(
+                builder: (context) {
+                  switch (_activeSubIndex) {
+                    case 0:
+                      return _buildScheduleTab(scheduleData, selectedStage, team);
+                    case 1:
+                      return StudentDeliverablesTab(
+                        isCapstone: isCapstone,
+                        studentData: widget.studentData,
+                        isEmbedded: true,
+                        hideHeader: true,
+                      );
+                    case 2:
+                      return PeerEvalTab(
+                        isCapstone: isCapstone,
+                        peerEvalAllowed: peerEvalAllowed,
+                        teammates: teammates,
+                        peerCriteria: peerCriteria,
+                        myPeerSubmissions: myPeerSubmissions,
+                        studentId: widget.studentData?['student']?['id']?.toString() ?? '',
+                        teamId: team?['id']?.toString() ?? '',
+                        peerWeight: (widget.studentData?['weights']?['peer'] as num?)?.toInt() ?? 20,
+                        onPeerSubmitted: _refreshAll,
+                        onRefresh: _refreshAll,
+                        isEmbedded: true,
+                        hideHistory: !isSelectedStageActive,
+                      );
+                    default:
+                      return const SizedBox.shrink();
+                  }
+                },
               ),
             ],
           ),

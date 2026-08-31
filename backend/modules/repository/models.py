@@ -1,10 +1,13 @@
 from repository.project_archive.models import ProjectArchiveLog
 from repository.deliverables.models import DeliverableSubmission, DeliverableSubmissionFile
-from repository.archive.models import ArchiveEntry
+from repository.archive.models import ArchiveEntry, RepositoryReview, UserBookShelf
 
 __all__ = [
     'ArchiveEntry',
     'DeliverableSubmission',
     'DeliverableSubmissionFile',
     'ProjectArchiveLog',
+    'RepositoryReview',
+    'UserBookShelf',
 ]
+

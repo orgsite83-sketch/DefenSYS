@@ -185,3 +185,88 @@ class ArchiveEntry(models.Model):
         if self.file:
             return self.file.url
         return None
+
+
+class RepositoryReview(models.Model):
+    target_id = models.CharField(max_length=120, db_index=True, help_text='ID of the repository entry (e.g. capstone-1-2, pit-5, doc_3)')
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='repository_reviews',
+        on_delete=models.CASCADE,
+    )
+    user_name = models.CharField(max_length=150, blank=True)
+    user_role = models.CharField(max_length=50, blank=True, default='Student')
+    rating = models.PositiveSmallIntegerField(default=5, help_text='Rating from 1 to 5 stars')
+    remark = models.TextField(blank=True, default='', help_text='User review remarks or feedback')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'repository'
+        db_table = 'repository_review'
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['target_id', 'user'],
+                name='unique_user_repository_review',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['target_id'], name='repo_review_target_idx'),
+        ]
+
+    def save(self, *args, **kwargs):
+        if self.user and not self.user_name:
+            full_name = f'{self.user.first_name} {self.user.last_name}'.strip()
+            self.user_name = full_name or self.user.username
+        if self.user and hasattr(self.user, 'role') and not self.user_role:
+            self.user_role = str(self.user.role).capitalize()
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f'{self.user_name} - {self.target_id} ({self.rating}★)'
+
+
+class UserBookShelf(models.Model):
+    STATUS_WANT_TO_READ = 'want_to_read'
+    STATUS_READING = 'reading'
+    STATUS_COMPLETED = 'completed'
+    STATUS_FAVORITED = 'favorited'
+
+    STATUS_CHOICES = (
+        (STATUS_WANT_TO_READ, 'Want to Read'),
+        (STATUS_READING, 'Currently Reading'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_FAVORITED, 'Favorited'),
+    )
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        related_name='user_bookshelf',
+        on_delete=models.CASCADE,
+    )
+    target_id = models.CharField(max_length=120, db_index=True)
+    status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_READING)
+    last_read_page = models.PositiveIntegerField(default=1)
+    total_pages = models.PositiveIntegerField(default=1)
+    progress_percent = models.FloatField(default=0.0)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        app_label = 'repository'
+        db_table = 'repository_bookshelf'
+        ordering = ['-updated_at']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['user', 'target_id'],
+                name='unique_user_bookshelf_target',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['user', 'status'], name='repo_shelf_user_status_idx'),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} - {self.target_id} ({self.status})'
+

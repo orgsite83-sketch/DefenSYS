@@ -7,22 +7,23 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/repository_provider.dart';
+import '../../../services/repository_review_provider.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../l10n/l10n_ext.dart';
 import '../../../widgets/empty_state.dart';
 import '../../../widgets/error_banner.dart';
+import '../../../widgets/book_cover_widget.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../toasts/feedback_toast.dart';
 import '../../../utils/pdf_viewer.dart';
-
 
 // ── Data models ───────────────────────────────────────────────────────────────
 
 class VaultEntry {
   final String id;
   final String fileName;
-  final String? fileUrl;  // Add file URL
+  final String? fileUrl;
   final String teamName;
   final String uploadedBy;
   final String academicYear;
@@ -30,12 +31,21 @@ class VaultEntry {
   final String timestamp;
   final String yearLevel;
   final String stage;
-  final String type; // 'pit' or 'capstone'
+  final String type; // 'pit', 'capstone', 'uploader'
   final String? deliverableLabel;
-  final String extractedText;  // PDF content
-  final List<String> topics;  // Keywords/topics
-  final String summary;  // Summary
+  final String extractedText;
+  final List<String> topics;
+  final String summary;
   final String category;
+  final double averageRating;
+  final int ratingsCount;
+  final int reviewsCount;
+  final int? userRating;
+  final String? userRemark;
+  final String? shelfStatus;
+  final int lastReadPage;
+  final int totalPages;
+  final double readingProgress;
 
   const VaultEntry({
     required this.id,
@@ -54,26 +64,100 @@ class VaultEntry {
     this.topics = const [],
     this.summary = '',
     this.category = '',
+    this.averageRating = 0.0,
+    this.ratingsCount = 0,
+    this.reviewsCount = 0,
+    this.userRating,
+    this.userRemark,
+    this.shelfStatus,
+    this.lastReadPage = 1,
+    this.totalPages = 1,
+    this.readingProgress = 0.0,
   });
 
-  factory VaultEntry.fromJson(Map<String, dynamic> j) => VaultEntry(
-        id: j['id']?.toString() ?? '',
-        fileName: (j['file_name'] ?? j['fileName'])?.toString() ?? '',
-        fileUrl: j['file_url']?.toString(),
-        teamName: (j['team_name'] ?? j['teamName'])?.toString() ?? '—',
-        uploadedBy: (j['uploaded_by'] ?? j['uploadedBy'])?.toString() ?? '—',
-        academicYear: (j['academic_year'] ?? j['academicYear'])?.toString() ?? '—',
-        status: j['status']?.toString() ?? 'Approved',
-        timestamp: (j['uploaded_at'] ?? j['timestamp'])?.toString() ?? '',
-        yearLevel: (j['year_level'] ?? j['yearLevel'])?.toString() ?? '—',
-        stage: j['stage']?.toString() ?? '—',
-        type: j['type']?.toString() ?? 'pit',
-        deliverableLabel: (j['deliverable_label'] ?? j['deliverableLabel'])?.toString(),
-        extractedText: j['extracted_text']?.toString() ?? '',
-        topics: (j['topics'] as List?)?.map((e) => e.toString()).toList() ?? [],
-        summary: j['summary']?.toString() ?? '',
-        category: j['category']?.toString() ?? '',
-      );
+  factory VaultEntry.fromJson(Map<String, dynamic> j) {
+    return VaultEntry(
+      id: j['id']?.toString() ?? '',
+      fileName: (j['file_name'] ?? j['fileName'])?.toString() ?? '',
+      fileUrl: j['file_url']?.toString(),
+      teamName: (j['team_name'] ?? j['teamName'])?.toString() ?? '—',
+      uploadedBy: (j['uploaded_by'] ?? j['uploadedBy'])?.toString() ?? '—',
+      academicYear: (j['academic_year'] ?? j['academicYear'])?.toString() ?? '—',
+      status: j['status']?.toString() ?? 'Approved',
+      timestamp: (j['uploaded_at'] ?? j['timestamp'])?.toString() ?? '',
+      yearLevel: (j['year_level'] ?? j['yearLevel'])?.toString() ?? '—',
+      stage: j['stage']?.toString() ?? '—',
+      type: j['type']?.toString() ?? 'pit',
+      deliverableLabel: (j['deliverable_label'] ?? j['deliverableLabel'])?.toString(),
+      extractedText: j['extracted_text']?.toString() ?? '',
+      topics: (j['topics'] as List?)?.map((e) => e.toString()).toList() ?? [],
+      summary: j['summary']?.toString() ?? '',
+      category: j['category']?.toString() ?? '',
+      averageRating: (j['average_rating'] is num)
+          ? (j['average_rating'] as num).toDouble()
+          : double.tryParse(j['average_rating']?.toString() ?? '0.0') ?? 0.0,
+      ratingsCount: j['ratings_count'] is int
+          ? j['ratings_count']
+          : int.tryParse(j['ratings_count']?.toString() ?? '0') ?? 0,
+      reviewsCount: j['reviews_count'] is int
+          ? j['reviews_count']
+          : int.tryParse(j['reviews_count']?.toString() ?? '0') ?? 0,
+      userRating: j['user_rating'] is int
+          ? j['user_rating']
+          : int.tryParse(j['user_rating']?.toString() ?? ''),
+      userRemark: j['user_remark']?.toString(),
+      shelfStatus: j['shelf_status']?.toString(),
+      lastReadPage: j['last_read_page'] is int
+          ? j['last_read_page']
+          : int.tryParse(j['last_read_page']?.toString() ?? '1') ?? 1,
+      totalPages: j['total_pages'] is int
+          ? j['total_pages']
+          : int.tryParse(j['total_pages']?.toString() ?? '1') ?? 1,
+      readingProgress: (j['reading_progress'] is num)
+          ? (j['reading_progress'] as num).toDouble()
+          : double.tryParse(j['reading_progress']?.toString() ?? '0.0') ?? 0.0,
+    );
+  }
+
+  VaultEntry copyWith({
+    double? averageRating,
+    int? ratingsCount,
+    int? reviewsCount,
+    int? userRating,
+    String? userRemark,
+    String? shelfStatus,
+    int? lastReadPage,
+    int? totalPages,
+    double? readingProgress,
+  }) {
+    return VaultEntry(
+      id: id,
+      fileName: fileName,
+      fileUrl: fileUrl,
+      teamName: teamName,
+      uploadedBy: uploadedBy,
+      academicYear: academicYear,
+      status: status,
+      timestamp: timestamp,
+      yearLevel: yearLevel,
+      stage: stage,
+      type: type,
+      deliverableLabel: deliverableLabel,
+      extractedText: extractedText,
+      topics: topics,
+      summary: summary,
+      category: category,
+      averageRating: averageRating ?? this.averageRating,
+      ratingsCount: ratingsCount ?? this.ratingsCount,
+      reviewsCount: reviewsCount ?? this.reviewsCount,
+      userRating: userRating ?? this.userRating,
+      userRemark: userRemark ?? this.userRemark,
+      shelfStatus: shelfStatus ?? this.shelfStatus,
+      lastReadPage: lastReadPage ?? this.lastReadPage,
+      totalPages: totalPages ?? this.totalPages,
+      readingProgress: readingProgress ?? this.readingProgress,
+    );
+  }
 }
 
 // ── Tab widget ────────────────────────────────────────────────────────────────
@@ -87,7 +171,8 @@ class RepositoryTab extends ConsumerStatefulWidget {
 
 class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   String _selectedYear = '';
-  String _selectedType = ''; // '', 'capstone', 'pit', 'uploader'
+  String _selectedType = ''; // '', 'capstone', 'pit'
+  bool _isGridView = true; // true = Bookshelf Grid, false = List
   final Set<String> _collapsedStages = {};
   bool _defaultYearApplied = false;
   String _searchQuery = '';
@@ -135,182 +220,20 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
   }
 
   List<String> _yearsFor(List<VaultEntry> allEntries) {
-    final y = allEntries.map((e) => e.academicYear).where((y) => y != '—').toSet().toList()..sort();
+    final y = allEntries
+        .map((e) => e.academicYear)
+        .where((y) => y != '—' && y.isNotEmpty)
+        .toSet()
+        .toList()
+      ..sort();
     return y.reversed.toList();
   }
 
   Future<void> _refreshVault() async {
     await Future.wait([
-      ref
-          .read(repositoryProvider.notifier)
-          .fetchForStudent(search: _searchQuery),
-      ref
-          .read(dashboardProvider('student').notifier)
-          .fetchDashboardData(),
+      ref.read(repositoryProvider.notifier).fetchForStudent(search: _searchQuery),
+      ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
     ]);
-  }
-
-  Widget _buildErrorPanel(String message) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: ErrorBanner(
-          title: context.l10n.failedToLoadRepository,
-          message: message,
-          onRetry: _refreshVault,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildErrorBanner(String message) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: ErrorBanner(
-        title: 'Could not refresh archive',
-        message: message,
-        onRetry: _refreshVault,
-      ),
-    );
-  }
-
-  Widget _buildEmptyPanel(bool isSearching) {
-    return EmptyState(
-      icon: Icons.folder_off,
-      iconSize: 48,
-      message: isSearching
-          ? 'No files match "$_searchQuery".'
-          : 'No published files yet.',
-    );
-  }
-
-  Widget _buildScrollableChild({
-    required Widget child,
-    required double minHeight,
-  }) {
-    return SingleChildScrollView(
-      physics: const AlwaysScrollableScrollPhysics(),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minHeight: minHeight),
-        child: child,
-      ),
-    );
-  }
-
-  Widget _buildListBody({
-    required bool loading,
-    required String? error,
-    required List<VaultEntry> allEntries,
-    required List<VaultEntry> entries,
-    required bool isSearching,
-  }) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final minHeight = constraints.maxHeight;
-
-        if (loading && allEntries.isEmpty) {
-          return _buildScrollableChild(
-            minHeight: minHeight,
-            child: const Center(
-              child: CircularProgressIndicator(color: DefensysTokens.maroon),
-            ),
-          );
-        }
-
-        if (error != null && allEntries.isEmpty) {
-          return _buildScrollableChild(
-            minHeight: minHeight,
-            child: _buildErrorPanel(error),
-          );
-        }
-
-        if (entries.isEmpty) {
-          return _buildScrollableChild(
-            minHeight: minHeight,
-            child: _buildEmptyPanel(isSearching),
-          );
-        }
-
-        // Group entries by stage/milestone
-        final Map<String, List<VaultEntry>> grouped = {};
-        for (var entry in entries) {
-          final stageName = entry.stage.isEmpty || entry.stage == '—' ? 'General' : entry.stage;
-          grouped.putIfAbsent(stageName, () => []).add(entry);
-        }
-
-        final List<Widget> listItems = [];
-        if (error != null) {
-          listItems.add(_buildErrorBanner(error));
-        }
-
-        grouped.forEach((stage, stageEntries) {
-          final isCollapsed = _collapsedStages.contains(stage);
-          listItems.add(
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  if (isCollapsed) {
-                    _collapsedStages.remove(stage);
-                  } else {
-                    _collapsedStages.add(stage);
-                  }
-                });
-              },
-              child: Container(
-                margin: const EdgeInsets.only(top: 14, bottom: 8),
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Row(
-                  children: [
-                    Icon(
-                      isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
-                      color: DefensysTokens.textSecondary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 4),
-                    Text(
-                      stage.toUpperCase(),
-                      style: const TextStyle(
-                        fontWeight: FontWeight.w800,
-                        fontSize: 12,
-                        color: DefensysTokens.textSecondary,
-                        letterSpacing: 0.5,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.grey.shade100,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.grey.shade200, width: 0.5),
-                      ),
-                      child: Text(
-                        '${stageEntries.length} ${stageEntries.length == 1 ? "file" : "files"}',
-                        style: TextStyle(
-                          fontSize: 9,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-
-          if (!isCollapsed) {
-            listItems.addAll(stageEntries.map(_entryCard));
-          }
-        });
-
-        return ListView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-          children: listItems,
-        );
-      },
-    );
   }
 
   void _applyDefaultYearIfNeeded(List<VaultEntry> allEntries) {
@@ -333,8 +256,8 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     }
   }
 
-  String _cleanFileName(String fileName) {
-    var name = fileName;
+  String _cleanTitle(String raw) {
+    var name = raw;
     final lastDot = name.lastIndexOf('.');
     if (lastDot != -1) {
       name = name.substring(0, lastDot);
@@ -344,45 +267,10 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     return name;
   }
 
-  Widget _buildSegmentTab({required String label, required String typeValue}) {
-    final isSelected = _selectedType == typeValue;
-    return Expanded(
-      child: GestureDetector(
-        onTap: () => setState(() => _selectedType = typeValue),
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-            boxShadow: isSelected
-                ? [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
-                      blurRadius: 3,
-                      offset: const Offset(0, 1),
-                    ),
-                  ]
-                : null,
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            label,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-              color: isSelected ? DefensysTokens.maroon : Colors.grey.shade600,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final vaultState = ref.watch(repositoryProvider);
-    final allEntries = vaultState.entries
-        .map((e) => VaultEntry.fromJson(e))
-        .toList();
+    final allEntries = vaultState.entries.map((e) => VaultEntry.fromJson(e)).toList();
     _applyDefaultYearIfNeeded(allEntries);
     final loading = vaultState.isLoading && allEntries.isEmpty;
     final error = vaultState.error;
@@ -390,9 +278,21 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     final isSearching = _searchQuery.isNotEmpty;
     final years = _yearsFor(allEntries);
 
+    // Identify "Continue Reading" manuscripts
+    final continueReadingEntries = allEntries
+        .where((e) => e.readingProgress > 0 || e.shelfStatus == 'reading')
+        .take(3)
+        .toList();
+
+    // Identify "Featured & Top Rated" manuscripts
+    final featuredEntries = allEntries
+        .where((e) => e.averageRating >= 4.0 || e.type == 'capstone')
+        .take(6)
+        .toList();
+
     return Column(
       children: [
-        // ── Header ──
+        // ── Library Header & Search Bar ──
         Container(
           color: Colors.white,
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
@@ -400,61 +300,128 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Icon(Icons.folder_special, color: DefensysTokens.maroon, size: 18),
-                  const SizedBox(width: 8),
-                  Text(
-                    context.l10n.repositoryTitle,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: DefensysTokens.maroon,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(Icons.local_library_rounded, color: DefensysTokens.maroon, size: 18),
+                      ),
+                      const SizedBox(width: 8),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'USTP Research Library',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 16,
+                              color: DefensysTokens.maroon,
+                              letterSpacing: -0.2,
+                            ),
+                          ),
+                          Text(
+                            'Digital Manuscripts & Defense Archives',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+
+                  // View Toggle Button (Grid vs List)
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: Colors.grey.shade300, width: 0.8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        IconButton(
+                          tooltip: 'Bookshelf Grid',
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(),
+                          icon: Icon(
+                            Icons.grid_view_rounded,
+                            size: 16,
+                            color: _isGridView ? DefensysTokens.maroon : Colors.grey.shade500,
+                          ),
+                          onPressed: () => setState(() => _isGridView = true),
+                        ),
+                        IconButton(
+                          tooltip: 'Classic List',
+                          padding: const EdgeInsets.all(6),
+                          constraints: const BoxConstraints(),
+                          icon: Icon(
+                            Icons.view_list_rounded,
+                            size: 18,
+                            color: !_isGridView ? DefensysTokens.maroon : Colors.grey.shade500,
+                          ),
+                          onPressed: () => setState(() => _isGridView = false),
+                        ),
+                      ],
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 12),
+
+              // Search Bar
               TextField(
                 controller: _searchController,
                 onChanged: _onSearchChanged,
                 decoration: InputDecoration(
-                  hintText: 'Smart search: PDF content, topics, file, team...',
-                  hintStyle: TextStyle(fontSize: 13, color: Colors.grey.shade400),
-                  prefixIcon: const Icon(Icons.auto_awesome, size: 20, color: DefensysTokens.maroon),
+                  hintText: 'Search by title, team, abstract topics, PDF text...',
+                  hintStyle: TextStyle(fontSize: 12.5, color: Colors.grey.shade400),
+                  prefixIcon: const Icon(Icons.auto_stories_rounded, size: 18, color: DefensysTokens.maroon),
                   suffixIcon: _searchQuery.isNotEmpty
                       ? IconButton(
                           tooltip: 'Clear search',
                           icon: const Icon(Icons.close, size: 18, color: Colors.grey),
-                          onPressed: _clearSearch)
+                          onPressed: _clearSearch,
+                        )
                       : const Tooltip(
-                          message: 'ML-powered search with PDF content extraction',
-                          child: Icon(Icons.psychology, size: 18, color: Colors.grey),
+                          message: 'Full-text ML indexed e-library search',
+                          child: Icon(Icons.psychology_rounded, size: 18, color: Colors.grey),
                         ),
                   isDense: true,
                   filled: true,
-                  fillColor: Colors.grey.shade50,
+                  fillColor: const Color(0xFFFBF9F5),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-                    borderSide: BorderSide(color: Colors.grey.shade200, width: 1.5),
+                    borderSide: BorderSide(color: Colors.grey.shade300, width: 1.2),
                   ),
                   focusedBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
                     borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.5),
                   ),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
                 ),
               ),
+
+              // Year Filter Chips
               if (!isSearching && years.isNotEmpty) ...[
-                const SizedBox(height: 12),
+                const SizedBox(height: 10),
                 SizedBox(
-                  height: 32,
+                  height: 30,
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: [
                       Padding(
-                        padding: const EdgeInsets.only(right: 8),
+                        padding: const EdgeInsets.only(right: 6),
                         child: ChoiceChip(
-                          label: const Text('All Years', style: TextStyle(fontSize: 12)),
+                          label: const Text('All Years', style: TextStyle(fontSize: 11)),
                           selected: _selectedYear.isEmpty,
                           selectedColor: DefensysTokens.maroon,
                           backgroundColor: Colors.grey.shade50,
@@ -462,44 +429,36 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                             color: _selectedYear.isEmpty ? Colors.white : Colors.grey.shade700,
                             fontWeight: _selectedYear.isEmpty ? FontWeight.bold : FontWeight.normal,
                           ),
-                          onSelected: (selected) {
-                            if (selected) {
-                              setState(() => _selectedYear = '');
-                            }
-                          },
+                          onSelected: (s) => setState(() => _selectedYear = ''),
                           showCheckmark: false,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(20),
+                            borderRadius: BorderRadius.circular(16),
                             side: BorderSide(
-                              color: _selectedYear.isEmpty ? DefensysTokens.maroon : Colors.grey.shade200,
+                              color: _selectedYear.isEmpty ? DefensysTokens.maroon : Colors.grey.shade300,
                               width: 1,
                             ),
                           ),
                         ),
                       ),
                       ...years.map((y) {
-                        final isSelected = _selectedYear == y;
+                        final isSel = _selectedYear == y;
                         return Padding(
-                          padding: const EdgeInsets.only(right: 8),
+                          padding: const EdgeInsets.only(right: 6),
                           child: ChoiceChip(
-                            label: Text('SY $y', style: const TextStyle(fontSize: 12)),
-                            selected: isSelected,
+                            label: Text('SY $y', style: const TextStyle(fontSize: 11)),
+                            selected: isSel,
                             selectedColor: DefensysTokens.maroon,
                             backgroundColor: Colors.grey.shade50,
                             labelStyle: TextStyle(
-                              color: isSelected ? Colors.white : Colors.grey.shade700,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              color: isSel ? Colors.white : Colors.grey.shade700,
+                              fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
                             ),
-                            onSelected: (selected) {
-                              if (selected) {
-                                setState(() => _selectedYear = y);
-                              }
-                            },
+                            onSelected: (s) => setState(() => _selectedYear = y),
                             showCheckmark: false,
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(20),
+                              borderRadius: BorderRadius.circular(16),
                               side: BorderSide(
-                                color: isSelected ? DefensysTokens.maroon : Colors.grey.shade200,
+                                color: isSel ? DefensysTokens.maroon : Colors.grey.shade300,
                                 width: 1,
                               ),
                             ),
@@ -510,19 +469,21 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                   ),
                 ),
               ],
-              const SizedBox(height: 12),
+              const SizedBox(height: 10),
+
+              // Type Tabs (All, Capstone, PIT)
               Container(
-                height: 38,
+                height: 34,
                 decoration: BoxDecoration(
                   color: Colors.grey.shade100,
-                  borderRadius: BorderRadius.circular(10),
+                  borderRadius: BorderRadius.circular(8),
                 ),
-                padding: const EdgeInsets.all(3),
+                padding: const EdgeInsets.all(2.5),
                 child: Row(
                   children: [
-                    _buildSegmentTab(label: 'All', typeValue: ''),
-                    _buildSegmentTab(label: 'Capstone', typeValue: 'capstone'),
-                    _buildSegmentTab(label: 'PIT', typeValue: 'pit'),
+                    _buildSegmentTab(label: 'All Shelves', typeValue: ''),
+                    _buildSegmentTab(label: '📘 Capstone', typeValue: 'capstone'),
+                    _buildSegmentTab(label: '📗 PIT Projects', typeValue: 'pit'),
                   ],
                 ),
               ),
@@ -530,32 +491,25 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
           ),
         ),
 
-        // ── Notice ──
+        // ── Notice Banner ──
         Container(
-          margin: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          margin: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
-            color: DefensysTokens.maroon.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-            border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.15), width: 1),
+            color: const Color(0xFFFBF7F0),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFEADBCE), width: 1),
           ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.lock_outline_rounded, color: DefensysTokens.maroon, size: 14),
-              ),
-              const SizedBox(width: 10),
-              const Expanded(
+              const Icon(Icons.verified_rounded, color: DefensysTokens.maroon, size: 14),
+              const SizedBox(width: 8),
+              Expanded(
                 child: Text(
-                  'Public repository · View-only access to all team submissions.',
+                  'Open Student Library · Read manuscripts, view peer remarks & leave reviews.',
                   style: TextStyle(
-                    fontSize: 11,
-                    color: DefensysTokens.maroon,
+                    fontSize: 10.5,
+                    color: Colors.brown.shade800,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -563,36 +517,20 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
             ],
           ),
         ),
-        const SizedBox(height: 8),
 
-        // ── Count ──
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-          child: Row(
-            children: [
-              Text(
-                loading
-                    ? 'Loading...'
-                    : isSearching
-                        ? '${entries.length} result${entries.length != 1 ? "s" : ""} for "$_searchQuery"'
-                        : '${entries.length} file${entries.length != 1 ? "s" : ""} found',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
-              ),
-            ],
-          ),
-        ),
-
-        // ── List ──
+        // ── Main Content List / Shelves ──
         Expanded(
           child: RefreshIndicator(
             color: DefensysTokens.maroon,
             onRefresh: _refreshVault,
-            child: _buildListBody(
+            child: _buildLibraryBody(
               loading: loading,
               error: error,
               allEntries: allEntries,
               entries: entries,
               isSearching: isSearching,
+              continueReadingEntries: continueReadingEntries,
+              featuredEntries: featuredEntries,
             ),
           ),
         ),
@@ -600,18 +538,489 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     );
   }
 
-  Widget _entryCard(VaultEntry e) {
+  Widget _buildSegmentTab({required String label, required String typeValue}) {
+    final isSelected = _selectedType == typeValue;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () => setState(() => _selectedType = typeValue),
+        child: Container(
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.05),
+                      blurRadius: 2,
+                      offset: const Offset(0, 1),
+                    ),
+                  ]
+                : null,
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              color: isSelected ? DefensysTokens.maroon : Colors.grey.shade700,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLibraryBody({
+    required bool loading,
+    required String? error,
+    required List<VaultEntry> allEntries,
+    required List<VaultEntry> entries,
+    required bool isSearching,
+    required List<VaultEntry> continueReadingEntries,
+    required List<VaultEntry> featuredEntries,
+  }) {
+    if (loading && allEntries.isEmpty) {
+      return const Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      );
+    }
+
+    if (error != null && allEntries.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: ErrorBanner(
+            title: context.l10n.failedToLoadRepository,
+            message: error,
+            onRetry: _refreshVault,
+          ),
+        ),
+      );
+    }
+
+    if (entries.isEmpty) {
+      return EmptyState(
+        icon: Icons.auto_stories_rounded,
+        iconSize: 48,
+        message: isSearching
+            ? 'No manuscripts match "$_searchQuery".'
+            : 'No published submissions in this shelf.',
+      );
+    }
+
+    // Group entries by stage/milestone
+    final Map<String, List<VaultEntry>> grouped = {};
+    for (var entry in entries) {
+      final stageName = entry.stage.isEmpty || entry.stage == '—' ? 'General' : entry.stage;
+      grouped.putIfAbsent(stageName, () => []).add(entry);
+    }
+
+    return ListView(
+      physics: const AlwaysScrollableScrollPhysics(),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      children: [
+        if (error != null)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 10),
+            child: ErrorBanner(
+              title: 'Could not refresh repository',
+              message: error,
+              onRetry: _refreshVault,
+            ),
+          ),
+
+        // ── 1. "Continue Reading" Shelf (if available & not searching) ──
+        if (!isSearching && continueReadingEntries.isNotEmpty) ...[
+          _buildContinueReadingSection(continueReadingEntries.first),
+          const SizedBox(height: 16),
+        ],
+
+        // ── 2. "Featured & Top-Rated Manuscripts" Carousel ──
+        if (!isSearching && featuredEntries.isNotEmpty) ...[
+          _buildFeaturedCarousel(featuredEntries),
+          const SizedBox(height: 18),
+        ],
+
+        // ── 3. Main Catalog Section Header ──
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              isSearching
+                  ? 'SEARCH RESULTS (${entries.length})'
+                  : 'ALL PUBLICATIONS (${entries.length})',
+              style: const TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 12,
+                color: DefensysTokens.textSecondary,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+
+        // ── 4. Catalog Sections (Grouped by Stage) ──
+        ...grouped.entries.map((group) {
+          final stage = group.key;
+          final stageEntries = group.value;
+          final isCollapsed = _collapsedStages.contains(stage);
+
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Section Accordion Header
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    if (isCollapsed) {
+                      _collapsedStages.remove(stage);
+                    } else {
+                      _collapsedStages.add(stage);
+                    }
+                  });
+                },
+                child: Container(
+                  margin: const EdgeInsets.only(top: 10, bottom: 8),
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isCollapsed ? Icons.keyboard_arrow_right_rounded : Icons.keyboard_arrow_down_rounded,
+                        color: DefensysTokens.textSecondary,
+                        size: 20,
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        stage.toUpperCase(),
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w800,
+                          fontSize: 12,
+                          color: DefensysTokens.textDark,
+                          letterSpacing: 0.3,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: Colors.grey.shade100,
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: Colors.grey.shade300, width: 0.6),
+                        ),
+                        child: Text(
+                          '${stageEntries.length} ${stageEntries.length == 1 ? "book" : "books"}',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.grey.shade700,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              if (!isCollapsed)
+                _isGridView
+                    ? _buildBookshelfGrid(stageEntries)
+                    : Column(children: stageEntries.map(_buildBookListItem).toList()),
+            ],
+          );
+        }),
+      ],
+    );
+  }
+
+  // ── Continue Reading Ribbon Widget ──
+  Widget _buildContinueReadingSection(VaultEntry entry) {
+    final title = entry.deliverableLabel ?? entry.fileName;
+    final clean = _cleanTitle(title);
+    final percent = (entry.readingProgress).clamp(0.0, 100.0);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFBF8F2),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: const Color(0xFFE2D6C5), width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.bookmark_added_rounded, color: DefensysTokens.maroon, size: 15),
+              const SizedBox(width: 6),
+              const Text(
+                'CONTINUE READING',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  color: DefensysTokens.maroon,
+                  letterSpacing: 0.6,
+                ),
+              ),
+              const Spacer(),
+              if (percent > 0)
+                Text(
+                  '${percent.toInt()}% completed',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.brown.shade700,
+                  ),
+                ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              BookCoverWidget(
+                title: clean,
+                authorOrTeam: entry.teamName,
+                type: entry.type,
+                stage: entry.stage,
+                category: entry.category,
+                size: BookCoverSize.small,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      clean,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: DefensysTokens.textDark,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '${entry.teamName} · ${entry.stage}',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                    ),
+                    const SizedBox(height: 8),
+                    // Progress Bar
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(4),
+                      child: LinearProgressIndicator(
+                        value: percent > 0 ? percent / 100.0 : 0.35,
+                        minHeight: 5,
+                        backgroundColor: Colors.grey.shade300,
+                        valueColor: const AlwaysStoppedAnimation<Color>(DefensysTokens.maroon),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              ElevatedButton(
+                onPressed: () => _showBookDetailsSheet(entry),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: DefensysTokens.maroon,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  elevation: 0,
+                ),
+                child: const Text('Resume', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Featured Books Carousel ──
+  Widget _buildFeaturedCarousel(List<VaultEntry> featured) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Row(
+          children: [
+            Icon(Icons.star_rounded, color: Color(0xFFD97706), size: 16),
+            SizedBox(width: 6),
+            Text(
+              'FEATURED & TOP-RATED',
+              style: TextStyle(
+                fontWeight: FontWeight.w800,
+                fontSize: 11.5,
+                color: DefensysTokens.textDark,
+                letterSpacing: 0.5,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 195,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: featured.length,
+            itemBuilder: (context, index) {
+              final entry = featured[index];
+              final label = entry.deliverableLabel ?? entry.fileName;
+              final clean = _cleanTitle(label);
+
+              return GestureDetector(
+                onTap: () => _showBookDetailsSheet(entry),
+                child: Container(
+                  width: 112,
+                  margin: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      BookCoverWidget(
+                        title: clean,
+                        authorOrTeam: entry.teamName,
+                        type: entry.type,
+                        stage: entry.stage,
+                        category: entry.category,
+                        rating: entry.averageRating > 0 ? entry.averageRating : null,
+                        size: BookCoverSize.medium,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        clean,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.bold,
+                          color: DefensysTokens.textDark,
+                        ),
+                      ),
+                      Text(
+                        entry.teamName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(fontSize: 9.5, color: Colors.grey.shade600),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── Bookshelf Grid View ──
+  Widget _buildBookshelfGrid(List<VaultEntry> entries) {
+    return LayoutBuilder(builder: (context, constraints) {
+      final crossAxisCount = constraints.maxWidth > 600 ? 4 : (constraints.maxWidth > 380 ? 3 : 2);
+      final itemWidth = (constraints.maxWidth - ((crossAxisCount - 1) * 12)) / crossAxisCount;
+      final itemHeight = itemWidth * 1.85;
+
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemCount: entries.length,
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          crossAxisSpacing: 12,
+          mainAxisSpacing: 16,
+          childAspectRatio: itemWidth / itemHeight,
+        ),
+        itemBuilder: (context, index) {
+          final entry = entries[index];
+          final label = entry.deliverableLabel ?? entry.fileName;
+          final clean = _cleanTitle(label);
+
+          return GestureDetector(
+            onTap: () => _showBookDetailsSheet(entry),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Center(
+                    child: BookCoverWidget(
+                      title: clean,
+                      authorOrTeam: entry.teamName,
+                      type: entry.type,
+                      stage: entry.stage,
+                      category: entry.category,
+                      academicYear: entry.academicYear,
+                      rating: entry.averageRating > 0 ? entry.averageRating : null,
+                      size: BookCoverSize.medium,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  clean,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: DefensysTokens.textDark,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  entry.teamName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+                if (entry.averageRating > 0) ...[
+                  const SizedBox(height: 2),
+                  Row(
+                    children: [
+                      const Icon(Icons.star_rounded, size: 11, color: Color(0xFFD97706)),
+                      const SizedBox(width: 2),
+                      Text(
+                        entry.averageRating.toStringAsFixed(1),
+                        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Color(0xFFB45309)),
+                      ),
+                      if (entry.reviewsCount > 0)
+                        Text(
+                          ' (${entry.reviewsCount})',
+                          style: TextStyle(fontSize: 9, color: Colors.grey.shade500),
+                        ),
+                    ],
+                  ),
+                ],
+              ],
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  // ── Classic List View ──
+  Widget _buildBookListItem(VaultEntry e) {
     final isCapstone = e.type == 'capstone';
-    final isUploader = e.type == 'uploader';
-    final color = isCapstone ? DefensysTokens.maroon : (isUploader ? DefensysTokens.techBlue : DefensysTokens.maroonLight);
     final label = e.deliverableLabel ?? e.fileName;
-    final cleanTitle = (label == e.fileName || e.deliverableLabel == null) 
-        ? _cleanFileName(label) 
-        : label;
-    final hasTopics = e.topics.isNotEmpty;
+    final clean = _cleanTitle(label);
 
     return Card(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
@@ -620,53 +1029,44 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
       color: Colors.white,
       clipBehavior: Clip.antiAlias,
       child: InkWell(
-        onTap: () => _showEntryDetailsDialog(e),
+        onTap: () => _showBookDetailsSheet(e),
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.all(12),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Leading Icon Container
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  e.fileName.toLowerCase().endsWith('.mp4') ? Icons.videocam_rounded
-                    : e.fileName.toLowerCase().endsWith('.zip') ? Icons.folder_zip_rounded
-                    : e.fileName.toLowerCase().endsWith('.ppt') || e.fileName.toLowerCase().endsWith('.pptx') ? Icons.slideshow_rounded
-                    : e.fileName.toLowerCase().endsWith('.doc') || e.fileName.toLowerCase().endsWith('.docx') ? Icons.description_rounded
-                    : Icons.picture_as_pdf_rounded,
-                  color: color,
-                  size: 22,
-                ),
+              // Book cover thumbnail
+              BookCoverWidget(
+                title: clean,
+                authorOrTeam: e.teamName,
+                type: e.type,
+                stage: e.stage,
+                category: e.category,
+                size: BookCoverSize.small,
               ),
-              const SizedBox(width: 14),
+              const SizedBox(width: 12),
 
-              // Main details
+              // Details
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      cleanTitle,
+                      clean,
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 14,
+                        fontSize: 13.5,
                         color: DefensysTokens.textDark,
                         height: 1.25,
                       ),
                     ),
-                    const SizedBox(height: 4),
+                    const SizedBox(height: 3),
                     Text(
                       e.teamName,
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: Colors.grey.shade600,
                         fontWeight: FontWeight.w500,
                       ),
@@ -675,96 +1075,48 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: color.withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(6),
+                            color: isCapstone
+                                ? DefensysTokens.maroon.withValues(alpha: 0.08)
+                                : const Color(0xFF1E3A8A).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
-                            isCapstone ? 'Capstone' : (isUploader ? 'Uploaded' : 'PIT'),
+                            isCapstone ? 'Capstone' : 'PIT',
                             style: TextStyle(
                               fontSize: 9,
-                              color: color,
+                              color: isCapstone ? DefensysTokens.maroon : const Color(0xFF1E3A8A),
                               fontWeight: FontWeight.w800,
                             ),
                           ),
                         ),
-                        const SizedBox(width: 8),
-                        if (e.stage != '—' && e.stage.isNotEmpty) ...[
-                          Container(
-                            width: 4,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: Colors.grey.shade400,
-                              shape: BoxShape.circle,
+                        const SizedBox(width: 6),
+                        if (e.averageRating > 0) ...[
+                          const Icon(Icons.star_rounded, size: 12, color: Color(0xFFD97706)),
+                          const SizedBox(width: 2),
+                          Text(
+                            e.averageRating.toStringAsFixed(1),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFFB45309),
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              e.stage,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
-                            ),
-                          ),
+                          const SizedBox(width: 6),
                         ],
-                        if (e.academicYear != '—' && e.academicYear.isNotEmpty) ...[
-                          const SizedBox(width: 8),
+                        if (e.academicYear.isNotEmpty && e.academicYear != '—')
                           Text(
                             'SY ${e.academicYear}',
-                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                            style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
                           ),
-                        ],
                       ],
                     ),
-                    if (hasTopics) ...[
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: e.topics.take(3).map((topic) => Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(6),
-                            border: Border.all(color: Colors.grey.shade200, width: 0.8),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.tag_rounded, size: 9, color: Colors.grey),
-                              const SizedBox(width: 2),
-                              Text(
-                                topic.length > 15 ? '${topic.substring(0, 15)}…' : topic,
-                                style: const TextStyle(
-                                  fontSize: 9,
-                                  color: Colors.grey,
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                            ],
-                          ),
-                        )).toList(),
-                      ),
-                    ],
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
-
-              // Trailing View Indicator
-              Align(
-                alignment: Alignment.centerRight,
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Icon(
-                    Icons.chevron_right_rounded,
-                    color: Colors.grey.shade400,
-                    size: 20,
-                  ),
-                ),
-              ),
+              const SizedBox(width: 6),
+              Icon(Icons.chevron_right_rounded, color: Colors.grey.shade400, size: 20),
             ],
           ),
         ),
@@ -772,346 +1124,50 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     );
   }
 
-  void _showEntryDetailsDialog(VaultEntry e) {
-    final isCapstone = e.type == 'capstone';
-    final isUploader = e.type == 'uploader';
-    final color = isCapstone ? DefensysTokens.maroon : (isUploader ? DefensysTokens.techBlue : DefensysTokens.maroonLight);
-    final label = e.deliverableLabel ?? e.fileName;
-    final cleanTitle = (label == e.fileName || e.deliverableLabel == null) 
-        ? _cleanFileName(label) 
-        : label;
-    final hasTopics = e.topics.isNotEmpty;
-    final hasSummary = e.summary.isNotEmpty && e.summary != '—';
-
-    showDialog(
+  // ── Book Details Bottom Sheet / Dialog ──
+  void _showBookDetailsSheet(VaultEntry entry) {
+    showModalBottomSheet(
       context: context,
-      builder: (context) {
-        return Dialog(
-          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusXl),
-          ),
-          clipBehavior: Clip.antiAlias,
-          backgroundColor: Colors.white,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.75,
-              maxWidth: 450,
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                // Header row with close button
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(20, 16, 8, 0),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      // Badge
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                        decoration: BoxDecoration(
-                          color: color.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          isCapstone ? 'Capstone' : (isUploader ? 'Uploaded File' : 'PIT Project'),
-                          style: TextStyle(
-                            fontSize: 10,
-                            color: color,
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: 0.3,
-                          ),
-                        ),
-                      ),
-                      // Close button
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded, color: Colors.grey, size: 22),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Scrollable content
-                Expanded(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        // Document Title
-                        Text(
-                          cleanTitle,
-                          style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w800,
-                            color: DefensysTokens.textDark,
-                            height: 1.3,
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-
-                        // Badges/Tags (Academic Year & Stage)
-                        Row(
-                          children: [
-                            if (e.stage != '—' && e.stage.isNotEmpty) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.grey.shade200, width: 0.5),
-                                ),
-                                child: Text(
-                                  e.stage,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade600,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                            ],
-                            if (e.academicYear != '—') ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(6),
-                                  border: Border.all(color: Colors.grey.shade200, width: 0.5),
-                                ),
-                                child: Text(
-                                  'SY ${e.academicYear}',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    color: Colors.grey.shade600,
-                                    fontWeight: FontWeight.bold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Project Details card
-                        Container(
-                          width: double.infinity,
-                          padding: const EdgeInsets.all(12),
-                          decoration: BoxDecoration(
-                            color: Colors.grey.shade50,
-                            borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-                            border: Border.all(color: Colors.grey.shade100, width: 1),
-                          ),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              const Text(
-                                'PROJECT DETAILS',
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w800,
-                                  color: Colors.grey,
-                                  letterSpacing: 0.5,
-                                ),
-                              ),
-                              const SizedBox(height: 8),
-                              _buildDetailRow(
-                                icon: Icons.group_rounded,
-                                label: 'Team Name',
-                                value: e.teamName,
-                              ),
-                              const SizedBox(height: 8),
-                              _buildDetailRow(
-                                icon: Icons.person_rounded,
-                                label: 'Uploaded By',
-                                value: e.uploadedBy,
-                              ),
-                              if (e.timestamp.isNotEmpty) ...[
-                                const SizedBox(height: 8),
-                                _buildDetailRow(
-                                  icon: Icons.calendar_today_rounded,
-                                  label: 'Date Uploaded',
-                                  value: _formatTimestamp(e.timestamp),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Summary Section
-                        const Row(
-                          children: [
-                            Icon(Icons.auto_awesome_rounded, color: DefensysTokens.maroon, size: 14),
-                            SizedBox(width: 6),
-                            Text(
-                              'Document Summary',
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.textDark,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          hasSummary ? e.summary : 'No summary details available for this upload.',
-                          style: TextStyle(
-                            fontSize: 12,
-                            height: 1.4,
-                            color: Colors.grey.shade700,
-                            fontStyle: hasSummary ? FontStyle.normal : FontStyle.italic,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-
-                        // Topics Section
-                        if (hasTopics) ...[
-                          const Text(
-                            'Keywords & Topics',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: DefensysTokens.textDark,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Wrap(
-                            spacing: 6,
-                            runSpacing: 6,
-                            children: e.topics.map((topic) => Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                              decoration: BoxDecoration(
-                                color: Colors.grey.shade50,
-                                borderRadius: BorderRadius.circular(6),
-                                border: Border.all(color: Colors.grey.shade200, width: 0.8),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  const Icon(Icons.tag_rounded, size: 8, color: Colors.grey),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    topic,
-                                    style: const TextStyle(
-                                      fontSize: 9,
-                                      color: Colors.grey,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )).toList(),
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-
-                // Action Button footer
-                Builder(
-                  builder: (context) {
-                    final lowerName = e.fileName.toLowerCase();
-                    final isPdf = lowerName.endsWith('.pdf');
-                    final isPreviewable = isPdf ||
-                        lowerName.endsWith('.png') ||
-                        lowerName.endsWith('.jpg') ||
-                        lowerName.endsWith('.jpeg') ||
-                        lowerName.endsWith('.webp') ||
-                        lowerName.endsWith('.gif') ||
-                        lowerName.endsWith('.mp4') ||
-                        lowerName.endsWith('.mov') ||
-                        lowerName.endsWith('.avi') ||
-                        lowerName.endsWith('.mkv');
-
-                    final buttonIcon = isPreviewable
-                        ? (isPdf ? Icons.picture_as_pdf_rounded : Icons.visibility_rounded)
-                        : Icons.download_rounded;
-                    final buttonLabel = isPreviewable
-                        ? (isPdf ? 'Read Document' : 'View File')
-                        : 'Download File';
-
-                    return Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: ElevatedButton.icon(
-                              onPressed: () {
-                                Navigator.pop(context); // Close dialog first
-                                _showViewer(e); // Then open viewer
-                              },
-                              icon: Icon(buttonIcon, size: 18),
-                              label: Text(buttonLabel, style: const TextStyle(fontWeight: FontWeight.bold)),
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: DefensysTokens.maroon,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                elevation: 0,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => _BookDetailsSheet(
+        entry: entry,
+        onReadPressed: () {
+          Navigator.pop(context);
+          _openReader(entry);
+        },
+      ),
     );
   }
 
-  Widget _buildDetailRow({
-    required IconData icon,
-    required String label,
-    required String value,
-  }) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: Colors.grey.shade600),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                label,
-                style: TextStyle(fontSize: 10, color: Colors.grey.shade500, fontWeight: FontWeight.w500),
-              ),
-              const SizedBox(height: 1),
-              Text(
-                value,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
-              ),
-            ],
+  void _openReader(VaultEntry e) {
+    final authState = ref.read(authProvider);
+    final user = authState.user;
+    final studentId = user?['username']?.toString() ?? 'Unknown';
+    final firstName = user?['first_name']?.toString() ?? '';
+    final lastName = user?['last_name']?.toString() ?? '';
+    final studentName = '$firstName $lastName'.trim();
+    final displayName = studentName.isNotEmpty ? studentName : studentId;
+
+    final fileRef = e.fileUrl != null && e.fileUrl!.isNotEmpty ? e.fileUrl! : e.fileName;
+    final lowerName = e.fileName.toLowerCase();
+
+    if (lowerName.endsWith('.pdf')) {
+      Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (context) => _PDFViewerScreen(
+            entry: e,
+            fileName: e.deliverableLabel ?? e.fileName,
+            fileRef: fileRef,
+            teamName: e.teamName,
+            stage: e.stage,
+            studentId: studentId,
+            studentName: displayName,
           ),
         ),
-      ],
-    );
-  }
-
-  String _formatTimestamp(String ts) {
-    try {
-      final dt = DateTime.parse(ts).toLocal();
-      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
-    } catch (_) {
-      return ts;
+      );
+    } else {
+      _viewOrDownloadNonPdf(fileRef, e.fileName);
     }
   }
 
@@ -1125,9 +1181,7 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
     );
 
     try {
-      final bytes = await ref
-          .read(authenticatedHttpClientProvider)
-          .fetchAuthenticatedFile(fileRef);
+      final bytes = await ref.read(authenticatedHttpClientProvider).fetchAuthenticatedFile(fileRef);
       if (mounted) Navigator.pop(context);
       if (!mounted) return;
 
@@ -1144,47 +1198,588 @@ class _RepositoryTabState extends ConsumerState<RepositoryTab> {
           final uri = Uri.parse(fileRef);
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } catch (launchErr) {
-          showErrorToast(context, 'Could not download or open file: $launchErr');
+          if (mounted) {
+            showErrorToast(context, 'Could not download or open file: $launchErr');
+          }
         }
       }
     }
   }
+}
 
-  void _showViewer(VaultEntry e) {
-    final authState = ref.read(authProvider);
-    final user = authState.user;
-    final studentId = user?['username']?.toString() ?? 'Unknown';
-    final firstName = user?['first_name']?.toString() ?? '';
-    final lastName = user?['last_name']?.toString() ?? '';
-    final studentName = '$firstName $lastName'.trim();
-    final displayName = studentName.isNotEmpty ? studentName : studentId;
-    
-    final fileRef = e.fileUrl != null && e.fileUrl!.isNotEmpty
-        ? e.fileUrl!
-        : e.fileName;
+// ── Book Details Bottom Sheet / Review Panel ─────────────────────────────────
 
-    final lowerName = e.fileName.toLowerCase();
-    if (lowerName.endsWith('.pdf')) {
-      Navigator.of(context).push(
-        MaterialPageRoute(
-          builder: (context) => _PDFViewerScreen(
-            fileName: e.deliverableLabel ?? e.fileName,
-            fileRef: fileRef,
-            teamName: e.teamName,
-            stage: e.stage,
-            studentId: studentId,
-            studentName: displayName,
-          ),
+class _BookDetailsSheet extends ConsumerStatefulWidget {
+  final VaultEntry entry;
+  final VoidCallback onReadPressed;
+
+  const _BookDetailsSheet({
+    required this.entry,
+    required this.onReadPressed,
+  });
+
+  @override
+  ConsumerState<_BookDetailsSheet> createState() => _BookDetailsSheetState();
+}
+
+class _BookDetailsSheetState extends ConsumerState<_BookDetailsSheet> {
+  ReviewsPayload? _reviewsPayload;
+  bool _loadingReviews = true;
+  int _selectedStar = 5;
+  final TextEditingController _remarkController = TextEditingController();
+  bool _submittingReview = false;
+  bool _isBookmarked = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isBookmarked = widget.entry.shelfStatus == 'want_to_read' || widget.entry.shelfStatus == 'favorited';
+    _loadReviews();
+  }
+
+  @override
+  void dispose() {
+    _remarkController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadReviews() async {
+    final payload = await ref
+        .read(repositoryReviewServiceProvider)
+        .fetchReviews(widget.entry.id);
+    if (!mounted) return;
+    setState(() {
+      _reviewsPayload = payload;
+      _loadingReviews = false;
+      if (payload?.userReview != null) {
+        _selectedStar = payload!.userReview!.rating;
+        _remarkController.text = payload.userReview!.remark;
+      }
+    });
+  }
+
+  Future<void> _submitReview() async {
+    final remarkText = _remarkController.text.trim();
+    setState(() => _submittingReview = true);
+
+    final payload = await ref.read(repositoryReviewServiceProvider).submitReview(
+      targetId: widget.entry.id,
+      rating: _selectedStar,
+      remark: remarkText,
+    );
+
+    if (!mounted) return;
+    setState(() {
+      _submittingReview = false;
+      if (payload != null) {
+        _reviewsPayload = payload;
+        showSuccessToast(context, 'Remark and rating submitted!');
+      }
+    });
+  }
+
+  Future<void> _toggleBookmark() async {
+    setState(() => _isBookmarked = !_isBookmarked);
+    await ref.read(repositoryReviewServiceProvider).updateShelfProgress(
+      targetId: widget.entry.id,
+      status: _isBookmarked ? 'want_to_read' : 'none',
+    );
+  }
+
+  String _cleanTitle(String raw) {
+    var name = raw;
+    final lastDot = name.lastIndexOf('.');
+    if (lastDot != -1) {
+      name = name.substring(0, lastDot);
+    }
+    name = name.replaceAll(RegExp(r'[._\-]'), ' ');
+    name = name.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return name;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final entry = widget.entry;
+    final label = entry.deliverableLabel ?? entry.fileName;
+    final clean = _cleanTitle(label);
+    final isCapstone = entry.type == 'capstone';
+    final hasSummary = entry.summary.isNotEmpty && entry.summary != '—';
+    final avgScore = _reviewsPayload?.averageRating ?? entry.averageRating;
+    final totalRatings = _reviewsPayload?.ratingsCount ?? entry.ratingsCount;
+    final reviews = _reviewsPayload?.reviews ?? [];
+
+    return Container(
+      constraints: BoxConstraints(
+        maxHeight: MediaQuery.of(context).size.height * 0.88,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
         ),
-      );
-    } else {
-      _viewOrDownloadNonPdf(fileRef, e.fileName);
+      ),
+      child: Column(
+        children: [
+          // Drag Handle
+          Container(
+            margin: const EdgeInsets.only(top: 10, bottom: 6),
+            width: 40,
+            height: 4,
+            decoration: BoxDecoration(
+              color: Colors.grey.shade300,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+
+          // Scrollable Content
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 20),
+              children: [
+                // ── Hero Section with Book Cover ──
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    BookCoverWidget(
+                      title: clean,
+                      authorOrTeam: entry.teamName,
+                      type: entry.type,
+                      stage: entry.stage,
+                      category: entry.category,
+                      academicYear: entry.academicYear,
+                      size: BookCoverSize.large,
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Track Badge
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                            decoration: BoxDecoration(
+                              color: isCapstone
+                                  ? DefensysTokens.maroon.withValues(alpha: 0.1)
+                                  : const Color(0xFF1E3A8A).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Text(
+                              isCapstone ? 'CAPSTONE MANUSCRIPT' : 'PIT RESEARCH',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                color: isCapstone ? DefensysTokens.maroon : const Color(0xFF1E3A8A),
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 0.4,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+
+                          // Title
+                          Text(
+                            clean,
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w800,
+                              color: DefensysTokens.textDark,
+                              height: 1.25,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+
+                          // Author / Team
+                          Text(
+                            entry.teamName,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+
+                          // Academic Year & Stage
+                          Text(
+                            '${entry.stage} · SY ${entry.academicYear}',
+                            style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+                          ),
+                          const SizedBox(height: 8),
+
+                          // Rating Scorecard Banner
+                          Row(
+                            children: [
+                              const Icon(Icons.star_rounded, color: Color(0xFFD97706), size: 18),
+                              const SizedBox(width: 4),
+                              Text(
+                                avgScore > 0 ? avgScore.toStringAsFixed(1) : 'No ratings',
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w800,
+                                  color: Color(0xFFB45309),
+                                ),
+                              ),
+                              if (totalRatings > 0)
+                                Text(
+                                  ' ($totalRatings reviews)',
+                                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                                ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+
+                // ── Action Buttons ──
+                Row(
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: ElevatedButton.icon(
+                        onPressed: widget.onReadPressed,
+                        icon: const Icon(Icons.auto_stories_rounded, size: 18),
+                        label: const Text('Read Manuscript', style: TextStyle(fontWeight: FontWeight.bold)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroon,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          elevation: 0,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    IconButton.filledTonal(
+                      tooltip: _isBookmarked ? 'Saved in Shelf' : 'Add to Shelf',
+                      icon: Icon(
+                        _isBookmarked ? Icons.bookmark_added_rounded : Icons.bookmark_add_outlined,
+                        color: _isBookmarked ? DefensysTokens.maroon : Colors.grey.shade700,
+                      ),
+                      onPressed: _toggleBookmark,
+                      style: IconButton.styleFrom(
+                        backgroundColor: _isBookmarked ? const Color(0xFFFBF1E8) : Colors.grey.shade100,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                        padding: const EdgeInsets.all(12),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+
+                // ── Executive Abstract / Summary ──
+                Container(
+                  padding: const EdgeInsets.all(14),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFBF9F5),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.grey.shade200, width: 1),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.psychology_rounded, color: DefensysTokens.maroon, size: 16),
+                          SizedBox(width: 6),
+                          Text(
+                            'EXECUTIVE ABSTRACT',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w800,
+                              color: DefensysTokens.maroon,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        hasSummary
+                            ? entry.summary
+                            : (entry.extractedText.isNotEmpty
+                                ? (entry.extractedText.length > 250
+                                    ? '${entry.extractedText.substring(0, 250)}...'
+                                    : entry.extractedText)
+                                : 'No abstract generated for this upload.'),
+                        style: TextStyle(
+                          fontSize: 12,
+                          height: 1.45,
+                          color: Colors.grey.shade800,
+                        ),
+                      ),
+                      if (entry.topics.isNotEmpty) ...[
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: entry.topics.map((t) => Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: Colors.grey.shade300, width: 0.7),
+                            ),
+                            child: Text(
+                              '#$t',
+                              style: TextStyle(fontSize: 9.5, color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                            ),
+                          )).toList(),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 20),
+
+                // ── Community Rating & Remarks Section ──
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.rate_review_rounded, color: DefensysTokens.maroon, size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'COMMUNITY REMARKS & REVIEWS',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textDark,
+                            letterSpacing: 0.5,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      '${reviews.length} notes',
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Interactive Rate & Remark Box
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2), width: 1.2),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Your Rating & Remarks',
+                        style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
+                      ),
+                      const SizedBox(height: 6),
+                      // Star Selector
+                      Row(
+                        children: List.generate(5, (index) {
+                          final star = index + 1;
+                          return IconButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 2),
+                            constraints: const BoxConstraints(),
+                            icon: Icon(
+                              star <= _selectedStar ? Icons.star_rounded : Icons.star_outline_rounded,
+                              color: const Color(0xFFD97706),
+                              size: 26,
+                            ),
+                            onPressed: () => setState(() => _selectedStar = star),
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 6),
+                      // Remark input
+                      TextField(
+                        controller: _remarkController,
+                        maxLines: 2,
+                        decoration: InputDecoration(
+                          hintText: 'Share feedback, critique, or questions on this manuscript...',
+                          hintStyle: TextStyle(fontSize: 11.5, color: Colors.grey.shade400),
+                          filled: true,
+                          fillColor: Colors.grey.shade50,
+                          isDense: true,
+                          contentPadding: const EdgeInsets.all(10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: BorderSide(color: Colors.grey.shade200),
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(6),
+                            borderSide: const BorderSide(color: DefensysTokens.maroon),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: ElevatedButton(
+                          onPressed: _submittingReview ? null : _submitReview,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: DefensysTokens.maroon,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                            elevation: 0,
+                          ),
+                          child: _submittingReview
+                              ? const SizedBox(
+                                  width: 14,
+                                  height: 14,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text('Post Remark', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+
+                // Review remarks list
+                if (_loadingReviews)
+                  const Center(
+                    child: Padding(
+                      padding: EdgeInsets.all(12),
+                      child: CircularProgressIndicator(color: DefensysTokens.maroon, strokeWidth: 2),
+                    ),
+                  )
+                else if (reviews.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    child: Center(
+                      child: Text(
+                        'No peer remarks yet. Be the first to review this manuscript!',
+                        style: TextStyle(fontSize: 11, fontStyle: FontStyle.italic, color: Colors.grey.shade500),
+                      ),
+                    ),
+                  )
+                else
+                  ...reviews.map((r) => _buildReviewCard(r)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReviewCard(ReviewItem r) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade200, width: 0.8),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 12,
+                backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                child: Text(
+                  r.userName.isNotEmpty ? r.userName[0].toUpperCase() : 'U',
+                  style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: DefensysTokens.maroon),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Text(
+                          r.userName,
+                          style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
+                        ),
+                        const SizedBox(width: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                          decoration: BoxDecoration(
+                            color: Colors.grey.shade200,
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            r.userRole,
+                            style: TextStyle(fontSize: 8.5, fontWeight: FontWeight.bold, color: Colors.grey.shade700),
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      _formatDate(r.createdAt),
+                      style: TextStyle(fontSize: 9.5, color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              ),
+              // Stars
+              Row(
+                children: List.generate(5, (index) {
+                  return Icon(
+                    index < r.rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                    color: const Color(0xFFD97706),
+                    size: 13,
+                  );
+                }),
+              ),
+            ],
+          ),
+          if (r.remark.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              r.remark,
+              style: TextStyle(fontSize: 11.5, height: 1.35, color: Colors.grey.shade800),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  String _formatDate(String iso) {
+    try {
+      final dt = DateTime.parse(iso).toLocal();
+      const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      return '${months[dt.month - 1]} ${dt.day}, ${dt.year}';
+    } catch (_) {
+      return iso;
     }
   }
 }
 
-// PDF Viewer Screen
+// ── PDF E-Reader Screen with Reading Themes & Progress ────────────────────────
+
+enum ReaderTheme {
+  day(name: 'Day', bg: Colors.white, fg: Colors.black87),
+  sepia(name: 'Sepia', bg: Color(0xFFFBF0D9), fg: Color(0xFF3E2723)),
+  night(name: 'Night', bg: Color(0xFF18181B), fg: Color(0xFFF4F4F5));
+
+  final String name;
+  final Color bg;
+  final Color fg;
+
+  const ReaderTheme({required this.name, required this.bg, required this.fg});
+}
+
 class _PDFViewerScreen extends ConsumerStatefulWidget {
+  final VaultEntry entry;
   final String fileName;
   final String fileRef;
   final String teamName;
@@ -1193,6 +1788,7 @@ class _PDFViewerScreen extends ConsumerStatefulWidget {
   final String studentName;
 
   const _PDFViewerScreen({
+    required this.entry,
     required this.fileName,
     required this.fileRef,
     required this.teamName,
@@ -1210,10 +1806,15 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
   String? _loadError;
   bool _loading = true;
   late final String _formattedDateTime;
+  PdfViewerController? _pdfViewerController;
+  int _currentPage = 1;
+  int _pageCount = 1;
+  ReaderTheme _currentTheme = ReaderTheme.day;
 
   @override
   void initState() {
     super.initState();
+    _pdfViewerController = PdfViewerController();
     _formattedDateTime = _formatCurrentDateTime();
     _loadPdf();
   }
@@ -1227,15 +1828,15 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
     final month = months[now.month - 1];
     final day = now.day;
     final year = now.year;
-    
+
     int hour = now.hour;
     final amPm = hour >= 12 ? 'PM' : 'AM';
     if (hour > 12) hour -= 12;
     if (hour == 0) hour = 12;
-    
+
     final minute = now.minute.toString().padLeft(2, '0');
     final second = now.second.toString().padLeft(2, '0');
-    
+
     return '$month $day, $year $hour:$minute:$second $amPm';
   }
 
@@ -1258,30 +1859,83 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
     }
   }
 
+  void _onPageChanged(PdfPageChangedDetails details) {
+    setState(() {
+      _currentPage = details.newPageNumber;
+      _pageCount = _pdfViewerController?.pageCount ?? 1;
+    });
+
+    // Save reading progress in background
+    final progress = _pageCount > 0 ? (_currentPage / _pageCount) * 100.0 : 0.0;
+    ref.read(repositoryReviewServiceProvider).updateShelfProgress(
+      targetId: widget.entry.id,
+      status: 'reading',
+      lastReadPage: _currentPage,
+      totalPages: _pageCount,
+      progressPercent: progress,
+    );
+  }
+
+  void _showThemeDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Reader Theme & Display', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: ReaderTheme.values.map((t) {
+            final isSelected = _currentTheme == t;
+            return ListTile(
+              leading: Container(
+                width: 24,
+                height: 24,
+                decoration: BoxDecoration(
+                  color: t.bg,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Colors.grey.shade400, width: 1),
+                ),
+              ),
+              title: Text(t.name, style: const TextStyle(fontSize: 13)),
+              trailing: isSelected ? const Icon(Icons.check, color: DefensysTokens.maroon) : null,
+              onTap: () {
+                setState(() => _currentTheme = t);
+                Navigator.pop(context);
+              },
+            );
+          }).toList(),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: _currentTheme.bg,
       appBar: AppBar(
-        backgroundColor: DefensysTokens.maroon,
+        backgroundColor: _currentTheme == ReaderTheme.night ? const Color(0xFF18181B) : DefensysTokens.maroon,
         foregroundColor: Colors.white,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              widget.fileName.length > 30
-                  ? '${widget.fileName.substring(0, 30)}...'
-                  : widget.fileName,
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+              widget.fileName.length > 25 ? '${widget.fileName.substring(0, 25)}...' : widget.fileName,
+              style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
             ),
             Text(
-              '${widget.teamName} · ${widget.stage}',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w400),
+              '${widget.teamName} · Page $_currentPage of $_pageCount',
+              style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w400),
             ),
           ],
         ),
         actions: [
           IconButton(
-            tooltip: 'Document info',
+            tooltip: 'Reading theme',
+            icon: const Icon(Icons.palette_outlined),
+            onPressed: _showThemeDialog,
+          ),
+          IconButton(
+            tooltip: 'Document security notice',
             icon: const Icon(Icons.info_outline),
             onPressed: () {
               showDialog(
@@ -1289,21 +1943,18 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                 builder: (context) => AlertDialog(
                   title: const Row(
                     children: [
-                      Icon(Icons.lock, color: DefensysTokens.maroon, size: 20),
+                      Icon(Icons.lock_outline_rounded, color: DefensysTokens.maroon, size: 20),
                       SizedBox(width: 8),
-                      Text('Read-Only Document', style: TextStyle(fontSize: 16)),
+                      Text('Read-Only Document', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
                     ],
                   ),
                   content: const Text(
-                    'This document is available for secure viewing only. '
-                    'Downloading and copying are disabled for archive submissions.',
-                    style: TextStyle(fontSize: 14),
+                    'This manuscript is available for authenticated reading only. '
+                    'Downloading and unauthorized reproduction are disabled.',
+                    style: TextStyle(fontSize: 13),
                   ),
                   actions: [
-                    TextButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('OK'),
-                    ),
+                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('OK')),
                   ],
                 ),
               );
@@ -1324,10 +1975,7 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Failed to load PDF: $_loadError',
-                      textAlign: TextAlign.center,
-                    ),
+                    Text('Failed to load PDF: $_loadError', textAlign: TextAlign.center),
                     const SizedBox(height: 16),
                     ElevatedButton(
                       onPressed: () {
@@ -1346,32 +1994,30 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
           else if (_pdfBytes != null)
             SfPdfViewer.memory(
               _pdfBytes!,
+              controller: _pdfViewerController,
               canShowScrollHead: true,
               canShowScrollStatus: true,
               enableDoubleTapZooming: true,
               enableTextSelection: false,
+              onPageChanged: _onPageChanged,
             ),
-          
-          // Watermark Overlay
+
+          // Security Watermark Overlay
           IgnorePointer(
             child: Center(
               child: Transform.rotate(
-                angle: -0.5, // Diagonal angle (about -30 degrees)
+                angle: -0.5,
                 child: Opacity(
-                  opacity: 0.15,
+                  opacity: 0.12,
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(
-                        Icons.lock,
-                        size: 60,
-                        color: DefensysTokens.maroon,
-                      ),
+                      const Icon(Icons.lock, size: 54, color: DefensysTokens.maroon),
                       const SizedBox(height: 8),
                       const Text(
                         'PROPERTY OF USTP',
                         style: TextStyle(
-                          fontSize: 28,
+                          fontSize: 26,
                           fontWeight: FontWeight.w900,
                           color: DefensysTokens.maroon,
                           letterSpacing: 3,
@@ -1381,17 +2027,17 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                       const Text(
                         'REPOSITORY - READ ONLY',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: 16,
                           fontWeight: FontWeight.w700,
                           color: DefensysTokens.maroon,
                           letterSpacing: 2,
                         ),
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 10),
                       Text(
                         'ID: ${widget.studentId}',
-                        style: TextStyle(
-                          fontSize: 16,
+                        style: const TextStyle(
+                          fontSize: 14,
                           fontWeight: FontWeight.w800,
                           color: DefensysTokens.maroon,
                           letterSpacing: 1.5,
@@ -1401,7 +2047,7 @@ class _PDFViewerScreenState extends ConsumerState<_PDFViewerScreen> {
                       Text(
                         _formattedDateTime,
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                           color: DefensysTokens.maroon,
                         ),

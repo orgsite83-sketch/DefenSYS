@@ -112,6 +112,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
     published_by_name = serializers.SerializerMethodField()
     verdict_by_name = serializers.SerializerMethodField()
     attempt_history = GradeAttemptHistorySerializer(many=True, read_only=True)
+    minutes_id = serializers.SerializerMethodField()
+    minutes_status = serializers.SerializerMethodField()
+    minutes_has_pdf = serializers.SerializerMethodField()
     peer_eval_complete = serializers.SerializerMethodField()
     peer_submissions_submitted = serializers.SerializerMethodField()
     peer_submissions_required = serializers.SerializerMethodField()
@@ -160,6 +163,9 @@ class TeamGradeSerializer(serializers.ModelSerializer):
             'verdict_at',
             'revision_deadline',
             'attempt_history',
+            'minutes_id',
+            'minutes_status',
+            'minutes_has_pdf',
             'status',
             'result',
             'panelists',
@@ -235,6 +241,30 @@ class TeamGradeSerializer(serializers.ModelSerializer):
 
     def get_verdict_by_name(self, obj):
         return display_name(obj.verdict_by) if obj.verdict_by else None
+
+    def get_minutes_id(self, obj):
+        try:
+            if obj.schedule_id and hasattr(obj.schedule, 'minutes') and obj.schedule.minutes is not None:
+                return obj.schedule.minutes.id
+        except Exception:
+            pass
+        return None
+
+    def get_minutes_status(self, obj):
+        try:
+            if obj.schedule_id and hasattr(obj.schedule, 'minutes') and obj.schedule.minutes is not None:
+                return obj.schedule.minutes.status
+        except Exception:
+            pass
+        return None
+
+    def get_minutes_has_pdf(self, obj):
+        try:
+            if obj.schedule_id and hasattr(obj.schedule, 'minutes') and obj.schedule.minutes is not None:
+                return bool(obj.schedule.minutes.pdf_file)
+        except Exception:
+            pass
+        return False
 
     def get_peer_eval_complete(self, obj):
         from .peer_eval import is_team_peer_eval_complete

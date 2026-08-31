@@ -27,6 +27,7 @@ class TeamGradeQuerySet(models.QuerySet):
             'semester__school_year',
             'published_by',
             'verdict_by',
+            'schedule__minutes',
         ).prefetch_related(
             'breakdowns',
             'breakdowns__rubric',

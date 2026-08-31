@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/services/defense_scheduler_provider.dart';
+import 'package:defensys/services/defense_stages_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
@@ -44,6 +45,17 @@ class ManualSlotEditorDialog {
     final panelWeight = TextEditingController(text: initialPanelWeight);
     final peerWeight = TextEditingController(text: initialPeerWeight);
 
+    if (scope == 'capstone' && stageId != null && rubricId == null) {
+      final semesterId = asInt(state.activeSemester?['id']);
+      final detail = await ref
+          .read(defenseStagesProvider.notifier)
+          .fetchStageDetail(stageId, semesterId: semesterId);
+      final grading = detail?['grading_config'];
+      if (grading is Map) {
+        rubricId = asInt(grading['panel_rubric_id']) ?? rubricId;
+      }
+    }
+
     final event = TextEditingController(text: initialEvent);
     final vaultFileTemplate = TextEditingController(text: initialPitTemplate);
     final date = TextEditingController(text: initialDate);
@@ -52,6 +64,8 @@ class ManualSlotEditorDialog {
     final room = TextEditingController(text: initialRoom);
     final panelIds = <int>{...initialSelectedPanelistIds};
     int? documenterId = initialDocumenterId;
+
+    if (!context.mounted) return;
 
     final saved = await showDialog<bool>(
       context: context,
@@ -164,11 +178,23 @@ class ManualSlotEditorDialog {
                                 ),
                               )
                               .toList(),
-                          onChanged: (value) {
+                          onChanged: (value) async {
                             setDialogState(() {
                               stageId = value;
                               rubricId = null;
                             });
+                            if (value != null) {
+                              final semesterId = asInt(state.activeSemester?['id']);
+                              final detail = await ref
+                                  .read(defenseStagesProvider.notifier)
+                                  .fetchStageDetail(value, semesterId: semesterId);
+                              final grading = detail?['grading_config'];
+                              if (grading is Map && dialogContext.mounted) {
+                                setDialogState(() {
+                                  rubricId = asInt(grading['panel_rubric_id']);
+                                });
+                              }
+                            }
                           },
                         ),
                       ] else ...[

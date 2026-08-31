@@ -19,7 +19,6 @@ import '../../widgets/defensys_skeleton.dart';
 import '../../widgets/offline_banner.dart';
 import '../../notifications/notifications_modal.dart';
 import '../../notifications/notifications_provider.dart';
-import '../../widgets/dialogs/prompt_missing_phone_dialog.dart';
 
 class StudentDashboard extends ConsumerStatefulWidget {
   final Map<String, dynamic>? userData;
@@ -31,6 +30,7 @@ class StudentDashboard extends ConsumerStatefulWidget {
 
 class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   int _selectedIndex = 0;
+  final _eventsSubTabNotifier = ValueNotifier<int>(0);
   late final StudentProfile _profile;
 
   @override
@@ -46,8 +46,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(dashboardProvider('student').notifier).fetchDashboardData();
       ref.read(notificationsProvider.notifier).fetchNotifications();
-      PromptMissingPhoneDialog.maybeShow(context, ref);
     });
+  }
+
+  @override
+  void dispose() {
+    _eventsSubTabNotifier.dispose();
+    super.dispose();
   }
 
   Future<void> _refreshDashboardAndNotifications() async {
@@ -77,23 +82,71 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       studentData: dataToPass,
     );
 
+    final student = dataToPass['student'] as Map<String, dynamic>?;
+    final studentName = student?['name']?.toString().trim().isNotEmpty == true
+        ? student!['name'].toString().trim()
+        : (widget.userData?['name'] ?? widget.userData?['first_name'] ?? _profile.name);
+
+    final members = (dataToPass['members'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final isLeader = student?['is_leader'] == true ||
+        student?['isLeader'] == true ||
+        widget.userData?['is_leader'] == true ||
+        widget.userData?['isLeader'] == true ||
+        members.any((m) =>
+            (m['id'] == student?['id'] || m['username'] == widget.userData?['username']) &&
+            (m['isLeader'] == true || m['is_leader'] == true));
+    final roleTag = isPM ? 'Project Manager' : (isLeader ? 'Leader' : 'Member');
+
+    final teamName = team?['name']?.toString();
+    final teamLevel = team?['level']?.toString() ??
+        (isCapstone ? 'Capstone Project' : 'Design Project');
+
+    final deliverables = (dataToPass['deliverables'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    int fileCount = 0;
+    for (final d in deliverables) {
+      final files = d['files'] as List?;
+      if (files != null && files.isNotEmpty) {
+        fileCount += files.length;
+      } else if (d['file_url'] != null || d['file_name'] != null) {
+        fileCount += 1;
+      }
+    }
+    if (fileCount == 0 && deliverables.isNotEmpty) {
+      fileCount = deliverables.length;
+    }
+
+    final schedule = dataToPass['schedule'] as Map<String, dynamic>?;
+    final grades = dataToPass['grades'] as Map<String, dynamic>?;
+    final String stageName = schedule?['stage']?.toString() ??
+        grades?['stage']?.toString() ??
+        delivState.currentTeamSelectedStage?.toString() ??
+        'Project Proposal';
+    final isPassed = grades?['result'] == 'PASSED' || grades?['is_published'] == true;
+
     final tabChildren = <Widget>[
       TeamTab(
         studentData: dataToPass,
         onRefresh: _refreshDashboardAndNotifications,
+        onSelectTab: (int index) => setState(() => _selectedIndex = index),
       ),
       StudentEventsTab(
         isCapstone: isCapstone,
         studentData: dataToPass,
+        subTabNotifier: _eventsSubTabNotifier,
       ),
       const RepositoryTab(),
       if (isPM)
         SectionIntegrationTab(studentData: dataToPass),
+      const ProfileScreen(showAppBar: false),
     ];
 
     final l10n = context.l10n;
     final destinations = <NavigationDestination>[
-      NavigationDestination(icon: const Icon(Icons.group), label: l10n.navTeam),
+      NavigationDestination(
+        icon: const Icon(Icons.group_outlined),
+        selectedIcon: const Icon(Icons.group),
+        label: l10n.navTeam,
+      ),
       NavigationDestination(
         icon: Badge(
           isLabelVisible: hasPendingEvents,
@@ -104,46 +157,95 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
         label: isCapstone ? 'Stages' : 'Events',
       ),
       NavigationDestination(
-        icon: const Icon(Icons.folder_open),
+        icon: const Icon(Icons.folder_open_outlined),
+        selectedIcon: const Icon(Icons.folder),
         label: l10n.navRepository,
       ),
       if (isPM)
         const NavigationDestination(
-          icon: Icon(Icons.hub),
+          icon: Icon(Icons.hub_outlined),
+          selectedIcon: Icon(Icons.hub),
           label: 'Integration',
         ),
+      const NavigationDestination(
+        icon: Icon(Icons.person_outline),
+        selectedIcon: Icon(Icons.person),
+        label: 'Profile',
+      ),
     ];
 
     final safeIndex = _selectedIndex.clamp(0, tabChildren.length - 1);
     final initialLoad = dashState.isLoading && dashState.data == null;
     final showFatalError = dashState.error != null && dashState.data == null;
 
+    String tabTitle;
+    String tabSubtitle;
+    if (safeIndex == 0) {
+      tabTitle = 'Team Workspace';
+      tabSubtitle = teamName != null ? '$teamName · $teamLevel' : 'Roster & Project Overview';
+    } else if (safeIndex == 1) {
+      tabTitle = isCapstone ? 'Defense Roadmap' : 'Defense Events';
+      tabSubtitle = isPassed ? '$stageName Cleared ✓' : '$stageName Phase';
+    } else if (safeIndex == 2) {
+      tabTitle = 'Repository';
+      tabSubtitle = fileCount > 0 ? '$fileCount Files Submitted' : 'Deliverables & Manuscripts';
+    } else if (isPM && safeIndex == 3) {
+      tabTitle = 'Section Integration';
+      tabSubtitle = 'Section Deliverables & Reports';
+    } else {
+      tabTitle = 'Account & Security';
+      tabSubtitle = '$studentName ($roleTag)';
+    }
+
     return MediaQuery.withClampedTextScaling(
       maxScaleFactor: 1.3,
       child: PopScope(
       canPop: false,
       child: Scaffold(
+      drawer: _buildStudentDrawer(
+        context,
+        dataToPass: dataToPass,
+        isPM: isPM,
+        studentName: studentName,
+        roleTag: roleTag,
+        teamName: teamName,
+        hasPendingDeliverables: delivState.hasPendingDeliverables,
+        hasPendingPeerEval: StudentTaskBadgeHelper.hasPendingPeerEval(dataToPass),
+      ),
       appBar: AppBar(
         automaticallyImplyLeading: false,
         backgroundColor: DefensysTokens.maroon,
         foregroundColor: Colors.white,
+        elevation: 0,
+        leading: Builder(
+          builder: (ctx) => IconButton(
+            icon: const Icon(Icons.menu_rounded, color: Colors.white),
+            tooltip: 'Navigation Menu',
+            onPressed: () => Scaffold.of(ctx).openDrawer(),
+          ),
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              context.l10n.studentDashboardTitle,
-              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
-            ),
-            if (safeIndex != 0 && team != null)
-              Text(
-                team['name']?.toString() ?? '',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.white.withValues(alpha: 0.85),
-                  fontWeight: FontWeight.w500,
-                ),
-                overflow: TextOverflow.ellipsis,
+              tabTitle,
+              style: const TextStyle(
+                fontWeight: FontWeight.bold,
+                fontSize: 17,
+                letterSpacing: -0.2,
               ),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              tabSubtitle,
+              style: TextStyle(
+                fontSize: 11.5,
+                color: Colors.white.withValues(alpha: 0.85),
+                fontWeight: FontWeight.w500,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ),
         actions: [
@@ -177,29 +279,7 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
               );
             },
           ),
-          IconButton(
-            icon: CircleAvatar(
-              radius: 14,
-              backgroundColor: Colors.white.withValues(alpha: 0.25),
-              backgroundImage: _profile.avatarBytes != null
-                  ? MemoryImage(_profile.avatarBytes!)
-                  : null,
-              child: _profile.avatarBytes == null
-                  ? Text(
-                      _profile.name.trim().isNotEmpty
-                          ? _profile.name.trim()[0].toUpperCase()
-                          : 'S',
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 12,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    )
-                  : null,
-            ),
-            tooltip: 'Profile',
-            onPressed: () => _showProfileSheet(context),
-          ),
+          const SizedBox(width: 4),
         ],
       ),
       body: OfflineBanner(
@@ -261,138 +341,425 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     );
   }
 
-  void _showProfileSheet(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
+  Widget _buildStudentDrawer(
+    BuildContext context, {
+    required Map<String, dynamic> dataToPass,
+    required bool isPM,
+    required String studentName,
+    required String roleTag,
+    required String? teamName,
+    required bool hasPendingDeliverables,
+    required bool hasPendingPeerEval,
+  }) {
+    final user = ref.watch(authProvider).user;
+    final avatarUrl = user?['avatar'] != null
+        ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
+        : null;
+    final academicPeriod = dataToPass['academic_period'] as Map<String, dynamic>? ??
+        (dataToPass['team'] as Map<String, dynamic>?)?['academic_period'] as Map<String, dynamic>?;
+    final termName = academicPeriod?['name']?.toString() ??
+        academicPeriod?['semester']?.toString() ??
+        'AY 2026-2027';
+
+    final notifState = ref.watch(notificationsProvider);
+
+    return Drawer(
       backgroundColor: Colors.white,
       shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: BorderRadius.horizontal(right: Radius.circular(16)),
       ),
-      builder: (_) => Consumer(
-        builder: (sheetCtx, ref, _) {
-          final user = ref.watch(authProvider).user;
-          final avatarUrl = user?['avatar'] != null
-              ? ApiConfig.publicMediaUrl(user!['avatar'] as String)
-              : null;
-          final studentName = user != null && user['name'] != null
-              ? user['name'] as String
-              : _profile.name;
-
-          return SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 8),
+      child: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Drawer Header with gradient maroon
+            Container(
+              width: double.infinity,
+              padding: EdgeInsets.fromLTRB(
+                20,
+                MediaQuery.of(context).padding.top + 20,
+                20,
+                20,
+              ),
+              decoration: const BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    DefensysTokens.maroon,
+                    Color(0xFF520B13),
+                  ],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+              ),
               child: Column(
-                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  ListTile(
-                    leading: CircleAvatar(
-                      radius: 24,
-                      backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
-                      backgroundImage: avatarUrl != null
-                          ? NetworkImage(avatarUrl)
-                          : null,
-                      child: avatarUrl == null
-                          ? Text(
-                              studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
-                              style: const TextStyle(
-                                color: DefensysTokens.maroon,
-                                fontWeight: FontWeight.bold,
-                                fontSize: 18,
-                              ),
-                            )
-                          : null,
-                    ),
-                    title: Text(
-                      studentName,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
-                    ),
-                    subtitle: Text(
-                      'Student · ${_profile.team}',
-                      style: const TextStyle(fontSize: 12),
-                    ),
-                  ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.person_outline, color: DefensysTokens.maroon),
-                    title: const Text(
-                      'Profile',
-                      style: TextStyle(
-                        color: DefensysTokens.maroon,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                    onTap: () {
-                      Navigator.pop(sheetCtx);
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const ProfileScreen(),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white24),
                         ),
+                        child: const Icon(
+                          Icons.shield_rounded,
+                          size: 18,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      const Text(
+                        'DefenSYS',
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                      const Spacer(),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                        child: Text(
+                          termName,
+                          style: const TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  Row(
+                    children: [
+                      CircleAvatar(
+                        radius: 22,
+                        backgroundColor: Colors.white.withValues(alpha: 0.25),
+                        backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+                        child: avatarUrl == null
+                            ? Text(
+                                studentName.isNotEmpty ? studentName[0].toUpperCase() : 'S',
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 18,
+                                ),
+                              )
+                            : null,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              studentName,
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              teamName != null ? '$roleTag · $teamName' : roleTag,
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.white.withValues(alpha: 0.85),
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+
+            // Navigation Links / Action Shortcuts (Clean Single-Line Items)
+            Expanded(
+              child: ListView(
+                padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+                children: [
+                  _drawerSectionHeader('QUICK ACCESS'),
+                  _drawerItem(
+                    icon: Icons.upload_file_rounded,
+                    title: 'Deliverables & Manuscripts',
+                    badgeLabel: hasPendingDeliverables ? 'Pending' : null,
+                    badgeColor: const Color(0xFFEA580C),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = 1);
+                      _eventsSubTabNotifier.value = 1;
+                    },
+                  ),
+                  _drawerItem(
+                    icon: Icons.how_to_reg_rounded,
+                    title: 'Peer Evaluation',
+                    badgeLabel: hasPendingPeerEval ? 'Due Soon' : null,
+                    badgeColor: const Color(0xFFDC2626),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = 1);
+                      _eventsSubTabNotifier.value = 2;
+                    },
+                  ),
+                  _drawerItem(
+                    icon: Icons.calendar_month_rounded,
+                    title: 'Defense Schedule',
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = 1);
+                      _eventsSubTabNotifier.value = 0;
+                    },
+                  ),
+                  _drawerItem(
+                    icon: Icons.folder_shared_rounded,
+                    title: 'Project Repository',
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = 2);
+                    },
+                  ),
+                  if (isPM)
+                    _drawerItem(
+                      icon: Icons.hub_rounded,
+                      title: 'Section Integration Hub',
+                      onTap: () {
+                        Navigator.pop(context);
+                        setState(() => _selectedIndex = 3);
+                      },
+                    ),
+                  _drawerItem(
+                    icon: Icons.draw_rounded,
+                    title: 'E-Signature & Security',
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() => _selectedIndex = (isPM ? 4 : 3));
+                    },
+                  ),
+                  _drawerItem(
+                    icon: Icons.notifications_outlined,
+                    title: 'Notifications',
+                    badgeCount: notifState.unreadCount,
+                    onTap: () {
+                      Navigator.pop(context);
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: Colors.transparent,
+                        isScrollControlled: true,
+                        builder: (_) => const NotificationsModal(),
                       );
                     },
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.info_outline_rounded),
-                    title: const Text('About DefenSYS'),
+
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 6),
+                    child: Divider(color: Color(0xFFE2E8F0)),
+                  ),
+
+                  _drawerSectionHeader('SYSTEM & POLICIES'),
+                  _drawerItem(
+                    icon: Icons.info_outline_rounded,
+                    title: 'About DefenSYS',
                     onTap: () {
-                      Navigator.pop(sheetCtx);
+                      Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const AboutScreen()),
                       );
                     },
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.privacy_tip_outlined),
-                    title: const Text('Privacy Policy'),
+                  _drawerItem(
+                    icon: Icons.privacy_tip_outlined,
+                    title: 'Privacy Policy',
                     onTap: () {
-                      Navigator.pop(sheetCtx);
+                      Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const PrivacyScreen()),
                       );
                     },
                   ),
-                  ListTile(
-                    leading: const Icon(Icons.gavel_rounded),
-                    title: const Text('Terms & Conditions'),
+                  _drawerItem(
+                    icon: Icons.gavel_rounded,
+                    title: 'Terms & Conditions',
                     onTap: () {
-                      Navigator.pop(sheetCtx);
+                      Navigator.pop(context);
                       Navigator.push(
                         context,
                         MaterialPageRoute(builder: (_) => const TermsScreen()),
                       );
                     },
                   ),
-                  const Divider(),
-                  ListTile(
-                    leading: const Icon(Icons.logout, color: Colors.red),
-                    title: const Text(
-                      'Logout',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                    onTap: () async {
-                      final authNotifier = ref.read(authProvider.notifier);
-                      Navigator.pop(sheetCtx);
-                      if (await confirmLogout(context)) {
-                        await authNotifier.logout();
-                      }
-                    },
-                  ),
                 ],
               ),
             ),
-          );
-        },
+
+            // Bottom Sign Out Tile
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 6, 16, 16),
+              child: InkWell(
+                onTap: () async {
+                  final authNotifier = ref.read(authProvider.notifier);
+                  Navigator.pop(context);
+                  if (await confirmLogout(context)) {
+                    await authNotifier.logout();
+                  }
+                },
+                borderRadius: BorderRadius.circular(10),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: const Color(0xFFFCA5A5)),
+                  ),
+                  child: const Row(
+                    children: [
+                      Icon(Icons.logout_rounded, color: Color(0xFFDC2626), size: 18),
+                      SizedBox(width: 12),
+                      Text(
+                        'Logout',
+                        style: TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                      Spacer(),
+                      Icon(Icons.chevron_right_rounded, color: Color(0xFFDC2626), size: 18),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerSectionHeader(String title) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w800,
+          color: DefensysTokens.textSecondary,
+          letterSpacing: 1.1,
+        ),
+      ),
+    );
+  }
+
+  Widget _drawerItem({
+    required IconData icon,
+    required String title,
+    required VoidCallback onTap,
+    String? badgeLabel,
+    Color? badgeColor,
+    int? badgeCount,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
+        child: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(7),
+              decoration: BoxDecoration(
+                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Icon(
+                icon,
+                size: 19,
+                color: DefensysTokens.maroon,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Row(
+                children: [
+                  Flexible(
+                    child: Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  if (badgeLabel != null) ...[
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: (badgeColor ?? const Color(0xFFDC2626)).withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: (badgeColor ?? const Color(0xFFDC2626)).withValues(alpha: 0.3),
+                        ),
+                      ),
+                      child: Text(
+                        badgeLabel,
+                        style: TextStyle(
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          color: badgeColor ?? const Color(0xFFDC2626),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            if (badgeCount != null && badgeCount > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  badgeCount.toString(),
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              )
+            else
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Color(0xFFCBD5E1),
+              ),
+          ],
+        ),
       ),
     );
   }

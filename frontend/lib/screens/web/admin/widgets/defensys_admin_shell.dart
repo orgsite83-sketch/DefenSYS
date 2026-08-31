@@ -10,7 +10,6 @@ import '../../../../notifications/notifications_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../config/api_config.dart';
 import '../../../../widgets/defensys_logo_mark.dart';
-import '../../../../widgets/dialogs/prompt_missing_phone_dialog.dart';
 import '../../faculty/e_signature_upload_dialog.dart';
 
 export '../../../../widgets/status_badge.dart';
@@ -284,7 +283,6 @@ class _TopNav extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final user = ref.watch(authProvider).user;
-    PromptMissingPhoneDialog.maybeShow(context, ref);
     final displayName = user != null && user['name'] != null
         ? user['name'] as String
         : 'Administrator';

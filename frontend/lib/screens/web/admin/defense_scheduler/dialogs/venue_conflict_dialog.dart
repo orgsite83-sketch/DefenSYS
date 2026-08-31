@@ -53,6 +53,9 @@ class ScheduleImportDialog {
     int? panelRubricId = initialRubricId;
     int? adviserRubricId = initialAdviserRubricId;
     int? peerRubricId = isPit ? initialPeerRubricId : initialCapstonePeerRubricId;
+    String? panelRubricName;
+    String? adviserRubricName;
+    String? peerRubricName;
     int panelWeight = int.tryParse(initialPanelWeight) ?? 80;
     int peerWeight = int.tryParse(initialPeerWeight) ?? 20;
     final dateController = TextEditingController(text: initialDate);
@@ -106,54 +109,6 @@ class ScheduleImportDialog {
       lastSavedSnapshot = currentDraftSnapshot();
     }
 
-    Future<void> loadStageRubrics(
-      int? stageId,
-      void Function(void Function()) setDialogState,
-    ) async {
-      if (stageId == null) return;
-      setDialogState(() => rubricLoading = true);
-      final semesterId = asInt(state.activeSemester?['id']);
-      if (semesterId == null) {
-        setDialogState(() => rubricLoading = false);
-        return;
-      }
-      final detail = await ref
-          .read(defenseStagesProvider.notifier)
-          .fetchStageDetail(stageId, semesterId: semesterId);
-      final grading = detail?['grading_config'];
-      if (!context.mounted) return;
-      setDialogState(() {
-        if (grading is Map) {
-          panelRubricId = asInt(grading['panel_rubric_id']) ?? panelRubricId;
-          adviserRubricId = asInt(grading['adviser_rubric_id']) ?? adviserRubricId;
-          peerRubricId = asInt(grading['peer_rubric_id']) ?? peerRubricId;
-        }
-        rubricLoading = false;
-      });
-    }
-
-    Future<void> loadPitEventConfig(
-      String eventName,
-      void Function(void Function()) setDialogState,
-    ) async {
-      if (eventName.trim().isEmpty) return;
-      setDialogState(() => rubricLoading = true);
-      final semesterId = asInt(state.activeSemester?['id']);
-      final config = await ref
-          .read(defenseSchedulerProvider.notifier)
-          .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
-      if (!context.mounted) return;
-      setDialogState(() {
-        if (config != null) {
-          panelRubricId = asInt(config['panel_rubric_id']) ?? panelRubricId;
-          peerRubricId = asInt(config['peer_rubric_id']) ?? peerRubricId;
-          panelWeight = int.tryParse(config['panel_weight']?.toString() ?? '') ?? panelWeight;
-          peerWeight = int.tryParse(config['peer_weight']?.toString() ?? '') ?? peerWeight;
-        }
-        rubricLoading = false;
-      });
-    }
-
     Future<void> persistDraft({bool showToast = false}) async {
       draftDebounce?.cancel();
       if (parsed == null || parsed!.rows.isEmpty) {
@@ -193,6 +148,136 @@ class ScheduleImportDialog {
       });
     }
 
+    Future<void> loadStageRubrics(
+      int? stageId, [
+      void Function(void Function())? setDialogState,
+    ]) async {
+      if (stageId == null) {
+        void updateState() {
+          panelRubricId = null;
+          adviserRubricId = null;
+          peerRubricId = null;
+          panelRubricName = null;
+          adviserRubricName = null;
+          peerRubricName = null;
+          rubricLoading = false;
+        }
+
+        if (setDialogState != null) {
+          setDialogState(updateState);
+        } else {
+          updateState();
+        }
+        return;
+      }
+
+      if (setDialogState != null) {
+        setDialogState(() => rubricLoading = true);
+      } else {
+        rubricLoading = true;
+      }
+
+      final semesterId = asInt(state.activeSemester?['id']);
+      final detail = await ref
+          .read(defenseStagesProvider.notifier)
+          .fetchStageDetail(stageId, semesterId: semesterId);
+      final grading = detail?['grading_config'];
+
+      void applyGrading() {
+        if (grading is Map) {
+          panelRubricId = asInt(grading['panel_rubric_id']);
+          adviserRubricId = asInt(grading['adviser_rubric_id']);
+          peerRubricId = asInt(grading['peer_rubric_id']);
+          panelRubricName = grading['panel_rubric_name']?.toString();
+          adviserRubricName = grading['adviser_rubric_name']?.toString();
+          peerRubricName = grading['peer_rubric_name']?.toString();
+        } else {
+          panelRubricId = null;
+          adviserRubricId = null;
+          peerRubricId = null;
+          panelRubricName = null;
+          adviserRubricName = null;
+          peerRubricName = null;
+        }
+        rubricLoading = false;
+      }
+
+      if (!context.mounted) return;
+
+      if (setDialogState != null) {
+        setDialogState(applyGrading);
+        scheduleDraftSave();
+      } else {
+        applyGrading();
+      }
+    }
+
+    Future<void> loadPitEventConfig(
+      String eventName, [
+      void Function(void Function())? setDialogState,
+    ]) async {
+      if (eventName.trim().isEmpty) {
+        void updateState() {
+          panelRubricId = null;
+          peerRubricId = null;
+          panelRubricName = null;
+          peerRubricName = null;
+          rubricLoading = false;
+        }
+
+        if (setDialogState != null) {
+          setDialogState(updateState);
+        } else {
+          updateState();
+        }
+        return;
+      }
+
+      if (setDialogState != null) {
+        setDialogState(() => rubricLoading = true);
+      } else {
+        rubricLoading = true;
+      }
+
+      final semesterId = asInt(state.activeSemester?['id']);
+      final config = await ref
+          .read(defenseSchedulerProvider.notifier)
+          .fetchPitEventConfig(eventName: eventName, semesterId: semesterId);
+
+      void applyConfig() {
+        if (config != null) {
+          panelRubricId = asInt(config['panel_rubric_id']);
+          peerRubricId = asInt(config['peer_rubric_id']);
+          panelRubricName = config['panel_rubric_name']?.toString();
+          peerRubricName = config['peer_rubric_name']?.toString();
+          panelWeight = int.tryParse(config['panel_weight']?.toString() ?? '') ?? panelWeight;
+          peerWeight = int.tryParse(config['peer_weight']?.toString() ?? '') ?? peerWeight;
+        } else {
+          panelRubricId = null;
+          peerRubricId = null;
+          panelRubricName = null;
+          peerRubricName = null;
+        }
+        rubricLoading = false;
+      }
+
+      if (!context.mounted) return;
+
+      if (setDialogState != null) {
+        setDialogState(applyConfig);
+        scheduleDraftSave();
+      } else {
+        applyConfig();
+      }
+    }
+
+    // Immediately fetch fresh rubrics from the backend for the detected or restored stage/event
+    if (!isPit && importStageId != null) {
+      await loadStageRubrics(importStageId);
+    } else if (isPit && importEventName.isNotEmpty) {
+      await loadPitEventConfig(importEventName);
+    }
+
     Future<void> discardDraft(void Function(void Function()) setDialogState) async {
       draftDebounce?.cancel();
       await clearScheduleImportDraft(scope: importScope);
@@ -212,6 +297,9 @@ class ScheduleImportDialog {
         panelRubricId = initialRubricId;
         adviserRubricId = initialAdviserRubricId;
         peerRubricId = isPit ? initialPeerRubricId : initialCapstonePeerRubricId;
+        panelRubricName = null;
+        adviserRubricName = null;
+        peerRubricName = null;
         panelWeight = int.tryParse(initialPanelWeight) ?? 80;
         peerWeight = int.tryParse(initialPeerWeight) ?? 20;
         importErrors = [];
@@ -503,6 +591,9 @@ class ScheduleImportDialog {
                           panelRubricId: panelRubricId,
                           adviserRubricId: adviserRubricId,
                           peerRubricId: peerRubricId,
+                          panelRubricName: panelRubricName,
+                          adviserRubricName: adviserRubricName,
+                          peerRubricName: peerRubricName,
                           rubricLoading: rubricLoading,
                           rowsDetected: previewRows.length,
                           readyRows: readyRows.length,
@@ -514,7 +605,6 @@ class ScheduleImportDialog {
                               importStageId = val;
                               headerMatch = null;
                             });
-                            scheduleDraftSave();
                             await loadStageRubrics(val, setDialogState);
                           },
                           onEventChanged: (val) async {
@@ -522,7 +612,6 @@ class ScheduleImportDialog {
                               importEventName = val ?? '';
                               headerMatch = null;
                             });
-                            scheduleDraftSave();
                             if (val != null) {
                               await loadPitEventConfig(val, setDialogState);
                             }
@@ -1490,6 +1579,9 @@ class ScheduleImportDialog {
     required int? panelRubricId,
     int? adviserRubricId,
     required int? peerRubricId,
+    String? panelRubricName,
+    String? adviserRubricName,
+    String? peerRubricName,
     required bool rubricLoading,
     required int rowsDetected,
     required int readyRows,
@@ -1509,15 +1601,26 @@ class ScheduleImportDialog {
           ),
         )
         .toList();
-    final rubricName = _getRubricName(state, panelRubricId);
-    final peerRubricName = isPit ? _getPeerRubricName(state, peerRubricId) : '';
-    final isCapstoneRubricMissing = !isPit &&
-        stageId != null &&
-        (panelRubricId == null ||
-            adviserRubricId == null ||
-            peerRubricId == null);
-    final isPitRubricMissing =
-        isPit && eventName.isNotEmpty && (panelRubricId == null || peerRubricId == null);
+    final pRubricName = _getRubricName(state, panelRubricId, panelRubricName);
+    final aRubricName = _getRubricName(state, adviserRubricId, adviserRubricName);
+    final peRubricName = isPit
+        ? _getPeerRubricName(state, peerRubricId, peerRubricName)
+        : _getRubricName(state, peerRubricId, peerRubricName);
+
+    final missingCapstoneRubrics = <String>[];
+    if (!isPit && stageId != null) {
+      if (panelRubricId == null) missingCapstoneRubrics.add('Panel');
+      if (adviserRubricId == null) missingCapstoneRubrics.add('Adviser');
+      if (peerRubricId == null) missingCapstoneRubrics.add('Peer');
+    }
+    final isCapstoneRubricMissing = missingCapstoneRubrics.isNotEmpty;
+
+    final missingPitRubrics = <String>[];
+    if (isPit && eventName.isNotEmpty) {
+      if (panelRubricId == null) missingPitRubrics.add('Panel');
+      if (peerRubricId == null) missingPitRubrics.add('Peer');
+    }
+    final isPitRubricMissing = missingPitRubrics.isNotEmpty;
 
     return Container(
       padding: const EdgeInsets.all(18),
@@ -1641,8 +1744,8 @@ class ScheduleImportDialog {
                   Expanded(
                     child: Text(
                       isPit
-                          ? 'Event "$eventName" is missing required grading rubrics. Assign rubrics before importing schedules.'
-                          : 'Stage "${_getStageLabel(state, stageId)}" is missing required grading rubrics (Panel, Adviser, or Peer). Schedule slots cannot be imported until rubrics are assigned in Defense Stages Setup.',
+                          ? 'Event "$eventName" is missing required grading rubrics (${missingPitRubrics.join(', ')}). Assign rubrics before importing schedules.'
+                          : 'Stage "${_getStageLabel(state, stageId)}" is missing required grading rubrics (${missingCapstoneRubrics.join(', ')}). Schedule slots cannot be imported until rubrics are assigned in Defense Stages Setup.',
                       style: const TextStyle(
                         color: Color(0xFF92400E),
                         fontSize: 12,
@@ -1705,19 +1808,37 @@ class ScheduleImportDialog {
                 'Panel rubric',
                 rubricLoading
                     ? 'Loading...'
-                    : (rubricName.isEmpty ? 'Missing' : rubricName),
-                danger: rubricName.isEmpty && !rubricLoading,
-                success: rubricName.isNotEmpty && !rubricLoading,
+                    : (panelRubricId == null || pRubricName.isEmpty ? 'Missing' : pRubricName),
+                danger: (panelRubricId == null || pRubricName.isEmpty) && !rubricLoading,
+                success: panelRubricId != null && pRubricName.isNotEmpty && !rubricLoading,
               ),
-              if (isPit)
+              if (!isPit) ...[
+                _importMetric(
+                  'Adviser rubric',
+                  rubricLoading
+                      ? 'Loading...'
+                      : (adviserRubricId == null || aRubricName.isEmpty ? 'Missing' : aRubricName),
+                  danger: (adviserRubricId == null || aRubricName.isEmpty) && !rubricLoading,
+                  success: adviserRubricId != null && aRubricName.isNotEmpty && !rubricLoading,
+                ),
                 _importMetric(
                   'Peer rubric',
                   rubricLoading
-                    ? 'Loading...'
-                    : (peerRubricName.isEmpty ? 'Missing' : peerRubricName),
-                  danger: peerRubricName.isEmpty && !rubricLoading,
-                  success: peerRubricName.isNotEmpty && !rubricLoading,
+                      ? 'Loading...'
+                      : (peerRubricId == null || peRubricName.isEmpty ? 'Missing' : peRubricName),
+                  danger: (peerRubricId == null || peRubricName.isEmpty) && !rubricLoading,
+                  success: peerRubricId != null && peRubricName.isNotEmpty && !rubricLoading,
                 ),
+              ] else ...[
+                _importMetric(
+                  'Peer rubric',
+                  rubricLoading
+                      ? 'Loading...'
+                      : (peerRubricId == null || peRubricName.isEmpty ? 'Missing' : peRubricName),
+                  danger: (peerRubricId == null || peRubricName.isEmpty) && !rubricLoading,
+                  success: peerRubricId != null && peRubricName.isNotEmpty && !rubricLoading,
+                ),
+              ],
             ],
           ),
         ],
@@ -2377,17 +2498,20 @@ class ScheduleImportDialog {
     return 'Stage $stageId';
   }
 
-  static String _getRubricName(DefenseSchedulerState state, int? rubricId) {
+  static String _getRubricName(DefenseSchedulerState state, int? rubricId, [String? fallbackName]) {
     if (rubricId == null) return '';
     for (final rubric in state.rubrics) {
       if (asInt(rubric['id']) == rubricId) {
         return rubric['name']?.toString() ?? '';
       }
     }
-    return '';
+    if (fallbackName != null && fallbackName.trim().isNotEmpty) {
+      return fallbackName.trim();
+    }
+    return 'Rubric #$rubricId';
   }
 
-  static String _getPeerRubricName(DefenseSchedulerState state, int? rubricId) {
+  static String _getPeerRubricName(DefenseSchedulerState state, int? rubricId, [String? fallbackName]) {
     if (rubricId == null) return '';
     for (final rubric in state.peerRubrics) {
       if (asInt(rubric['id']) == rubricId) {
@@ -2399,6 +2523,9 @@ class ScheduleImportDialog {
         return rubric['name']?.toString() ?? '';
       }
     }
-    return '';
+    if (fallbackName != null && fallbackName.trim().isNotEmpty) {
+      return fallbackName.trim();
+    }
+    return 'Peer Rubric #$rubricId';
   }
 }

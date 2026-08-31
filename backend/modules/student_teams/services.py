@@ -73,11 +73,8 @@ def get_stage_progress(team, stage):
 
 
 def is_stage_ready(team, stage):
-    progress = get_stage_progress(team, stage)
-    if not progress:
+    if not team or not stage:
         return False
-    if progress.status == TeamStageProgress.STATUS_READY:
-        return True
 
     from grading.grades.models import TeamGrade
     from defense.scheduler.models import DefenseSchedule
@@ -95,6 +92,12 @@ def is_stage_ready(team, stage):
             status=DefenseSchedule.STATUS_SCHEDULED,
         ).exists()
         return not has_active
+
+    progress = get_stage_progress(team, stage)
+    if not progress:
+        return False
+    if progress.status == TeamStageProgress.STATUS_READY:
+        return True
 
     if progress.status == TeamStageProgress.STATUS_SCHEDULED:
         has_active = DefenseSchedule.objects.filter(

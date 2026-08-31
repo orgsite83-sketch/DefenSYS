@@ -1051,6 +1051,7 @@ class StudentDashboardView(APIView):
         )
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
+        # Query active schedule first, fallback to most recent schedule (completed/done/archived)
         schedule = (
             DefenseSchedule.objects.select_related('team', 'defense_stage')
             .filter(team=team, status=DefenseSchedule.STATUS_SCHEDULED)
@@ -1059,6 +1060,48 @@ class StudentDashboardView(APIView):
             if team
             else None
         )
+        if schedule is None and team:
+            schedule = (
+                DefenseSchedule.objects.select_related('team', 'defense_stage')
+                .filter(team=team)
+                .order_by('-scheduled_date', '-start_time', '-id')
+                .first()
+            )
+
+        # Deliverable submissions and files for student dashboard
+        deliverables_payload = []
+        if team:
+            try:
+                submissions = (
+                    DeliverableSubmission.objects.filter(team=team)
+                    .prefetch_related('files')
+                    .order_by('-reviewed_at', '-id')
+                )
+                for sub in submissions[:8]:
+                    files_list = []
+                    for f in sub.files.all():
+                        files_list.append({
+                            'id': f.id,
+                            'file_name': f.file_name,
+                            'file_size': f.file_size,
+                            'file_url': f.file.url if f.file else None,
+                            'uploaded_at': f.uploaded_at.isoformat() if f.uploaded_at else None,
+                            'category': f.category,
+                        })
+                    deliverables_payload.append({
+                        'id': sub.id,
+                        'label': sub.label,
+                        'stage': sub.stage_label,
+                        'type': sub.deliverable_type,
+                        'status': sub.status,
+                        'required': sub.required,
+                        'feedback': sub.feedback,
+                        'file_count': len(files_list),
+                        'files': files_list,
+                    })
+            except Exception:
+                deliverables_payload = []
+
         # Unified grade resolution
         canonical_grade = None
         if team:
@@ -1152,6 +1195,7 @@ class StudentDashboardView(APIView):
             'team_name': team_payload['name'] if team_payload else None,
             'project_title': team_payload['projectTitle'] if team_payload else None,
             'status': team_payload['status'] if team_payload else 'No team assigned',
+            'deliverables': deliverables_payload,
             'final_grade': None,
         })
 

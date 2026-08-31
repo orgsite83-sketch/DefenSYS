@@ -4,8 +4,10 @@ from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name
 from repository.entry_payloads import ml_fields_from
 
+from django.db.models import Avg, Count
 from .ml_search import filter_and_rank_entries
-from .models import ArchiveEntry
+from .models import ArchiveEntry, RepositoryReview, UserBookShelf
+
 
 
 CAPSTONE_VISIBLE_IDS = ['D4.1', 'D10', 'D17', 'D18', 'D19']
@@ -218,7 +220,72 @@ def pit_entry_payload(entry):
     }
 
 
-def all_visible_entries():
+def get_entry_review_stats(target_ids=None):
+    qs = RepositoryReview.objects.all()
+    if target_ids is not None:
+        qs = qs.filter(target_id__in=target_ids)
+    
+    stats_map = {}
+    for row in qs.values('target_id').annotate(
+        avg_rating=Avg('rating'),
+        total_ratings=Count('id'),
+    ):
+        target_id = row['target_id']
+        stats_map[target_id] = {
+            'average_rating': round(row['avg_rating'] or 0.0, 1),
+            'ratings_count': row['total_ratings'],
+            'reviews_count': 0,
+        }
+    
+    for row in qs.exclude(remark='').values('target_id').annotate(
+        total_remarks=Count('id')
+    ):
+        target_id = row['target_id']
+        if target_id in stats_map:
+            stats_map[target_id]['reviews_count'] = row['total_remarks']
+        else:
+            stats_map[target_id] = {
+                'average_rating': 0.0,
+                'ratings_count': 0,
+                'reviews_count': row['total_remarks'],
+            }
+
+    return stats_map
+
+
+def get_user_shelf_map(user, target_ids=None):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return {}
+    qs = UserBookShelf.objects.filter(user=user)
+    if target_ids is not None:
+        qs = qs.filter(target_id__in=target_ids)
+    return {
+        item.target_id: {
+            'shelf_status': item.status,
+            'last_read_page': item.last_read_page,
+            'total_pages': item.total_pages,
+            'reading_progress': item.progress_percent,
+        }
+        for item in qs
+    }
+
+
+def get_user_review_map(user, target_ids=None):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return {}
+    qs = RepositoryReview.objects.filter(user=user)
+    if target_ids is not None:
+        qs = qs.filter(target_id__in=target_ids)
+    return {
+        item.target_id: {
+            'user_rating': item.rating,
+            'user_remark': item.remark,
+        }
+        for item in qs
+    }
+
+
+def all_visible_entries(user=None):
     submissions = list(capstone_visible_queryset()) + list(pit_visible_deliverables_queryset())
     submission_keys = {(s.team_id, s.stage_label) for s in submissions if s.team_id and s.stage_label}
 
@@ -231,11 +298,35 @@ def all_visible_entries():
     entries = [pit_entry_payload(entry) for entry in pit_entries]
     for submission in submissions:
         entries.extend(capstone_entry_payload(submission))
+    
+    # Enrich with review & shelf metadata
+    review_stats = get_entry_review_stats()
+    shelf_map = get_user_shelf_map(user)
+    user_reviews = get_user_review_map(user)
+
+    for entry in entries:
+        tid = entry.get('id', '')
+        stats = review_stats.get(tid, {})
+        entry['average_rating'] = stats.get('average_rating', 0.0)
+        entry['ratings_count'] = stats.get('ratings_count', 0)
+        entry['reviews_count'] = stats.get('reviews_count', 0)
+        
+        user_rev = user_reviews.get(tid, {})
+        entry['user_rating'] = user_rev.get('user_rating')
+        entry['user_remark'] = user_rev.get('user_remark')
+        
+        shelf_info = shelf_map.get(tid, {})
+        entry['shelf_status'] = shelf_info.get('shelf_status')
+        entry['last_read_page'] = shelf_info.get('last_read_page', 1)
+        entry['total_pages'] = shelf_info.get('total_pages', 1)
+        entry['reading_progress'] = shelf_info.get('reading_progress', 0.0)
+
     return sorted(entries, key=lambda item: item.get('uploaded_at'), reverse=True)
 
 
 def search_archive_payload(request):
-    entries = all_visible_entries()
+    user = getattr(request, 'user', None)
+    entries = all_visible_entries(user=user)
     filtered, suggestions = filter_and_rank_entries(entries, request.query_params)
     return {
         'entries': filtered,
@@ -275,10 +366,8 @@ def counts_payload(entries, filtered_entries):
 
 
 def project_archive_payload(request):
-    entries = all_visible_entries()
-    
-    # Note: Archive is public - all authenticated users can see all visible entries
-    # No team filtering applied - students can see archive submissions from all teams
+    user = getattr(request, 'user', None)
+    entries = all_visible_entries(user=user)
     
     filtered_entries, suggestions = filter_and_rank_entries(entries, request.query_params)
     
@@ -302,3 +391,139 @@ def project_archive_payload(request):
         'restricted_deliverable_ids': restricted_ids,
         'notice': 'Repository is read-only. Restricted deliverables are intentionally hidden.',
     }
+
+
+def get_reviews_payload_for_target(target_id, user=None):
+    reviews = list(RepositoryReview.objects.filter(target_id=target_id).order_by('-created_at'))
+    
+    total_ratings = len(reviews)
+    avg_rating = round(sum(r.rating for r in reviews) / total_ratings, 1) if total_ratings > 0 else 0.0
+    
+    distribution = {5: 0, 4: 0, 3: 0, 2: 0, 1: 0}
+    for r in reviews:
+        if r.rating in distribution:
+            distribution[r.rating] += 1
+            
+    user_review = None
+    if user and getattr(user, 'is_authenticated', False):
+        for r in reviews:
+            if r.user_id == user.id:
+                user_review = {
+                    'id': r.id,
+                    'rating': r.rating,
+                    'remark': r.remark,
+                    'user_name': r.user_name,
+                    'user_role': r.user_role,
+                    'created_at': r.created_at.isoformat(),
+                    'updated_at': r.updated_at.isoformat(),
+                }
+                break
+
+    reviews_list = [
+        {
+            'id': r.id,
+            'user_id': r.user_id,
+            'user_name': r.user_name,
+            'user_role': r.user_role,
+            'rating': r.rating,
+            'remark': r.remark,
+            'created_at': r.created_at.isoformat(),
+            'updated_at': r.updated_at.isoformat(),
+            'is_owner': getattr(user, 'is_authenticated', False) and r.user_id == user.id if user else False,
+        }
+        for r in reviews if r.remark.strip() or r.rating > 0
+    ]
+
+    return {
+        'target_id': target_id,
+        'average_rating': avg_rating,
+        'ratings_count': total_ratings,
+        'reviews_count': len([r for r in reviews if r.remark.strip()]),
+        'distribution': distribution,
+        'user_review': user_review,
+        'reviews': reviews_list,
+    }
+
+
+def save_user_review(user, target_id, rating, remark=''):
+    try:
+        rating = int(rating)
+    except (ValueError, TypeError):
+        rating = 5
+    if rating < 1: rating = 1
+    if rating > 5: rating = 5
+    
+    review, _ = RepositoryReview.objects.update_or_create(
+        target_id=target_id,
+        user=user,
+        defaults={
+            'rating': rating,
+            'remark': str(remark or '').strip(),
+        }
+    )
+    return get_reviews_payload_for_target(target_id, user=user)
+
+
+def delete_user_review(user, review_id):
+    deleted_count, _ = RepositoryReview.objects.filter(id=review_id, user=user).delete()
+    return deleted_count > 0
+
+
+def get_user_shelf_payload(user):
+    if not user or not getattr(user, 'is_authenticated', False):
+        return {'items': []}
+    
+    shelf_items = list(UserBookShelf.objects.filter(user=user).order_by('-updated_at'))
+    return {
+        'items': [
+            {
+                'id': item.id,
+                'target_id': item.target_id,
+                'status': item.status,
+                'last_read_page': item.last_read_page,
+                'total_pages': item.total_pages,
+                'progress_percent': item.progress_percent,
+                'updated_at': item.updated_at.isoformat(),
+            }
+            for item in shelf_items
+        ]
+    }
+
+
+def update_user_shelf(user, target_id, status=None, last_read_page=None, total_pages=None, progress_percent=None):
+    defaults = {}
+    if status is not None:
+        defaults['status'] = status
+    if last_read_page is not None:
+        try:
+            defaults['last_read_page'] = max(1, int(last_read_page))
+        except (ValueError, TypeError):
+            pass
+    if total_pages is not None:
+        try:
+            defaults['total_pages'] = max(1, int(total_pages))
+        except (ValueError, TypeError):
+            pass
+    if progress_percent is not None:
+        try:
+            defaults['progress_percent'] = min(100.0, max(0.0, float(progress_percent)))
+        except (ValueError, TypeError):
+            pass
+    elif 'last_read_page' in defaults and 'total_pages' in defaults and defaults['total_pages'] > 0:
+        defaults['progress_percent'] = round((defaults['last_read_page'] / defaults['total_pages']) * 100.0, 1)
+
+    item, _ = UserBookShelf.objects.update_or_create(
+        user=user,
+        target_id=target_id,
+        defaults=defaults,
+    )
+    return {
+        'id': item.id,
+        'target_id': item.target_id,
+        'status': item.status,
+        'last_read_page': item.last_read_page,
+        'total_pages': item.total_pages,
+        'progress_percent': item.progress_percent,
+        'updated_at': item.updated_at.isoformat(),
+    }
+

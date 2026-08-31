@@ -2424,4 +2424,90 @@ class GradeCenterApiTests(APITestCase):
         # Should not raise
         require_grade_editable(grade)
 
+    def test_grade_serializer_includes_minutes_info(self):
+        from defense.minutes.models import DefenseMinutes
+        from .serializers import TeamGradeSerializer
+        import datetime
+
+        schedule = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(10, 0),
+            room='Room 401',
+            scheduled_date=datetime.date(2026, 6, 22),
+            status=DefenseSchedule.STATUS_DONE,
+        )
+        grade = TeamGrade.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            schedule=schedule,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label=self.stage.label,
+            panel_score=Decimal('85.00'),
+            verdict=TeamGrade.VERDICT_APPROVED,
+        )
+
+        minutes = DefenseMinutes.objects.create(
+            schedule=schedule,
+            team_name=self.capstone_team.name,
+            project_title=self.capstone_team.project_title,
+            adviser_name='Dr. Adviser',
+            defense_stage_label=self.stage.label,
+            defense_date=datetime.date(2026, 6, 22),
+            defense_time=datetime.time(10, 0),
+            room='Room 401',
+            documenter_name='Prof. Documenter',
+            status=DefenseMinutes.STATUS_SUBMITTED,
+        )
+
+        grade.refresh_from_db()
+        data = TeamGradeSerializer(grade).data
+        self.assertEqual(data['minutes_id'], minutes.id)
+        self.assertEqual(data['minutes_status'], 'submitted')
+        self.assertFalse(data['minutes_has_pdf'])
+
+    def test_get_ready_teams_includes_redefense_teams(self):
+        from student_teams.services import get_ready_teams, is_stage_ready
+        from student_teams.models import TeamStageProgress
+        import datetime
+
+        # Ensure no active scheduled slot for previous attempt
+        self.capstone_schedule.status = DefenseSchedule.STATUS_DONE
+        self.capstone_schedule.save(update_fields=['status'])
+
+        # Ensure no existing ready progress
+        TeamStageProgress.objects.filter(team=self.capstone_team, defense_stage=self.stage).delete()
+
+        # Grade is marked for re-defense without active schedule
+        grade = TeamGrade.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            stage_label=self.stage.label,
+            panel_score=Decimal('65.00'),
+            verdict=TeamGrade.VERDICT_FOR_REDEFENSE,
+        )
+
+        ready_teams = get_ready_teams(self.semester, self.stage)
+        self.assertIn(self.capstone_team, ready_teams)
+        self.assertTrue(is_stage_ready(self.capstone_team, self.stage))
+
+        # Once scheduled, no longer in ready teams
+        schedule = DefenseSchedule.objects.create(
+            team=self.capstone_team,
+            semester=self.semester,
+            defense_stage=self.stage,
+            start_time=datetime.time(13, 0),
+            room='Room 205',
+            scheduled_date=datetime.date(2026, 7, 1),
+            status=DefenseSchedule.STATUS_SCHEDULED,
+        )
+        ready_teams_after = get_ready_teams(self.semester, self.stage)
+        self.assertNotIn(self.capstone_team, ready_teams_after)
+        self.assertFalse(is_stage_ready(self.capstone_team, self.stage))
+
+
 

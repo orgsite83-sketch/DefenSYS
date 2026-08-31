@@ -15,6 +15,10 @@ import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../theme/defensys_tokens.dart';
 import '../../../toasts/feedback_toast.dart';
+import '../../../widgets/confirm_dialog.dart';
+import '../../about_screen.dart';
+import '../../privacy_screen.dart';
+import '../../terms_screen.dart';
 
 MediaType _inferMediaType(String filename) {
   final ext = filename.toLowerCase().split('.').last;
@@ -46,7 +50,8 @@ class StudentProfile {
 /// - Provides Change Password form with strength & validation rules.
 /// - Shows real-time Activity Audit Trail.
 class ProfileScreen extends ConsumerStatefulWidget {
-  const ProfileScreen({super.key});
+  final bool? showAppBar;
+  const ProfileScreen({super.key, this.showAppBar});
 
   @override
   ConsumerState<ProfileScreen> createState() => _ProfileScreenState();
@@ -457,72 +462,83 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final email = user['email'] ?? '';
     final role = (user['role'] ?? 'student') as String;
     final roleLabel = role[0].toUpperCase() + role.substring(1);
+    final isStudent = role.toLowerCase() == 'student';
     final isWide = MediaQuery.of(context).size.width > 900;
 
+    final showBar = widget.showAppBar ?? !kIsWeb;
+
     return Scaffold(
-      backgroundColor: const Color(0xFFF1F5F9), // Slate 100
-      appBar: kIsWeb
-          ? null
-          : AppBar(
+      backgroundColor: Colors.grey.shade50,
+      appBar: showBar
+          ? AppBar(
               backgroundColor: DefensysTokens.maroon,
               foregroundColor: Colors.white,
               title: const Text('Profile', style: TextStyle(fontWeight: FontWeight.bold)),
               elevation: 0,
-            ),
+            )
+          : null,
       body: SingleChildScrollView(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(isWide ? 24 : 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             // Top Hero Card Banner
             _buildHeroBanner(displayName, username, email, roleLabel, user, isWide),
-                const SizedBox(height: 20),
+            const SizedBox(height: 16),
 
-                // Main Content Grid
-                if (isWide)
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Left Column: Identity & E-Signature
-                      Expanded(
-                        flex: 5,
-                        child: Column(
-                          children: [
-                            _buildIdentityCard(displayName, username, email, roleLabel, user),
-                            const SizedBox(height: 20),
-                            _buildESignatureCard(user),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(width: 20),
-                      // Right Column: Security & Activity Feed
-                      Expanded(
-                        flex: 7,
-                        child: Column(
-                          children: [
-                            _buildChangePasswordCard(username, email),
-                            const SizedBox(height: 20),
-                            _buildHistoryCard(),
-                          ],
-                        ),
-                      ),
-                    ],
-                  )
-                else
-                  Column(
-                    children: [
-                      _buildIdentityCard(displayName, username, email, roleLabel, user),
-                      const SizedBox(height: 20),
-                      _buildESignatureCard(user),
-                      const SizedBox(height: 20),
-                      _buildChangePasswordCard(username, email),
-                      const SizedBox(height: 20),
-                      _buildHistoryCard(),
-                    ],
+            // Main Content Grid
+            if (isWide)
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Left Column: Identity & E-Signature
+                  Expanded(
+                    flex: 5,
+                    child: Column(
+                      children: [
+                        _buildIdentityCard(displayName, username, email, roleLabel, user),
+                        if (!isStudent) ...[
+                          const SizedBox(height: 20),
+                          _buildESignatureCard(user),
+                        ],
+                      ],
+                    ),
                   ),
-              ],
-            ),
+                  const SizedBox(width: 20),
+                  // Right Column: Security & Activity Feed
+                  Expanded(
+                    flex: 7,
+                    child: Column(
+                      children: [
+                        _buildChangePasswordCard(username, email),
+                        const SizedBox(height: 20),
+                        _buildHistoryCard(),
+                        const SizedBox(height: 20),
+                        _buildAppInfoAndSessionCard(),
+                      ],
+                    ),
+                  ),
+                ],
+              )
+            else
+              Column(
+                children: [
+                  _buildIdentityCard(displayName, username, email, roleLabel, user),
+                  if (!isStudent) ...[
+                    const SizedBox(height: 16),
+                    _buildESignatureCard(user),
+                  ],
+                  const SizedBox(height: 16),
+                  _buildChangePasswordCard(username, email),
+                  const SizedBox(height: 16),
+                  _buildHistoryCard(),
+                  const SizedBox(height: 16),
+                  _buildAppInfoAndSessionCard(),
+                ],
+              ),
+          ],
         ),
+      ),
     );
   }
 
@@ -565,7 +581,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         ],
       ),
       child: Padding(
-        padding: const EdgeInsets.all(24),
+        padding: EdgeInsets.all(isWide ? 24 : 16),
             child: Flex(
               direction: isWide ? Axis.horizontal : Axis.vertical,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -585,7 +601,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                             border: Border.all(color: Colors.white38, width: 2),
                           ),
                           child: CircleAvatar(
-                            radius: 42,
+                            radius: isWide ? 42 : 36,
                             backgroundColor: Colors.white24,
                             backgroundImage:
                                 avatarUrl != null ? NetworkImage(avatarUrl) : null,
@@ -594,8 +610,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                     displayName.isNotEmpty
                                         ? displayName[0].toUpperCase()
                                         : 'U',
-                                    style: const TextStyle(
-                                      fontSize: 34,
+                                    style: TextStyle(
+                                      fontSize: isWide ? 34 : 26,
                                       fontWeight: FontWeight.w800,
                                       color: Colors.white,
                                     ),
@@ -651,7 +667,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         ),
                       ],
                     ),
-                    const SizedBox(width: 20),
+                    SizedBox(width: isWide ? 20 : 14),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -661,8 +677,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                               Flexible(
                                 child: Text(
                                   displayName,
-                                  style: const TextStyle(
-                                    fontSize: 24,
+                                  style: TextStyle(
+                                    fontSize: isWide ? 24 : 18,
                                     fontWeight: FontWeight.bold,
                                     color: Colors.white,
                                     letterSpacing: -0.3,
@@ -670,11 +686,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                              const SizedBox(width: 10),
+                              const SizedBox(width: 8),
                               Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 10,
-                                  vertical: 4,
+                                padding: EdgeInsets.symmetric(
+                                  horizontal: isWide ? 10 : 8,
+                                  vertical: isWide ? 4 : 3,
                                 ),
                                 decoration: BoxDecoration(
                                   color: Colors.white.withValues(alpha: 0.18),
@@ -683,8 +699,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                                 ),
                                 child: Text(
                                   roleLabel,
-                                  style: const TextStyle(
-                                    fontSize: 12,
+                                  style: TextStyle(
+                                    fontSize: isWide ? 12 : 11,
                                     fontWeight: FontWeight.w700,
                                     color: Colors.white,
                                   ),
@@ -1834,6 +1850,156 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         .split(RegExp(r'[\._]'))
         .map((word) => word.isNotEmpty ? word[0].toUpperCase() + word.substring(1) : '')
         .join(' ');
+  }
+
+  Widget _buildAppInfoAndSessionCard() {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(
+                  Icons.settings_suggest_outlined,
+                  size: 20,
+                  color: DefensysTokens.maroon,
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Text(
+                'Application & Session',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                  color: DefensysTokens.textPrimary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          _infoTile(
+            icon: Icons.info_outline_rounded,
+            title: 'About DefenSYS',
+            subtitle: 'Version and system information',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const AboutScreen()),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          _infoTile(
+            icon: Icons.privacy_tip_outlined,
+            title: 'Privacy Policy',
+            subtitle: 'Data usage and privacy guidelines',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const PrivacyScreen()),
+            ),
+          ),
+          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+          _infoTile(
+            icon: Icons.gavel_rounded,
+            title: 'Terms & Conditions',
+            subtitle: 'Academic defense agreement & rules',
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const TermsScreen()),
+            ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFFDC2626),
+                side: const BorderSide(color: Color(0xFFFCA5A5)),
+                backgroundColor: const Color(0xFFFEF2F2),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text(
+                'Logout',
+                style: TextStyle(fontWeight: FontWeight.w700),
+              ),
+              onPressed: () async {
+                if (await confirmLogout(context)) {
+                  await ref.read(authProvider.notifier).logout();
+                }
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _infoTile({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required VoidCallback onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+        child: Row(
+          children: [
+            Icon(icon, size: 20, color: DefensysTokens.textSecondary),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.textPrimary,
+                    ),
+                  ),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      color: DefensysTokens.textSecondary,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: DefensysTokens.textSecondary,
+            ),
+          ],
+        ),
+      ),
+    );
   }
 }
 

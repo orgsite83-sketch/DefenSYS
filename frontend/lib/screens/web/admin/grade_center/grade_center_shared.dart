@@ -1792,6 +1792,10 @@ Widget gradeCenterHeroSummaryCard({
                           ),
                         ),
                       ),
+                    if (!isPit && asInt(grade['attempt_count']) != null && (asInt(grade['attempt_count']) ?? 1) > 1)
+                      attemptBadgeWidget(asInt(grade['attempt_count']) ?? 1),
+                    if (!isPit)
+                      defenseMinutesStatusBadgeWidget(grade),
                   ],
                 ),
                 const SizedBox(height: 12),
@@ -1885,6 +1889,10 @@ Widget gradeCenterHeroSummaryCard({
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       _resultOutcomeBadge(result),
+                      if (!isPit && grade['verdict'] != null && (grade['verdict']?.toString() ?? '').isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        verdictBadgeWidget(grade['verdict']?.toString()),
+                      ],
                       const SizedBox(width: 8),
                       statusChipWidget(status),
                     ],
@@ -2000,6 +2008,10 @@ Widget gradeCenterHeroSummaryCard({
             ),
           ],
         ),
+        if (!isPit && (grade['verdict'] != null || (grade['verdict_remarks']?.toString() ?? '').isNotEmpty)) ...[
+          const SizedBox(height: 16),
+          _verdictDirectivesCard(grade),
+        ],
       ],
     ),
   );
@@ -3330,6 +3342,197 @@ Widget gradeScoreSummaryCard({
         const Divider(height: 1, color: Color(0xFFF1F5F9)),
         const SizedBox(height: 14),
         child,
+      ],
+    ),
+  );
+}
+
+Widget defenseMinutesStatusBadgeWidget(Map<String, dynamic> grade) {
+  final scheduleId = asInt(grade['schedule_id']);
+  final minutesStatus = grade['minutes_status']?.toString();
+  final hasPdf = grade['minutes_has_pdf'] == true;
+
+  if (scheduleId == null || minutesStatus == null || minutesStatus.isEmpty) {
+    return const SizedBox.shrink();
+  }
+
+  final isCompleted = minutesStatus == 'completed' || hasPdf;
+  final label = isCompleted
+      ? 'Official Minutes: Signed & Completed'
+      : minutesStatus == 'adviser_signed'
+          ? 'Minutes: Awaiting Chair Sign'
+          : minutesStatus == 'submitted'
+              ? 'Minutes: Awaiting Adviser Sign'
+              : 'Minutes: In Progress by Documenter';
+
+  final color = isCompleted
+      ? const Color(0xFF047857)
+      : minutesStatus == 'adviser_signed' || minutesStatus == 'submitted'
+          ? const Color(0xFF2563EB)
+          : const Color(0xFF64748B);
+
+  final icon = isCompleted
+      ? Icons.verified_outlined
+      : minutesStatus == 'adviser_signed' || minutesStatus == 'submitted'
+          ? Icons.draw_outlined
+          : Icons.edit_note_outlined;
+
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: 0.08),
+      borderRadius: BorderRadius.circular(6),
+      border: Border.all(color: color.withValues(alpha: 0.25)),
+    ),
+    child: Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(icon, size: 13, color: color),
+        const SizedBox(width: 4),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _verdictDirectivesCard(Map<String, dynamic> grade) {
+  final verdict = grade['verdict']?.toString();
+  final remarks = grade['verdict_remarks']?.toString() ?? '';
+  final verdictByName = grade['verdict_by_name']?.toString() ?? '';
+  final deadline = grade['revision_deadline']?.toString();
+
+  final isApproved = verdict == 'approved';
+  final isApprovedRevisions = verdict == 'approved_with_revisions';
+  final isForRedefense = verdict == 'for_redefense';
+
+  final accentColor = isApproved
+      ? const Color(0xFF16A34A)
+      : isApprovedRevisions
+          ? const Color(0xFFD97706)
+          : isForRedefense
+              ? const Color(0xFFDC2626)
+              : const Color(0xFF64748B);
+
+  final bgColor = isApproved
+      ? const Color(0xFFF0FDF4)
+      : isApprovedRevisions
+          ? const Color(0xFFFFFBEB)
+          : isForRedefense
+              ? const Color(0xFFFEF2F2)
+              : const Color(0xFFF8FAFC);
+
+  final borderColor = isApproved
+      ? const Color(0xFFBBF7D0)
+      : isApprovedRevisions
+          ? const Color(0xFFFDE68A)
+          : isForRedefense
+              ? const Color(0xFFFECACA)
+              : const Color(0xFFE2E8F0);
+
+  return Container(
+    width: double.infinity,
+    padding: const EdgeInsets.all(14),
+    decoration: BoxDecoration(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: borderColor, width: 1.2),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(5),
+              decoration: BoxDecoration(
+                color: accentColor.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: Icon(Icons.gavel_rounded, size: 16, color: accentColor),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              'Official Panel Decision & Directives',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+                color: accentColor,
+              ),
+            ),
+            const SizedBox(width: 8),
+            verdictBadgeWidget(verdict),
+            const Spacer(),
+            if (deadline != null && deadline.isNotEmpty) ...[
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: const Color(0xFFFDE68A)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.event_available_rounded, size: 13, color: Color(0xFFD97706)),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Revision Due: $deadline',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF92400E),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+        if (remarks.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: borderColor.withValues(alpha: 0.7)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (verdictByName.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 3),
+                    child: Text(
+                      'Issued by $verdictByName:',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ),
+                Text(
+                  remarks,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF1E293B),
+                    height: 1.4,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ],
     ),
   );
