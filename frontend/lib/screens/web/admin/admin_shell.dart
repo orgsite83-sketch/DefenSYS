@@ -10,6 +10,17 @@ import '../../../services/unsaved_changes_provider.dart';
 import '../../../utils/unsaved_changes.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../services/dashboard_provider.dart';
+import '../../../services/academic/student_academic_records_provider.dart';
+import '../../../services/academic/student_teams_provider.dart';
+import '../../../services/academic/curriculum_analytics_provider.dart';
+import '../../../services/admin/user_management_provider.dart';
+import '../../../services/grading/grade_center_provider.dart';
+import '../../../services/grading/rubric_engine_provider.dart';
+import '../../../services/defense_board_provider.dart';
+import '../../../services/defense_stages_provider.dart';
+import '../../../services/defense/defense_scheduler_provider.dart';
+import '../../../services/system_audit_provider.dart';
+import '../../../services/project_archive_provider.dart';
 import 'academic_periods_screen.dart';
 import 'admin_dashboard_content.dart';
 import 'audit_compliance_screen.dart';
@@ -50,6 +61,7 @@ class AdminShell extends ConsumerStatefulWidget {
 
 class _AdminShellState extends ConsumerState<AdminShell> {
   final Set<DefensysAdminSection> _loadedSections = {};
+  DefensysAdminSection? _currentSection;
 
   @override
   void initState() {
@@ -71,6 +83,18 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         routeSection ?? DefensysAdminSection.overview;
 
     _loadedSections.add(activeSection);
+
+    if (_currentSection != activeSection) {
+      final oldSection = _currentSection;
+      _currentSection = activeSection;
+      if (oldSection != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted) return;
+          _refreshSectionData(activeSection);
+        });
+      }
+    }
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && ref.read(activeAdminSectionProvider) != activeSection) {
         ref.read(activeAdminSectionProvider.notifier).setSection(activeSection);
@@ -91,11 +115,14 @@ class _AdminShellState extends ConsumerState<AdminShell> {
             return const SizedBox.shrink();
           }).toList(),
         ),
-        if (isDetail && widget.routeChild != null)
+        if (widget.routeChild != null)
           Positioned.fill(
-            child: ColoredBox(
-              color: DefensysUi.bgLight,
-              child: widget.routeChild!,
+            child: Offstage(
+              offstage: !isDetail,
+              child: ColoredBox(
+                color: DefensysUi.bgLight,
+                child: widget.routeChild!,
+              ),
             ),
           ),
       ],
@@ -127,8 +154,68 @@ class _AdminShellState extends ConsumerState<AdminShell> {
     }
     ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
     ref.read(unsavedChangesProvider.notifier).setDirty(false);
+    if (section == _currentSection) {
+      _refreshSectionData(section);
+    }
     ref.read(activeAdminSectionProvider.notifier).setSection(section);
     ref.read(appRouterProvider).go(AdminRoutes.pathForSection(section));
+  }
+
+  void _refreshSectionData(DefensysAdminSection section) {
+    switch (section) {
+      case DefensysAdminSection.overview:
+        ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.academicPeriods:
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.userManagement:
+      case DefensysAdminSection.studentAcademicRecords:
+        ref.read(userManagementProvider.notifier).fetchUsers();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
+        break;
+      case DefensysAdminSection.studentTeams:
+        ref.read(studentTeamsProvider.notifier).fetchTeams();
+        ref.read(userManagementProvider.notifier).fetchUsers();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.gradeCenter:
+        ref.read(gradeCenterProvider.notifier).fetchGrades();
+        ref.read(defenseStagesProvider.notifier).fetchStages();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.rubrics:
+        ref.read(rubricEngineProvider.notifier).fetchRubrics(status: '');
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.defenseBoard:
+        ref.read(defenseBoardProvider.notifier).fetchBoard();
+        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.scheduling:
+        ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.defenseStages:
+        ref.read(defenseStagesProvider.notifier).fetchStages();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.curriculumAnalytics:
+        ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.auditCompliance:
+        ref.read(systemAuditProvider.notifier).fetch();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+      case DefensysAdminSection.repositoryAudit:
+        ref.read(repositoryAuditProvider.notifier).fetchEntries();
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+        break;
+    }
   }
 
   /// Detail / nested routes use [routeChild] from go_router; top-level sections

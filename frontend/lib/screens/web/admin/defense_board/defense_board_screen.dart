@@ -18,6 +18,7 @@ import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
 import '../defense_scheduler/dialogs/venue_conflict_dialog.dart';
 import '../defense_scheduler/models/schedule_import_models.dart';
 import '../grade_center/grade_center_screen.dart';
+import '../admin_shell.dart';
 import '../grade_center/grade_center_team_detail_screen.dart';
 import '../../../../services/grading/grade_center_provider.dart';
 import '../widgets/defensys_admin_shell.dart';
@@ -147,6 +148,15 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
     }
 
     final state = ref.watch(defenseBoardProvider);
+    ref.listen<DefensysAdminSection>(
+      activeAdminSectionProvider,
+      (previous, next) {
+        if (next == DefensysAdminSection.defenseBoard) {
+          ref.read(defenseBoardProvider.notifier).fetchBoard();
+          ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+        }
+      },
+    );
     final schedState = ref.watch(defenseSchedulerProvider);
     final currentView = ref.watch(defenseBoardActiveViewProvider);
     final user = ref.watch(authProvider).user;

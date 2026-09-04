@@ -138,6 +138,9 @@ class RubricSerializer(serializers.ModelSerializer):
                 pass
 
         info = get_rubric_deletion_info(instance)
+        is_hard_locked = bool(info['has_evaluations'] or info['has_schedule'] or info['is_stage_completed'])
+        data['is_locked'] = is_hard_locked
+        data['is_soft_locked'] = bool(info['is_assigned'] and not is_hard_locked)
         data['is_assigned'] = info['is_assigned']
         data['assigned_context_name'] = info['assigned_context_name']
         data['has_schedule'] = info['has_schedule']
@@ -200,17 +203,17 @@ def get_rubric_deletion_info(instance):
     if has_evaluations:
         deletion_tier = 'locked'
         context_str = f'Defense Stage "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_CAPSTONE and assigned_context_name else (f'PIT Event "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_PIT and assigned_context_name else 'defense operations')
-        lock_reason = f'This rubric is assigned to {context_str} and has recorded evaluations, so it cannot be deleted.'
+        lock_reason = f'This rubric is assigned to {context_str} and has recorded evaluations, so it is locked and cannot be modified or deleted.'
     elif is_stage_completed:
         deletion_tier = 'locked'
-        lock_reason = f'This rubric is assigned to Defense Stage "{assigned_context_name or "Capstone"}" (Completed) and cannot be deleted.'
+        lock_reason = f'This rubric is assigned to Defense Stage "{assigned_context_name or "Capstone"}" (Completed) and is locked (cannot be modified or deleted).'
     elif instance.scope == Rubric.SCOPE_PIT and is_assigned:
         deletion_tier = 'locked'
-        lock_reason = f'This rubric is assigned to PIT Event "{assigned_context_name or "PIT Event"}" and cannot be deleted.'
+        lock_reason = f'This rubric is assigned to PIT Event "{assigned_context_name or "PIT Event"}" and is locked.'
     elif has_schedule:
         deletion_tier = 'locked'
         context_str = f'Defense Stage "{assigned_context_name}"' if instance.scope == Rubric.SCOPE_CAPSTONE and assigned_context_name else f'"{instance.name}"'
-        lock_reason = f'This rubric is assigned to active scheduled defense sessions for {context_str} and cannot be deleted.'
+        lock_reason = f'This rubric is assigned to active scheduled defense sessions for {context_str} and is locked.'
     elif is_assigned:
         deletion_tier = 'assigned_no_schedule'
         lock_reason = None
@@ -246,6 +249,13 @@ class RubricWriteSerializer(serializers.Serializer):
     criteria = RubricCriterionSerializer(many=True, min_length=1)
 
     def validate(self, attrs):
+        if self.instance is not None:
+            info = get_rubric_deletion_info(self.instance)
+            if info['has_evaluations'] or info['has_schedule'] or info['is_stage_completed']:
+                raise serializers.ValidationError({
+                    'detail': info['lock_reason'] or 'This rubric is locked and cannot be modified because active defense schedules or recorded evaluations exist.'
+                })
+
         attrs['name'] = attrs['name'].strip()
         if not attrs['name']:
             raise serializers.ValidationError({'name': 'Rubric name is required.'})
@@ -336,8 +346,7 @@ class RubricWriteSerializer(serializers.Serializer):
         instance.status = validated_data.get('status', instance.status)
         instance.panel_weight = validated_data['panel_weight']
         instance.adviser_weight = validated_data['adviser_weight']
-        instance.peer_weight = validated_data['peer_weight']
-        instance.is_locked = instance.status == Rubric.STATUS_PUBLISHED
+        instance.is_locked = False
         instance.save()
         self._sync_criteria(instance, criteria)
         self._sync_stage_grading_config(instance)

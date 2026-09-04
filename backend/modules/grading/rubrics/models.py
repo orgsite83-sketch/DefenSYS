@@ -130,8 +130,6 @@ class Rubric(models.Model):
             self.event_name = ''
         else:
             self.event_name = ''
-        if self.status == self.STATUS_PUBLISHED:
-            self.is_locked = True
         self.full_clean()
         super().save(*args, **kwargs)
 

@@ -5,7 +5,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/dashboard_provider.dart';
 import '../grading/grade_center_provider.dart';
+import '../grading/rubric_engine_provider.dart';
+import '../defense/defense_stages_provider.dart';
+import '../defense/defense_scheduler_provider.dart';
 import 'student_academic_records_provider.dart';
 import 'student_teams_provider.dart';
 
@@ -123,6 +127,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 201) {
         await fetchPeriods(successMessage: 'School year $trimmed added.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -153,6 +158,7 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
 
       if (response.statusCode == 201) {
         await fetchPeriods(successMessage: '$label added.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -317,6 +323,46 @@ class AcademicPeriodNotifier extends Notifier<AcademicPeriodState> {
     } catch (e, st) {
       assert(() {
         debugPrint('studentAcademicRecords refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+    } catch (e, st) {
+      assert(() {
+        debugPrint('dashboardProvider admin refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(dashboardProvider('faculty').notifier).fetchDashboardData(silent: true);
+    } catch (e, st) {
+      assert(() {
+        debugPrint('dashboardProvider faculty refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(rubricEngineProvider.notifier).fetchRubrics();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('rubricEngine refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(defenseStagesProvider.notifier).fetchStages();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('defenseStages refresh after period save failed: $e\n$st');
+        return true;
+      }());
+    }
+    try {
+      await ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+    } catch (e, st) {
+      assert(() {
+        debugPrint('defenseScheduler refresh after period save failed: $e\n$st');
         return true;
       }());
     }

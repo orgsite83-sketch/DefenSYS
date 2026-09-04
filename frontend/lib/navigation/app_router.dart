@@ -160,7 +160,12 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     if (routeSection != null) {
       final current = ref.read(activeAdminSectionProvider);
       if (routeSection != current) {
-        ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final currentNow = ref.read(activeAdminSectionProvider);
+          if (routeSection != currentNow) {
+            ref.read(activeAdminSectionProvider.notifier).setSection(routeSection);
+          }
+        });
       }
     }
   });

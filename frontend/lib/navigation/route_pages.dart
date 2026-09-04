@@ -269,7 +269,11 @@ class AdminRubricEditorRoute extends ConsumerWidget {
       if (!context.mounted) return;
       if (success) {
         showSuccessToast(context, 'Rubric deleted.');
-        context.pop();
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AdminRoutes.rubrics);
+        }
       } else {
         final error = ref.read(rubricEngineProvider).error ?? 'Could not delete rubric.';
         showErrorToast(context, error);
@@ -278,8 +282,14 @@ class AdminRubricEditorRoute extends ConsumerWidget {
 
     return RubricFullPageEditor(
       rubric: rubric,
-      readOnly: rubric?['status']?.toString() == 'published',
-      onBack: () => context.pop(),
+      readOnly: rubric?['is_locked'] == true,
+      onBack: () {
+        if (context.canPop()) {
+          context.pop();
+        } else {
+          context.go(AdminRoutes.rubrics);
+        }
+      },
       onDelete: rubricId != null ? handleDelete : null,
     );
   }

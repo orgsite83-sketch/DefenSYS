@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../services/academic_period_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../services/defense_board_provider.dart';
 import '../../../widgets/defensys_skeleton.dart';
 import '../../../widgets/feedback/empty_state.dart';
+import 'admin_shell.dart';
 import 'widgets/defensys_admin_shell.dart';
 
 class AdminDashboardContent extends ConsumerStatefulWidget {
@@ -38,6 +40,21 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
   @override
   Widget build(BuildContext context) {
     final dashState = ref.watch(dashboardProvider('admin'));
+    final academicState = ref.watch(academicPeriodProvider);
+
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+      if (next == DefensysAdminSection.overview && previous != DefensysAdminSection.overview) {
+        ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+      }
+    });
+
+    ref.listen<AcademicPeriodState>(academicPeriodProvider, (previous, next) {
+      if (previous?.activeSemester?['id'] != next.activeSemester?['id']) {
+        ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+      }
+    });
+
     final initialLoad = dashState.isLoading && dashState.data == null;
     final stats = _statsFrom(dashState.data?['stats']);
 
@@ -47,10 +64,39 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const DefensysPageHeader(
+            DefensysPageHeader(
               icon: Icons.show_chart_rounded,
               title: 'Welcome back, Admin!',
               subtitle: 'Here is what is happening in the IT Department today.',
+              actions: OutlinedButton.icon(
+                onPressed: dashState.isRefreshing
+                    ? null
+                    : () {
+                        ref
+                            .read(dashboardProvider('admin').notifier)
+                            .fetchDashboardData(silent: true);
+                        ref.read(academicPeriodProvider.notifier).fetchPeriods();
+                      },
+                icon: dashState.isRefreshing
+                    ? const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _maroon,
+                        ),
+                      )
+                    : const Icon(Icons.refresh_rounded, size: 16),
+                label: Text(dashState.isRefreshing ? 'Refreshing...' : 'Refresh'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: _ink,
+                  side: const BorderSide(color: Color(0xFFE2E8F0)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                ),
+              ),
             ),
             const SizedBox(height: 20),
             if (initialLoad)
@@ -114,7 +160,7 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
               children: [
                 Expanded(child: _teamPipelineCard(dashState)),
                 const SizedBox(width: 20),
-                Expanded(child: _actionAndAuditCard(dashState)),
+                Expanded(child: _actionAndAuditCard(dashState, academicState)),
               ],
             ),
           ],
@@ -146,30 +192,34 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
             child: Icon(icon, color: iconColor, size: 30),
           ),
           const SizedBox(width: 22),
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                value,
-                style: const TextStyle(
-                  color: _ink,
-                  fontSize: 24,
-                  height: 0.95,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.4,
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  value,
+                  style: const TextStyle(
+                    color: _ink,
+                    fontSize: 24,
+                    height: 0.95,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.4,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 14),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: Color(0xFF4B5565),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(height: 14),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFF4B5565),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ],
       ),
@@ -798,11 +848,13 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
     );
   }
 
-  Widget _actionAndAuditCard(DashboardState dashState) {
-    final actionItems = _actionItemsFrom(dashState);
+  Widget _actionAndAuditCard(
+    DashboardState dashState,
+    AcademicPeriodState academicState,
+  ) {
+    final actionItems = _actionItemsFrom(dashState, academicState);
     final recentActivity = _recentActivityFrom(dashState);
-    final activeSem =
-        dashState.data?['active_semester']?.toString() ?? 'Active Semester';
+    final activeSem = _resolveActiveSemesterLabel(dashState, academicState);
 
     return Container(
       height: _cardHeight,
@@ -836,33 +888,80 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                   onTap: () => setState(() => _bottomRightTabIndex = 1),
                 ),
                 const Spacer(),
-                InkWell(
-                  onTap: () =>
-                      widget.onNavigate(DefensysAdminSection.auditCompliance),
-                  borderRadius: BorderRadius.circular(6),
-                  child: const Padding(
-                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'View All',
-                          style: TextStyle(
-                            color: _maroon,
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.w800,
+                if (_bottomRightTabIndex == 0)
+                  InkWell(
+                    onTap: dashState.isRefreshing
+                        ? null
+                        : () {
+                            ref
+                                .read(dashboardProvider('admin').notifier)
+                                .fetchDashboardData(silent: true);
+                            ref
+                                .read(academicPeriodProvider.notifier)
+                                .fetchPeriods();
+                          },
+                    borderRadius: BorderRadius.circular(6),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (dashState.isRefreshing)
+                            const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 1.8,
+                                color: _maroon,
+                              ),
+                            )
+                          else
+                            const Icon(
+                              Icons.refresh_rounded,
+                              size: 14,
+                              color: _maroon,
+                            ),
+                          const SizedBox(width: 4),
+                          Text(
+                            dashState.isRefreshing ? 'Refreshing...' : 'Refresh',
+                            style: const TextStyle(
+                              color: _maroon,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
                           ),
-                        ),
-                        SizedBox(width: 4),
-                        Icon(
-                          Icons.arrow_forward_rounded,
-                          size: 13,
-                          color: _maroon,
-                        ),
-                      ],
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  InkWell(
+                    onTap: () =>
+                        widget.onNavigate(DefensysAdminSection.auditCompliance),
+                    borderRadius: BorderRadius.circular(6),
+                    child: const Padding(
+                      padding: EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'View All',
+                            style: TextStyle(
+                              color: _maroon,
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          SizedBox(width: 4),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 13,
+                            color: _maroon,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1605,13 +1704,46 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
         .toList();
   }
 
-  List<Map<String, dynamic>> _actionItemsFrom(DashboardState dashState) {
+  String _resolveActiveSemesterLabel(
+    DashboardState dashState,
+    AcademicPeriodState academicState,
+  ) {
+    final backendSem = dashState.data?['active_semester']?.toString().trim();
+    if (backendSem != null &&
+        backendSem.isNotEmpty &&
+        backendSem != 'Not configured' &&
+        backendSem != 'Loading...') {
+      return backendSem;
+    }
+    if (academicState.activeSemester != null) {
+      final label = academicState.activeSemester!['label']?.toString() ?? '';
+      final sy =
+          academicState.activeSemester!['school_year']?.toString() ?? '';
+      if (label.isNotEmpty && sy.isNotEmpty) {
+        return '$label, A.Y. $sy';
+      } else if (label.isNotEmpty) {
+        return label;
+      } else if (sy.isNotEmpty) {
+        return 'A.Y. $sy';
+      }
+    }
+    return backendSem ?? 'Not configured';
+  }
+
+  List<Map<String, dynamic>> _actionItemsFrom(
+    DashboardState dashState,
+    AcademicPeriodState academicState,
+  ) {
     final raw = dashState.data?['action_items'];
     if (raw is! List) return const [];
-    return raw
+    final items = raw
         .whereType<Map>()
         .map((item) => item.map((k, v) => MapEntry(k.toString(), v)))
         .toList();
+    if (academicState.activeSemester != null) {
+      items.removeWhere((item) => item['id'] == 'no_active_period');
+    }
+    return items;
   }
 
   List<Map<String, dynamic>> _recentActivityFrom(DashboardState dashState) {

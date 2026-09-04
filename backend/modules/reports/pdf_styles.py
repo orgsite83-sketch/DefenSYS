@@ -41,13 +41,16 @@ def _find_asset_path(filename):
     return None
 
 
-def get_official_header_image(width=6.9*inch, height=1.28*inch):
+def get_official_header_image(width=7.1*inch, height=None):
     """
-    Returns the official USTP Department of Information Technology Header Banner (image003.png).
+    Returns the official USTP Department of Information Technology Header Banner (ustp_header_banner.png / image003.png).
     """
-    header_path = _find_asset_path('image003.png')
+    header_path = _find_asset_path('ustp_header_banner.png') or _find_asset_path('image003.png')
     if header_path:
         try:
+            if height is None:
+                # True aspect ratio of the official trimmed header banner (2448 x 392)
+                height = width * (392.0 / 2448.0)
             img = Image(header_path, width=width, height=height)
             img.hAlign = 'CENTER'
             return img
@@ -113,61 +116,82 @@ class NumberedCanvas(canvas.Canvas):
 
     def draw_page_decorations(self, page_count):
         self.saveState()
-        
-        # 1. Top Header on subsequent pages (Page 2+)
-        if self._pageNumber > 1:
-            self.setFont("Helvetica-Bold", 7)
-            self.setFillColor(MAROON)
-            self.drawString(45, 762, "UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES")
-            self.setFont("Helvetica", 7)
-            self.setFillColor(TEXT_MUTED)
-            self.drawRightString(612 - 45, 762, "Department of Information Technology — Oroquieta Campus")
+        page_w = getattr(self, '_pagesize', (612, 792))[0]
+        page_h = getattr(self, '_pagesize', (612, 792))[1]
+        doc = getattr(self, '_doctemplate', None)
+        show_sidebar = getattr(self, '_show_sidebar', getattr(doc, 'show_sidebar', False))
+        draw_canvas_header = getattr(self, '_draw_canvas_header', getattr(doc, 'draw_canvas_header', True))
+
+        # 1. Header Banner on Page 1 (Edge-to-Edge Full Bleed)
+        if self._pageNumber == 1 and draw_canvas_header:
+            banner_path = _find_asset_path('ustp_header_banner.png') or _find_asset_path('image003.png')
+            if banner_path:
+                banner_h = page_w * (400.0 / 2448.0)
+                self.drawImage(banner_path, 0, page_h - banner_h, width=page_w, height=banner_h, mask='auto')
+                
+                # Vision / Mission / Quality Policy Left Sidebar (image004.png)
+                if show_sidebar:
+                    side_path = _find_asset_path('ustp_sidebar.png') or _find_asset_path('image004.png')
+                    if side_path:
+                        sb_w = 1.30 * inch
+                        sb_h = sb_w * (1726.0 / 421.0)
+                        sb_x = 24
+                        sb_y = page_h - banner_h - sb_h - 10
+                        self.drawImage(side_path, sb_x, sb_y, width=sb_w, height=sb_h, mask='auto')
+        elif self._pageNumber > 1:
+            # Running Header on Page 2+
+            top_y = page_h - 30
+            self.setFont("Times-Bold", 8)
+            self.setFillColor(colors.black)
+            self.drawString(28, top_y, "UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES")
+            self.setFont("Times-Roman", 8)
+            self.setFillColor(colors.HexColor('#374151'))
+            self.drawRightString(page_w - 28, top_y, "Department of Information Technology — Oroquieta Campus")
             
             self.setStrokeColor(BORDER_GREY)
             self.setLineWidth(0.5)
-            self.line(45, 755, 612 - 45, 755)
+            self.line(28, top_y - 7, page_w - 28, top_y - 7)
 
         # 2. Bottom Footer on all pages
-        doc = getattr(self, '_doctemplate', None)
         generated_by = getattr(doc, 'generated_by', 'System Administrator')
         generated_at = getattr(doc, 'generated_at', datetime.now().strftime('%Y-%m-%d %I:%M %p'))
         
-        # Gold rule line above footer
+        # Gold rule line across entire page width
         self.setStrokeColor(GOLD)
-        self.setLineWidth(0.8)
-        self.line(45, 42, 612 - 45, 42)
+        self.setLineWidth(0.9)
+        self.line(0, 34, page_w, 34)
         
-        # Campus badge on bottom left
-        footer_img_path = _find_asset_path('image005.png')
+        # Campus badge on bottom left (image005.png)
+        footer_img_path = _find_asset_path('ustp_footer_badge.png') or _find_asset_path('image005.png')
         if footer_img_path:
             try:
-                self.drawImage(footer_img_path, 45, 14, width=58, height=25, preserveAspectRatio=True, mask='auto')
+                self.drawImage(footer_img_path, 22, 10, width=64, height=27, preserveAspectRatio=True, mask='auto')
             except Exception:
-                self.setFont("Helvetica-Bold", 7.5)
-                self.setFillColor(MAROON)
-                self.drawString(45, 24, "USTP OROQUIETA CAMPUS")
+                self.setFont("Times-Bold", 8)
+                self.setFillColor(colors.black)
+                self.drawString(22, 20, "USTP OROQUIETA CAMPUS")
         else:
-            self.setFont("Helvetica-Bold", 7.5)
-            self.setFillColor(MAROON)
-            self.drawString(45, 24, "USTP OROQUIETA CAMPUS")
+            self.setFont("Times-Bold", 8)
+            self.setFillColor(colors.black)
+            self.drawString(22, 20, "USTP OROQUIETA CAMPUS")
             
         # Accountability text in center
-        self.setFont("Helvetica", 7)
-        self.setFillColor(TEXT_MUTED)
-        self.drawCentredString(306, 23, f"Official Record · Generated by: {generated_by} · {generated_at}")
+        self.setFont("Times-Roman", 7.5)
+        self.setFillColor(colors.HexColor('#4B5563'))
+        self.drawCentredString(page_w / 2.0, 18, f"Official Record · Generated by: {generated_by} · {generated_at}")
         
         # Page count on bottom right
         page_str = f"Page {self._pageNumber} of {page_count}"
-        self.setFont("Helvetica-Bold", 7.5)
-        self.setFillColor(TEXT_DARK)
-        self.drawRightString(612 - 45, 23, page_str)
+        self.setFont("Times-Bold", 8)
+        self.setFillColor(colors.black)
+        self.drawRightString(page_w - 24, 18, page_str)
         
         self.restoreState()
 
 
 def defensys_styles():
     """
-    Return custom stylesheet extensions for official DefenSYS institutional report layout.
+    Return custom stylesheet extensions for official DefenSYS institutional report layout using Times New Roman.
     """
     styles = getSampleStyleSheet()
     
@@ -175,163 +199,174 @@ def defensys_styles():
         'ReportTitle': ParagraphStyle(
             'ReportTitle',
             parent=styles['Heading1'],
-            fontName='Helvetica-Bold',
-            fontSize=13,
-            textColor=MAROON,
+            fontName='Times-Bold',
+            fontSize=13.5,
+            textColor=colors.black,
             alignment=TA_CENTER,
             spaceBefore=4,
             spaceAfter=2,
-            leading=16,
+            leading=17,
         ),
         'ReportSubtitle': ParagraphStyle(
             'ReportSubtitle',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=9,
-            textColor=TEXT_MUTED,
+            fontName='Times-Bold',
+            fontSize=10,
+            textColor=colors.HexColor('#1F2937'),
             alignment=TA_CENTER,
             spaceAfter=8,
+            leading=13,
         ),
         'SectionHeader': ParagraphStyle(
             'SectionHeader',
             parent=styles['Heading2'],
-            fontName='Helvetica-Bold',
-            fontSize=10,
-            textColor=MAROON,
+            fontName='Times-Bold',
+            fontSize=10.5,
+            textColor=colors.black,
             spaceBefore=8,
             spaceAfter=3,
+            leading=13,
             keepWithNext=True,
         ),
         'SubSectionHeader': ParagraphStyle(
             'SubSectionHeader',
             parent=styles['Heading3'],
-            fontName='Helvetica-Bold',
-            fontSize=9,
-            textColor=TEXT_DARK,
+            fontName='Times-Bold',
+            fontSize=9.5,
+            textColor=colors.black,
             spaceBefore=6,
             spaceAfter=2,
+            leading=12,
             keepWithNext=True,
         ),
         'BodyDark': ParagraphStyle(
             'BodyDark',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=8,
-            textColor=TEXT_DARK,
-            leading=10.5,
+            fontName='Times-Roman',
+            fontSize=9,
+            textColor=colors.black,
+            leading=12,
         ),
         'BodyDarkBold': ParagraphStyle(
             'BodyDarkBold',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            textColor=TEXT_DARK,
-            leading=10.5,
+            fontName='Times-Bold',
+            fontSize=9,
+            textColor=colors.black,
+            leading=12,
         ),
         'BodyMuted': ParagraphStyle(
             'BodyMuted',
             parent=styles['Normal'],
-            fontName='Helvetica-Oblique',
-            fontSize=7.5,
-            textColor=TEXT_MUTED,
-            leading=9.5,
+            fontName='Times-Italic',
+            fontSize=8.5,
+            textColor=colors.HexColor('#4B5563'),
+            leading=11,
         ),
         'TableHeader': ParagraphStyle(
             'TableHeader',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            textColor=colors.whitesmoke,
+            fontName='Times-Bold',
+            fontSize=8.5,
+            textColor=colors.black,
             alignment=TA_LEFT,
+            leading=11,
         ),
         'TableHeaderCenter': ParagraphStyle(
             'TableHeaderCenter',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            textColor=colors.whitesmoke,
+            fontName='Times-Bold',
+            fontSize=8.5,
+            textColor=colors.black,
             alignment=TA_CENTER,
+            leading=11,
         ),
         'TableCell': ParagraphStyle(
             'TableCell',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=7.5,
-            textColor=TEXT_DARK,
-            leading=9.5,
+            fontName='Times-Roman',
+            fontSize=8.5,
+            textColor=colors.black,
+            leading=11,
         ),
         'TableCellCenter': ParagraphStyle(
             'TableCellCenter',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=7.5,
-            textColor=TEXT_DARK,
+            fontName='Times-Roman',
+            fontSize=8.5,
+            textColor=colors.black,
             alignment=TA_CENTER,
-            leading=9.5,
+            leading=11,
         ),
         'TableCellBold': ParagraphStyle(
             'TableCellBold',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=7.5,
-            textColor=TEXT_DARK,
-            leading=9.5,
+            fontName='Times-Bold',
+            fontSize=8.5,
+            textColor=colors.black,
+            leading=11,
         ),
         'TableCellBoldCenter': ParagraphStyle(
             'TableCellBoldCenter',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=7.5,
-            textColor=TEXT_DARK,
+            fontName='Times-Bold',
+            fontSize=8.5,
+            textColor=colors.black,
             alignment=TA_CENTER,
-            leading=9.5,
+            leading=11,
         ),
         'MetaLabel': ParagraphStyle(
             'MetaLabel',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8,
-            textColor=TEXT_DARK,
+            fontName='Times-Bold',
+            fontSize=9,
+            textColor=colors.black,
+            leading=12,
         ),
         'MetaVal': ParagraphStyle(
             'MetaVal',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=8,
-            textColor=TEXT_DARK,
+            fontName='Times-Roman',
+            fontSize=9,
+            textColor=colors.black,
+            leading=12,
         ),
         'SigName': ParagraphStyle(
             'SigName',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
-            fontSize=8.5,
-            textColor=TEXT_DARK,
+            fontName='Times-Bold',
+            fontSize=9.5,
+            textColor=colors.black,
             alignment=TA_CENTER,
+            leading=12,
         ),
         'SigRole': ParagraphStyle(
             'SigRole',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=7.5,
-            textColor=TEXT_MUTED,
+            fontName='Times-Roman',
+            fontSize=8.5,
+            textColor=colors.HexColor('#374151'),
             alignment=TA_CENTER,
+            leading=11,
         ),
         'WarningText': ParagraphStyle(
             'WarningText',
             parent=styles['Normal'],
-            fontName='Helvetica-Bold',
+            fontName='Times-Bold',
             fontSize=8.5,
             textColor=RED_WARNING_TEXT,
             alignment=TA_CENTER,
+            leading=11,
         ),
         'WarningSubtext': ParagraphStyle(
             'WarningSubtext',
             parent=styles['Normal'],
-            fontName='Helvetica',
-            fontSize=7,
+            fontName='Times-Roman',
+            fontSize=7.5,
             textColor=RED_WARNING_TEXT,
             alignment=TA_CENTER,
             spaceBefore=1.5,
+            leading=10,
         ),
     }
     
@@ -484,16 +519,17 @@ def defensys_confidential_callout():
 
 def defensys_table_style():
     """
-    Standard tabular layout theme with maroon headers and clean borders.
+    Standard professional academic tabular layout theme with subtle grey headers and clean borders.
     """
     return TableStyle([
-        ('BACKGROUND', (0, 0), (-1, 0), MAROON),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#F3F4F6')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
         ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
         ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('TOPPADDING', (0, 0), (-1, -1), 3),
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
         ('LEFTPADDING', (0, 0), (-1, -1), 4.5),
         ('RIGHTPADDING', (0, 0), (-1, -1), 4.5),
-        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, BG_LIGHT]),
-        ('GRID', (0, 0), (-1, -1), 0.4, BORDER_GREY),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor('#F9FAFB')]),
+        ('GRID', (0, 0), (-1, -1), 0.4, colors.HexColor('#CBD5E1')),
     ])

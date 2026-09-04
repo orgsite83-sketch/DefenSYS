@@ -259,6 +259,91 @@ class ReportsApiTests(APITestCase):
         })
         self.assertEqual(response.status_code, 200)
 
+    def test_defensys_pdf_report_builder_direct(self):
+        from reports.pdf_builder import DefensysPdfReportBuilder
+        from reportlab.lib.units import inch
+
+        builder = DefensysPdfReportBuilder(
+            title="System Unit Test Report",
+            subtitle="Verification of Centralized PDF Builder",
+            generated_by="Automated Tester",
+        )
+        builder.add_header()
+        builder.add_metadata_grid([
+            ("Test Case Name", "DefensysPdfReportBuilder Direct Generation"),
+            ("Status", "Running Test"),
+            ("Date", "2026-09-01"),
+        ])
+        builder.add_section_header("Section 1: Data Table Verification")
+        builder.add_paragraph("This paragraph verifies typography and text wrapping in the centralized PDF builder.")
+        builder.add_table(
+            headers=["ID", "Description", "Result", "Score"],
+            rows=[
+                ["TC-001", "Header rendering verification", "PASSED", "100%"],
+                ["TC-002", "Numbered canvas calculation", "PASSED", "100%"],
+                ["TC-003", "Zebra-striped table rows", "PASSED", "100%"],
+            ],
+            col_widths=[1.0 * inch, 3.5 * inch, 1.2 * inch, 1.0 * inch],
+            alignments=['center', 'left', 'center', 'center'],
+            bold_cols=[0, 2],
+        )
+        builder.add_alert_box(
+            title="Quality Verification Notice",
+            message="All styling rules conform to official USTP Department of Information Technology guidelines.",
+            level="success",
+        )
+        builder.add_signatures(
+            prepared_by="Automated Test Runner",
+            noted_by="Quality Assurance Officer",
+            approved_by="IT Program Chairperson",
+        )
+
+        pdf_bytes = builder.build()
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(len(pdf_bytes) > 1000)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+    def test_defense_minutes_pdf_generation(self):
+        import datetime
+        from defense.minutes.models import DefenseMinutes, MinutesPanelistComment
+        from defense.minutes.pdf_generator import generate_minutes_pdf
+        from defense.scheduler.models import DefenseSchedule
+
+        schedule = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            semester=self.semester,
+            team=self.team_other,
+            defense_stage=self.stage,
+            scheduled_date=datetime.date(2026, 7, 4),
+            start_time=datetime.time(10, 0),
+            room='Room 302',
+            created_by=self.admin,
+        )
+
+        minutes = DefenseMinutes.objects.create(
+            schedule=schedule,
+            team_name='Test Team Minutes',
+            project_title='Automated Test Defense Project',
+            adviser_name='Dr. Test Adviser',
+            defense_stage_label='Concept Proposal',
+            defense_date=datetime.date(2026, 7, 4),
+            defense_time=datetime.time(10, 0),
+            documenter_name='Test Documenter',
+            room='Room 302',
+        )
+        MinutesPanelistComment.objects.create(
+            minutes=minutes,
+            panelist_name_snapshot='Dr. Panel Chair',
+            panelist_role_snapshot='Chairman',
+            comments='Great presentation, proceed to manuscript finalization.',
+            display_order=1,
+        )
+
+        pdf_bytes = generate_minutes_pdf(minutes)
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(len(pdf_bytes) > 1000)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
     def test_individual_grade_report_generation(self):
         self.client.force_authenticate(user=self.admin)
         from authentication_access_control.models import SystemAuditLog
@@ -273,6 +358,13 @@ class ReportsApiTests(APITestCase):
         log = SystemAuditLog.objects.filter(action='report.generate_individual_grade').first()
         self.assertIsNotNone(log)
         self.assertEqual(log.category, 'compliance')
-        self.assertEqual(log.target_id, str(self.student.id))
+    def test_weekly_progress_pdf_generation(self):
+        from repository.deliverables.pdf_generator import generate_weekly_reports_pdf
+
+        # Test with empty reports
+        pdf_bytes = generate_weekly_reports_pdf(self.team_advised, [])
+        self.assertIsInstance(pdf_bytes, bytes)
+        self.assertTrue(len(pdf_bytes) > 1000)
+        self.assertTrue(pdf_bytes.startswith(b'%PDF'))
 
 

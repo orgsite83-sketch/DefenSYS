@@ -987,12 +987,34 @@ paths:
           description: Analytics payload
 
   /curriculum-analytics/proposal/:
+    get:
+      tags: [curriculum-analytics]
+      summary: Retrieve current curriculum proposal (admin)
+      parameters:
+        - name: academic_year
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Proposal payload
     post:
       tags: [curriculum-analytics]
       summary: Generate curriculum proposal (admin)
       responses:
         '200':
-          description: Proposal text
+          description: Proposal payload
+
+  /curriculum-analytics/proposal/pdf/:
+    get:
+      tags: [curriculum-analytics]
+      summary: Download official Curriculum Review & Decision Support Proposal PDF
+      parameters:
+        - name: academic_year
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: PDF binary file
 
   /teams/weekly-progress/:
     get:

@@ -143,12 +143,10 @@ Future<List<PickedTabularFile>> _pickTabularFilesInternal({required bool multipl
 }
 
 Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
-  final pickedFiles = <PickedTabularFile>[];
-  for (final file in files) {
-    final extension = file.name.toLowerCase().split('.').last;
-    if (extension != 'csv' && extension != 'xlsx') {
-      continue;
-    }
+  final futures = files.map((file) async {
+    final extension = file.name.contains('.')
+        ? file.name.toLowerCase().split('.').last
+        : '';
 
     final fileCompleter = Completer<PickedTabularFile?>();
     final reader = html.FileReader();
@@ -178,7 +176,7 @@ Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
             name: file.name,
             extension: extension,
             bytes: bytes,
-            text: extension == 'csv'
+            text: extension == 'csv' || extension == 'txt' || extension == 'tsv'
                 ? utf8.decode(bytes, allowMalformed: true)
                 : null,
           ),
@@ -187,31 +185,193 @@ Future<List<PickedTabularFile>> _parseHtmlFiles(List<html.File> files) async {
         fileCompleter.complete(null);
       }
     });
-    reader.readAsArrayBuffer(file);
+    try {
+      reader.readAsArrayBuffer(file);
+    } catch (_) {
+      if (!fileCompleter.isCompleted) fileCompleter.complete(null);
+    }
+    return await fileCompleter.future;
+  });
 
-    final picked = await fileCompleter.future;
-    if (picked != null) {
-      pickedFiles.add(picked);
+  final results = await Future.wait(futures);
+  return results.whereType<PickedTabularFile>().toList();
+}
+
+class _DropzoneEntry {
+  final void Function(List<PickedTabularFile> files) onFilesDropped;
+  final void Function(bool isDragging)? onDragStateChanged;
+  final void Function(List<String> rejectedFileNames)? onRejectedFiles;
+
+  _DropzoneEntry({
+    required this.onFilesDropped,
+    this.onDragStateChanged,
+    this.onRejectedFiles,
+  });
+}
+
+class _DropzoneManager {
+  static final _DropzoneManager instance = _DropzoneManager._();
+  _DropzoneManager._();
+
+  final List<_DropzoneEntry> _listeners = [];
+  bool _isDragging = false;
+  Timer? _dragDebounceTimer;
+
+  StreamSubscription? _winDragEnterSub;
+  StreamSubscription? _winDragOverSub;
+  StreamSubscription? _winDragLeaveSub;
+  StreamSubscription? _winDropSub;
+
+  StreamSubscription? _bodyDragOverSub;
+  StreamSubscription? _bodyDropSub;
+
+  void _attachDomListeners() {
+    if (_winDragOverSub != null) return;
+
+    void handleDragOver(html.MouseEvent event) {
+      event.preventDefault();
+      try {
+        event.dataTransfer.dropEffect = 'copy';
+      } catch (_) {}
+
+      if (!_isDragging) {
+        _isDragging = true;
+        _notifyDragState(true);
+      }
+
+      _dragDebounceTimer?.cancel();
+      _dragDebounceTimer = Timer(const Duration(milliseconds: 350), () {
+        if (_isDragging) {
+          _isDragging = false;
+          _notifyDragState(false);
+        }
+      });
+    }
+
+    void handleDragEnter(html.MouseEvent event) {
+      event.preventDefault();
+      try {
+        event.dataTransfer.dropEffect = 'copy';
+      } catch (_) {}
+
+      if (!_isDragging) {
+        _isDragging = true;
+        _notifyDragState(true);
+      }
+    }
+
+    void handleDragLeave(html.MouseEvent event) {
+      event.preventDefault();
+      final x = event.client.x;
+      final y = event.client.y;
+      final w = html.window.innerWidth ?? 0;
+      final h = html.window.innerHeight ?? 0;
+      if (x <= 0 || y <= 0 || (w > 0 && x >= w) || (h > 0 && y >= h)) {
+        _dragDebounceTimer?.cancel();
+        if (_isDragging) {
+          _isDragging = false;
+          _notifyDragState(false);
+        }
+      }
+    }
+
+    Future<void> handleDrop(html.MouseEvent event) async {
+      event.preventDefault();
+      _dragDebounceTimer?.cancel();
+      if (_isDragging) {
+        _isDragging = false;
+        _notifyDragState(false);
+      }
+
+      final dtFiles = event.dataTransfer.files;
+      if (dtFiles == null || dtFiles.isEmpty) return;
+
+      final fileList = List<html.File>.from(dtFiles);
+      if (_listeners.isEmpty) return;
+      final activeListener = _listeners.last;
+
+      final pickedFiles = await _parseHtmlFiles(fileList);
+      if (pickedFiles.isNotEmpty) {
+        activeListener.onFilesDropped(pickedFiles);
+      }
+    }
+
+    _winDragEnterSub = html.window.onDragEnter.listen(handleDragEnter);
+    _winDragOverSub = html.window.onDragOver.listen(handleDragOver);
+    _winDragLeaveSub = html.window.onDragLeave.listen(handleDragLeave);
+    _winDropSub = html.window.onDrop.listen(handleDrop);
+
+    // Also attach to document.body to ensure events bubbling within body are handled
+    _bodyDragOverSub = html.document.body?.onDragOver.listen((e) => e.preventDefault());
+    _bodyDropSub = html.document.body?.onDrop.listen((e) => e.preventDefault());
+  }
+
+  void _detachDomListeners() {
+    _dragDebounceTimer?.cancel();
+    _dragDebounceTimer = null;
+
+    _winDragEnterSub?.cancel();
+    _winDragOverSub?.cancel();
+    _winDragLeaveSub?.cancel();
+    _winDropSub?.cancel();
+
+    _bodyDragOverSub?.cancel();
+    _bodyDropSub?.cancel();
+
+    _winDragEnterSub = null;
+    _winDragOverSub = null;
+    _winDragLeaveSub = null;
+    _winDropSub = null;
+    _bodyDragOverSub = null;
+    _bodyDropSub = null;
+
+    _isDragging = false;
+  }
+
+  void _notifyDragState(bool isDragging) {
+    if (_listeners.isNotEmpty) {
+      _listeners.last.onDragStateChanged?.call(isDragging);
     }
   }
-  return pickedFiles;
+
+  StreamSubscription<List<PickedTabularFile>> register(
+    void Function(List<PickedTabularFile> files) onFilesDropped, {
+    void Function(bool isDragging)? onDragStateChanged,
+    void Function(List<String> rejectedFileNames)? onRejectedFiles,
+  }) {
+    final entry = _DropzoneEntry(
+      onFilesDropped: onFilesDropped,
+      onDragStateChanged: onDragStateChanged,
+      onRejectedFiles: onRejectedFiles,
+    );
+    _listeners.add(entry);
+    _attachDomListeners();
+
+    late final StreamController<List<PickedTabularFile>> controller;
+    controller = StreamController<List<PickedTabularFile>>(
+      onCancel: () {
+        _listeners.remove(entry);
+        if (_listeners.isEmpty) {
+          _detachDomListeners();
+        } else if (_isDragging) {
+          _notifyDragState(true);
+        }
+      },
+    );
+
+    return controller.stream.listen(null);
+  }
 }
 
 StreamSubscription? setupDropzoneListener(
-  void Function(List<PickedTabularFile> files) onFilesDropped,
-) {
-  html.document.body?.onDragOver.listen((event) {
-    event.preventDefault();
-  });
-  return html.document.body?.onDrop.listen((event) async {
-    event.preventDefault();
-    final dtFiles = event.dataTransfer.files;
-    if (dtFiles == null || dtFiles.isEmpty) return;
-
-    final pickedFiles = await _parseHtmlFiles(dtFiles);
-    if (pickedFiles.isNotEmpty) {
-      onFilesDropped(pickedFiles);
-    }
-  });
+  void Function(List<PickedTabularFile> files) onFilesDropped, {
+  void Function(bool isDragging)? onDragStateChanged,
+  void Function(List<String> rejectedFileNames)? onRejectedFiles,
+}) {
+  return _DropzoneManager.instance.register(
+    onFilesDropped,
+    onDragStateChanged: onDragStateChanged,
+    onRejectedFiles: onRejectedFiles,
+  );
 }
 

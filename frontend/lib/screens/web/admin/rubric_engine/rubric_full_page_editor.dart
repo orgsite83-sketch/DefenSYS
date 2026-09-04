@@ -88,6 +88,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
   late List<String> _scales;
   bool _isDirty = false;
   bool _checking = false;
+  UnsavedChangesNotifier? _unsavedNotifier;
+  UnsavedChangesSaveDraftNotifier? _unsavedDraftNotifier;
 
   void _markDirty() {
     if (widget.readOnly || _isDirty) return;
@@ -227,6 +229,8 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     }
     _name.addListener(_markDirty);
     _attachCriteriaListeners();
+    _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
+    _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final s = ref.read(rubricEngineProvider);
@@ -252,11 +256,9 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       draft.displayOrder.removeListener(_markDirty);
     }
     _disposeCriteriaList(_criteria);
+    _unsavedNotifier?.setDirty(false);
+    _unsavedDraftNotifier?.setCallback(null);
     super.dispose();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
-    });
   }
 
   String _evaluationLabel(String? value) {
@@ -757,7 +759,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
     if (status == 'published') {
       title = 'Publish Rubric?';
-      confirmLabel = 'Publish & Lock';
+      confirmLabel = 'Publish';
     } else {
       title = 'Save Rubric Draft?';
       confirmLabel = 'Save Draft';
@@ -790,7 +792,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 children: [
                   Text(
                     status == 'published'
-                        ? 'Are you sure you want to publish and lock this rubric? Once published, the rubric structure and settings cannot be edited (deletion is only allowed if not tied to any Capstone schedules or PIT events).'
+                        ? 'Are you sure you want to publish this rubric? Published rubrics can be assigned to defense stages and PIT events. You can continue editing criteria until defenses are scheduled or evaluations begin.'
                         : 'Are you sure you want to save this rubric draft?',
                     style: const TextStyle(
                       fontFamily: DefensysUi.fontFamily,
@@ -871,7 +873,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
       showSuccessToast(
         context,
         status == 'published'
-            ? 'Rubric published and locked.'
+            ? 'Rubric published successfully.'
             : 'Rubric draft saved.',
       );
       if (showConfirmation) {
@@ -885,33 +887,74 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
     return ok;
   }
 
+  Widget _softLockedBanner() {
+    final assignedContext = widget.rubric?['assigned_context_name']?.toString() ?? 'a defense stage';
+    final scope = widget.rubric?['scope']?.toString() ?? _scope;
+    final contextType = scope == 'pit' ? 'PIT Event' : 'Defense Stage';
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Row(
+        children: [
+          const Icon(
+            Icons.info_outline_rounded,
+            size: 19,
+            color: Color(0xFF1D4ED8),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: RichText(
+              text: TextSpan(
+                style: const TextStyle(
+                  fontFamily: DefensysUi.fontFamily,
+                  color: Color(0xFF1E3A8A),
+                  fontSize: 13,
+                  height: 1.4,
+                ),
+                children: [
+                  const TextSpan(
+                    text: 'Assigned Notice: ',
+                    style: TextStyle(fontWeight: FontWeight.w800),
+                  ),
+                  TextSpan(
+                    text:
+                        'This rubric is currently assigned to $contextType "$assignedContext". You can modify criteria and weights freely; any saved changes will automatically reflect in that $contextType.',
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _lockedBanner() {
     final lockReason = widget.rubric?['lock_reason']?.toString();
-    final canDelete = widget.rubric?['can_delete'] != false;
-    final isAssigned = widget.rubric?['is_assigned'] == true;
     final assignedContext = widget.rubric?['assigned_context_name']?.toString();
     final isStageCompleted = widget.rubric?['is_stage_completed'] == true;
-    final scope = widget.rubric?['scope']?.toString() ?? _scope;
+    final hasEvaluations = widget.rubric?['has_evaluations'] == true;
+    final hasSchedule = widget.rubric?['has_schedule'] == true;
 
     String bannerText =
-        'This rubric is published and locked. Criteria and settings cannot be changed.';
-    if (!canDelete && lockReason != null && lockReason.isNotEmpty) {
+        'This rubric is locked. Criteria and settings cannot be altered.';
+    if (lockReason != null && lockReason.isNotEmpty) {
       bannerText = lockReason;
-    } else if (isStageCompleted &&
-        assignedContext != null &&
-        assignedContext.isNotEmpty) {
+    } else if (hasEvaluations) {
+      bannerText =
+          'This rubric is locked because evaluations/grades have already been submitted using these criteria.';
+    } else if (hasSchedule && assignedContext != null && assignedContext.isNotEmpty) {
+      bannerText =
+          'This rubric is locked because active defense sessions are currently scheduled for "$assignedContext".';
+    } else if (isStageCompleted && assignedContext != null && assignedContext.isNotEmpty) {
       bannerText =
           'This rubric is assigned to Defense Stage "$assignedContext" (Completed). Criteria and deletion are locked.';
-    } else if (isAssigned &&
-        assignedContext != null &&
-        assignedContext.isNotEmpty) {
-      if (scope == 'pit') {
-        bannerText =
-            'This rubric is currently assigned to PIT Event "$assignedContext". Criteria and settings are locked.';
-      } else {
-        bannerText =
-            'This rubric is currently assigned to Defense Stage "$assignedContext". Criteria and settings are locked.';
-      }
     }
 
     return Container(
@@ -959,6 +1002,10 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
 
     final activeSem = state.activeSemester;
     final activeYear = activeSem?['school_year']?.toString();
+    final activeSemId = _asInt(activeSem?['id']);
+    if (_semesterId == null && activeSemId != null && widget.rubric == null) {
+      _semesterId = activeSemId;
+    }
 
     final filteredSemesters = state.semesters.where((semester) {
       final semId = _asInt(semester['id']);
@@ -1035,7 +1082,7 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                   ? 'View Rubric'
                   : (_editing ? 'Edit Rubric' : 'Create Rubric'),
               subtitle: widget.readOnly
-                  ? 'Published rubrics are read-only. Criteria and settings cannot be changed.'
+                  ? 'This rubric is locked. Criteria and settings cannot be changed.'
                   : (_editing
                       ? 'Update rubric details, criteria, and evaluation settings.'
                       : _createSubtitle()),
@@ -1069,11 +1116,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                 ),
               ),
             ),
-            if (widget.readOnly ||
-                widget.rubric?['is_assigned'] == true ||
-                widget.rubric?['can_delete'] == false) ...[
+            if (widget.readOnly || widget.rubric?['is_locked'] == true) ...[
               const SizedBox(height: 18),
               _lockedBanner(),
+            ] else if (widget.rubric?['is_soft_locked'] == true ||
+                widget.rubric?['is_assigned'] == true) ...[
+              const SizedBox(height: 18),
+              _softLockedBanner(),
             ],
             const SizedBox(height: 26),
                 _sectionCard(
@@ -1548,13 +1597,13 @@ class _RubricFullPageEditorState extends ConsumerState<RubricFullPageEditor> {
                       const SizedBox(width: 12),
                       ElevatedButton.icon(
                         onPressed: saving ? null : () => _save('published'),
-                        icon: Icon(
-                          Icons.lock_outline,
+                        icon: const Icon(
+                          Icons.check_circle_outline_rounded,
                           color: DefensysUi.accentGold,
                           size: 17,
                         ),
-                        label: Text(
-                          'Publish and Lock Rubric',
+                        label: const Text(
+                          'Publish Rubric',
                           style: TextStyle(
                             fontFamily: DefensysUi.fontFamily,
                             color: Colors.white,

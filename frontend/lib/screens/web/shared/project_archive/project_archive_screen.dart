@@ -3,6 +3,8 @@ import 'package:defensys/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:defensys/screens/web/admin/admin_shell.dart';
+import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
 import 'components/project_archive_table.dart';
 import 'components/project_archive_summary_cards.dart';
 import 'dialogs/archive_resubmission_dialog.dart';
@@ -178,6 +180,12 @@ class _ProjectArchiveScreenState
   @override
   Widget build(BuildContext context) {
     final state = ref.watch(repositoryAuditProvider);
+
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+      if (next == DefensysAdminSection.repositoryAudit) {
+        ref.read(repositoryAuditProvider.notifier).fetchEntries();
+      }
+    });
 
     final mainContent = SingleChildScrollView(
       padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),

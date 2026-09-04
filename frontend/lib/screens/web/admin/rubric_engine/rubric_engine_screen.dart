@@ -12,6 +12,7 @@ import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import 'rubric_full_page_editor.dart';
 import '../widgets/defensys_admin_shell.dart';
+import '../admin_shell.dart';
 
 class RubricEngineScreen extends ConsumerStatefulWidget {
   const RubricEngineScreen({super.key});
@@ -39,15 +40,20 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Map<String, dynamic>? _rubricEditorTarget;
   String? _rubricEditorInitialEval;
   String? _rubricEditorInitialScope;
+  UnsavedChangesNotifier? _unsavedNotifier;
+  UnsavedChangesSaveDraftNotifier? _unsavedDraftNotifier;
 
   @override
   void initState() {
     super.initState();
     _tableHScrollController.addListener(_updateTableScrollHint);
+    _unsavedNotifier = ref.read(unsavedChangesProvider.notifier);
+    _unsavedDraftNotifier = ref.read(unsavedChangesSaveDraftProvider.notifier);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final user = ref.read(authProvider).user;
       ref.read(rubricEngineProvider.notifier).fetchRubrics(
             scope: _isPitLeadOnly(user) ? 'pit' : null,
+            status: '',
             termContext: 'active',
           );
       _updateTableScrollHint();
@@ -79,11 +85,9 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     _tableHScrollController.removeListener(_updateTableScrollHint);
     _tableHScrollController.dispose();
     _searchController.dispose();
+    _unsavedDraftNotifier?.setCallback(null);
+    _unsavedNotifier?.setDirty(false);
     super.dispose();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    });
   }
 
   void _openRubricEditor({
@@ -94,7 +98,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }) {
     if (GoRouterState.of(context).uri.path == AdminRoutes.rubrics) {
       final id = rubric != null ? _asInt(rubric['id']) : null;
-      context.push(
+      context.go(
         id != null ? AdminRoutes.rubricEdit(id) : AdminRoutes.rubricCreate,
       );
       return;
@@ -160,6 +164,20 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
       }
     });
 
+    ref.listen<DefensysAdminSection>(
+      activeAdminSectionProvider,
+      (previous, next) {
+        if (next == DefensysAdminSection.rubrics) {
+          final user = ref.read(authProvider).user;
+          ref.read(rubricEngineProvider.notifier).fetchRubrics(
+                scope: _isPitLeadOnly(user) ? 'pit' : null,
+                status: '',
+                termContext: 'active',
+              );
+        }
+      },
+    );
+
     final onAdminList =
         GoRouterState.of(context).uri.path == AdminRoutes.rubrics;
 
@@ -185,12 +203,6 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             : null,
       );
     }
-
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      ref.read(unsavedChangesSaveDraftProvider.notifier).setCallback(null);
-      ref.read(unsavedChangesProvider.notifier).setDirty(false);
-    });
 
     return SingleChildScrollView(
       padding: DefensysUi.contentPadding,
@@ -1123,22 +1135,33 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   }
 
   Widget _buildActions(RubricEngineState state, Map<String, dynamic> rubric) {
-    final published = rubric['status'] == 'published';
+    final isHardLocked = rubric['is_locked'] == true;
+    final isSoftLocked = !isHardLocked &&
+        (rubric['is_soft_locked'] == true || rubric['is_assigned'] == true);
+    final assignedContext = rubric['assigned_context_name']?.toString();
+    final canDelete = rubric['can_delete'] != false;
     final rubricId = _asInt(rubric['id']);
+
+    String tooltipMessage = 'Edit rubric criteria';
+    if (isHardLocked) {
+      tooltipMessage = rubric['lock_reason']?.toString() ?? 'View locked rubric';
+    } else if (isSoftLocked && assignedContext != null && assignedContext.isNotEmpty) {
+      tooltipMessage = 'Edit rubric (Assigned to $assignedContext)';
+    }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
         Tooltip(
-          message: published ? 'View locked rubric' : 'Edit rubric criteria',
+          message: tooltipMessage,
           child: IconButton(
             onPressed: state.isSaving
                 ? null
-                : () => _openRubricEditor(rubric: rubric, readOnly: published),
+                : () => _openRubricEditor(rubric: rubric, readOnly: isHardLocked),
             icon: Icon(
-              published ? Icons.lock_outline_rounded : Icons.edit_outlined,
+              isHardLocked ? Icons.lock_outline_rounded : Icons.edit_outlined,
               size: 17,
-              color: published ? const Color(0xFF64748B) : DefensysUi.primaryMaroon,
+              color: isHardLocked ? const Color(0xFF64748B) : DefensysUi.primaryMaroon,
             ),
             style: IconButton.styleFrom(
               minimumSize: const Size(34, 34),
@@ -1148,10 +1171,10 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
             ),
           ),
         ),
-        if (!published && rubricId != null) ...[
+        if (canDelete && rubricId != null) ...[
           const SizedBox(width: 4),
           Tooltip(
-            message: 'Delete draft rubric',
+            message: 'Delete rubric',
             child: IconButton(
               onPressed: state.isSaving
                   ? null
@@ -1267,7 +1290,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _statusChip(Map<String, dynamic> rubric) {
     final published = rubric['status'] == 'published';
     final (label, bg, border, fg, icon) = published
-        ? ('Published', const Color(0xFFF0FDF4), const Color(0xFFBBF2D0), const Color(0xFF15803D), Icons.lock_outline_rounded)
+        ? ('Published', const Color(0xFFF0FDF4), const Color(0xFFBBF2D0), const Color(0xFF15803D), Icons.check_circle_outline_rounded)
         : ('Draft', const Color(0xFFFFFBEB), const Color(0xFFFDE68A), const Color(0xFFB45309), Icons.edit_note_rounded);
 
     return Container(

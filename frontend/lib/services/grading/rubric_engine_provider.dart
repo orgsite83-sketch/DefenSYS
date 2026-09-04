@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import 'grade_center_provider.dart';
 
 final rubricEngineProvider =
     NotifierProvider<RubricEngineNotifier, RubricEngineState>(
@@ -180,6 +181,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       if (response.statusCode == 201) {
         await fetchRubrics(successMessage: 'Rubric saved.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -210,6 +212,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       if (response.statusCode == 200) {
         await fetchRubrics(successMessage: 'Rubric updated.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -239,6 +242,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       if (response.statusCode == 200) {
         await fetchRubrics(successMessage: 'Rubric deleted.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -268,6 +272,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       if (response.statusCode == 200) {
         await fetchRubrics(successMessage: 'Rubric published and locked.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -298,6 +303,7 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
 
       if (response.statusCode == 200) {
         await fetchRubrics(successMessage: 'Weight configuration saved.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -310,6 +316,12 @@ class RubricEngineNotifier extends Notifier<RubricEngineState> {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  Future<void> _refreshDependentProviders() async {
+    try {
+      await ref.read(gradeCenterProvider.notifier).fetchGrades();
+    } catch (_) {}
   }
 
   Future<List<Map<String, dynamic>>> checkExistingRubrics() async {

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/material.dart';
@@ -83,10 +84,22 @@ class _StudentBatchEnrollmentHubViewState
 
   static const List<int> _rowsPerPageOptions = [10, 25, 50, 100];
 
+  StreamSubscription? _dropSubscription;
+  bool _isDraggingFile = false;
+
   @override
   void initState() {
     super.initState();
     _currentMode = widget.initialMode;
+
+    _dropSubscription = setupDropzoneListener(
+      _handleFilesDropped,
+      onDragStateChanged: (isDragging) {
+        if (mounted && _isDraggingFile != isDragging) {
+          setState(() => _isDraggingFile = isDragging);
+        }
+      },
+    );
 
     // Restore draft state if available
     final draft = ref.read(studentBatchDraftProvider);
@@ -116,9 +129,43 @@ class _StudentBatchEnrollmentHubViewState
 
   @override
   void dispose() {
+    _dropSubscription?.cancel();
     _rolloverSearchCtrl.dispose();
     _freshSearchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
+    if (!mounted || files.isEmpty) return;
+    try {
+      if (_currentMode == StudentHubMode.freshIntake) {
+        final merged = List<PickedTabularFile>.from(_stagedFreshFiles);
+        for (final file in files) {
+          final exists = merged.any(
+            (existing) => existing.name == file.name && existing.bytes.length == file.bytes.length,
+          );
+          if (!exists) {
+            merged.add(file);
+          }
+        }
+        await _openFreshStagingModal(merged);
+      } else {
+        final merged = List<PickedTabularFile>.from(_stagedRolloverFiles);
+        for (final file in files) {
+          final exists = merged.any(
+            (existing) => existing.name == file.name && existing.bytes.length == file.bytes.length,
+          );
+          if (!exists) {
+            merged.add(file);
+          }
+        }
+        await _openRolloverStagingModal(merged);
+      }
+    } catch (e) {
+      if (mounted) {
+        showErrorToast(context, 'Could not process dropped file(s): $e');
+      }
+    }
   }
 
   Future<void> _loadInitialRolloverData() async {
@@ -180,6 +227,65 @@ class _StudentBatchEnrollmentHubViewState
             ),
           ),
           const SizedBox(height: 20),
+
+          // Active drag-and-drop indicator banner
+          if (_isDraggingFile) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              margin: const EdgeInsets.only(bottom: 16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFEF2F2),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: _maroon, width: 1.5),
+                boxShadow: [
+                  BoxShadow(
+                    color: _maroon.withValues(alpha: 0.1),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(6),
+                    decoration: BoxDecoration(
+                      color: _maroon.withValues(alpha: 0.12),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.file_download_rounded, color: _maroon, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          _currentMode == StudentHubMode.freshIntake
+                              ? 'Drop Class List Source File(s) to Stage'
+                              : 'Drop Rollover Class List File(s) to Stage',
+                          style: const TextStyle(
+                            fontSize: 13.5,
+                            fontWeight: FontWeight.w800,
+                            color: _maroon,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'Release mouse anywhere to automatically stage and inspect class lists (.csv / .xlsx)',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: DefensysUi.textDark,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
 
           // Top Mode Switcher (Pill Tabs)
           Container(
@@ -1186,16 +1292,22 @@ class _StudentBatchEnrollmentHubViewState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: hasFiles
-                        ? const Color(0xFFDCFCE7)
-                        : _maroon.withValues(alpha: 0.08),
+                    color: _isDraggingFile
+                        ? _maroon.withValues(alpha: 0.15)
+                        : (hasFiles
+                            ? const Color(0xFFDCFCE7)
+                            : _maroon.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    hasFiles
-                        ? Icons.task_alt_rounded
-                        : Icons.cloud_upload_outlined,
-                    color: hasFiles ? _green : _maroon,
+                    _isDraggingFile
+                        ? Icons.file_download_rounded
+                        : (hasFiles
+                            ? Icons.task_alt_rounded
+                            : Icons.cloud_upload_outlined),
+                    color: _isDraggingFile
+                        ? _maroon
+                        : (hasFiles ? _green : _maroon),
                     size: 20,
                   ),
                 ),
@@ -1205,9 +1317,11 @@ class _StudentBatchEnrollmentHubViewState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        hasFiles
-                            ? 'Staged Class List Source Files'
-                            : 'Upload Class List Files',
+                        _isDraggingFile
+                            ? 'Drop Class List Files'
+                            : (hasFiles
+                                ? 'Staged Class List Source Files'
+                                : 'Upload Class List Files'),
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -1216,18 +1330,21 @@ class _StudentBatchEnrollmentHubViewState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        hasFiles
-                            ? '${_stagedFreshFiles.length} file(s) staged • ${_parsedFreshStudents.length} students ready'
-                            : 'Supports official university CSV and XLSX formats',
-                        style: const TextStyle(
+                        _isDraggingFile
+                            ? 'Release files to stage into intake review'
+                            : (hasFiles
+                                ? '${_stagedFreshFiles.length} file(s) staged • ${_parsedFreshStudents.length} students ready'
+                                : 'Supports official university CSV and XLSX formats'),
+                        style: TextStyle(
                           fontSize: 12,
-                          color: _muted,
+                          color: _isDraggingFile ? _maroon : _muted,
+                          fontWeight: _isDraggingFile ? FontWeight.w700 : FontWeight.normal,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (hasFiles) ...[
+                if (hasFiles && !_isDraggingFile) ...[
                   OutlinedButton.icon(
                     onPressed: () => _openFreshStagingModal(_stagedFreshFiles),
                     icon: const Icon(Icons.folder_open_rounded, size: 15),
@@ -1252,58 +1369,92 @@ class _StudentBatchEnrollmentHubViewState
                 }
               },
               borderRadius: BorderRadius.circular(10),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
                 decoration: BoxDecoration(
-                  color: hasFiles ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC),
+                  color: _isDraggingFile
+                      ? const Color(0xFFFEF2F2)
+                      : (hasFiles ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC)),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: hasFiles ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1),
-                    width: hasFiles ? 1.5 : 1,
+                    color: _isDraggingFile
+                        ? _maroon
+                        : (hasFiles ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1)),
+                    width: _isDraggingFile ? 2.0 : (hasFiles ? 1.5 : 1),
                   ),
+                  boxShadow: _isDraggingFile
+                      ? [
+                          BoxShadow(
+                            color: _maroon.withValues(alpha: 0.15),
+                            blurRadius: 14,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      hasFiles
-                          ? Icons.inventory_2_outlined
-                          : Icons.cloud_upload_outlined,
-                      size: 30,
-                      color: hasFiles ? _green : _maroon,
+                      _isDraggingFile
+                          ? Icons.file_download_rounded
+                          : (hasFiles
+                              ? Icons.inventory_2_outlined
+                              : Icons.cloud_upload_outlined),
+                      size: _isDraggingFile ? 36 : 30,
+                      color: _isDraggingFile
+                          ? _maroon
+                          : (hasFiles ? _green : _maroon),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      hasFiles
-                          ? '${_stagedFreshFiles.length} Class List File(s) Staged (Click to View / Add)'
-                          : 'Click to choose official class list (.csv / .xlsx)',
+                      _isDraggingFile
+                          ? 'Drop official class list (.csv / .xlsx) here'
+                          : (hasFiles
+                              ? '${_stagedFreshFiles.length} Class List File(s) Staged (Click or Drop to Add)'
+                              : 'Drag & drop or click to choose official class list (.csv / .xlsx)'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: hasFiles ? const Color(0xFF15803D) : _ink,
+                        color: _isDraggingFile
+                            ? _maroon
+                            : (hasFiles ? const Color(0xFF15803D) : _ink),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      hasFiles
-                          ? 'Review sections, replace, or add more class section files'
-                          : 'Supports staging multiple class section files at once',
+                      _isDraggingFile
+                          ? 'Release to automatically stage multiple class section files at once'
+                          : (hasFiles
+                              ? 'Review sections, replace, or drop more class section files'
+                              : 'Supports staging multiple class section files at once'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: hasFiles ? const Color(0xFF166534) : _muted,
+                        color: _isDraggingFile
+                            ? _maroon
+                            : (hasFiles ? const Color(0xFF166534) : _muted),
                       ),
                     ),
-                    if (!hasFiles) ...[
+                    if (!hasFiles || _isDraggingFile) ...[
                       const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildSpecChip('CSV', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          _buildSpecChip(
+                            'CSV',
+                            _isDraggingFile ? _maroon.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
+                            _isDraggingFile ? _maroon : const Color(0xFF475569),
+                          ),
                           const SizedBox(width: 6),
-                          _buildSpecChip('XLSX', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          _buildSpecChip(
+                            'XLSX',
+                            _isDraggingFile ? _maroon.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
+                            _isDraggingFile ? _maroon : const Color(0xFF475569),
+                          ),
                         ],
                       ),
                     ],
@@ -2194,16 +2345,22 @@ class _StudentBatchEnrollmentHubViewState
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: _hasCsvUploaded
-                        ? const Color(0xFFDCFCE7)
-                        : _maroon.withValues(alpha: 0.08),
+                    color: _isDraggingFile
+                        ? _maroon.withValues(alpha: 0.15)
+                        : (_hasCsvUploaded
+                            ? const Color(0xFFDCFCE7)
+                            : _maroon.withValues(alpha: 0.08)),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Icon(
-                    _hasCsvUploaded
-                        ? Icons.task_alt_rounded
-                        : Icons.cloud_upload_outlined,
-                    color: _hasCsvUploaded ? _green : _maroon,
+                    _isDraggingFile
+                        ? Icons.file_download_rounded
+                        : (_hasCsvUploaded
+                            ? Icons.task_alt_rounded
+                            : Icons.cloud_upload_outlined),
+                    color: _isDraggingFile
+                        ? _maroon
+                        : (_hasCsvUploaded ? _green : _maroon),
                     size: 20,
                   ),
                 ),
@@ -2213,9 +2370,11 @@ class _StudentBatchEnrollmentHubViewState
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        _hasCsvUploaded
-                            ? 'Staged Class List Source Files'
-                            : 'Cohort Source & Class List Matching',
+                        _isDraggingFile
+                            ? 'Drop Rollover Class List Files'
+                            : (_hasCsvUploaded
+                                ? 'Staged Class List Source Files'
+                                : 'Cohort Source & Class List Matching'),
                         style: const TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w800,
@@ -2224,18 +2383,21 @@ class _StudentBatchEnrollmentHubViewState
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        _hasCsvUploaded
-                            ? '${_stagedRolloverFiles.length} file(s) currently staged for cohort review'
-                            : 'Matches active student IDs & skips non-enrolled',
-                        style: const TextStyle(
+                        _isDraggingFile
+                            ? 'Release files to stage into rollover cohort review'
+                            : (_hasCsvUploaded
+                                ? '${_stagedRolloverFiles.length} file(s) currently staged for cohort review'
+                                : 'Matches active student IDs & skips non-enrolled'),
+                        style: TextStyle(
                           fontSize: 12,
-                          color: _muted,
+                          color: _isDraggingFile ? _maroon : _muted,
+                          fontWeight: _isDraggingFile ? FontWeight.w700 : FontWeight.normal,
                         ),
                       ),
                     ],
                   ),
                 ),
-                if (_hasCsvUploaded) ...[
+                if (_hasCsvUploaded && !_isDraggingFile) ...[
                   OutlinedButton.icon(
                     onPressed: state.isSaving
                         ? null
@@ -2264,64 +2426,92 @@ class _StudentBatchEnrollmentHubViewState
                       }
                     },
               borderRadius: BorderRadius.circular(10),
-              child: Container(
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
                 width: double.infinity,
                 padding: const EdgeInsets.symmetric(vertical: 22, horizontal: 16),
                 decoration: BoxDecoration(
-                  color: _hasCsvUploaded
-                      ? const Color(0xFFF0FDF4)
-                      : const Color(0xFFF8FAFC),
+                  color: _isDraggingFile
+                      ? const Color(0xFFFEF2F2)
+                      : (_hasCsvUploaded ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC)),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: _hasCsvUploaded
-                        ? const Color(0xFF16A34A)
-                        : const Color(0xFFCBD5E1),
-                    width: _hasCsvUploaded ? 1.5 : 1,
+                    color: _isDraggingFile
+                        ? _maroon
+                        : (_hasCsvUploaded ? const Color(0xFF16A34A) : const Color(0xFFCBD5E1)),
+                    width: _isDraggingFile ? 2.0 : (_hasCsvUploaded ? 1.5 : 1),
                   ),
+                  boxShadow: _isDraggingFile
+                      ? [
+                          BoxShadow(
+                            color: _maroon.withValues(alpha: 0.15),
+                            blurRadius: 14,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      _hasCsvUploaded
-                          ? Icons.inventory_2_outlined
-                          : Icons.cloud_upload_outlined,
-                      size: 30,
-                      color: _hasCsvUploaded ? _green : _maroon,
+                      _isDraggingFile
+                          ? Icons.file_download_rounded
+                          : (_hasCsvUploaded
+                              ? Icons.inventory_2_outlined
+                              : Icons.cloud_upload_outlined),
+                      size: _isDraggingFile ? 36 : 30,
+                      color: _isDraggingFile
+                          ? _maroon
+                          : (_hasCsvUploaded ? _green : _maroon),
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      _hasCsvUploaded
-                          ? '${_stagedRolloverFiles.length} Class List File(s) Staged (Click to View / Add)'
-                          : 'Click to choose official class list (.csv / .xlsx)',
+                      _isDraggingFile
+                          ? 'Drop official class list (.csv / .xlsx) here'
+                          : (_hasCsvUploaded
+                              ? '${_stagedRolloverFiles.length} Class List File(s) Staged (Click or Drop to Add)'
+                              : 'Drag & drop or click to choose official class list (.csv / .xlsx)'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
                         fontWeight: FontWeight.w700,
-                        color: _hasCsvUploaded ? const Color(0xFF15803D) : _ink,
+                        color: _isDraggingFile
+                            ? _maroon
+                            : (_hasCsvUploaded ? const Color(0xFF15803D) : _ink),
                       ),
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      _hasCsvUploaded
-                          ? 'Review sections, replace, or add more class section files'
-                          : 'Supports staging multiple class section files at once',
+                      _isDraggingFile
+                          ? 'Release to automatically stage multiple class section files at once'
+                          : (_hasCsvUploaded
+                              ? 'Review sections, replace, or drop more class section files'
+                              : 'Supports staging multiple class section files at once'),
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 11.5,
-                        color: _hasCsvUploaded
-                            ? const Color(0xFF166534)
-                            : _muted,
+                        color: _isDraggingFile
+                            ? _maroon
+                            : (_hasCsvUploaded ? const Color(0xFF166534) : _muted),
                       ),
                     ),
-                    if (!_hasCsvUploaded) ...[
+                    if (!_hasCsvUploaded || _isDraggingFile) ...[
                       const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          _buildSpecChip('CSV', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          _buildSpecChip(
+                            'CSV',
+                            _isDraggingFile ? _maroon.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
+                            _isDraggingFile ? _maroon : const Color(0xFF475569),
+                          ),
                           const SizedBox(width: 6),
-                          _buildSpecChip('XLSX', const Color(0xFFF1F5F9), const Color(0xFF475569)),
+                          _buildSpecChip(
+                            'XLSX',
+                            _isDraggingFile ? _maroon.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
+                            _isDraggingFile ? _maroon : const Color(0xFF475569),
+                          ),
                         ],
                       ),
                     ],

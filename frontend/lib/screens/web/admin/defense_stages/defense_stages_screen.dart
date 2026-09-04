@@ -13,6 +13,7 @@ import '../../../../widgets/feedback/empty_state.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/pipeline_position_selector.dart';
 import '../widgets/defensys_admin_shell.dart';
+import '../admin_shell.dart';
 
 class DefenseStagesScreen extends ConsumerStatefulWidget {
   const DefenseStagesScreen({super.key});
@@ -70,6 +71,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         }
         if (next.message != null && next.message != previous?.message) {
           showSuccessToast(context, next.message!);
+        }
+      },
+    );
+
+    ref.listen<DefensysAdminSection>(
+      activeAdminSectionProvider,
+      (previous, next) {
+        if (next == DefensysAdminSection.defenseStages) {
+          ref.read(defenseStagesProvider.notifier).fetchStages();
         }
       },
     );
@@ -2764,10 +2774,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     // Fetch periods for grade composition weights
     await ref.read(academicPeriodProvider.notifier).fetchPeriods();
-    // Fetch capstone published rubrics
+    // Fetch capstone rubrics (published ones are filtered client-side for dropdowns)
     await ref.read(rubricEngineProvider.notifier).fetchRubrics(
           scope: 'capstone',
-          status: 'published',
+          status: '',
         );
 
     final semesters = <Map<String, dynamic>>[];
@@ -2859,7 +2869,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     await ref.read(rubricEngineProvider.notifier).fetchRubrics(
           scope: 'capstone',
-          status: 'published',
+          status: '',
         );
 
     if (!mounted) return;

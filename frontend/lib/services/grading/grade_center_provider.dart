@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/dashboard_provider.dart';
+import '../academic/curriculum_analytics_provider.dart';
 
 final gradeCenterProvider =
     NotifierProvider<GradeCenterNotifier, GradeCenterState>(
@@ -262,6 +264,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
 
       if (response.statusCode == 200) {
         await fetchGrades(successMessage: 'Grade scores updated.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -293,6 +296,7 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
         await fetchGrades(
           successMessage: 'Grade published and team result updated.',
         );
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -509,6 +513,15 @@ class GradeCenterNotifier extends Notifier<GradeCenterState> {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  Future<void> _refreshDependentProviders() async {
+    try {
+      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+    } catch (_) {}
+    try {
+      await ref.read(curriculumAnalyticsProvider.notifier).fetchAnalytics();
+    } catch (_) {}
   }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);

@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:defensys/config/api_config.dart';
 import 'package:defensys/screens/web/admin/widgets/defensys_admin_shell.dart';
+import 'package:defensys/screens/web/admin/admin_shell.dart';
 import 'package:defensys/services/auth_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/defense_scheduler_provider.dart';
@@ -329,6 +330,15 @@ class _DefenseSchedulerScreenState
         showSuccessToast(context, message);
       }
     });
+
+    ref.listen<DefensysAdminSection>(
+      activeAdminSectionProvider,
+      (previous, next) {
+        if (next == DefensysAdminSection.scheduling) {
+          ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
+        }
+      },
+    );
 
     final activeStageOrEventName = _scope == 'capstone'
         ? _stageLabel(state)

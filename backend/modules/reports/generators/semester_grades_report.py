@@ -1,57 +1,30 @@
 from decimal import Decimal
-from io import BytesIO
-from datetime import datetime
-from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib import colors
-
-from reports.pdf_styles import (
-    defensys_styles,
-    defensys_official_header,
-    defensys_metadata_grid,
-    defensys_signatures_block,
-    defensys_confidential_callout,
-    defensys_table_style,
-    NumberedCanvas,
-)
+from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_semester_grades_pdf(semester, grade_records, generated_by_user):
+def generate_semester_grades_pdf(semester, grade_records, generated_by_user, signatories=None, include_signatures=True):
     """
     Generate an official USTP DIT PDF summary of all team grades for a semester.
     """
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        topMargin=0.4 * inch,
-        bottomMargin=0.55 * inch,
-        leftMargin=0.5 * inch,
-        rightMargin=0.5 * inch,
+    sem_label = f"{semester.school_year.label if semester else ''} {semester.label if semester else ''}".strip()
+    builder = DefensysPdfReportBuilder(
+        title="Semester Grade Summary Report",
+        subtitle=f"Official Defense Evaluation Registry · {sem_label}",
+        generated_by=generated_by_user,
     )
-    
-    doc.generated_by = generated_by_user
-    doc.generated_at = datetime.now().strftime('%Y-%m-%d %I:%M %p')
-    
-    story = []
-    styles = defensys_styles()
-    
+
     total_records = len(grade_records)
     passed_count = sum(1 for g in grade_records if g.result == 'passed')
     failed_count = sum(1 for g in grade_records if g.result == 'failed')
     pending_count = sum(1 for g in grade_records if g.result == 'pending')
-    
+
     completed_grades = [g.final_grade for g in grade_records if g.final_grade is not None]
     avg_grade = sum(completed_grades) / len(completed_grades) if completed_grades else Decimal('0.00')
-    
+
     # 1. Official Header Banner & Document Title
-    defensys_official_header(
-        story=story,
-        title="Semester Grade Summary Report",
-        subtitle=f"Official Defense Evaluation Registry · {semester.school_year.label if semester else ''} {semester.label if semester else ''}"
-    )
-    
+    builder.add_header()
+
     # 2. Metadata Grid
     metadata_rows = [
         ("Academic School Year", semester.school_year.label if semester else "N/A"),
@@ -60,59 +33,60 @@ def generate_semester_grades_pdf(semester, grade_records, generated_by_user):
         ("Outcome Breakdown", f"Passed: {passed_count}  ·  Failed: {failed_count}  ·  Pending: {pending_count}"),
         ("Cohort Grade Average", f"{avg_grade:.2f}%" if completed_grades else "N/A"),
     ]
-    story.append(defensys_metadata_grid(metadata_rows, width=7.1*inch))
-    story.append(Spacer(1, 0.12*inch))
-    
+    builder.add_metadata_grid(metadata_rows)
+
     # 3. Main Grade Sheet Table
-    story.append(Paragraph("Student Teams Grade Register", styles['SectionHeader']))
-    story.append(Spacer(1, 0.04*inch))
-    
+    builder.add_section_header("Student Teams Grade Register")
+
     headers = [
-        Paragraph("<b>Team Name</b>", styles['TableHeader']),
-        Paragraph("<b>Project Title</b>", styles['TableHeader']),
-        Paragraph("<b>Stage</b>", styles['TableHeaderCenter']),
-        Paragraph("<b>Panel</b>", styles['TableHeaderCenter']),
-        Paragraph("<b>Adv</b>", styles['TableHeaderCenter']),
-        Paragraph("<b>Peer</b>", styles['TableHeaderCenter']),
-        Paragraph("<b>Final</b>", styles['TableHeaderCenter']),
-        Paragraph("<b>Result</b>", styles['TableHeaderCenter'])
+        "Team Name",
+        "Project Title",
+        "Stage",
+        "Panel",
+        "Adv",
+        "Peer",
+        "Final",
+        "Result",
     ]
-    
-    table_rows = [headers]
+
+    rows = []
     for gr in grade_records:
         p_score = f"{gr.panel_score:.1f}%" if gr.panel_score is not None else "-"
         a_score = f"{gr.adviser_score:.1f}%" if (gr.adviser_score is not None and gr.adviser_weight > 0) else "-"
         peer_score = f"{gr.peer_score:.1f}%" if gr.peer_score is not None else "-"
         f_grade = f"{gr.final_grade:.2f}%" if gr.final_grade is not None else "Pending"
-        
+
         result_label = gr.result.upper() if gr.final_grade is not None else "PENDING"
-        
-        table_rows.append([
-            Paragraph(gr.team.name or "N/A", styles['TableCellBold']),
-            Paragraph(gr.team.project_title or "N/A", styles['TableCell']),
-            Paragraph(gr.stage_label or "N/A", styles['TableCellCenter']),
-            Paragraph(p_score, styles['TableCellCenter']),
-            Paragraph(a_score, styles['TableCellCenter']),
-            Paragraph(peer_score, styles['TableCellCenter']),
-            Paragraph(f_grade, styles['TableCellBoldCenter']),
-            Paragraph(result_label, styles['TableCellBoldCenter'])
+
+        rows.append([
+            gr.team.name or "N/A",
+            gr.team.project_title or "N/A",
+            gr.stage_label or "N/A",
+            p_score,
+            a_score,
+            peer_score,
+            f_grade,
+            result_label,
         ])
-        
-    grade_table = Table(table_rows, colWidths=[1.4*inch, 2.1*inch, 1.0*inch, 0.6*inch, 0.5*inch, 0.5*inch, 0.5*inch, 0.5*inch])
-    grade_table.setStyle(defensys_table_style())
-    story.append(grade_table)
-    
-    # 4. Signatures Block
-    defensys_signatures_block(
-        story=story,
-        prepared_by=generated_by_user,
-        noted_by="Academic Department Secretary",
-        approved_by="IT Program Chairperson"
+
+    builder.add_table(
+        headers=headers,
+        rows=rows,
+        col_widths=[1.3 * inch, 1.8 * inch, 0.9 * inch, 0.55 * inch, 0.45 * inch, 0.45 * inch, 0.50 * inch, 0.55 * inch],
+        alignments=['left', 'left', 'center', 'center', 'center', 'center', 'center', 'center'],
+        bold_cols=[0, 6, 7],
     )
-    
-    # 5. Build Document
-    doc.build(story, canvasmaker=NumberedCanvas)
-    pdf_content = buffer.getvalue()
-    buffer.close()
-    
-    return pdf_content
+
+    # 4. Signatures Block
+    builder.add_signatures(
+        prepared_by=generated_by_user,
+        prepared_role="Academic Documenter / Evaluator",
+        noted_by="Academic Department Secretary",
+        noted_role="Department Administrative Secretary",
+        approved_by="IT Program Chairperson",
+        approved_role="IT Program Chairperson",
+        signatories=signatories,
+        include_signatures=include_signatures,
+    )
+
+    return builder.build()

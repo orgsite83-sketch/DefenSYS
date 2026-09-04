@@ -139,10 +139,10 @@ class _DefenseStageEditorScreenState
       }
     }
 
-    // Load Capstone published rubrics
+    // Load Capstone rubrics (published ones are filtered client-side for dropdowns)
     await ref.read(rubricEngineProvider.notifier).fetchRubrics(
           scope: 'capstone',
-          status: 'published',
+          status: '',
         );
 
     if (!mounted) return;

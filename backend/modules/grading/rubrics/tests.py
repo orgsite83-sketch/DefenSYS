@@ -103,15 +103,63 @@ class RubricEngineApiTests(APITestCase):
         self.assertIn('evaluation_type', response.data)
         self.client.force_authenticate(user=self.admin)
 
-    def test_publish_locks_rubric(self):
-        create = self.client.post('/api/grading/rubrics/', self.rubric_payload(), format='json')
+    def test_publish_marks_published_unlocked_when_unassigned(self):
+        create = self.client.post(
+            '/api/grading/rubrics/',
+            self.rubric_payload(defense_stage_id=None),
+            format='json',
+        )
         rubric_id = create.data['rubric']['id']
 
         response = self.client.post(f'/api/grading/rubrics/{rubric_id}/publish/')
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.data['rubric']['status'], Rubric.STATUS_PUBLISHED)
-        self.assertTrue(response.data['rubric']['is_locked'])
+        self.assertFalse(response.data['rubric']['is_locked'])
+        self.assertFalse(response.data['rubric']['is_soft_locked'])
+
+    def test_published_unassigned_rubric_can_be_edited(self):
+        create = self.client.post(
+            '/api/grading/rubrics/',
+            self.rubric_payload(defense_stage_id=None, status=Rubric.STATUS_PUBLISHED),
+            format='json',
+        )
+        rubric_id = create.data['rubric']['id']
+
+        update_payload = self.rubric_payload(
+            defense_stage_id=None,
+            name='Updated Published Rubric Name',
+            status=Rubric.STATUS_PUBLISHED,
+        )
+        response = self.client.patch(f'/api/grading/rubrics/{rubric_id}/', update_payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['rubric']['name'], 'Updated Published Rubric Name')
+
+    def test_soft_locked_rubric_can_be_edited_when_assigned_without_schedules(self):
+        create = self.client.post('/api/grading/rubrics/', self.rubric_payload(), format='json')
+        rubric_id = create.data['rubric']['id']
+        self.assertTrue(create.data['rubric']['is_soft_locked'])
+        self.assertFalse(create.data['rubric']['is_locked'])
+
+        update_payload = self.rubric_payload(name='Updated Stage Rubric')
+        response = self.client.patch(f'/api/grading/rubrics/{rubric_id}/', update_payload, format='json')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.data['rubric']['name'], 'Updated Stage Rubric')
+
+    def test_hard_locked_rubric_rejects_update_when_evaluations_or_schedules_exist(self):
+        from defense.stages.models import StageGradingConfig
+        create = self.client.post('/api/grading/rubrics/', self.rubric_payload(), format='json')
+        rubric_id = create.data['rubric']['id']
+
+        StageGradingConfig.objects.filter(
+            defense_stage=self.stage,
+            semester=self.semester,
+        ).update(is_officially_complete=True)
+
+        update_payload = self.rubric_payload(name='Illegal Modification')
+        response = self.client.patch(f'/api/grading/rubrics/{rubric_id}/', update_payload, format='json')
+        self.assertEqual(response.status_code, 400)
+        self.assertIn('locked', str(response.data).lower())
 
     def test_capstone_weight_patch_is_rejected_use_stage_config(self):
         create = self.client.post('/api/grading/rubrics/', self.rubric_payload(), format='json')

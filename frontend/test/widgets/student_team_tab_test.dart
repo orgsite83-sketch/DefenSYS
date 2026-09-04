@@ -85,8 +85,8 @@ void main() {
     expect(find.text('Passed'), findsWidgets);
     expect(find.text('Current'), findsWidgets);
 
-    // 3. Verify Active Defense Status Overview
-    expect(find.text('Active Defense Status'), findsOneWidget);
+    // 3. Verify Stage Status Card (Defaults to active stage "Colloquium")
+    expect(find.text('Stage Status'), findsOneWidget);
     expect(find.text('DEFENSE COUNTDOWN:'), findsOneWidget);
     expect(find.text('Room 402'), findsOneWidget);
     expect(find.text('Stage Deliverables'), findsOneWidget);
@@ -98,7 +98,21 @@ void main() {
     expect(find.text('Past Defense Results & Grades'), findsOneWidget);
     expect(find.text('Score: 94.5 (Passed)'), findsOneWidget);
 
-    // 5. Verify Tapping Peer Evaluation triggers navigation
+    // 5. Interactive Test: Tap "Project Proposal" in the stepper to inspect its details in Stage Status
+    await tester.tap(find.text('Project Proposal').first);
+    await tester.pumpAndSettle();
+
+    // Stage Status now dynamically reflects "Project Proposal" passed status & grade
+    expect(find.text('Deliberation Result: PASSED'), findsOneWidget);
+    expect(find.text('Official Grade: 94.5 • Completed'), findsOneWidget);
+    expect(find.text('Viewing records for passed stage: Project Proposal'), findsOneWidget);
+
+    // Tap back to current active stage
+    await tester.tap(find.text('Current (Colloquium) →'));
+    await tester.pumpAndSettle();
+    expect(find.text('DEFENSE COUNTDOWN:'), findsOneWidget);
+
+    // 6. Verify Tapping Peer Evaluation triggers navigation
     await tester.tap(find.text('Peer Eval ✓'));
     expect(selectedTab, equals(1));
 

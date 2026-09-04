@@ -724,8 +724,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
           _buildSectionHeader('People & Teams'),
           _buildSidebarItem(
-            icon: Icons.school_outlined,
-            label: 'Cohort',
+            icon: Icons.manage_accounts_outlined,
+            label: 'User Management',
             onTap: () =>
                 _afterSidebarAction(isWide, () => _goToSection('cohort')),
             isActive:
@@ -1132,6 +1132,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           onOpenGradeCenter: () => _goToSection('grade_center'),
           onOpenRubrics: () => _goToSection('rubrics'),
           onOpenCohort: () => _goToSection('cohort'),
+          onOpenPitEvents: () => _goToSection('pit_events'),
+          onOpenAuditCompliance: () => _goToSection('audit_compliance'),
         );
       case FacultyWorkspace.adviser:
         return AdviserDashboardContent(

@@ -4,6 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/dashboard_provider.dart';
+import '../grading/grade_center_provider.dart';
+import '../grading/rubric_engine_provider.dart';
+import 'defense_board_provider.dart';
 
 final defenseStagesProvider =
     NotifierProvider<DefenseStagesNotifier, DefenseStagesState>(
@@ -123,6 +127,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         final data = jsonDecode(response.body);
         final newId = data is Map ? _asInt(data['stage']?['id']) : null;
         await fetchStages(successMessage: 'Defense stage added.');
+        await _refreshDependentProviders();
         return newId;
       }
 
@@ -164,6 +169,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
 
       if (response.statusCode == 200) {
         await fetchStages(successMessage: 'Defense stage updated.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -244,6 +250,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
       if (response.statusCode == 200) {
         final payload = Map<String, dynamic>.from(jsonDecode(response.body));
         _applyPayload(payload, successMessage: 'Stage order updated.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -292,6 +299,7 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
 
       if (response.statusCode == 200) {
         await fetchStages(successMessage: 'Defense stage deleted.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -316,6 +324,21 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
+
+  Future<void> _refreshDependentProviders() async {
+    try {
+      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+    } catch (_) {}
+    try {
+      await ref.read(rubricEngineProvider.notifier).fetchRubrics();
+    } catch (_) {}
+    try {
+      await ref.read(gradeCenterProvider.notifier).fetchGrades();
+    } catch (_) {}
+    try {
+      await ref.read(defenseBoardProvider.notifier).fetchBoard();
+    } catch (_) {}
+  }
 
   AuthenticatedHttpClient get _client => ref.read(authenticatedHttpClientProvider);
 

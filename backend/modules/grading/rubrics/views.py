@@ -357,7 +357,6 @@ class RubricPublishView(APIView):
             )
         old_status = rubric.status
         rubric.status = Rubric.STATUS_PUBLISHED
-        rubric.is_locked = True
         rubric.save()
         rubric = rubric_queryset().get(pk=rubric.pk)
 
@@ -367,8 +366,8 @@ class RubricPublishView(APIView):
             category=SystemAuditLog.CATEGORY_GRADE_CENTER,
             action='rubric.publish',
             target=rubric,
-            old_values={'status': old_status, 'is_locked': False},
-            new_values={'status': rubric.status, 'is_locked': True},
+            old_values={'status': old_status},
+            new_values={'status': rubric.status},
             request=request,
         )
         return Response({

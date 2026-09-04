@@ -344,6 +344,56 @@ Student Number,Full Name,Email,Year Level
       expect(capturedResult, isNull);
       expect(find.text('Staged Import Files'), findsOneWidget);
     });
+
+    testWidgets('displays unsupported files (e.g. PDF, MD) directly in modal with warning and excludes from preview', (tester) async {
+      final pdfFile = PickedTabularFile(
+        name: 'activity.pdf',
+        extension: 'pdf',
+        bytes: Uint8List.fromList([0x25, 0x50, 0x44, 0x46]), // %PDF
+      );
+
+      StagedImportResult? capturedResult;
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Builder(
+              builder: (context) => ElevatedButton(
+                onPressed: () async {
+                  capturedResult = await showFileImportStagingModal(
+                    context,
+                    initialFiles: [studentFile, pdfFile],
+                    importMode: 'student',
+                    hasActiveSemester: true,
+                  );
+                },
+                child: const Text('Open Modal'),
+              ),
+            ),
+          ),
+        ),
+      );
+
+      await tester.tap(find.text('Open Modal'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Staged Import Files'), findsOneWidget);
+      expect(find.text('students_import.csv'), findsNothing); // our studentFile name is bsit_3a_enrolled.csv
+      expect(find.text('bsit_3a_enrolled.csv'), findsOneWidget);
+      expect(find.text('activity.pdf'), findsOneWidget);
+      expect(find.text('PDF'), findsOneWidget);
+      expect(find.textContaining('PDF File'), findsOneWidget);
+      expect(find.textContaining('Unsupported file format (.pdf)'), findsOneWidget);
+      expect(find.textContaining('1 incompatible file will be skipped'), findsOneWidget);
+
+      // Generating preview should only include valid studentFile
+      await tester.tap(find.textContaining('Generate Preview Table'));
+      await tester.pumpAndSettle();
+
+      expect(capturedResult, isNotNull);
+      expect(capturedResult!.files.length, 1);
+      expect(capturedResult!.files.first.name, 'bsit_3a_enrolled.csv');
+    });
   });
 }
 

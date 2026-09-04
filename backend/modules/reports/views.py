@@ -1,3 +1,4 @@
+import json
 from decimal import Decimal
 from datetime import datetime, date, timedelta
 from django.http import HttpResponse
@@ -41,6 +42,28 @@ from reports.generators.audit_trail_report import generate_audit_trail_pdf
 from reports.export_formatters import handle_export_or_preview
 
 User = get_user_model()
+
+
+def _parse_signature_params(request):
+    """
+    Extracts include_signatures (bool) and signatories (list of dicts) from request query params.
+    """
+    raw_inc = request.query_params.get('include_signatures')
+    include_signatures = True
+    if raw_inc is not None:
+        include_signatures = str(raw_inc).strip().lower() in ('true', '1', 'yes')
+
+    raw_sig = request.query_params.get('signatories')
+    signatories = None
+    if raw_sig:
+        try:
+            parsed = json.loads(raw_sig)
+            if isinstance(parsed, list):
+                signatories = parsed
+        except (ValueError, TypeError):
+            signatories = None
+
+    return include_signatures, signatories
 
 
 class TeamGradeReportView(APIView):
@@ -252,6 +275,8 @@ class TeamGradeReportView(APIView):
                 },
             )
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title=f"Team Grade Report — {grade_record.team.name}",
@@ -261,7 +286,9 @@ class TeamGradeReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_team_grade_pdf(grade_record, generated_by),
+            pdf_generator_func=lambda: generate_team_grade_pdf(
+                grade_record, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -403,6 +430,8 @@ class IndividualGradeReportView(APIView):
                 },
             )
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title=f"Individual Grade Audit — {student_name}",
@@ -412,7 +441,9 @@ class IndividualGradeReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_individual_grade_pdf(student, student_grade, team_grade, generated_by),
+            pdf_generator_func=lambda: generate_individual_grade_pdf(
+                student, student_grade, team_grade, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -548,6 +579,8 @@ class SemesterGradesReportView(APIView):
         clean_title = "".join(c for c in report_title if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         filename = f"DefenSYS_{clean_title}_{sem_label_safe}"
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title=report_title,
@@ -557,7 +590,9 @@ class SemesterGradesReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_semester_grades_pdf(semester, grade_records, generated_by),
+            pdf_generator_func=lambda: generate_semester_grades_pdf(
+                semester, grade_records, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -674,6 +709,8 @@ class DefenseScheduleReportView(APIView):
         sem_label_safe = "".join(c for c in semester.school_year.label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         filename = f"DefenSYS_Defense_Schedules_{sem_label_safe}_{semester.label.replace(' ', '_')}"
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title="Defense Timetable & Schedule Summary",
@@ -683,7 +720,9 @@ class DefenseScheduleReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_defense_schedule_pdf(semester, schedules, generated_by),
+            pdf_generator_func=lambda: generate_defense_schedule_pdf(
+                semester, schedules, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -765,6 +804,8 @@ class TeamRosterReportView(APIView):
         sem_label_safe = "".join(c for c in sem_label if c.isalnum() or c in (' ', '_', '-')).strip().replace(' ', '_')
         filename = f"DefenSYS_Team_Roster{sem_label_safe}"
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title="Student Team Directory Roster",
@@ -774,7 +815,9 @@ class TeamRosterReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_team_roster_pdf(semester, teams, generated_by),
+            pdf_generator_func=lambda: generate_team_roster_pdf(
+                semester, teams, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -839,6 +882,8 @@ class UserDirectoryReportView(APIView):
 
         filename = f"DefenSYS_User_Directory_{datetime.now().strftime('%Y-%m-%d')}"
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title="System User Account Directory",
@@ -848,7 +893,9 @@ class UserDirectoryReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_user_directory_pdf(users, generated_by),
+            pdf_generator_func=lambda: generate_user_directory_pdf(
+                users, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )
 
 
@@ -969,6 +1016,8 @@ class AuditTrailReportView(APIView):
 
         filename = f"DefenSYS_Audit_Register_{datetime.now().strftime('%Y-%m-%d')}"
 
+        include_signatures, signatories = _parse_signature_params(request)
+
         return handle_export_or_preview(
             export_format=export_format,
             title="Institutional Audit & Compliance Register",
@@ -978,5 +1027,7 @@ class AuditTrailReportView(APIView):
             columns=columns,
             rows=rows,
             filename=filename,
-            pdf_generator_func=lambda: generate_audit_trail_pdf(logs, filters_desc, generated_by),
+            pdf_generator_func=lambda: generate_audit_trail_pdf(
+                logs, filters_desc, generated_by, signatories=signatories, include_signatures=include_signatures
+            ),
         )

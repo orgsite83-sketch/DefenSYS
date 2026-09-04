@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -13,6 +14,7 @@ import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
+import '../admin_shell.dart';
 
 class AuditComplianceScreen extends ConsumerStatefulWidget {
   const AuditComplianceScreen({super.key});
@@ -136,6 +138,12 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       _checkAndFetchAudit(next);
     });
 
+    ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
+      if (next == DefensysAdminSection.auditCompliance) {
+        _checkAndFetchAudit(ref.read(authProvider));
+      }
+    });
+
     if (authState.isRestoring) {
       return SingleChildScrollView(
         padding: DefensysUi.contentPadding,
@@ -165,57 +173,19 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Sleek Executive Segmented Control Bar
-          Container(
-            width: double.infinity,
-            margin: const EdgeInsets.only(bottom: 24),
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF8FAFC),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-              border: Border.all(color: DefensysTokens.border),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x08000000),
-                  blurRadius: 6,
-                  offset: Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              children: [
-                Expanded(
-                  child: _SegmentTabButton(
-                    label: 'Audit Trail Register',
-                    subtitle: 'Realtime compliance & change logs',
-                    badgeLabel: 'Live Logs',
-                    icon: Icons.shield_outlined,
-                    isSelected: _selectedTabIndex == 0,
-                    onTap: () {
-                      if (_selectedTabIndex != 0) {
-                        setState(() => _selectedTabIndex = 0);
-                      }
-                    },
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _SegmentTabButton(
-                    label: 'Report Export Center',
-                    subtitle: 'Official PDF audit documents',
-                    badgeLabel: 'PDF Center',
-                    icon: Icons.summarize_outlined,
-                    isSelected: _selectedTabIndex == 1,
-                    onTap: () {
-                      if (_selectedTabIndex != 1) {
-                        setState(() => _selectedTabIndex = 1);
-                      }
-                    },
-                  ),
-                ),
-              ],
+          // Sleek Executive Segmented Pill Control
+          Align(
+            alignment: Alignment.centerLeft,
+            child: _ExecutiveTabBar(
+              selectedIndex: _selectedTabIndex,
+              onTabSelected: (index) {
+                if (_selectedTabIndex != index) {
+                  setState(() => _selectedTabIndex = index);
+                }
+              },
             ),
           ),
+          const SizedBox(height: 16),
           if (_selectedTabIndex == 0)
             _buildAuditRegisterTab(context)
           else
@@ -273,17 +243,12 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        DefensysPageHeader(
-          icon: Icons.verified_user_outlined,
-          title: 'Audit Trail & Evidence Review',
-          subtitle:
-              'Official compliance trail for institutional actions, grade updates, and access changes.',
-          actions: _AuditReadinessBadge(state: state),
-        ),
-        const SizedBox(height: 20),
-        _EvidenceStatusCards(state: state),
-        const SizedBox(height: 20),
-        _AuditFilterToolbar(
+        // Compact KPI Ribbon (Combines ISO Readiness, findings, verified evidence, pending review, and ratio)
+        _CompactAuditKpiRibbon(state: state),
+        const SizedBox(height: 14),
+
+        // Streamlined Single-Row Filter Toolbar
+        _CompactAuditFilterToolbar(
           state: state,
           isAdmin: isAdmin,
           isPitLead: isPitLead,
@@ -303,7 +268,9 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           }),
           onQuickExport: () => _quickExportAuditPDF(state),
         ),
-        const SizedBox(height: 20),
+        const SizedBox(height: 14),
+
+        // Primary Hero: Audit Trail Register Table & Rich Domain Evidence Inspector
         LayoutBuilder(
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 1100;
@@ -312,7 +279,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
 
             if (!wide) {
               return Column(
-                children: [table, const SizedBox(height: 20), details],
+                children: [table, const SizedBox(height: 16), details],
               );
             }
 
@@ -320,7 +287,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(flex: 3, child: table),
-                const SizedBox(width: 20),
+                const SizedBox(width: 16),
                 Expanded(flex: 2, child: details),
               ],
             );
@@ -901,6 +868,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       builder: (dialogCtx) {
         return _ReportExportConfigDialog(
           report: report,
+          currentUser: ref.read(authProvider).user,
           academicState: academicState,
           teamsState: teamsState,
           allStudents: allStudentsList,
@@ -939,6 +907,8 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
               startDate: params['startDate'],
               endDate: params['endDate'],
               exportFormat: params['exportFormat'] ?? 'pdf',
+              includeSignatures: params['include_signatures'],
+              signatories: params['signatories'],
             );
           },
           onFetchPreview: (params) async {
@@ -1130,9 +1100,18 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     String? startDate,
     String? endDate,
     String exportFormat = 'pdf',
+    String? includeSignatures,
+    String? signatories,
   }) async {
     final endpoint = report['endpoint'] as String;
     final queryParams = <String, String>{};
+
+    if (includeSignatures != null && includeSignatures.isNotEmpty) {
+      queryParams['include_signatures'] = includeSignatures;
+    }
+    if (signatories != null && signatories.isNotEmpty) {
+      queryParams['signatories'] = signatories;
+    }
 
     final ext = exportFormat == 'xlsx'
         ? '.xlsx'
@@ -2129,6 +2108,7 @@ class _TeamPickerDialogState extends State<_TeamPickerDialog> {
 /// Dialog: Dedicated Report Export Master-Detail Configuration & Live Data Viewer Modal
 class _ReportExportConfigDialog extends StatefulWidget {
   final Map<String, dynamic> report;
+  final Map<String, dynamic>? currentUser;
   final AcademicPeriodState academicState;
   final StudentTeamsState teamsState;
   final List<Map<String, dynamic>> allStudents;
@@ -2159,6 +2139,7 @@ class _ReportExportConfigDialog extends StatefulWidget {
 
   const _ReportExportConfigDialog({
     required this.report,
+    this.currentUser,
     required this.academicState,
     required this.teamsState,
     required this.allStudents,
@@ -2217,6 +2198,532 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   bool _isLoadingPreview = false;
   ReportPreviewData? _previewData;
 
+  bool _includeSignatures = true;
+  List<Map<String, String>> _signatories = [];
+  List<String> _availableLabels = ['Prepared by:', 'Noted by:', 'Approved by:'];
+
+  void _initSignatories() {
+    _availableLabels = ['Prepared by:', 'Noted by:', 'Approved by:'];
+    final user = widget.currentUser;
+    String userName = '';
+    if (user != null) {
+      final fn = (user['first_name'] ?? '').toString().trim();
+      final ln = (user['last_name'] ?? '').toString().trim();
+      if (fn.isNotEmpty || ln.isNotEmpty) {
+        userName = '$fn $ln'.trim();
+      } else {
+        userName = (user['username'] ?? '').toString().trim();
+      }
+    }
+    if (userName.isEmpty) userName = 'Academic Documenter';
+
+    String adviserName = 'Project Adviser / Panel Chair';
+    if (_selectedTeamId != null) {
+      final t = widget.teamsState.teams.firstWhere(
+        (elem) => elem['id']?.toString() == _selectedTeamId,
+        orElse: () => <String, dynamic>{},
+      );
+      if (t['adviser_name'] != null && t['adviser_name'].toString().trim().isNotEmpty) {
+        adviserName = t['adviser_name'].toString().trim();
+      } else if (t['adviser'] is Map) {
+        final afn = (t['adviser']['first_name'] ?? '').toString().trim();
+        final aln = (t['adviser']['last_name'] ?? '').toString().trim();
+        if (afn.isNotEmpty || aln.isNotEmpty) {
+          adviserName = '$afn $aln'.trim();
+        }
+      }
+    }
+
+    _signatories = [
+      {
+        'label': 'Prepared by:',
+        'name': userName,
+        'role': 'Academic Documenter / Evaluator',
+      },
+      {
+        'label': 'Noted by:',
+        'name': adviserName,
+        'role': 'Project Adviser / Panel Chair',
+      },
+      {
+        'label': 'Approved by:',
+        'name': 'IT Program Chairperson',
+        'role': 'IT Program Chairperson',
+      },
+    ];
+  }
+
+  void _openSignatoryCustomizerDialog() {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Dialog(
+              backgroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+              child: Container(
+                width: 680,
+                constraints: const BoxConstraints(maxHeight: 700),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Header
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+                        border: Border(bottom: BorderSide(color: DefensysTokens.border)),
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                            ),
+                            child: const Icon(Icons.history_edu_rounded, size: 20, color: DefensysTokens.maroon),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Configure PDF Report Signatories',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: DefensysTokens.textDark,
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Customize certification statement, signatory count, names, roles, or toggle signatures off.',
+                                  style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
+                            onPressed: () => Navigator.of(dialogCtx).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Body
+                    Flexible(
+                      child: SingleChildScrollView(
+                        padding: const EdgeInsets.all(20),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // 1. Toggle Switch Card
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                              decoration: BoxDecoration(
+                                color: _includeSignatures ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
+                                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                border: Border.all(
+                                  color: _includeSignatures ? const Color(0xFFFDE68A) : DefensysTokens.border,
+                                ),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    _includeSignatures ? Icons.verified_outlined : Icons.do_not_disturb_on_outlined,
+                                    color: _includeSignatures ? const Color(0xFFD97706) : DefensysTokens.steelGrey,
+                                    size: 22,
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(
+                                          'Include Signatory & Certification Block',
+                                          style: TextStyle(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w700,
+                                            color: _includeSignatures ? const Color(0xFF92400E) : DefensysTokens.textDark,
+                                          ),
+                                        ),
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          _includeSignatures
+                                              ? 'Institutional certification disclaimer and signature lines will be rendered on the PDF.'
+                                              : 'Signatures and certification disclaimer will be completely omitted from the export.',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Switch(
+                                    value: _includeSignatures,
+                                    activeColor: DefensysTokens.maroon,
+                                    onChanged: (val) {
+                                      setState(() => _includeSignatures = val);
+                                      setModalState(() {});
+                                    },
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                            if (_includeSignatures) ...[
+                              const SizedBox(height: 18),
+                              Row(
+                                children: [
+                                  const Text(
+                                    'CONFIGURED SIGNATORIES',
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w800,
+                                      color: DefensysTokens.steelGrey,
+                                      letterSpacing: 0.5,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                                    ),
+                                    child: Text(
+                                      '${_signatories.length} ${_signatories.length == 1 ? "Signer" : "Signers"}',
+                                      style: const TextStyle(
+                                        fontSize: 10,
+                                        fontWeight: FontWeight.w700,
+                                        color: DefensysTokens.maroon,
+                                      ),
+                                    ),
+                                  ),
+                                  const Spacer(),
+                                  TextButton.icon(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: DefensysTokens.maroon,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    ),
+                                    icon: const Icon(Icons.add_rounded, size: 16),
+                                    label: const Text('Add Signatory', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                                    onPressed: () {
+                                      setState(() {
+                                        _signatories.add({
+                                          'label': 'Approved by:',
+                                          'name': '',
+                                          'role': 'Academic Evaluator / Chairperson',
+                                        });
+                                      });
+                                      setModalState(() {});
+                                    },
+                                  ),
+                                  const SizedBox(width: 4),
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: DefensysTokens.steelGrey,
+                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                                    ),
+                                    onPressed: () {
+                                      setState(() {
+                                        _initSignatories();
+                                      });
+                                      setModalState(() {});
+                                    },
+                                    child: const Text('Reset Defaults', style: TextStyle(fontSize: 11.5)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+
+                              if (_signatories.isEmpty)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.all(20),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF8FAFC),
+                                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                                    border: Border.all(color: DefensysTokens.border),
+                                  ),
+                                  child: const Center(
+                                    child: Text(
+                                      'No signatories added. Click "+ Add Signatory" or "Reset Defaults".',
+                                      style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                                    ),
+                                  ),
+                                ),
+                              if (_signatories.isNotEmpty)
+                                for (int idx = 0; idx < _signatories.length; idx++)
+                                  _buildSignatoryEditorRow(idx, setModalState),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    // Footer
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
+                        border: Border(top: BorderSide(color: DefensysTokens.border)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Spacer(),
+                          FilledButton(
+                            style: FilledButton.styleFrom(
+                              backgroundColor: DefensysTokens.maroon,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
+                            ),
+                            onPressed: () => Navigator.of(dialogCtx).pop(),
+                            child: const Text('Done & Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _promptAddCustomLabel(int signerIndex, StateSetter setModalState) {
+    final textController = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (promptCtx) {
+        return AlertDialog(
+          backgroundColor: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: const Row(
+            children: [
+              Icon(Icons.label_outline_rounded, color: DefensysTokens.maroon, size: 20),
+              SizedBox(width: 8),
+              Text('Add Custom Signatory Label', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Enter header label for this signatory (e.g. Verified by:, Attested by:, Dean:)',
+                style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: textController,
+                autofocus: true,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                decoration: InputDecoration(
+                  hintText: 'e.g. Verified by:',
+                  hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                    borderSide: const BorderSide(color: DefensysTokens.border),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(promptCtx).pop(),
+              child: const Text('Cancel', style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey)),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(
+                backgroundColor: DefensysTokens.maroon,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusSm)),
+              ),
+              onPressed: () {
+                final entered = textController.text.trim();
+                if (entered.isNotEmpty) {
+                  final formatted = entered.endsWith(':') ? entered : '$entered:';
+                  setState(() {
+                    if (!_availableLabels.contains(formatted)) {
+                      _availableLabels.add(formatted);
+                    }
+                    _signatories[signerIndex]['label'] = formatted;
+                  });
+                  setModalState(() {});
+                }
+                Navigator.of(promptCtx).pop();
+              },
+              child: const Text('Add & Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildSignatoryEditorRow(int idx, StateSetter setModalState) {
+    final s = _signatories[idx];
+    final currentLabel = s['label'] ?? 'Prepared by:';
+    if (!_availableLabels.contains(currentLabel)) {
+      _availableLabels.add(currentLabel);
+    }
+
+    final menuItems = <DropdownMenuItem<String>>[
+      ..._availableLabels.map((lbl) => DropdownMenuItem(
+        value: lbl,
+        child: Text(lbl, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
+      )),
+      const DropdownMenuItem(
+        value: '__ADD_CUSTOM__',
+        child: Row(
+          children: [
+            Icon(Icons.add_rounded, size: 14, color: DefensysTokens.maroon),
+            SizedBox(width: 4),
+            Text('Custom Label...', style: TextStyle(fontSize: 11.5, color: DefensysTokens.maroon, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    ];
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 3,
+            offset: Offset(0, 1),
+          )
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Container(
+            width: 24,
+            height: 24,
+            decoration: BoxDecoration(
+              color: const Color(0xFFF1F5F9),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '#${idx + 1}',
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                color: DefensysTokens.steelGrey,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          // Label Dropdown
+          SizedBox(
+            width: 155,
+            child: DropdownButtonFormField<String>(
+              value: currentLabel,
+              isDense: true,
+              decoration: InputDecoration(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  borderSide: const BorderSide(color: DefensysTokens.border),
+                ),
+              ),
+              style: const TextStyle(fontSize: 11.5, color: DefensysTokens.textDark, fontWeight: FontWeight.w600),
+              items: menuItems,
+              onChanged: (selected) {
+                if (selected == '__ADD_CUSTOM__') {
+                  _promptAddCustomLabel(idx, setModalState);
+                } else if (selected != null) {
+                  setState(() {
+                    _signatories[idx]['label'] = selected;
+                  });
+                  setModalState(() {});
+                }
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Name Field
+          Expanded(
+            flex: 3,
+            child: TextFormField(
+              initialValue: s['name'],
+              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+              decoration: InputDecoration(
+                hintText: 'Signer Name (e.g. Analiza Corpuz)',
+                hintStyle: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  borderSide: const BorderSide(color: DefensysTokens.border),
+                ),
+              ),
+              onChanged: (newVal) {
+                _signatories[idx]['name'] = newVal;
+              },
+            ),
+          ),
+          const SizedBox(width: 8),
+          // Role Field
+          Expanded(
+            flex: 3,
+            child: TextFormField(
+              initialValue: s['role'],
+              style: const TextStyle(fontSize: 11.5),
+              decoration: InputDecoration(
+                hintText: 'Designation / Role (e.g. Project Adviser)',
+                hintStyle: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
+                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  borderSide: const BorderSide(color: DefensysTokens.border),
+                ),
+              ),
+              onChanged: (newVal) {
+                _signatories[idx]['role'] = newVal;
+              },
+            ),
+          ),
+          const SizedBox(width: 6),
+          // Delete Button
+          IconButton(
+            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
+            tooltip: 'Remove Signatory',
+            onPressed: () {
+              setState(() {
+                _signatories.removeAt(idx);
+              });
+              setModalState(() {});
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   void initState() {
     super.initState();
@@ -2233,6 +2740,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     _reportTrackFilter = widget.initialTrack;
     _startDateController.text = widget.initialStartDate;
     _endDateController.text = widget.initialEndDate;
+
+    _initSignatories();
 
     _selectorSearchController.addListener(() => setState(() {}));
     _viewerSearchController.addListener(() => setState(() {}));
@@ -2268,6 +2777,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       if (_startDateController.text.isNotEmpty) 'startDate': _startDateController.text.trim(),
       if (_endDateController.text.isNotEmpty) 'endDate': _endDateController.text.trim(),
       'exportFormat': _selectedFormat,
+      'include_signatures': _includeSignatures.toString(),
+      if (_signatories.isNotEmpty) 'signatories': jsonEncode(_signatories),
     };
   }
 
@@ -3811,6 +4322,58 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
             );
           }),
 
+          // Signatures Customizer Trigger Pill
+          Container(
+            height: 20,
+            width: 1,
+            color: const Color(0xFFCBD5E1),
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+          ),
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _openSignatoryCustomizerDialog,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 120),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: _includeSignatures ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  border: Border.all(
+                    color: _includeSignatures ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
+                    width: 1,
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      _includeSignatures ? Icons.history_edu_rounded : Icons.edit_off_outlined,
+                      size: 14,
+                      color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
+                    ),
+                    const SizedBox(width: 5),
+                    Text(
+                      _includeSignatures ? 'Signatures (${_signatories.length})' : 'Signatures (Off)',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: _includeSignatures ? const Color(0xFF92400E) : DefensysTokens.steelGrey,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.tune_rounded,
+                      size: 12,
+                      color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+
           const Spacer(),
 
           // Cancel Button
@@ -3887,17 +4450,58 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   }
 }
 
-class _SegmentTabButton extends StatelessWidget {
+class _ExecutiveTabBar extends StatelessWidget {
+  final int selectedIndex;
+  final ValueChanged<int> onTabSelected;
+
+  const _ExecutiveTabBar({
+    required this.selectedIndex,
+    required this.onTabSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _TabPill(
+            label: 'Audit Trail Register',
+            badgeLabel: 'Live Logs',
+            icon: Icons.shield_outlined,
+            isSelected: selectedIndex == 0,
+            onTap: () => onTabSelected(0),
+          ),
+          const SizedBox(width: 4),
+          _TabPill(
+            label: 'Report Export Center',
+            badgeLabel: 'PDF Center',
+            icon: Icons.summarize_outlined,
+            isSelected: selectedIndex == 1,
+            onTap: () => onTabSelected(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TabPill extends StatelessWidget {
   final String label;
-  final String subtitle;
   final String badgeLabel;
   final IconData icon;
   final bool isSelected;
   final VoidCallback onTap;
 
-  const _SegmentTabButton({
+  const _TabPill({
     required this.label,
-    required this.subtitle,
     required this.badgeLabel,
     required this.icon,
     required this.isSelected,
@@ -3910,95 +4514,57 @@ class _SegmentTabButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
         child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          duration: const Duration(milliseconds: 160),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
           decoration: BoxDecoration(
             color: isSelected ? Colors.white : Colors.transparent,
-            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-            border: Border.all(
-              color: isSelected ? DefensysTokens.maroon : Colors.transparent,
-              width: 1.5,
-            ),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
             boxShadow: isSelected
                 ? const [
                     BoxShadow(
-                      color: Color(0x0B000000),
-                      blurRadius: 6,
-                      offset: Offset(0, 2),
+                      color: Color(0x0E000000),
+                      blurRadius: 4,
+                      offset: Offset(0, 1),
                     )
                   ]
                 : [],
           ),
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Container(
-                padding: const EdgeInsets.all(9),
-                decoration: BoxDecoration(
-                  color: isSelected
-                      ? DefensysTokens.maroon
-                      : const Color(0xFFE2E8F0),
-                  shape: BoxShape.circle,
-                ),
-                child: Icon(
-                  icon,
-                  size: 18,
-                  color: isSelected ? Colors.white : DefensysTokens.steelGrey,
+              Icon(
+                icon,
+                size: 15,
+                color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                style: TextStyle(
+                  fontFamily: DefensysTokens.fontFamily,
+                  color: isSelected ? DefensysTokens.maroon : DefensysTokens.textDark,
+                  fontSize: 12.5,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontFamily: DefensysTokens.fontFamily,
-                            color: isSelected
-                                ? DefensysTokens.maroon
-                                : DefensysTokens.textDark,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? DefensysTokens.maroon.withValues(alpha: 0.1)
-                                : const Color(0xFFE2E8F0),
-                            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                          ),
-                          child: Text(
-                            badgeLabel,
-                            style: TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: isSelected
-                                  ? DefensysTokens.maroon
-                                  : DefensysTokens.steelGrey,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      subtitle,
-                      style: TextStyle(
-                        color: isSelected
-                            ? DefensysTokens.textSecondary
-                            : DefensysTokens.steelGrey,
-                        fontSize: 11,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                decoration: BoxDecoration(
+                  color: isSelected
+                      ? DefensysTokens.maroon.withValues(alpha: 0.1)
+                      : const Color(0xFFE2E8F0),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                ),
+                child: Text(
+                  badgeLabel,
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                  ),
                 ),
               ),
             ],
@@ -4009,308 +4575,302 @@ class _SegmentTabButton extends StatelessWidget {
   }
 }
 
-class _AuditReadinessBadge extends StatelessWidget {
+class _CompactAuditKpiRibbon extends StatelessWidget {
   final SystemAuditState state;
 
-  const _AuditReadinessBadge({required this.state});
+  const _CompactAuditKpiRibbon({required this.state});
 
   @override
   Widget build(BuildContext context) {
     final total = _count(state.counts['filtered'], fallback: state.logs.length);
     final needsReview = _count(state.counts['needs_review']);
+    final captured = _count(state.counts['captured']);
     final reviewed = _count(state.counts['reviewed']);
     final readiness = total == 0
         ? 0
         : (((total - needsReview).clamp(0, total) / total) * 100).round();
     final isReady = needsReview == 0;
 
-    return DefensysCard(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Stack(
-            alignment: Alignment.center,
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x05000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final isWide = constraints.maxWidth >= 960;
+
+          final readinessItem = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 48,
-                height: 48,
-                child: CircularProgressIndicator(
-                  value: readiness / 100,
-                  strokeWidth: 4.5,
-                  backgroundColor: const Color(0xFFE2E8F0),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    isReady ? DefensysTokens.success : DefensysTokens.gold,
-                  ),
+                width: 28,
+                height: 28,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    CircularProgressIndicator(
+                      value: readiness / 100,
+                      strokeWidth: 3.5,
+                      backgroundColor: const Color(0xFFE2E8F0),
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        isReady ? DefensysTokens.success : DefensysTokens.gold,
+                      ),
+                    ),
+                    Icon(
+                      Icons.shield_outlined,
+                      color: isReady ? DefensysTokens.successText : DefensysTokens.darkGold,
+                      size: 13,
+                    ),
+                  ],
                 ),
               ),
-              Icon(
-                Icons.shield_outlined,
-                color: isReady ? DefensysTokens.successText : DefensysTokens.darkGold,
-                size: 24,
-              ),
-            ],
-          ),
-          const SizedBox(width: 14),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'ISO 9001:2015 Readiness',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: DefensysTokens.steelGrey,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.baseline,
-                textBaseline: TextBaseline.alphabetic,
+              const SizedBox(width: 8),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  Text(
-                    '$readiness%',
-                    style: const TextStyle(
-                      color: DefensysTokens.maroon,
-                      fontSize: 24,
-                      fontWeight: FontWeight.w800,
-                    ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        '$readiness%',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.maroon,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: isReady ? DefensysTokens.successBg : DefensysTokens.warningBg,
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                        ),
+                        child: Text(
+                          isReady ? 'Ready' : 'Pending',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            color: isReady ? DefensysTokens.successText : DefensysTokens.warningText,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: isReady ? DefensysTokens.successBg : DefensysTokens.warningBg,
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                      border: Border.all(
-                        color: isReady
-                            ? DefensysTokens.successBorder
-                            : DefensysTokens.warningBorder,
-                      ),
-                    ),
-                    child: Text(
-                      isReady ? 'Ready for Audit' : 'Pending Review',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: isReady
-                            ? DefensysTokens.successText
-                            : DefensysTokens.warningText,
-                      ),
+                  const Text(
+                    'ISO 9001 Readiness',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.steelGrey,
                     ),
                   ),
                 ],
               ),
             ],
-          ),
-          const SizedBox(width: 20),
-          Container(
-            width: 1,
-            height: 36,
-            color: DefensysTokens.border,
-          ),
-          const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          );
+
+          final findingsItem = _RibbonStatItem(
+            icon: Icons.rate_review_outlined,
+            value: '$needsReview',
+            label: 'Open Findings',
+            badgeText: needsReview == 0 ? 'Clear' : 'Needs Review',
+            accentColor: DefensysTokens.warningText,
+            badgeBg: DefensysTokens.warningBg,
+            badgeFg: DefensysTokens.warningText,
+          );
+
+          final verifiedItem = _RibbonStatItem(
+            icon: Icons.task_alt_outlined,
+            value: '$captured',
+            label: 'Verified Evidence',
+            badgeText: 'Logged',
+            accentColor: DefensysTokens.success,
+            badgeBg: DefensysTokens.successBg,
+            badgeFg: DefensysTokens.successText,
+          );
+
+          final pendingItem = _RibbonStatItem(
+            icon: Icons.schedule_outlined,
+            value: '$needsReview',
+            label: 'Pending Action',
+            badgeText: 'Awaiting',
+            accentColor: DefensysTokens.techBlue,
+            badgeBg: DefensysTokens.infoBg,
+            badgeFg: DefensysTokens.infoText,
+          );
+
+          final ratioItem = Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
-              const Text(
-                'Reviewed Ratio',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: DefensysTokens.steelGrey,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                '$reviewed / $total',
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: DefensysTokens.textDark,
-                ),
+              Icon(Icons.inventory_2_outlined, size: 16, color: DefensysTokens.steelGrey),
+              const SizedBox(width: 6),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    '$reviewed / $total',
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: DefensysTokens.textDark,
+                    ),
+                  ),
+                  const Text(
+                    'Reviewed Ratio',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w600,
+                      color: DefensysTokens.steelGrey,
+                    ),
+                  ),
+                ],
               ),
             ],
-          ),
-        ],
+          );
+
+          if (isWide) {
+            return Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                readinessItem,
+                _RibbonDivider(),
+                findingsItem,
+                _RibbonDivider(),
+                verifiedItem,
+                _RibbonDivider(),
+                pendingItem,
+                _RibbonDivider(),
+                ratioItem,
+              ],
+            );
+          }
+
+          return Wrap(
+            spacing: 16,
+            runSpacing: 10,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              readinessItem,
+              findingsItem,
+              verifiedItem,
+              pendingItem,
+              ratioItem,
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-class _EvidenceStatusCards extends StatelessWidget {
-  final SystemAuditState state;
-
-  const _EvidenceStatusCards({required this.state});
-
-  @override
-  Widget build(BuildContext context) {
-    const gap = 12.0;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final columns = constraints.maxWidth >= 900
-            ? 4
-            : constraints.maxWidth >= 560
-                ? 2
-                : 1;
-        final cardWidth =
-            (constraints.maxWidth - (gap * (columns - 1))) / columns;
-
-        final total = _count(state.counts['filtered'], fallback: state.logs.length);
-        final needsReview = _count(state.counts['needs_review']);
-        final captured = _count(state.counts['captured']);
-        final percent = total == 0
-            ? 0
-            : (((total - needsReview).clamp(0, total) / total) * 100).round();
-
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            _SummaryCard(
-              width: cardWidth,
-              label: 'Audit Readiness',
-              value: '$percent%',
-              status: percent >= 80 ? 'Optimal Status' : 'Needs Review',
-              icon: Icons.fact_check_outlined,
-              accentColor: DefensysTokens.maroon,
-              statusBg: percent >= 80 ? DefensysTokens.successBg : DefensysTokens.warningBg,
-              statusText: percent >= 80 ? DefensysTokens.successText : DefensysTokens.warningText,
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              label: 'Open Findings',
-              value: '$needsReview',
-              status: 'Requires Attention',
-              icon: Icons.rate_review_outlined,
-              accentColor: DefensysTokens.warningText,
-              statusBg: DefensysTokens.warningBg,
-              statusText: DefensysTokens.warningText,
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              label: 'Verified Evidence',
-              value: '$captured',
-              status: 'System Logged',
-              icon: Icons.task_alt_outlined,
-              accentColor: DefensysTokens.success,
-              statusBg: DefensysTokens.successBg,
-              statusText: DefensysTokens.successText,
-            ),
-            _SummaryCard(
-              width: cardWidth,
-              label: 'Pending Review',
-              value: '$needsReview',
-              status: 'Awaiting Action',
-              icon: Icons.schedule_outlined,
-              accentColor: DefensysTokens.techBlue,
-              statusBg: DefensysTokens.infoBg,
-              statusText: DefensysTokens.infoText,
-            ),
-          ],
-        );
-      },
-    );
-  }
-}
-
-class _SummaryCard extends StatelessWidget {
-  final double width;
-  final String label;
-  final String value;
-  final String status;
+class _RibbonStatItem extends StatelessWidget {
   final IconData icon;
+  final String value;
+  final String label;
+  final String badgeText;
   final Color accentColor;
-  final Color statusBg;
-  final Color statusText;
+  final Color badgeBg;
+  final Color badgeFg;
 
-  const _SummaryCard({
-    required this.width,
-    required this.label,
-    required this.value,
-    required this.status,
+  const _RibbonStatItem({
     required this.icon,
+    required this.value,
+    required this.label,
+    required this.badgeText,
     required this.accentColor,
-    required this.statusBg,
-    required this.statusText,
+    required this.badgeBg,
+    required this.badgeFg,
   });
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: width,
-      child: Container(
-        padding: const EdgeInsets.all(18),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-          border: Border.all(color: DefensysTokens.border),
-          boxShadow: const [
-            BoxShadow(
-              color: Color(0x06000000),
-              blurRadius: 4,
-              offset: Offset(0, 2),
-            ),
-          ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 28,
+          height: 28,
+          decoration: BoxDecoration(
+            color: accentColor.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+          ),
+          child: Icon(icon, color: accentColor, size: 15),
         ),
-        child: Column(
+        const SizedBox(width: 8),
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: accentColor.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                Text(
+                  value,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w800,
+                    color: accentColor,
                   ),
-                  child: Icon(icon, color: accentColor, size: 22),
                 ),
+                const SizedBox(width: 5),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: statusBg,
+                    color: badgeBg,
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                   ),
                   child: Text(
-                    status,
+                    badgeText,
                     style: TextStyle(
-                      color: statusText,
-                      fontSize: 11,
+                      fontSize: 9.5,
                       fontWeight: FontWeight.w700,
+                      color: badgeFg,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 14),
-            Text(
-              value,
-              style: TextStyle(
-                color: accentColor,
-                fontSize: 28,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.5,
-              ),
-            ),
-            const SizedBox(height: 2),
             Text(
               label,
               style: const TextStyle(
-                color: DefensysTokens.steelGrey,
-                fontSize: 12.5,
+                fontSize: 10.5,
                 fontWeight: FontWeight.w600,
+                color: DefensysTokens.steelGrey,
               ),
             ),
           ],
         ),
-      ),
+      ],
     );
   }
 }
 
-class _AuditFilterToolbar extends ConsumerWidget {
+class _RibbonDivider extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 26,
+      color: const Color(0xFFE2E8F0),
+    );
+  }
+}
+
+class _CompactAuditFilterToolbar extends ConsumerWidget {
   final SystemAuditState state;
   final bool isAdmin;
   final bool isPitLead;
@@ -4324,7 +4884,7 @@ class _AuditFilterToolbar extends ConsumerWidget {
   final VoidCallback onSelectEndDate;
   final VoidCallback onQuickExport;
 
-  const _AuditFilterToolbar({
+  const _CompactAuditFilterToolbar({
     required this.state,
     required this.isAdmin,
     required this.isPitLead,
@@ -4339,221 +4899,190 @@ class _AuditFilterToolbar extends ConsumerWidget {
     required this.onQuickExport,
   });
 
-  bool get _hasActiveFilters {
-    return state.category.isNotEmpty ||
-        state.reviewStatus.isNotEmpty ||
-        state.action.isNotEmpty ||
-        state.search.isNotEmpty ||
-        state.startDate.isNotEmpty ||
-        state.endDate.isNotEmpty ||
-        state.track.isNotEmpty ||
-        state.yearLevel.isNotEmpty;
+  int get _activeFilterCount {
+    int count = 0;
+    if (state.category.isNotEmpty) count++;
+    if (state.reviewStatus.isNotEmpty) count++;
+    if (state.action.isNotEmpty) count++;
+    if (state.startDate.isNotEmpty || state.endDate.isNotEmpty) count++;
+    if (state.track.isNotEmpty || state.yearLevel.isNotEmpty) count++;
+    return count;
+  }
+
+  bool get _hasActiveFilters => _activeFilterCount > 0 || state.search.isNotEmpty;
+
+  void _openFilterDialog(BuildContext context, WidgetRef ref) {
+    showDialog(
+      context: context,
+      builder: (ctx) => _AuditFilterModal(
+        state: state,
+        isAdmin: isAdmin,
+        isPitLead: isPitLead,
+        user: user,
+        currentScope: currentScope,
+        initialStartDate: startDateController.text,
+        initialEndDate: endDateController.text,
+        onApply: ({
+          required String scope,
+          required String category,
+          required String reviewStatus,
+          required String action,
+          required String startDate,
+          required String endDate,
+        }) {
+          onScopeChanged(scope);
+          final notifier = ref.read(systemAuditProvider.notifier);
+          notifier.setCategory(category);
+          notifier.setReviewStatus(reviewStatus);
+          notifier.setAction(action);
+          notifier.setStartDate(startDate);
+          notifier.setEndDate(endDate);
+          startDateController.text = startDate;
+          endDateController.text = endDate;
+          notifier.fetch();
+        },
+        onReset: () {
+          onScopeChanged('all');
+          final notifier = ref.read(systemAuditProvider.notifier);
+          notifier.setCategory('');
+          notifier.setReviewStatus('');
+          notifier.setAction('');
+          notifier.setStartDate('');
+          notifier.setEndDate('');
+          startDateController.clear();
+          endDateController.clear();
+          notifier.fetch();
+        },
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final reportsState = ref.watch(reportsProvider);
+    final filterCount = _activeFilterCount;
 
-    return DefensysCard(
-      padding: const EdgeInsets.all(18),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x05000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Spacious Top Line: Search Bar + Filter Modal Button + Export PDF
           Row(
             children: [
-              const Icon(Icons.filter_list_rounded, color: DefensysTokens.maroon, size: 20),
-              const SizedBox(width: 8),
-              Text('Audit Trail Filters', style: DefensysUi.sectionTitle),
-              const Spacer(),
-              if (_hasActiveFilters)
-                TextButton.icon(
-                  onPressed: () {
-                    searchController.clear();
-                    startDateController.clear();
-                    endDateController.clear();
-                    final notifier = ref.read(systemAuditProvider.notifier);
-                    notifier.setCategory('');
-                    notifier.setReviewStatus('');
-                    notifier.setAction('');
-                    notifier.setSearch('');
-                    notifier.setStartDate('');
-                    notifier.setEndDate('');
-                    notifier.setTrack('');
-                    notifier.setYearLevel('');
-                  },
-                  icon: const Icon(Icons.restart_alt_rounded, size: 16),
-                  label: const Text('Reset Filters'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: DefensysTokens.maroon,
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                  ),
-                ),
-            ],
-          ),
-          const SizedBox(height: 14),
-
-          // Dropdowns Row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              if (isAdmin) ...[
-                Expanded(
-                  child: DropdownButtonFormField<String>(
-                    initialValue: currentScope,
-                    isExpanded: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Academic Scope',
-                      border: OutlineInputBorder(),
+              // Search Bar
+              Expanded(
+                child: SizedBox(
+                  height: 38,
+                  child: TextField(
+                    controller: searchController,
+                    style: const TextStyle(fontSize: 13),
+                    decoration: InputDecoration(
+                      hintText: 'Search audit records by keywords, user, action, target ID...',
+                      hintStyle: const TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        borderSide: const BorderSide(color: DefensysTokens.maroon),
+                      ),
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                       isDense: true,
+                      prefixIcon: const Icon(Icons.search_rounded, size: 18, color: DefensysTokens.steelGrey),
+                      suffixIcon: searchController.text.isNotEmpty
+                          ? InkWell(
+                              onTap: () {
+                                searchController.clear();
+                                ref.read(systemAuditProvider.notifier).setSearch('');
+                                ref.read(systemAuditProvider.notifier).fetch();
+                              },
+                              child: const Icon(Icons.close_rounded, size: 15, color: DefensysTokens.steelGrey),
+                            )
+                          : null,
                     ),
-                    items: const [
-                      DropdownMenuItem(value: 'all', child: Text('All Academic Tracks')),
-                      DropdownMenuItem(value: 'capstone', child: Text('Capstone Project')),
-                      DropdownMenuItem(value: 'pit_all', child: Text('PIT (All Tracks)')),
-                      DropdownMenuItem(value: 'pit_1', child: Text('PIT (1st Year)')),
-                      DropdownMenuItem(value: 'pit_2', child: Text('PIT (2nd Year)')),
-                      DropdownMenuItem(value: 'pit_3', child: Text('PIT (3rd Year)')),
-                      DropdownMenuItem(value: 'pit_4', child: Text('PIT (4th Year)')),
-                    ],
-                    onChanged: onScopeChanged,
+                    onChanged: ref.read(systemAuditProvider.notifier).setSearch,
+                    onSubmitted: (_) => ref.read(systemAuditProvider.notifier).fetch(),
                   ),
-                ),
-                const SizedBox(width: 10),
-              ] else if (isPitLead) ...[
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(
-                    color: DefensysTokens.neutralBg,
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                    border: Border.all(color: DefensysTokens.border),
-                  ),
-                  child: Text(
-                    'Scope: PIT (${user?['pit_lead_year'] ?? "N/A"})',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      color: DefensysTokens.textDark,
-                      fontSize: 12.5,
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 10),
-              ],
-              Expanded(
-                child: _FilterDropdown(
-                  label: 'Category',
-                  value: state.category,
-                  options: _categoryOptions,
-                  onChanged: ref.read(systemAuditProvider.notifier).setCategory,
                 ),
               ),
               const SizedBox(width: 10),
-              Expanded(
-                child: _FilterDropdown(
-                  label: 'Review Status',
-                  value: state.reviewStatus,
-                  options: state.options['review_statuses'],
-                  onChanged: ref.read(systemAuditProvider.notifier).setReviewStatus,
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: _FilterDropdown(
-                  label: 'Action',
-                  value: state.action,
-                  options: (state.options['actions'] as List?)
-                      ?.map(
-                        (item) => {'value': '$item', 'label': '$item'},
-                      )
-                      .toList(),
-                  onChanged: ref.read(systemAuditProvider.notifier).setAction,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 12),
 
-          // Inputs Row
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextField(
-                  controller: searchController,
-                  decoration: const InputDecoration(
-                    labelText: 'Search evidence keywords',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    prefixIcon: Icon(Icons.search_rounded, size: 18),
-                  ),
-                  onChanged: ref.read(systemAuditProvider.notifier).setSearch,
-                  onSubmitted: (_) => ref.read(systemAuditProvider.notifier).fetch(),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: startDateController,
-                  readOnly: true,
-                  onTap: onSelectStartDate,
-                  decoration: const InputDecoration(
-                    labelText: 'Start date',
-                    hintText: 'YYYY-MM-DD',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    suffixIcon: Icon(Icons.calendar_today_rounded, size: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                flex: 2,
-                child: TextField(
-                  controller: endDateController,
-                  readOnly: true,
-                  onTap: onSelectEndDate,
-                  decoration: const InputDecoration(
-                    labelText: 'End date',
-                    hintText: 'YYYY-MM-DD',
-                    border: OutlineInputBorder(),
-                    isDense: true,
-                    suffixIcon: Icon(Icons.calendar_today_rounded, size: 16),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 16),
+              // Filter Icon Button (with active count badge)
               SizedBox(
-                height: DefensysTokens.buttonHeightPrimary,
-                child: FilledButton.icon(
-                  onPressed: () => ref.read(systemAuditProvider.notifier).fetch(),
-                  icon: const Icon(Icons.search_rounded, size: 18),
-                  label: const Text('Apply'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: DefensysTokens.maroon,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                    ),
-                  ),
-                ),
+                height: 38,
+                child: filterCount > 0
+                    ? FilledButton.icon(
+                        onPressed: () => _openFilterDialog(context, ref),
+                        icon: const Icon(Icons.tune_rounded, size: 16),
+                        label: Text(
+                          'Filters ($filterCount)',
+                          style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
+                        ),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroon,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                          ),
+                          elevation: 0,
+                        ),
+                      )
+                    : OutlinedButton.icon(
+                        onPressed: () => _openFilterDialog(context, ref),
+                        icon: const Icon(Icons.tune_rounded, size: 16),
+                        label: const Text(
+                          'Filters',
+                          style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: DefensysTokens.textDark,
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                          ),
+                        ),
+                      ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
+
+              // Quick PDF Export Button
               SizedBox(
-                height: DefensysTokens.buttonHeightPrimary,
+                height: 38,
                 child: OutlinedButton.icon(
                   onPressed: state.isLoading ? null : onQuickExport,
                   icon: reportsState.isLoading
                       ? const SizedBox(
-                          width: 16,
-                          height: 16,
+                          width: 14,
+                          height: 14,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Icon(Icons.download_rounded, size: 18),
-                  label: const Text('Download PDF'),
+                      : const Icon(Icons.download_rounded, size: 16),
+                  label: const Text('Export PDF', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: DefensysTokens.maroon,
                     side: const BorderSide(color: DefensysTokens.maroon),
+                    padding: const EdgeInsets.symmetric(horizontal: 14),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
                     ),
@@ -4565,37 +5094,50 @@ class _AuditFilterToolbar extends ConsumerWidget {
 
           // Active Filter Chips Bar
           if (_hasActiveFilters) ...[
-            const SizedBox(height: 14),
+            const SizedBox(height: 10),
             Wrap(
-              spacing: 8,
-              runSpacing: 8,
+              spacing: 6,
+              runSpacing: 6,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 const Text(
                   'Active filters:',
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: 11,
                     fontWeight: FontWeight.w700,
                     color: DefensysTokens.steelGrey,
                   ),
                 ),
+                if (state.track.isNotEmpty || state.yearLevel.isNotEmpty)
+                  _ActiveChip(
+                    label: 'Scope: ${state.track.isNotEmpty ? state.track.toUpperCase() : ""}${state.yearLevel.isNotEmpty ? " (${state.yearLevel})" : ""}',
+                    onDeleted: () {
+                      onScopeChanged('all');
+                    },
+                  ),
                 if (state.category.isNotEmpty)
                   _ActiveChip(
-                    label: 'Category: ${state.category}',
-                    onDeleted: () =>
-                        ref.read(systemAuditProvider.notifier).setCategory(''),
+                    label: 'Category: ${_getCategoryLabel(state.category)}',
+                    onDeleted: () {
+                      ref.read(systemAuditProvider.notifier).setCategory('');
+                      ref.read(systemAuditProvider.notifier).fetch();
+                    },
                   ),
                 if (state.reviewStatus.isNotEmpty)
                   _ActiveChip(
-                    label: 'Status: ${state.reviewStatus}',
-                    onDeleted: () =>
-                        ref.read(systemAuditProvider.notifier).setReviewStatus(''),
+                    label: 'Status: ${_getStatusLabel(state.reviewStatus)}',
+                    onDeleted: () {
+                      ref.read(systemAuditProvider.notifier).setReviewStatus('');
+                      ref.read(systemAuditProvider.notifier).fetch();
+                    },
                   ),
                 if (state.action.isNotEmpty)
                   _ActiveChip(
                     label: 'Action: ${state.action}',
-                    onDeleted: () =>
-                        ref.read(systemAuditProvider.notifier).setAction(''),
+                    onDeleted: () {
+                      ref.read(systemAuditProvider.notifier).setAction('');
+                      ref.read(systemAuditProvider.notifier).fetch();
+                    },
                   ),
                 if (state.search.isNotEmpty)
                   _ActiveChip(
@@ -4606,42 +5148,569 @@ class _AuditFilterToolbar extends ConsumerWidget {
                       ref.read(systemAuditProvider.notifier).fetch();
                     },
                   ),
-                if (state.startDate.isNotEmpty)
+                if (state.startDate.isNotEmpty || state.endDate.isNotEmpty)
                   _ActiveChip(
-                    label: 'From: ${state.startDate}',
+                    label: 'Date: ${state.startDate.isNotEmpty ? state.startDate : "Start"} to ${state.endDate.isNotEmpty ? state.endDate : "Present"}',
                     onDeleted: () {
                       startDateController.clear();
-                      ref.read(systemAuditProvider.notifier).setStartDate('');
-                      ref.read(systemAuditProvider.notifier).fetch();
-                    },
-                  ),
-                if (state.endDate.isNotEmpty)
-                  _ActiveChip(
-                    label: 'To: ${state.endDate}',
-                    onDeleted: () {
                       endDateController.clear();
-                      ref.read(systemAuditProvider.notifier).setEndDate('');
-                      ref.read(systemAuditProvider.notifier).fetch();
+                      final notifier = ref.read(systemAuditProvider.notifier);
+                      notifier.setStartDate('');
+                      notifier.setEndDate('');
+                      notifier.fetch();
                     },
                   ),
-                if (state.track.isNotEmpty)
-                  _ActiveChip(
-                    label: 'Track: ${state.track}',
-                    onDeleted: () {
-                      ref.read(systemAuditProvider.notifier).setTrack('');
-                    },
+                InkWell(
+                  onTap: () {
+                    searchController.clear();
+                    startDateController.clear();
+                    endDateController.clear();
+                    onScopeChanged('all');
+                    final notifier = ref.read(systemAuditProvider.notifier);
+                    notifier.setCategory('');
+                    notifier.setReviewStatus('');
+                    notifier.setAction('');
+                    notifier.setSearch('');
+                    notifier.setStartDate('');
+                    notifier.setEndDate('');
+                    notifier.fetch();
+                  },
+                  child: const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Text(
+                      'Clear all',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.maroon,
+                        decoration: TextDecoration.underline,
+                      ),
+                    ),
                   ),
-                if (state.yearLevel.isNotEmpty)
-                  _ActiveChip(
-                    label: 'Year: ${state.yearLevel}',
-                    onDeleted: () {
-                      ref.read(systemAuditProvider.notifier).setYearLevel('');
-                    },
-                  ),
+                ),
               ],
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  String _getCategoryLabel(String val) {
+    for (final opt in _categoryOptions) {
+      if (opt['value'] == val) return opt['label'] ?? val;
+    }
+    return val;
+  }
+
+  String _getStatusLabel(String val) {
+    final list = state.options['review_statuses'] as List?;
+    if (list != null) {
+      for (final item in list) {
+        if (item is Map && item['value'] == val) return item['label']?.toString() ?? val;
+      }
+    }
+    return val;
+  }
+}
+
+/// Comprehensive Audit Filter Modal Dialog
+class _AuditFilterModal extends StatefulWidget {
+  final SystemAuditState state;
+  final bool isAdmin;
+  final bool isPitLead;
+  final dynamic user;
+  final String currentScope;
+  final String initialStartDate;
+  final String initialEndDate;
+  final void Function({
+    required String scope,
+    required String category,
+    required String reviewStatus,
+    required String action,
+    required String startDate,
+    required String endDate,
+  }) onApply;
+  final VoidCallback onReset;
+
+  const _AuditFilterModal({
+    required this.state,
+    required this.isAdmin,
+    required this.isPitLead,
+    required this.user,
+    required this.currentScope,
+    required this.initialStartDate,
+    required this.initialEndDate,
+    required this.onApply,
+    required this.onReset,
+  });
+
+  @override
+  State<_AuditFilterModal> createState() => _AuditFilterModalState();
+}
+
+class _AuditFilterModalState extends State<_AuditFilterModal> {
+  late String _scope;
+  late String _category;
+  late String _reviewStatus;
+  late String _action;
+  late TextEditingController _startCtrl;
+  late TextEditingController _endCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _scope = widget.currentScope;
+    _category = widget.state.category;
+    _reviewStatus = widget.state.reviewStatus;
+    _action = widget.state.action;
+    _startCtrl = TextEditingController(text: widget.initialStartDate.isNotEmpty ? widget.initialStartDate : widget.state.startDate);
+    _endCtrl = TextEditingController(text: widget.initialEndDate.isNotEmpty ? widget.initialEndDate : widget.state.endDate);
+  }
+
+  @override
+  void dispose() {
+    _startCtrl.dispose();
+    _endCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _pickDate(TextEditingController controller) async {
+    final now = DateTime.now();
+    DateTime initial = now;
+    if (controller.text.isNotEmpty) {
+      final parsed = DateTime.tryParse(controller.text);
+      if (parsed != null) initial = parsed;
+    }
+
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initial,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2035),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: const ColorScheme.light(
+              primary: DefensysTokens.maroon,
+              onPrimary: Colors.white,
+              onSurface: DefensysTokens.textDark,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      final formatted =
+          '${picked.year}-${picked.month.toString().padLeft(2, '0')}-${picked.day.toString().padLeft(2, '0')}';
+      setState(() {
+        controller.text = formatted;
+      });
+    }
+  }
+
+  void _applyDatePreset(int daysAgo) {
+    final now = DateTime.now();
+    final today =
+        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    if (daysAgo == 0) {
+      setState(() {
+        _startCtrl.text = today;
+        _endCtrl.text = today;
+      });
+    } else {
+      final past = now.subtract(Duration(days: daysAgo));
+      final pastStr =
+          '${past.year}-${past.month.toString().padLeft(2, '0')}-${past.day.toString().padLeft(2, '0')}';
+      setState(() {
+        _startCtrl.text = pastStr;
+        _endCtrl.text = today;
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.white,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 520, maxHeight: 680),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Modal Header
+            Padding(
+              padding: const EdgeInsets.all(18),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                    ),
+                    child: const Icon(Icons.tune_rounded, color: DefensysTokens.maroon, size: 18),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Filter Audit Register',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textDark,
+                          ),
+                        ),
+                        SizedBox(height: 2),
+                        Text(
+                          'Refine records by scope, category, compliance status, or date range.',
+                          style: TextStyle(
+                            fontSize: 11.5,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close_rounded, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+            // Modal Body Form
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // 1. Academic Scope
+                    if (widget.isAdmin) ...[
+                      const _ModalSectionTitle('Academic Scope'),
+                      const SizedBox(height: 6),
+                      DropdownButtonFormField<String>(
+                        initialValue: _scope,
+                        isExpanded: true,
+                        decoration: _modalInputDecoration('Select Academic Track'),
+                        style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                        items: const [
+                          DropdownMenuItem(value: 'all', child: Text('All Academic Tracks')),
+                          DropdownMenuItem(value: 'capstone', child: Text('Capstone Project')),
+                          DropdownMenuItem(value: 'pit_all', child: Text('PIT (All Tracks)')),
+                          DropdownMenuItem(value: 'pit_1', child: Text('PIT (1st Year)')),
+                          DropdownMenuItem(value: 'pit_2', child: Text('PIT (2nd Year)')),
+                          DropdownMenuItem(value: 'pit_3', child: Text('PIT (3rd Year)')),
+                          DropdownMenuItem(value: 'pit_4', child: Text('PIT (4th Year)')),
+                        ],
+                        onChanged: (val) => setState(() => _scope = val ?? 'all'),
+                      ),
+                      const SizedBox(height: 16),
+                    ] else if (widget.isPitLead) ...[
+                      const _ModalSectionTitle('Academic Scope'),
+                      const SizedBox(height: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                          border: Border.all(color: DefensysTokens.border),
+                        ),
+                        child: Text(
+                          'PIT (${widget.user?['pit_lead_year'] ?? "N/A"})',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.textDark,
+                            fontSize: 12.5,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
+
+                    // 2. Process Area / Category
+                    const _ModalSectionTitle('Process Area (Category)'),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: _category,
+                      isExpanded: true,
+                      decoration: _modalInputDecoration('All Process Areas'),
+                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      items: [
+                        const DropdownMenuItem(value: '', child: Text('All Process Areas')),
+                        ..._categoryOptions.map(
+                          (cat) => DropdownMenuItem(
+                            value: cat['value'] ?? '',
+                            child: Text(cat['label'] ?? ''),
+                          ),
+                        ),
+                      ],
+                      onChanged: (val) => setState(() => _category = val ?? ''),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 3. Compliance Review Status
+                    const _ModalSectionTitle('Review & Compliance Status'),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: _reviewStatus,
+                      isExpanded: true,
+                      decoration: _modalInputDecoration('All Statuses'),
+                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      items: [
+                        const DropdownMenuItem(value: '', child: Text('All Statuses')),
+                        ...?((widget.state.options['review_statuses'] as List?)?.map(
+                          (st) => DropdownMenuItem(
+                            value: st['value']?.toString() ?? '',
+                            child: Text(st['label']?.toString() ?? ''),
+                          ),
+                        )),
+                      ],
+                      onChanged: (val) => setState(() => _reviewStatus = val ?? ''),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 4. Specific Action Type
+                    const _ModalSectionTitle('Control Activity / Action Type'),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<String>(
+                      initialValue: _action,
+                      isExpanded: true,
+                      decoration: _modalInputDecoration('All Action Types'),
+                      style: const TextStyle(fontSize: 13, color: DefensysTokens.textDark),
+                      items: [
+                        const DropdownMenuItem(value: '', child: Text('All Action Types')),
+                        ...?((widget.state.options['actions'] as List?)?.map(
+                          (act) => DropdownMenuItem(
+                            value: act?.toString() ?? '',
+                            child: Text(act?.toString() ?? ''),
+                          ),
+                        )),
+                      ],
+                      onChanged: (val) => setState(() => _action = val ?? ''),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // 5. Date Range & Presets
+                    const _ModalSectionTitle('Date Range'),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: [
+                        _PresetChip(label: 'Today', onTap: () => _applyDatePreset(0)),
+                        _PresetChip(label: 'Last 7 Days', onTap: () => _applyDatePreset(7)),
+                        _PresetChip(label: 'Last 30 Days', onTap: () => _applyDatePreset(30)),
+                        if (_startCtrl.text.isNotEmpty || _endCtrl.text.isNotEmpty)
+                          _PresetChip(
+                            label: 'Clear Dates',
+                            isClear: true,
+                            onTap: () => setState(() {
+                              _startCtrl.clear();
+                              _endCtrl.clear();
+                            }),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _startCtrl,
+                            readOnly: true,
+                            onTap: () => _pickDate(_startCtrl),
+                            style: const TextStyle(fontSize: 12.5),
+                            decoration: _modalInputDecoration('Start Date (From)').copyWith(
+                              suffixIcon: const Icon(Icons.calendar_today_rounded, size: 15, color: DefensysTokens.steelGrey),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: TextField(
+                            controller: _endCtrl,
+                            readOnly: true,
+                            onTap: () => _pickDate(_endCtrl),
+                            style: const TextStyle(fontSize: 12.5),
+                            decoration: _modalInputDecoration('End Date (To)').copyWith(
+                              suffixIcon: const Icon(Icons.calendar_today_rounded, size: 15, color: DefensysTokens.steelGrey),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Modal Footer Actions
+            const Divider(height: 1, color: Color(0xFFE2E8F0)),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton.icon(
+                    onPressed: () {
+                      setState(() {
+                        _scope = 'all';
+                        _category = '';
+                        _reviewStatus = '';
+                        _action = '';
+                        _startCtrl.clear();
+                        _endCtrl.clear();
+                      });
+                      widget.onReset();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.restart_alt_rounded, size: 15),
+                    label: const Text('Reset All', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                    style: TextButton.styleFrom(
+                      foregroundColor: DefensysTokens.maroon,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                    ),
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      OutlinedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: DefensysTokens.steelGrey,
+                          side: const BorderSide(color: Color(0xFFCBD5E1)),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                          ),
+                        ),
+                        child: const Text('Cancel', style: TextStyle(fontSize: 12)),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
+                        onPressed: () {
+                          widget.onApply(
+                            scope: _scope,
+                            category: _category,
+                            reviewStatus: _reviewStatus,
+                            action: _action,
+                            startDate: _startCtrl.text.trim(),
+                            endDate: _endCtrl.text.trim(),
+                          );
+                          Navigator.pop(context);
+                        },
+                        icon: const Icon(Icons.check_rounded, size: 15),
+                        label: const Text('Apply Filters', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
+                        style: FilledButton.styleFrom(
+                          backgroundColor: DefensysTokens.maroon,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                          ),
+                          elevation: 0,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  InputDecoration _modalInputDecoration(String hint) {
+    return InputDecoration(
+      hintText: hint,
+      hintStyle: const TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
+      border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
+      ),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        borderSide: const BorderSide(color: DefensysTokens.maroon),
+      ),
+      contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      isDense: true,
+    );
+  }
+}
+
+class _ModalSectionTitle extends StatelessWidget {
+  final String title;
+
+  const _ModalSectionTitle(this.title);
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        fontSize: 11.5,
+        fontWeight: FontWeight.w700,
+        color: DefensysTokens.textDark,
+      ),
+    );
+  }
+}
+
+class _PresetChip extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+  final bool isClear;
+
+  const _PresetChip({
+    required this.label,
+    required this.onTap,
+    this.isClear = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          decoration: BoxDecoration(
+            color: isClear ? DefensysTokens.dangerBg : const Color(0xFFF1F5F9),
+            borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+            border: Border.all(
+              color: isClear ? DefensysTokens.dangerBorder : const Color(0xFFE2E8F0),
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              color: isClear ? DefensysTokens.dangerText : DefensysTokens.steelGrey,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4656,7 +5725,7 @@ class _ActiveChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.only(left: 10, right: 4, top: 4, bottom: 4),
+      padding: const EdgeInsets.only(left: 8, right: 3, top: 2, bottom: 2),
       decoration: BoxDecoration(
         color: DefensysTokens.maroon.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
@@ -4668,7 +5737,7 @@ class _ActiveChip extends StatelessWidget {
           Text(
             label,
             style: const TextStyle(
-              fontSize: 11.5,
+              fontSize: 10.5,
               fontWeight: FontWeight.w700,
               color: DefensysTokens.maroon,
             ),
@@ -4679,7 +5748,7 @@ class _ActiveChip extends StatelessWidget {
             borderRadius: BorderRadius.circular(99),
             child: const Padding(
               padding: EdgeInsets.all(2),
-              child: Icon(Icons.close_rounded, size: 14, color: DefensysTokens.maroon),
+              child: Icon(Icons.close_rounded, size: 12, color: DefensysTokens.maroon),
             ),
           ),
         ],
@@ -4697,32 +5766,59 @@ class _AuditTrailTable extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final selectedLog = state.selectedLog ?? (state.logs.isNotEmpty ? state.logs.first : null);
 
-    return DefensysCard(
-      padding: const EdgeInsets.all(18),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Table Header Row
           Row(
             children: [
-              const Icon(
-                Icons.receipt_long_outlined,
-                color: DefensysTokens.maroon,
-                size: 20,
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                ),
+                child: const Icon(
+                  Icons.receipt_long_outlined,
+                  color: DefensysTokens.maroon,
+                  size: 16,
+                ),
               ),
               const SizedBox(width: 8),
-              Text('Audit Trail Register', style: DefensysUi.sectionTitle),
+              const Text(
+                'Audit Trail Register',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                  color: DefensysTokens.textDark,
+                ),
+              ),
               const Spacer(),
               if (state.totalCount > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                   decoration: BoxDecoration(
-                    color: DefensysTokens.neutralBg,
+                    color: const Color(0xFFF1F5F9),
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                   ),
                   child: Text(
-                    '${state.totalCount} total entries',
+                    '${state.totalCount} entries',
                     style: const TextStyle(
-                      fontSize: 11.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w700,
                       color: DefensysTokens.steelGrey,
                     ),
@@ -4730,18 +5826,19 @@ class _AuditTrailTable extends ConsumerWidget {
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+
           if (state.isLoading)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 40),
               child: Center(
                 child: Column(
                   children: [
-                    CircularProgressIndicator(),
+                    CircularProgressIndicator(strokeWidth: 2.5, color: DefensysTokens.maroon),
                     SizedBox(height: 12),
                     Text(
                       'Loading audit logs...',
-                      style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 13),
+                      style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 12.5),
                     ),
                   ],
                 ),
@@ -4760,8 +5857,8 @@ class _AuditTrailTable extends ConsumerWidget {
                   ? 'No matching audit records'
                   : 'No audit records yet',
               message: _hasAuditFilters(state)
-                  ? 'Try clearing a category, status, action, search, or date filter to widen the audit register.'
-                  : 'New official academic actions and repository changes will appear here after they are logged.',
+                  ? 'Try clearing a filter to widen the audit register.'
+                  : 'New official academic actions and repository changes will appear here.',
             )
           else ...[
             ClipRRect(
@@ -4776,9 +5873,15 @@ class _AuditTrailTable extends ConsumerWidget {
                   child: DataTable(
                     showCheckboxColumn: false,
                     headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                    headingTextStyle: DefensysUi.tableHeader,
-                    dataRowMinHeight: 52,
-                    dataRowMaxHeight: 56,
+                    headingTextStyle: const TextStyle(
+                      fontFamily: DefensysTokens.fontFamily,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: DefensysTokens.steelGrey,
+                      letterSpacing: 0.5,
+                    ),
+                    dataRowMinHeight: 48,
+                    dataRowMaxHeight: 52,
                     columns: const [
                       DataColumn(label: Text('DATE / TIME')),
                       DataColumn(label: Text('PROCESS AREA')),
@@ -4793,10 +5896,10 @@ class _AuditTrailTable extends ConsumerWidget {
                         selected: false,
                         color: WidgetStateProperty.resolveWith((states) {
                           if (isSelected) {
-                            return const Color(0xFFE2E8F0); // Subtle soft slate highlight
+                            return const Color(0xFFF1F5F9);
                           }
                           if (states.contains(WidgetState.hovered)) {
-                            return const Color(0xFFF1F5F9);
+                            return const Color(0xFFFAFAFA);
                           }
                           return Colors.white;
                         }),
@@ -4807,16 +5910,28 @@ class _AuditTrailTable extends ConsumerWidget {
                             Row(
                               mainAxisSize: MainAxisSize.min,
                               children: [
+                                if (isSelected)
+                                  Container(
+                                    width: 3,
+                                    height: 20,
+                                    margin: const EdgeInsets.only(right: 6),
+                                    decoration: BoxDecoration(
+                                      color: DefensysTokens.maroon,
+                                      borderRadius: BorderRadius.circular(2),
+                                    ),
+                                  ),
                                 Icon(
                                   Icons.schedule,
-                                  size: 14,
+                                  size: 13,
                                   color: isSelected ? DefensysTokens.maroon : DefensysTokens.steelGrey,
                                 ),
                                 const SizedBox(width: 6),
                                 Text(
                                   _dateTime(log['created_at']),
-                                  style: DefensysUi.tableCell.copyWith(
+                                  style: TextStyle(
+                                    fontSize: 12,
                                     fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                                    color: isSelected ? DefensysTokens.maroon : DefensysTokens.textDark,
                                   ),
                                 ),
                               ],
@@ -4829,23 +5944,23 @@ class _AuditTrailTable extends ConsumerWidget {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 CircleAvatar(
-                                  radius: 12,
+                                  radius: 11,
                                   backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
                                   child: Text(
                                     (log['actor_name']?.toString() ?? 'S')[0].toUpperCase(),
                                     style: const TextStyle(
-                                      fontSize: 10,
+                                      fontSize: 9.5,
                                       fontWeight: FontWeight.bold,
                                       color: DefensysTokens.maroon,
                                     ),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
+                                const SizedBox(width: 6),
                                 Text(
                                   log['actor_name']?.toString() ?? 'System',
                                   style: const TextStyle(
                                     fontWeight: FontWeight.w600,
-                                    fontSize: 13,
+                                    fontSize: 12,
                                     color: DefensysTokens.textDark,
                                   ),
                                 ),
@@ -4860,27 +5975,27 @@ class _AuditTrailTable extends ConsumerWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 12),
+            // Pagination Bar
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Row(
                   children: [
                     const Text(
-                      'Rows per page: ',
+                      'Rows: ',
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: DefensysTokens.steelGrey,
                         fontWeight: FontWeight.w600,
                       ),
                     ),
-                    const SizedBox(width: 4),
                     DropdownButton<int>(
                       value: state.pageSize,
                       underline: const SizedBox(),
                       isDense: true,
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         fontWeight: FontWeight.w700,
                         color: DefensysTokens.textDark,
                       ),
@@ -4895,11 +6010,11 @@ class _AuditTrailTable extends ConsumerWidget {
                         }
                       },
                     ),
-                    const SizedBox(width: 16),
+                    const SizedBox(width: 12),
                     Text(
-                      'Showing page ${state.currentPage} of ${state.totalPages} (${state.totalCount} total entries)',
+                      'Page ${state.currentPage} of ${state.totalPages}',
                       style: const TextStyle(
-                        fontSize: 12,
+                        fontSize: 11.5,
                         color: DefensysTokens.steelGrey,
                       ),
                     ),
@@ -4908,36 +6023,38 @@ class _AuditTrailTable extends ConsumerWidget {
                 Row(
                   children: [
                     IconButton(
-                      icon: const Icon(Icons.chevron_left),
+                      icon: const Icon(Icons.chevron_left, size: 18),
                       tooltip: 'Previous Page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       onPressed: state.currentPage > 1
-                          ? () => ref
-                              .read(systemAuditProvider.notifier)
-                              .previousPage()
+                          ? () => ref.read(systemAuditProvider.notifier).previousPage()
                           : null,
                     ),
+                    const SizedBox(width: 4),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                       decoration: BoxDecoration(
-                        color: DefensysTokens.neutralBg,
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                       ),
                       child: Text(
-                        'Page ${state.currentPage} / ${state.totalPages}',
+                        '${state.currentPage} / ${state.totalPages}',
                         style: const TextStyle(
                           fontWeight: FontWeight.w700,
-                          fontSize: 12,
+                          fontSize: 11,
                           color: DefensysTokens.textDark,
                         ),
                       ),
                     ),
+                    const SizedBox(width: 4),
                     IconButton(
-                      icon: const Icon(Icons.chevron_right),
+                      icon: const Icon(Icons.chevron_right, size: 18),
                       tooltip: 'Next Page',
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
                       onPressed: state.currentPage < state.totalPages
-                          ? () => ref
-                              .read(systemAuditProvider.notifier)
-                              .nextPage()
+                          ? () => ref.read(systemAuditProvider.notifier).nextPage()
                           : null,
                     ),
                   ],
@@ -4959,28 +6076,29 @@ class _ProcessAreaBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     IconData icon = Icons.folder_open_outlined;
-    if (category.toLowerCase().contains('grade')) {
+    final lower = category.toLowerCase();
+    if (lower.contains('grade')) {
       icon = Icons.grade_outlined;
-    } else if (category.toLowerCase().contains('period')) {
+    } else if (lower.contains('period')) {
       icon = Icons.date_range_outlined;
-    } else if (category.toLowerCase().contains('schedul')) {
+    } else if (lower.contains('schedul')) {
       icon = Icons.event_outlined;
-    } else if (category.toLowerCase().contains('reposit')) {
+    } else if (lower.contains('reposit') || lower.contains('archive')) {
       icon = Icons.folder_zip_outlined;
-    } else if (category.toLowerCase().contains('guest')) {
+    } else if (lower.contains('guest') || lower.contains('access') || lower.contains('user')) {
       icon = Icons.person_pin_outlined;
     }
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 15, color: DefensysTokens.steelGrey),
+        Icon(icon, size: 14, color: DefensysTokens.steelGrey),
         const SizedBox(width: 6),
         Text(
           category.isEmpty ? 'General' : category,
           style: const TextStyle(
             fontWeight: FontWeight.w600,
-            fontSize: 12.5,
+            fontSize: 12,
             color: DefensysTokens.textDark,
           ),
         ),
@@ -5009,6 +6127,10 @@ class _ActionTag extends StatelessWidget {
       bg = DefensysTokens.successBg;
       fg = DefensysTokens.successText;
       border = DefensysTokens.successBorder;
+    } else if (lower.contains('publish') || lower.contains('finalize')) {
+      bg = const Color(0xFFF0FDFA);
+      fg = const Color(0xFF0F766E);
+      border = const Color(0xFF99F6E4);
     } else if (lower.contains('override') || lower.contains('update') || lower.contains('edit')) {
       bg = DefensysTokens.overriddenBg;
       fg = DefensysTokens.overriddenText;
@@ -5016,7 +6138,7 @@ class _ActionTag extends StatelessWidget {
     }
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
       decoration: BoxDecoration(
         color: bg,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
@@ -5026,7 +6148,7 @@ class _ActionTag extends StatelessWidget {
         action.isEmpty ? 'action.unknown' : action,
         style: TextStyle(
           fontFamily: 'monospace',
-          fontSize: 11,
+          fontSize: 10.5,
           fontWeight: FontWeight.bold,
           color: fg,
         ),
@@ -5043,10 +6165,10 @@ class _ReviewStatusPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final status = log['review_status']?.toString() ?? '';
-    bool isReviewed = status == 'reviewed';
+    final isReviewed = status == 'reviewed';
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
         color: isReviewed ? DefensysTokens.successBg : DefensysTokens.warningBg,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
@@ -5061,14 +6183,14 @@ class _ReviewStatusPill extends StatelessWidget {
         children: [
           Icon(
             isReviewed ? Icons.check_circle_outlined : Icons.pending_outlined,
-            size: 13,
+            size: 11.5,
             color: isReviewed ? DefensysTokens.successText : DefensysTokens.warningText,
           ),
           const SizedBox(width: 4),
           Text(
             isReviewed ? 'Reviewed' : 'Needs Review',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 10.5,
               fontWeight: FontWeight.w700,
               color: isReviewed ? DefensysTokens.successText : DefensysTokens.warningText,
             ),
@@ -5079,22 +6201,45 @@ class _ReviewStatusPill extends StatelessWidget {
   }
 }
 
-class _EvidenceDetailsPanel extends ConsumerWidget {
+class _EvidenceDetailsPanel extends ConsumerStatefulWidget {
   final Map<String, dynamic>? log;
 
   const _EvidenceDetailsPanel({required this.log});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final item = log;
+  ConsumerState<_EvidenceDetailsPanel> createState() => _EvidenceDetailsPanelState();
+}
+
+class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
+  int _inspectorTab = 0; // 0 = Visual Inspection, 1 = Raw JSON Payload
+
+  @override
+  Widget build(BuildContext context) {
+    final item = widget.log;
     final status = item?['review_status']?.toString() ?? '';
     final isReviewed = status == 'reviewed';
+    final category = item?['category']?.toString() ?? '';
+    final action = item?['action']?.toString() ?? '';
+    final targetType = item?['target_type']?.toString() ?? '';
 
-    return DefensysCard(
-      padding: const EdgeInsets.all(20),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+        border: Border.all(color: DefensysTokens.border),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x06000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Panel Header
           Row(
             children: [
               Container(
@@ -5106,27 +6251,31 @@ class _EvidenceDetailsPanel extends ConsumerWidget {
                 child: const Icon(
                   Icons.description_outlined,
                   color: DefensysTokens.maroon,
-                  size: 18,
+                  size: 16,
                 ),
               ),
               const SizedBox(width: 8),
-              Expanded(
+              const Expanded(
                 child: Text(
-                  'Evidence Packet Preview',
-                  style: DefensysUi.sectionTitle,
+                  'Evidence Packet Review',
+                  style: TextStyle(
+                    fontSize: 14.5,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textDark,
+                  ),
                 ),
               ),
               if (item != null)
                 InkWell(
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: '${item['id']}'));
-                    showSuccessToast(context, 'Log ID copied to clipboard');
+                    showSuccessToast(context, 'Log ID #${item['id']} copied to clipboard');
                   },
                   borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
-                      color: DefensysTokens.neutralBg,
+                      color: const Color(0xFFF1F5F9),
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
                       border: Border.all(color: DefensysTokens.border),
                     ),
@@ -5134,7 +6283,7 @@ class _EvidenceDetailsPanel extends ConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'ID: #${item['id'] ?? '-'}',
+                          '#${item['id'] ?? '-'}',
                           style: const TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -5142,81 +6291,655 @@ class _EvidenceDetailsPanel extends ConsumerWidget {
                           ),
                         ),
                         const SizedBox(width: 4),
-                        const Icon(Icons.copy_rounded, size: 12, color: DefensysTokens.steelGrey),
+                        const Icon(Icons.copy_rounded, size: 11, color: DefensysTokens.steelGrey),
                       ],
                     ),
                   ),
                 ),
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 14),
+
           if (item == null)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 30),
+              padding: EdgeInsets.symmetric(vertical: 36),
               child: Center(
                 child: Text(
-                  'Select an audit record to review its detailed evidence packet.',
-                  style: TextStyle(color: DefensysTokens.steelGrey),
+                  'Select an audit record to inspect its detailed evidence packet.',
+                  style: TextStyle(color: DefensysTokens.steelGrey, fontSize: 12.5),
                 ),
               ),
             )
           else ...[
-            _DetailLine('Responsible User', item['actor_name'] ?? 'System'),
-            _DetailLine('Timestamp', _dateTime(item['created_at'])),
-            _DetailLine('Process Area', item['category_label']),
-            _DetailLine('Action', item['action']),
-            _DetailLine(
-              'Target Resource',
-              '${item['target_type'] ?? 'Resource'} #${item['target_id'] ?? '-'}',
+            // Status Verification Action Bar
+            Row(
+              children: [
+                Expanded(
+                  child: isReviewed
+                      ? OutlinedButton.icon(
+                          onPressed: () async {
+                            final ok = await ref
+                                .read(systemAuditProvider.notifier)
+                                .updateReviewStatus(item['id'] as int, 'needs_review');
+                            if (context.mounted && ok) {
+                              showSuccessToast(context, 'Log status reverted to Needs Review.');
+                            }
+                          },
+                          icon: const Icon(Icons.undo_rounded, size: 14),
+                          label: const Text('Revert to Needs Review', style: TextStyle(fontSize: 11.5)),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: DefensysTokens.warningText,
+                            side: const BorderSide(color: DefensysTokens.warningBorder),
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                          ),
+                        )
+                      : FilledButton.icon(
+                          onPressed: () async {
+                            final ok = await ref
+                                .read(systemAuditProvider.notifier)
+                                .updateReviewStatus(item['id'] as int, 'reviewed');
+                            if (context.mounted && ok) {
+                              showSuccessToast(context, 'Audit evidence verified and marked as Reviewed!');
+                            }
+                          },
+                          icon: const Icon(Icons.check_circle_rounded, size: 14),
+                          label: const Text('Verify & Mark as Reviewed', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: DefensysTokens.successText,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 8),
+                            elevation: 0,
+                          ),
+                        ),
+                ),
+              ],
             ),
-            _DetailLine('Review Status', item['review_status_label']),
-            _DetailLine('Reason Note', item['reason']),
             const SizedBox(height: 12),
-            SizedBox(
-              width: double.infinity,
-              height: 38,
-              child: isReviewed
-                  ? OutlinedButton.icon(
-                      onPressed: () async {
-                        final ok = await ref
-                            .read(systemAuditProvider.notifier)
-                            .updateReviewStatus(item['id'] as int, 'needs_review');
-                        if (context.mounted && ok) {
-                          showSuccessToast(context, 'Log status reverted to Needs Review.');
-                        }
-                      },
-                      icon: const Icon(Icons.undo_rounded, size: 16),
-                      label: const Text('Mark as Needs Review'),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: DefensysTokens.warningText,
-                        side: const BorderSide(color: DefensysTokens.warningBorder),
-                      ),
-                    )
-                  : FilledButton.icon(
-                      onPressed: () async {
-                        final ok = await ref
-                            .read(systemAuditProvider.notifier)
-                            .updateReviewStatus(item['id'] as int, 'reviewed');
-                        if (context.mounted && ok) {
-                          showSuccessToast(context, 'Audit log verified & marked as Reviewed!');
-                        }
-                      },
-                      icon: const Icon(Icons.check_circle_rounded, size: 16),
-                      label: const Text('Mark as Reviewed'),
-                      style: FilledButton.styleFrom(
-                        backgroundColor: DefensysTokens.successText,
-                        foregroundColor: Colors.white,
-                      ),
-                    ),
+
+            // Metadata summary block
+            Container(
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Column(
+                children: [
+                  _DetailLine('Responsible User', item['actor_name'] ?? 'System'),
+                  _DetailLine('Timestamp', _dateTime(item['created_at'])),
+                  _DetailLine('Process Area', item['category_label'] ?? item['category']),
+                  _DetailLine('Action Type', item['action']),
+                  _DetailLine('Target Resource', '${item['target_type'] ?? 'Resource'} #${item['target_id'] ?? '-'}'),
+                  if (item['reason'] != null && item['reason'].toString().trim().isNotEmpty)
+                    _DetailLine('Audit Reason', item['reason']),
+                ],
+              ),
             ),
             const SizedBox(height: 14),
 
-            // Visual Diff Viewer
-            _VisualDiffViewer(
-              oldValues: item['old_values'],
-              newValues: item['new_values'],
+            // Rich Domain Evidence Viewers
+            if (category == 'repository' || action.startsWith('repository.') || targetType == 'ArchiveEntry' || targetType == 'VaultEntry')
+              _ArchiveFileEvidenceCard(log: item)
+            else if (action.contains('rubric') || targetType == 'Rubric' || (category == 'grade_center' && action.contains('rubric')))
+              _RubricConfigEvidenceCard(log: item)
+            else if (action.contains('grade') || targetType.contains('Grade') || action.contains('scoring'))
+              _GradeDecisionEvidenceCard(log: item)
+            else if (action.contains('schedule') || category == 'scheduling' || targetType == 'DefenseSchedule')
+              _ScheduleEvidenceCard(log: item)
+            else if (action.contains('guest') || action.contains('user') || category == 'guest_access' || category == 'user_management')
+              _UserAccessEvidenceCard(log: item)
+            else
+              _GenericEvidenceCard(log: item),
+
+            const SizedBox(height: 14),
+
+            // Interactive Tab Bar for Change Diff vs Raw JSON Payload
+            Container(
+              height: 32,
+              padding: const EdgeInsets.all(2),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF1F5F9),
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _inspectorTab = 0),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _inspectorTab == 0 ? Colors.white : Colors.transparent,
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        ),
+                        child: Text(
+                          'Visual Change Diff',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: _inspectorTab == 0 ? FontWeight.w700 : FontWeight.w500,
+                            color: _inspectorTab == 0 ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: InkWell(
+                      onTap: () => setState(() => _inspectorTab = 1),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                      child: Container(
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: _inspectorTab == 1 ? Colors.white : Colors.transparent,
+                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        ),
+                        child: Text(
+                          'Raw Audit JSON',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: _inspectorTab == 1 ? FontWeight.w700 : FontWeight.w500,
+                            color: _inspectorTab == 1 ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+
+            if (_inspectorTab == 0)
+              _VisualDiffViewer(
+                oldValues: item['old_values'],
+                newValues: item['new_values'],
+              )
+            else
+              _RawJsonInspector(log: item),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Rich Evidence Card: Archive & Project Repository Files
+class _ArchiveFileEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _ArchiveFileEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
+    final fileName = newVals['file_name']?.toString() ?? 'Document_${log['target_id']}.pdf';
+    final fileSize = newVals['file_size']?.toString() ?? 'Official PDF Document';
+    final track = newVals['track']?.toString() ?? newVals['entry_type']?.toString() ?? 'Repository Entry';
+    final yearLevel = newVals['year_level']?.toString() ?? '';
+    final status = newVals['status']?.toString() ?? 'Approved';
+    final replaced = newVals['replaced_existing'] == true;
+    final teamId = newVals['team_id']?.toString() ?? '';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF2F2), // Soft maroon tint
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFFECACA)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                ),
+                child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white, size: 20),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      fileName,
+                      style: const TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textDark,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      '$fileSize • $status',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.steelGrey,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          const Divider(height: 1, color: Color(0xFFFCA5A5)),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 4,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
+            children: [
+              Text(
+                'Scope: ${track.toUpperCase()} ${yearLevel.isNotEmpty ? "($yearLevel)" : ""}',
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: DefensysTokens.maroon),
+              ),
+              if (teamId.isNotEmpty)
+                Text(
+                  'Team ID: #$teamId',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: replaced ? DefensysTokens.warningBg : DefensysTokens.successBg,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                ),
+                child: Text(
+                  replaced ? 'Version Overwrite' : 'New Upload',
+                  style: TextStyle(
+                    fontSize: 9.5,
+                    fontWeight: FontWeight.w700,
+                    color: replaced ? DefensysTokens.warningText : DefensysTokens.successText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Rich Evidence Card: Rubric & Assessment Configuration
+class _RubricConfigEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _RubricConfigEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
+    final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
+    final name = newVals['name']?.toString() ?? oldVals['name']?.toString() ?? 'Rubric #${log['target_id']}';
+    final scope = newVals['scope']?.toString() ?? oldVals['scope']?.toString() ?? 'Academic Rubric';
+    final evalType = newVals['evaluation_type']?.toString() ?? oldVals['evaluation_type']?.toString() ?? 'Assessment';
+    final semester = newVals['semester']?.toString() ?? oldVals['semester']?.toString() ?? '';
+    final status = newVals['status']?.toString() ?? (log['action'].toString().contains('publish') ? 'Published & Locked' : 'Configured');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0FDF4), // Soft emerald tint
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFBBF7D0)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.successText,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                ),
+                child: const Icon(Icons.rule_folder_outlined, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      name,
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textDark,
+                      ),
+                    ),
+                    Text(
+                      '${scope.toUpperCase()} • $evalType Evaluation ${semester.isNotEmpty ? "($semester)" : ""}',
+                      style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  border: Border.all(color: const Color(0xFF86EFAC)),
+                ),
+                child: Text(
+                  status,
+                  style: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.successText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          // Weight breakdown bar
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+              border: Border.all(color: const Color(0xFFDCFCE7)),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceAround,
+              children: [
+                _MiniWeightTag('Panelist Weight', '50%', DefensysTokens.maroon),
+                _MiniWeightTag('Adviser Weight', '30%', DefensysTokens.darkGold),
+                _MiniWeightTag('Peer Review', '20%', DefensysTokens.techBlue),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniWeightTag extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MiniWeightTag(this.label, this.value, this.color);
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
+        Text(label, style: const TextStyle(fontSize: 9.5, color: DefensysTokens.steelGrey)),
+      ],
+    );
+  }
+}
+
+/// Rich Evidence Card: Grade & Result Decisions
+class _GradeDecisionEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _GradeDecisionEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
+    final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
+    final grade = newVals['final_grade']?.toString() ?? newVals['grade']?.toString() ?? oldVals['final_grade']?.toString() ?? '-';
+    final stage = newVals['stage_label']?.toString() ?? newVals['event_name']?.toString() ?? 'Evaluation';
+    final status = newVals['status']?.toString() ?? 'Finalized';
+    final isPassed = !grade.toLowerCase().contains('fail') && !status.toLowerCase().contains('redefense');
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFEFF6FF), // Soft blue tint
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFBFDBFE)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(7),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.techBlue,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                ),
+                child: const Icon(Icons.school_outlined, color: Colors.white, size: 18),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Official Grade Decision: $stage',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textDark,
+                      ),
+                    ),
+                    Text(
+                      'Target Grade Resource #${log['target_id']}',
+                      style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isPassed ? DefensysTokens.successBg : DefensysTokens.dangerBg,
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                  border: Border.all(color: isPassed ? DefensysTokens.successBorder : DefensysTokens.dangerBorder),
+                ),
+                child: Text(
+                  isPassed ? 'Passed ($grade)' : 'Verdict: $status',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: isPassed ? DefensysTokens.successText : DefensysTokens.dangerText,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (oldVals.isNotEmpty && oldVals['final_grade'] != null && oldVals['final_grade'] != newVals['final_grade']) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+              ),
+              child: Row(
+                children: [
+                  const Text('Score Adjustment: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey)),
+                  Text('${oldVals['final_grade']}', style: const TextStyle(fontSize: 11, decoration: TextDecoration.lineThrough, color: DefensysTokens.dangerText)),
+                  const Icon(Icons.arrow_forward_rounded, size: 12, color: DefensysTokens.steelGrey),
+                  Text('${newVals['final_grade']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: DefensysTokens.successText)),
+                ],
+              ),
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+/// Rich Evidence Card: Defense Schedules
+class _ScheduleEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _ScheduleEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
+    final stage = newVals['stage_label']?.toString() ?? 'Defense Event';
+    final room = newVals['room']?.toString() ?? newVals['venue']?.toString() ?? 'Designated Room';
+    final status = newVals['status']?.toString() ?? 'Scheduled';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBEB), // Soft gold tint
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFFDE68A)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: DefensysTokens.darkGold,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+            ),
+            child: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Defense Schedule • $stage',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textDark,
+                  ),
+                ),
+                Text(
+                  'Venue: $room • Status: $status',
+                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Rich Evidence Card: User Access & Guest Tokens
+class _UserAccessEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _UserAccessEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
+    final username = newVals['username']?.toString() ?? newVals['name']?.toString() ?? 'Account #${log['target_id']}';
+    final role = newVals['role']?.toString() ?? 'User Account';
+
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF5F3FF), // Soft purple tint
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFDDD6FE)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C3AED),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+            ),
+            child: const Icon(Icons.badge_outlined, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  username,
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textDark,
+                  ),
+                ),
+                Text(
+                  'Assigned Role / Permission: $role',
+                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Generic Evidence Card
+class _GenericEvidenceCard extends StatelessWidget {
+  final Map<String, dynamic> log;
+
+  const _GenericEvidenceCard({required this.log});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: DefensysTokens.border),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: DefensysTokens.steelGrey,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+            ),
+            child: const Icon(Icons.verified_outlined, color: Colors.white, size: 18),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  log['category_label']?.toString() ?? 'System Event',
+                  style: const TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textDark,
+                  ),
+                ),
+                Text(
+                  'Action: ${log['action']} on ${log['target_type']} #${log['target_id']}',
+                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -5240,27 +6963,17 @@ class _VisualDiffViewer extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Text(
-          'Evidence Changes & Diff Log',
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w700,
-            color: DefensysTokens.steelGrey,
-          ),
-        ),
-        const SizedBox(height: 8),
-
         // Old Values Block
         _DiffBlock(
-          title: 'Previous Evidence',
+          title: 'Previous State (Before)',
           dataMap: oldMap,
           isOld: true,
         ),
-        const SizedBox(height: 10),
+        const SizedBox(height: 8),
 
         // New Values Block
         _DiffBlock(
-          title: 'New Evidence',
+          title: 'New Applied State (After)',
           dataMap: newMap,
           isOld: false,
         ),
@@ -5301,30 +7014,30 @@ class _DiffBlock extends StatelessWidget {
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
         border: Border.all(color: border),
       ),
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(icon, size: 14, color: headerColor),
+              Icon(icon, size: 13, color: headerColor),
               const SizedBox(width: 6),
               Text(
                 title,
                 style: TextStyle(
-                  fontSize: 11.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w800,
                   color: headerColor,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           if (dataMap.isEmpty)
             Text(
-              isOld ? 'No previous evidence recorded (Initial creation)' : 'No new evidence payload',
+              isOld ? 'No previous record (Initial Creation)' : 'No modified fields payload',
               style: const TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 color: DefensysTokens.steelGrey,
                 fontStyle: FontStyle.italic,
               ),
@@ -5333,28 +7046,28 @@ class _DiffBlock extends StatelessWidget {
             Column(
               children: dataMap.entries.map((entry) {
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 4),
+                  padding: const EdgeInsets.only(bottom: 3),
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       SizedBox(
-                        width: 120,
+                        width: 110,
                         child: Text(
                           entry.key,
                           style: TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 11,
                             fontWeight: FontWeight.w700,
                             color: headerColor,
                           ),
                         ),
                       ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 6),
                       Expanded(
                         child: SelectableText(
                           '${entry.value}',
                           style: const TextStyle(
                             fontFamily: 'monospace',
-                            fontSize: 11.5,
+                            fontSize: 11,
                             color: DefensysTokens.textDark,
                           ),
                         ),
@@ -5370,20 +7083,80 @@ class _DiffBlock extends StatelessWidget {
   }
 }
 
-class _FormSectionLabel extends StatelessWidget {
-  final String label;
+class _RawJsonInspector extends StatelessWidget {
+  final Map<String, dynamic> log;
 
-  const _FormSectionLabel(this.label);
+  const _RawJsonInspector({required this.log});
 
   @override
   Widget build(BuildContext context) {
-    return Text(
-      label,
-      style: const TextStyle(
-        fontSize: 10.5,
-        fontWeight: FontWeight.w800,
-        color: DefensysTokens.steelGrey,
-        letterSpacing: 0.5,
+    final encoder = const JsonEncoder.withIndent('  ');
+    final formattedJson = encoder.convert(log);
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0F172A), // Dark slate terminal
+        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Row(
+                children: [
+                  Icon(Icons.code_rounded, size: 14, color: Color(0xFF94A3B8)),
+                  SizedBox(width: 6),
+                  Text(
+                    'Audit Event Payload (JSON)',
+                    style: TextStyle(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.bold,
+                      color: Color(0xFF94A3B8),
+                    ),
+                  ),
+                ],
+              ),
+              InkWell(
+                onTap: () {
+                  Clipboard.setData(ClipboardData(text: formattedJson));
+                  showSuccessToast(context, 'Raw JSON payload copied to clipboard');
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.copy_rounded, size: 12, color: Color(0xFF38BDF8)),
+                      SizedBox(width: 4),
+                      Text(
+                        'Copy JSON',
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.bold,
+                          color: Color(0xFF38BDF8),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          SelectableText(
+            formattedJson,
+            style: const TextStyle(
+              fontFamily: 'monospace',
+              fontSize: 10.5,
+              color: Color(0xFFF1F5F9),
+              height: 1.4,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -5399,16 +7172,16 @@ class _DetailLine extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = value?.toString().trim() ?? '';
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.only(bottom: 6),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           SizedBox(
-            width: 120,
+            width: 110,
             child: Text(
               label,
               style: const TextStyle(
-                fontSize: 12,
+                fontSize: 11.5,
                 color: DefensysTokens.steelGrey,
                 fontWeight: FontWeight.w600,
               ),
@@ -5418,7 +7191,7 @@ class _DetailLine extends StatelessWidget {
             child: Text(
               text.isEmpty ? '-' : text,
               style: const TextStyle(
-                fontSize: 13,
+                fontSize: 12,
                 color: DefensysTokens.textDark,
                 fontWeight: FontWeight.w500,
               ),
@@ -5460,63 +7233,31 @@ class _AuditMessage extends StatelessWidget {
   }
 }
 
-class _FilterDropdown extends StatelessWidget {
+class _FormSectionLabel extends StatelessWidget {
   final String label;
-  final String value;
-  final dynamic options;
-  final ValueChanged<String> onChanged;
 
-  const _FilterDropdown({
-    required this.label,
-    required this.value,
-    required this.options,
-    required this.onChanged,
-  });
+  const _FormSectionLabel(this.label);
 
   @override
   Widget build(BuildContext context) {
-    final items = <Map<String, dynamic>>[
-      {'value': '', 'label': 'All $label'},
-      ...List<Map<String, dynamic>>.from(options ?? const []),
-    ];
-    return DropdownButtonFormField<String>(
-      initialValue: value,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        border: const OutlineInputBorder(),
-        isDense: true,
+    return Text(
+      label,
+      style: const TextStyle(
+        fontSize: 10.5,
+        fontWeight: FontWeight.w800,
+        color: DefensysTokens.steelGrey,
+        letterSpacing: 0.5,
       ),
-      items: items
-          .map(
-            (item) => DropdownMenuItem<String>(
-              value: item['value']?.toString() ?? '',
-              child: Text(
-                item['label']?.toString() ?? '',
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )
-          .toList(),
-      selectedItemBuilder: (context) => items
-          .map(
-            (item) => Text(
-              item['label']?.toString() ?? '',
-              overflow: TextOverflow.ellipsis,
-            ),
-          )
-          .toList(),
-      onChanged: (next) => onChanged(next ?? ''),
     );
   }
 }
 
 const _categoryOptions = [
-  {'value': 'academic_period', 'label': 'Academic Period Changes'},
-  {'value': 'grade_center', 'label': 'Grade & Result Decisions'},
-  {'value': 'scheduling', 'label': 'Schedule Changes'},
-  {'value': 'repository', 'label': 'Project Archive Evidence'},
-  {'value': 'guest_access', 'label': 'Guest Access Activity'},
+  {'value': 'academic_period', 'label': 'Academic Periods'},
+  {'value': 'grade_center', 'label': 'Grade & Rubrics'},
+  {'value': 'scheduling', 'label': 'Defense Schedules'},
+  {'value': 'repository', 'label': 'Archive & Vault'},
+  {'value': 'guest_access', 'label': 'Guest Access'},
 ];
 
 int _count(dynamic value, {int fallback = 0}) {

@@ -1,64 +1,29 @@
-import os
-from io import BytesIO
 from datetime import datetime
-from django.conf import settings
-from reportlab.lib.pagesizes import letter
-from reportlab.lib import colors
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image, HRFlowable
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-
-from reports.pdf_styles import (
-    get_official_header_image,
-    NumberedCanvas,
-    defensys_styles,
-    defensys_official_header,
-    defensys_metadata_grid,
-    defensys_signatures_block,
-    defensys_table_style,
-)
-
-MAROON = colors.HexColor('#7A110A')
-GOLD = colors.HexColor('#D4A843')
-TEXT_DARK = colors.HexColor('#1E293B')
-TEXT_MUTED = colors.HexColor('#64748B')
-BORDER_LIGHT = colors.HexColor('#E2E8F0')
-BG_LIGHT = colors.HexColor('#F8FAFC')
+from reports.pdf_builder import DefensysPdfReportBuilder
 
 
-def generate_minutes_pdf(minutes):
+def generate_minutes_pdf(minutes, signatories=None, include_signatures=True):
     """
     Generates an official USTP DIT PDF for the completed defense minutes matching Minutes-Defense-TEMPLATE.pdf.
 
     Args:
         minutes: DefenseMinutes object
+        signatories: list of custom signers
+        include_signatures: bool
 
     Returns:
         bytes: PDF content
     """
-    buffer = BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        topMargin=0.4 * inch,
-        bottomMargin=0.55 * inch,
-        leftMargin=0.5 * inch,
-        rightMargin=0.5 * inch,
+    builder = DefensysPdfReportBuilder(
+        title="Project Final Oral Defense Minutes of Team",
+        subtitle=f"[{minutes.team_name or 'Student Team'}]",
+        generated_by=minutes.documenter_name or 'Defense Documenter',
+        show_sidebar=True,
     )
-    
-    doc.generated_by = minutes.documenter_name or 'Defense Documenter'
-    doc.generated_at = datetime.now().strftime('%Y-%m-%d %I:%M %p')
-    
-    story = []
-    styles = defensys_styles()
 
     # 1. Official Header Banner & Document Title
-    defensys_official_header(
-        story=story,
-        title=f"Project Final Oral Defense Minutes of Team",
-        subtitle=f"[{minutes.team_name or 'Student Team'}]"
-    )
+    builder.add_header()
 
     # 2. Defense Information Metadata Grid
     def format_time(t):
@@ -89,50 +54,49 @@ def generate_minutes_pdf(minutes):
         ("Capstone Adviser", minutes.adviser_name or 'N/A'),
         ("Panel Members", panelists_str),
     ]
-    story.append(defensys_metadata_grid(metadata_rows, width=7.1*inch))
-    story.append(Spacer(1, 0.12 * inch))
+    builder.add_metadata_grid(metadata_rows)
 
     # 3. Panelist Comments / Suggestions Table
-    story.append(Paragraph("PANELIST COMMENTS & SUGGESTIONS", styles['SectionHeader']))
-    story.append(Spacer(1, 0.04 * inch))
+    builder.add_section_header("PANELIST COMMENTS & SUGGESTIONS")
 
-    comment_headers = [
-        Paragraph("<b>PANELIST</b>", styles['TableHeader']),
-        Paragraph("<b>COMMENTS / SUGGESTIONS</b>", styles['TableHeader']),
+    headers = [
+        "PANELIST",
+        "COMMENTS / SUGGESTIONS",
     ]
-    
-    comment_rows = [comment_headers]
+
+    rows = []
     for c in comments:
         role_tag = f" ({c.panelist_role_snapshot})" if c.panelist_role_snapshot else ""
         panelist_label = f"<b>{c.panelist_name_snapshot or 'Panelist'}</b>{role_tag}"
         comments_html = c.comments.replace('\n', '<br/>') if c.comments else "<i>No specific comments recorded.</i>"
-        
-        comment_rows.append([
-            Paragraph(panelist_label, styles['TableCellBold']),
-            Paragraph(comments_html, styles['TableCell']),
+        rows.append([
+            panelist_label,
+            comments_html,
         ])
 
-    if len(comment_rows) == 1:
-        comment_rows.append([
-            Paragraph("Panelists", styles['TableCell']),
-            Paragraph("<i>All panelists endorsed the project presentation without major revisions.</i>", styles['TableCell'])
+    if not rows:
+        rows.append([
+            "Panelists",
+            "<i>All panelists endorsed the project presentation without major revisions.</i>",
         ])
 
-    comments_table = Table(comment_rows, colWidths=[2.2 * inch, 4.9 * inch])
-    comments_table.setStyle(defensys_table_style())
-    story.append(comments_table)
-
-    # 4. Certification & Signatures Section
-    defensys_signatures_block(
-        story=story,
-        prepared_by=minutes.documenter_name or "Documenter",
-        noted_by=minutes.adviser_name or "Capstone Adviser",
-        approved_by="IT Program Chairperson"
+    builder.add_table(
+        headers=headers,
+        rows=rows,
+        col_widths=[1.8 * inch, builder.usable_width - 1.8 * inch],
+        bold_cols=[0],
     )
 
-    # Build document
-    doc.build(story, canvasmaker=NumberedCanvas)
-    pdf_content = buffer.getvalue()
-    buffer.close()
+    # 4. Certification & Signatures Section
+    builder.add_signatures(
+        prepared_by=minutes.documenter_name or "Documenter",
+        prepared_role="Documenter / Evaluator",
+        noted_by=minutes.adviser_name or "Capstone Adviser",
+        noted_role="Capstone Adviser / Panel Chair",
+        approved_by="IT Program Chairperson",
+        approved_role="IT Program Chairperson",
+        signatories=signatories,
+        include_signatures=include_signatures,
+    )
 
-    return pdf_content
+    return builder.build()

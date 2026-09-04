@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:excel/excel.dart' as xl;
@@ -106,12 +107,57 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   bool _isProcessing = false;
   int _totalValidRows = 0;
 
+  StreamSubscription? _dropSubscription;
+  bool _isDraggingFile = false;
+
   @override
   void initState() {
     super.initState();
     _stagedFiles.addAll(widget.initialFiles);
     _activeImportMode = widget.importMode;
     _reinspectAllFiles();
+
+    _dropSubscription = setupDropzoneListener(
+      _handleDroppedFiles,
+      onDragStateChanged: (isDragging) {
+        if (mounted && _isDraggingFile != isDragging) {
+          setState(() => _isDraggingFile = isDragging);
+        }
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _dropSubscription?.cancel();
+    super.dispose();
+  }
+
+  void _handleDroppedFiles(List<PickedTabularFile> files) {
+    if (!mounted || files.isEmpty) return;
+    int addedCount = 0;
+    setState(() {
+      for (final f in files) {
+        final exists = _stagedFiles.any(
+          (existing) => existing.name == f.name && existing.bytes.length == f.bytes.length,
+        );
+        if (!exists) {
+          _stagedFiles.add(f);
+          addedCount++;
+        }
+      }
+      _reinspectAllFiles();
+    });
+
+    if (mounted && addedCount > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('$addedCount file(s) added to staged imports.'),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    }
   }
 
   void _reinspectAllFiles() {
@@ -134,8 +180,21 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
     try {
       if (file.isXlsx) {
         return _inspectXlsxFile(file, importMode);
-      } else {
+      } else if (file.isCsv) {
         return _inspectCsvFile(file, importMode);
+      } else {
+        final extLabel = file.extension.isNotEmpty ? file.extension.toUpperCase() : 'Unsupported';
+        final isStudent = importMode == 'student';
+        return StagedFileInfo(
+          file: file,
+          formatLabel: '$extLabel File',
+          isValid: false,
+          rowCount: 0,
+          detectedImportMode: importMode,
+          warning: isStudent
+              ? 'Unsupported file format (.${file.extension.toLowerCase()}). DefenSYS requires official student class lists in .csv or .xlsx format.'
+              : 'Unsupported file format (.${file.extension.toLowerCase()}). DefenSYS requires faculty spreadsheets in .csv or .xlsx format.',
+        );
       }
     } catch (e) {
       return StagedFileInfo(
@@ -624,6 +683,28 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
               // 1. Header
               _buildHeader(context),
 
+              if (_isDraggingFile)
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+                  color: const Color(0xFFFEF2F2),
+                  child: const Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.file_download_rounded, color: DefensysTokens.maroon, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Drop file(s) anywhere to add to staging',
+                        style: TextStyle(
+                          color: DefensysTokens.maroon,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+
               const Divider(height: 1, color: DefensysTokens.border),
 
               // 2. Summary Info Bar
@@ -839,7 +920,10 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
 
     String entityCountText;
     if (isInvalid) {
-      entityCountText = 'Incompatible Format (0 ${_activeImportMode == 'student' ? 'student' : 'faculty'} records)';
+      final isNonTabular = !info.file.isCsv && !info.file.isXlsx;
+      entityCountText = isNonTabular
+          ? 'Unsupported File Format (0 records)'
+          : 'Incompatible Format (0 ${_activeImportMode == 'student' ? 'student' : 'faculty'} records)';
     } else if (isFaculty) {
       entityCountText = '${info.rowCount} ${info.rowCount == 1 ? 'faculty' : 'faculty'}';
     } else if (isUsers) {
@@ -1114,41 +1198,56 @@ class _FileImportStagingModalState extends State<FileImportStagingModal> {
   }
 
   Widget _buildAddMoreButton() {
-    final addLabel = _stagedFiles.isEmpty
-        ? 'Select file(s) to import'
-        : (_activeImportMode == 'student'
-            ? 'Add another class section or file'
-            : 'Add another faculty/staff file');
+    final addLabel = _isDraggingFile
+        ? 'Drop file(s) here to add to staging'
+        : (_stagedFiles.isEmpty
+            ? 'Select file(s) to import'
+            : (_activeImportMode == 'student'
+                ? 'Add another class section or file'
+                : 'Add another faculty/staff file'));
 
     return InkWell(
       onTap: _isProcessing ? null : _handleAddMoreFiles,
       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
         padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 16),
         decoration: BoxDecoration(
-          color: DefensysTokens.background,
+          color: _isDraggingFile ? const Color(0xFFFEF2F2) : DefensysTokens.background,
           borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
           border: Border.all(
-            color: const Color(0xFFCBD5E1),
+            color: _isDraggingFile ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+            width: _isDraggingFile ? 1.8 : 1.0,
             style: BorderStyle.solid,
           ),
+          boxShadow: _isDraggingFile
+              ? [
+                  BoxShadow(
+                    color: DefensysTokens.maroon.withValues(alpha: 0.12),
+                    blurRadius: 10,
+                    spreadRadius: 1,
+                  ),
+                ]
+              : null,
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(
-              Icons.add_circle_outline_rounded,
+            Icon(
+              _isDraggingFile
+                  ? Icons.file_download_rounded
+                  : Icons.add_circle_outline_rounded,
               size: 16,
               color: DefensysTokens.maroon,
             ),
             const SizedBox(width: 8),
             Text(
               addLabel,
-              style: const TextStyle(
+              style: TextStyle(
                 fontFamily: DefensysTokens.fontFamily,
                 color: DefensysTokens.maroon,
                 fontSize: 13,
-                fontWeight: FontWeight.w700,
+                fontWeight: _isDraggingFile ? FontWeight.w800 : FontWeight.w700,
               ),
             ),
           ],

@@ -69,17 +69,50 @@ class _BulkImportViewState extends State<BulkImportView> {
 
   bool get _isDirty => _stagedFiles.isNotEmpty || _parsedFacultyRows.isNotEmpty;
 
+  StreamSubscription? _dropSubscription;
+  bool _isDraggingFile = false;
+
   @override
   void initState() {
     super.initState();
     _loadDraft();
+
+    _dropSubscription = setupDropzoneListener(
+      _handleFilesDropped,
+      onDragStateChanged: (isDragging) {
+        if (mounted && _isDraggingFile != isDragging) {
+          setState(() => _isDraggingFile = isDragging);
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _dropSubscription?.cancel();
     _draftDebounce?.cancel();
     _searchCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleFilesDropped(List<PickedTabularFile> files) async {
+    if (!mounted || files.isEmpty) return;
+    try {
+      final merged = List<PickedTabularFile>.from(_stagedFiles);
+      for (final file in files) {
+        final exists = merged.any(
+          (existing) => existing.name == file.name && existing.bytes.length == file.bytes.length,
+        );
+        if (!exists) {
+          merged.add(file);
+        }
+      }
+      await _openStagingModal(merged);
+    } catch (e) {
+      if (mounted) {
+        showErrorToast(context, 'Could not process dropped file(s): $e');
+      }
+    }
   }
 
   Future<void> _loadDraft() async {
@@ -1235,17 +1268,31 @@ class _BulkImportViewState extends State<BulkImportView> {
             const SizedBox(height: 14),
 
             // Staged Files Container or Dropzone
-            if (_stagedFiles.isEmpty)
+            if (_stagedFiles.isEmpty || _isDraggingFile)
               InkWell(
                 onTap: widget.state.isSaving ? null : _pickFiles,
                 borderRadius: BorderRadius.circular(10),
-                child: Container(
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 200),
                   width: double.infinity,
                   padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
                   decoration: BoxDecoration(
-                    color: const Color(0xFFFAFAFA),
+                    color: _isDraggingFile ? const Color(0xFFFEF2F2) : const Color(0xFFFAFAFA),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: _line, style: BorderStyle.solid),
+                    border: Border.all(
+                      color: _isDraggingFile ? _maroon : _line,
+                      width: _isDraggingFile ? 2.0 : 1.0,
+                      style: BorderStyle.solid,
+                    ),
+                    boxShadow: _isDraggingFile
+                        ? [
+                            BoxShadow(
+                              color: _maroon.withValues(alpha: 0.12),
+                              blurRadius: 12,
+                              spreadRadius: 1,
+                            ),
+                          ]
+                        : null,
                   ),
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -1253,24 +1300,35 @@ class _BulkImportViewState extends State<BulkImportView> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: _maroon.withValues(alpha: 0.08),
+                          color: _maroon.withValues(alpha: _isDraggingFile ? 0.15 : 0.08),
                           shape: BoxShape.circle,
                         ),
-                        child: const Icon(Icons.cloud_upload_outlined, color: _maroon, size: 24),
+                        child: Icon(
+                          _isDraggingFile ? Icons.file_download_rounded : Icons.cloud_upload_outlined,
+                          color: _maroon,
+                          size: 26,
+                        ),
                       ),
                       const SizedBox(height: 8),
-                      const Text(
-                        'Click to Stage Faculty Spreadsheets',
+                      Text(
+                        _isDraggingFile
+                            ? 'Drop Faculty Spreadsheets (.csv / .xlsx) Here'
+                            : 'Drag & drop or click to stage faculty spreadsheets',
                         style: TextStyle(
                           fontSize: 13,
                           fontWeight: FontWeight.w700,
-                          color: _ink,
+                          color: _isDraggingFile ? _maroon : _ink,
                         ),
                       ),
                       const SizedBox(height: 4),
-                      const Text(
-                        'Supports .csv and .xlsx spreadsheets. Multi-file staging supported.',
-                        style: TextStyle(fontSize: 11.5, color: _muted),
+                      Text(
+                        _isDraggingFile
+                            ? 'Release to automatically inspect and stage multiple files at once'
+                            : 'Supports .csv and .xlsx spreadsheets. Multi-file staging supported.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          color: _isDraggingFile ? _maroon : _muted,
+                        ),
                       ),
                     ],
                   ),

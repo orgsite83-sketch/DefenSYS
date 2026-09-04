@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../network/authenticated_client.dart';
+import '../app/dashboard_provider.dart';
+import 'defense_board_provider.dart';
 
 final defenseSchedulerProvider =
     NotifierProvider<DefenseSchedulerNotifier, DefenseSchedulerState>(
@@ -266,6 +268,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
         final created = data['created_count'] ?? 0;
         _applyPayload(data, successMessage: '$created schedules saved.');
         state = state.copyWith(generatedSlots: const []);
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -296,6 +299,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
       if (response.statusCode == 201) {
         await fetchSchedules(successMessage: 'Schedule saved.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -339,6 +343,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
 
     await fetchSchedules();
+    await _refreshDependentProviders();
 
     if (errors.isNotEmpty && created == 0) {
       state = state.copyWith(error: errors.first);
@@ -480,6 +485,7 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
 
       if (response.statusCode == 200) {
         await fetchSchedules(successMessage: 'Schedule deleted.');
+        await _refreshDependentProviders();
         return true;
       }
 
@@ -492,6 +498,15 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
       return false;
     }
+  }
+
+  Future<void> _refreshDependentProviders() async {
+    try {
+      await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);
+    } catch (_) {}
+    try {
+      await ref.read(defenseBoardProvider.notifier).fetchBoard();
+    } catch (_) {}
   }
 
   AuthenticatedHttpClient get _client =>

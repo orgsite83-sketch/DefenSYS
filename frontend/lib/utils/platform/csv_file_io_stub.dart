@@ -38,8 +38,10 @@ Future<List<PickedTabularFile>> pickMultipleTabularDataFiles() async {
 }
 
 dynamic setupDropzoneListener(
-  void Function(List<PickedTabularFile> files) onFilesDropped,
-) {
+  void Function(List<PickedTabularFile> files) onFilesDropped, {
+  void Function(bool isDragging)? onDragStateChanged,
+  void Function(List<String> rejectedFileNames)? onRejectedFiles,
+}) {
   return null;
 }
 

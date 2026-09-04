@@ -2028,146 +2028,58 @@ class ScheduleImportDialog {
     }
 
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: const Color(0xFFE5E7EB)),
       ),
       child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: DataTable(
-          headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-          headingTextStyle: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w800,
-            color: Color(0xFF334155),
-          ),
-          columns: [
-            const DataColumn(label: Text('Status')),
-            const DataColumn(label: Text('Time Slot')),
-            const DataColumn(label: Text('Team & Project')),
-            const DataColumn(label: Text('Adviser')),
-            const DataColumn(label: Text('Panel Members')),
-            if (!isPit) const DataColumn(label: Text('Documenter')),
-            const DataColumn(label: Text('Room')),
-            const DataColumn(label: Text('Validation Issues')),
-          ],
-          rows: rows.map((row) {
-            return DataRow(
-              color: WidgetStateProperty.all(
-                row.ready
-                    ? (row.isRedefense
-                        ? const Color(0xFFFAF5FF)
-                        : Colors.white)
-                    : (row.isAlreadyPassed
-                        ? const Color(0xFFF8FAFC)
-                        : const Color(0xFFFFFBEB)),
-              ),
-              cells: [
-                DataCell(_importStatusChip(row)),
-                DataCell(
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF64748B)),
-                      const SizedBox(width: 6),
-                      Text(
-                        row.timeLabel,
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF334155),
-                        ),
-                      ),
-                    ],
-                  ),
+        scrollDirection: Axis.vertical,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: DataTable(
+            dataRowMinHeight: 52,
+            dataRowMaxHeight: double.infinity,
+            headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+            headingTextStyle: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF334155),
+            ),
+            columns: [
+              const DataColumn(label: Text('Status')),
+              const DataColumn(label: Text('Time Slot')),
+              const DataColumn(label: Text('Team & Project')),
+              const DataColumn(label: Text('Adviser')),
+              const DataColumn(label: Text('Panel Members')),
+              if (!isPit) const DataColumn(label: Text('Documenter')),
+              const DataColumn(label: Text('Room')),
+              const DataColumn(label: Text('Validation Issues')),
+            ],
+            rows: rows.map((row) {
+              return DataRow(
+                color: WidgetStateProperty.all(
+                  row.ready
+                      ? (row.isRedefense
+                          ? const Color(0xFFFAF5FF)
+                          : Colors.white)
+                      : (row.isAlreadyPassed
+                          ? const Color(0xFFF8FAFC)
+                          : const Color(0xFFFFFBEB)),
                 ),
-                DataCell(
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text(
-                        row.teamLabel,
-                        style: const TextStyle(
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF1E293B),
-                        ),
-                      ),
-                      if (row.projectLabel.isNotEmpty && row.projectLabel != '-')
-                        Text(
-                          row.projectLabel,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 11,
-                            color: Color(0xFF64748B),
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    row.source.adviser.isNotEmpty ? row.source.adviser : '-',
-                    style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
-                  ),
-                ),
-                DataCell(
-                  Text(
-                    row.panelLabel,
-                    style: const TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.maroon,
-                    ),
-                  ),
-                ),
-                if (!isPit)
+                cells: [
+                  DataCell(_importStatusChip(row)),
                   DataCell(
-                    row.documenterLabel != '-'
-                        ? Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFFEF3C7),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(Icons.edit_note_rounded, size: 13, color: Color(0xFF92400E)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  row.documenterLabel,
-                                  style: const TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: Color(0xFF92400E),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : const Text('-', style: TextStyle(color: Color(0xFF94A3B8))),
-                  ),
-                DataCell(
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
+                    Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(Icons.meeting_room_outlined, size: 13, color: Color(0xFF475569)),
-                        const SizedBox(width: 4),
+                        const Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF64748B)),
+                        const SizedBox(width: 6),
                         Text(
-                          row.room.isNotEmpty ? row.room : 'Unassigned',
+                          row.timeLabel,
                           style: const TextStyle(
-                            fontSize: 11.5,
+                            fontSize: 12,
                             fontWeight: FontWeight.w700,
                             color: Color(0xFF334155),
                           ),
@@ -2175,16 +2087,110 @@ class ScheduleImportDialog {
                       ],
                     ),
                   ),
-                ),
-                DataCell(
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 380),
-                    child: _buildValidationIssuesCell(context, row),
+                  DataCell(
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          row.teamLabel,
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF1E293B),
+                          ),
+                        ),
+                        if (row.projectLabel.isNotEmpty && row.projectLabel != '-')
+                          Text(
+                            row.projectLabel,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            );
-          }).toList(),
+                  DataCell(
+                    Text(
+                      row.source.adviser.isNotEmpty ? row.source.adviser : '-',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF334155)),
+                    ),
+                  ),
+                  DataCell(
+                    Text(
+                      row.panelLabel,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.maroon,
+                      ),
+                    ),
+                  ),
+                  if (!isPit)
+                    DataCell(
+                      row.documenterLabel != '-'
+                          ? Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF3C7),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  const Icon(Icons.edit_note_rounded, size: 13, color: Color(0xFF92400E)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    row.documenterLabel,
+                                    style: const TextStyle(
+                                      fontSize: 11.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: Color(0xFF92400E),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            )
+                          : const Text('-', style: TextStyle(color: Color(0xFF94A3B8))),
+                    ),
+                  DataCell(
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.meeting_room_outlined, size: 13, color: Color(0xFF475569)),
+                          const SizedBox(width: 4),
+                          Text(
+                            row.room.isNotEmpty ? row.room : 'Unassigned',
+                            style: const TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: Color(0xFF334155),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  DataCell(
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 420),
+                      child: _buildValidationIssuesCell(context, row),
+                    ),
+                  ),
+                ],
+              );
+            }).toList(),
+          ),
         ),
       ),
     );
@@ -2212,89 +2218,106 @@ class ScheduleImportDialog {
       );
     }
 
+    final issueWidgets = <Widget>[];
+
+    if (row.stageIssues.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Stage',
+          message: row.stageIssues.join('; '),
+          color: const Color(0xFFB45309),
+          bg: const Color(0xFFFFFBEB),
+          border: const Color(0xFFFDE68A),
+          tooltip: row.scope == 'pit'
+              ? 'Click to configure PIT event in PIT Events Management'
+              : 'Click to configure stage rubrics in Defense Stages Setup',
+          onTap: () {
+            Navigator.pop(context);
+            if (row.scope == 'pit') {
+              context.go(FacultyRoutes.pitEvents);
+            } else if (row.stageId != null) {
+              context.go(AdminRoutes.defenseStageEdit(row.stageId!, initialTab: 1));
+            } else {
+              context.go(AdminRoutes.defenseStages);
+            }
+          },
+        ),
+      );
+    }
+
+    if (row.teamIssues.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Team',
+          message: row.teamIssues.join('; '),
+          color: const Color(0xFFB42318),
+          bg: const Color(0xFFFEF3F2),
+          border: const Color(0xFFFECDCA),
+          tooltip: row.teamId != null
+              ? 'Click to view ${row.teamLabel} details & endorsement status'
+              : 'Click to open Student Teams Hub',
+          onTap: () {
+            Navigator.pop(context);
+            if (row.teamId != null) {
+              context.go(AdminRoutes.teamDetail(row.teamId!));
+            } else {
+              context.go(AdminRoutes.studentTeams);
+            }
+          },
+        ),
+      );
+    }
+
+    if (row.slotIssues.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Slot',
+          message: row.slotIssues.join('; '),
+          color: const Color(0xFF991B1B),
+          bg: const Color(0xFFFEF2F2),
+          border: const Color(0xFFFECACA),
+          tooltip: row.slotIssues.any((s) =>
+                  s.toLowerCase().contains('panel') ||
+                  s.toLowerCase().contains('documenter') ||
+                  s.toLowerCase().contains('faculty'))
+              ? 'Click to open User Management to check faculty accounts'
+              : null,
+          onTap: row.slotIssues.any((s) =>
+                  s.toLowerCase().contains('panel') ||
+                  s.toLowerCase().contains('documenter') ||
+                  s.toLowerCase().contains('faculty'))
+              ? () {
+                  Navigator.pop(context);
+                  context.go(AdminRoutes.users);
+                }
+              : null,
+        ),
+      );
+    }
+
+    if (row.warnings.isNotEmpty) {
+      issueWidgets.add(
+        _issueCategoryPill(
+          prefix: 'Notice',
+          message: row.warnings.join('; '),
+          color: const Color(0xFF475569),
+          bg: const Color(0xFFF1F5F9),
+          border: const Color(0xFFCBD5E1),
+        ),
+      );
+    }
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          if (row.stageIssues.isNotEmpty) ...[
-            _issueCategoryPill(
-              prefix: 'Stage',
-              message: row.stageIssues.join('; '),
-              color: const Color(0xFFB45309),
-              bg: const Color(0xFFFFFBEB),
-              border: const Color(0xFFFDE68A),
-              tooltip: row.scope == 'pit'
-                  ? 'Click to configure PIT event in PIT Events Management'
-                  : 'Click to configure stage rubrics in Defense Stages Setup',
-              onTap: () {
-                Navigator.pop(context);
-                if (row.scope == 'pit') {
-                  context.go(FacultyRoutes.pitEvents);
-                } else if (row.stageId != null) {
-                  context.go(AdminRoutes.defenseStageEdit(row.stageId!, initialTab: 1));
-                } else {
-                  context.go(AdminRoutes.defenseStages);
-                }
-              },
-            ),
-            const SizedBox(height: 3),
+          for (var i = 0; i < issueWidgets.length; i++) ...[
+            if (i > 0) const SizedBox(height: 4),
+            issueWidgets[i],
           ],
-          if (row.teamIssues.isNotEmpty) ...[
-            _issueCategoryPill(
-              prefix: 'Team',
-              message: row.teamIssues.join('; '),
-              color: const Color(0xFFB42318),
-              bg: const Color(0xFFFEF3F2),
-              border: const Color(0xFFFECDCA),
-              tooltip: row.teamId != null
-                  ? 'Click to view ${row.teamLabel} details & endorsement status'
-                  : 'Click to open Student Teams Hub',
-              onTap: () {
-                Navigator.pop(context);
-                if (row.teamId != null) {
-                  context.go(AdminRoutes.teamDetail(row.teamId!));
-                } else {
-                  context.go(AdminRoutes.studentTeams);
-                }
-              },
-            ),
-            const SizedBox(height: 3),
-          ],
-          if (row.slotIssues.isNotEmpty) ...[
-            _issueCategoryPill(
-              prefix: 'Slot',
-              message: row.slotIssues.join('; '),
-              color: const Color(0xFF991B1B),
-              bg: const Color(0xFFFEF2F2),
-              border: const Color(0xFFFECACA),
-              tooltip: row.slotIssues.any((s) =>
-                      s.toLowerCase().contains('panel') ||
-                      s.toLowerCase().contains('documenter') ||
-                      s.toLowerCase().contains('faculty'))
-                  ? 'Click to open User Management to check faculty accounts'
-                  : null,
-              onTap: row.slotIssues.any((s) =>
-                      s.toLowerCase().contains('panel') ||
-                      s.toLowerCase().contains('documenter') ||
-                      s.toLowerCase().contains('faculty'))
-                  ? () {
-                      Navigator.pop(context);
-                      context.go(AdminRoutes.users);
-                    }
-                  : null,
-            ),
-            const SizedBox(height: 3),
-          ],
-          if (row.warnings.isNotEmpty)
-            _issueCategoryPill(
-              prefix: 'Notice',
-              message: row.warnings.join('; '),
-              color: const Color(0xFF475569),
-              bg: const Color(0xFFF1F5F9),
-              border: const Color(0xFFCBD5E1),
-            ),
         ],
       ),
     );
