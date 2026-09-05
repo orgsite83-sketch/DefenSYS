@@ -426,62 +426,30 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   ),
                   const SizedBox(width: 12),
 
-                  // More Options Button (Containing View Details)
-                  PopupMenuButton<String>(
-                    tooltip: 'More options',
-                    onSelected: (value) {
-                      if (value == 'view_details') {
-                        onOpenStage(row);
-                      }
-                    },
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                      side: const BorderSide(color: Color(0xFFE5E7EB)),
-                    ),
-                    elevation: 3,
-                    color: Colors.white,
-                    itemBuilder: (context) => [
-                      const PopupMenuItem<String>(
-                        value: 'view_details',
-                        height: 38,
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              Icons.visibility_outlined,
-                              size: 15,
-                              color: DefensysUi.primaryMaroon,
-                            ),
-                            SizedBox(width: 8),
-                            Text(
-                              'View Details',
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                fontWeight: FontWeight.w600,
-                                color: DefensysUi.textDark,
-                              ),
-                            ),
-                          ],
+                  // Quick Inspection Action: View Details
+                  Tooltip(
+                    message: 'View Stage Details',
+                    waitDuration: const Duration(milliseconds: 300),
+                    child: InkWell(
+                      onTap: () => onOpenStage(row),
+                      borderRadius: BorderRadius.circular(7),
+                      child: Container(
+                        height: 36,
+                        width: 36,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(7),
+                          border: Border.all(
+                            color: const Color(0xFFD0D5DD),
+                            width: 1,
+                          ),
                         ),
-                      ),
-                    ],
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 10,
-                        vertical: 8,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(7),
-                        border: Border.all(
-                          color: const Color(0xFFD0D5DD),
-                          width: 1,
+                        child: const Icon(
+                          Icons.visibility_outlined,
+                          size: 17,
+                          color: Color(0xFF344054),
                         ),
-                      ),
-                      child: const Icon(
-                        Icons.more_horiz_rounded,
-                        size: 16,
-                        color: Color(0xFF475467),
                       ),
                     ),
                   ),

@@ -525,28 +525,35 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       child: Row(
         children: [
           _tableCell(
-            Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  r['student_name']?.toString() ??
-                      r['student_username']?.toString() ??
-                      'Student',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: _ink,
-                  ),
-                  overflow: TextOverflow.ellipsis,
+            InkWell(
+              onTap: () => _showStudentHistory(r),
+              borderRadius: BorderRadius.circular(4),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r['student_name']?.toString() ??
+                          r['student_username']?.toString() ??
+                          'Student',
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: _ink,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      r['student_username']?.toString() ?? '',
+                      style: const TextStyle(fontSize: 11.5, color: _muted),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  r['student_username']?.toString() ?? '',
-                  style: const TextStyle(fontSize: 11.5, color: _muted),
-                  overflow: TextOverflow.ellipsis,
-                ),
-              ],
+              ),
             ),
             flex: 2.8,
           ),
@@ -637,7 +644,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
       mainAxisSize: MainAxisSize.min,
       children: [
         Tooltip(
-          message: 'Student Details',
+          message: 'View Student Details',
           waitDuration: const Duration(milliseconds: 300),
           child: InkWell(
             onTap: () => _showStudentHistory(r),
@@ -645,7 +652,7 @@ class _StudentsEnrollmentViewState extends ConsumerState<StudentsEnrollmentView>
             child: const Padding(
               padding: EdgeInsets.all(4),
               child: Icon(
-                Icons.info_outline_rounded,
+                Icons.visibility_outlined,
                 color: DefensysUi.techBlue,
                 size: 19,
               ),

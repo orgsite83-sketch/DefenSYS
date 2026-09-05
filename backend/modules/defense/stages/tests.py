@@ -649,3 +649,62 @@ class StageGradingConfigApiTests(APITestCase):
         )
         self.assertEqual(res_reorder.status_code, 400)
         self.assertIn('stage_ids', res_reorder.data)
+
+    def test_create_and_update_presentation_only_stage(self):
+        response = self.client.post(
+            '/api/defense/stages/',
+            {
+                'label': 'Title Pitch & Idea Validation',
+                'description': 'Verbal pitch session with no deliverables.',
+                'display_order': 4,
+                'is_presentation_only': True,
+            },
+            format='json',
+        )
+        self.assertEqual(response.status_code, 201)
+        self.assertTrue(response.data['stage']['is_presentation_only'])
+        stage_id = response.data['stage']['id']
+        stage = DefenseStage.objects.get(id=stage_id)
+        self.assertTrue(stage.is_presentation_only)
+
+        # Update via patch
+        patch_res = self.client.patch(
+            f'/api/defense/stages/{stage_id}/',
+            {'is_presentation_only': False},
+            format='json',
+        )
+        self.assertEqual(patch_res.status_code, 200)
+        stage.refresh_from_db()
+        self.assertFalse(stage.is_presentation_only)
+
+    def test_presentation_only_stage_endorsement_and_readiness(self):
+        from repository.deliverables.services import endorse_team, stage_deliverables_configured, required_complete
+        from student_teams.services import is_stage_ready
+
+        stage = DefenseStage.objects.create(
+            label='Demo Day Expo',
+            display_order=5,
+            is_presentation_only=True,
+        )
+
+        student = User.objects.create_user(
+            username='student-innovator',
+            password='pass12345',
+            role='student',
+        )
+        team = StudentTeam.objects.create(
+            name='Team Innovation Alpha',
+            project_title='Innovation Alpha Project',
+            level=StudentTeam.LEVEL_4_CAPSTONE,
+            year_level='4th Year',
+            semester=self.semester,
+            leader=student,
+        )
+
+        self.assertTrue(stage_deliverables_configured(team, stage.label))
+        self.assertTrue(required_complete(team, stage.label))
+
+        # Endorsement should succeed with 0 deliverables
+        endorsed_team = endorse_team(team, stage.label)
+        self.assertEqual(endorsed_team.ready_for_stage, 'Demo Day Expo')
+        self.assertTrue(is_stage_ready(team, stage))

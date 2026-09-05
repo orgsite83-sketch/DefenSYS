@@ -259,7 +259,9 @@ class _AdminShellState extends ConsumerState<AdminShell> {
           onBack: () => _goToSection(DefensysAdminSection.defenseBoard),
         );
       case DefensysAdminSection.defenseBoard:
-        return const DefenseBoardScreen();
+        final isImport =
+            GoRouterState.of(context).uri.path == AdminRoutes.defenseScheduleBulkImport;
+        return DefenseBoardScreen(initialBulkImport: isImport);
       case DefensysAdminSection.defenseStages:
         return const DefenseStagesScreen();
     }

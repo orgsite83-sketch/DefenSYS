@@ -72,5 +72,47 @@ Concept Proposal,2026-06-18,Room 301,9:00AM-9:30AM,Team Site Avengers,DefenSYS,2
       expect(row.teamName, equals('Team Site Avengers'));
       expect(row.members, equals(['4081', '4082']));
     });
+
+    test('parses multi-day schedule with intermediate date headers and repeated table headers', () {
+      const csv = '''
+Concept Proposal,,,,,,,
+6/18/2026,,,,,,,
+Room 301,,,,,,,
+Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Documenter
+9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,Marcus Villar,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+,,,,Patricia Ong,,,
+,,,,Ethan Salazar,,,
+,,,,Zoe Castillo,,,
+9:30AM-10:00AM,Team ByteForce,AI Attendance,Ricardo Fontanilla,Ryan Torres,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+10:00AM-10:30AM,Team NexGen,Campus Lost,Ricardo Fontanilla,Carlos Bautista,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+,,,,Sophia Santos,,,
+
+6/19/2026,,,2026,,,,
+Room 301,,,,,,,
+Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Documenter
+9:00AM-9:30AM,Team Site Avengers,DefenSYS,Ricardo Fontanilla,Carlos Reyes,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+,,,,Maria Santos,,,
+9:30AM-10:00AM,Team ByteForce,AI Attendance,Ricardo Fontanilla,Jose Garcia,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+10:00AM-10:30AM,Team NexGen,Campus Lost,Ricardo Fontanilla,Diego Ramos,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+''';
+
+      final bytes = Uint8List.fromList(utf8.encode(csv));
+      final result = parseScheduleImportFile(bytes: bytes, filename: 'test.csv');
+
+      expect(result.rows, hasLength(6));
+      expect(result.rows[0].date, equals('6/18/2026'));
+      expect(result.rows[0].teamName, equals('Team SkyLedger'));
+      expect(result.rows[1].date, equals('6/18/2026'));
+      expect(result.rows[1].teamName, equals('Team ByteForce'));
+      expect(result.rows[2].date, equals('6/18/2026'));
+      expect(result.rows[2].teamName, equals('Team NexGen'));
+
+      expect(result.rows[3].date, equals('6/19/2026'));
+      expect(result.rows[3].teamName, equals('Team Site Avengers'));
+      expect(result.rows[4].date, equals('6/19/2026'));
+      expect(result.rows[4].teamName, equals('Team ByteForce'));
+      expect(result.rows[5].date, equals('6/19/2026'));
+      expect(result.rows[5].teamName, equals('Team NexGen'));
+    });
   });
 }

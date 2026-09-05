@@ -17,6 +17,7 @@ abstract final class AdminRoutes {
   static const auditCompliance = '/admin/audit-compliance';
   static const defenseScheduler = '/admin/defense-scheduler';
   static const defenseBoard = '/admin/defense-board';
+  static const defenseScheduleBulkImport = '/admin/defense-board/import';
   static const defenseStages = '/admin/defense-stages';
 
   static String teamDetail(int teamId) => '/admin/student-teams/$teamId';
@@ -123,6 +124,7 @@ abstract final class FacultyRoutes {
   static const pitInstructors = '/faculty/pit-instructors';
   static const defenseScheduler = '/faculty/defense-scheduler';
   static const defenseBoard = '/faculty/defense-board';
+  static const defenseScheduleBulkImport = '/faculty/defense-board/import';
   static const gradeCenter = '/faculty/grade-center';
   static const rubrics = '/faculty/rubrics';
   static const projectArchive = '/faculty/project-archive';

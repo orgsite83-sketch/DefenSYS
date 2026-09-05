@@ -29,7 +29,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   static const _kColStatus = 140.0;
   static const _kRubricDataTableWidth =
       _kColName + _kColStage + _kColScope + _kColEval + _kColStatus;
-  static const _kRubricActionColumnWidth = 110.0;
+  static const _kRubricActionColumnWidth = 80.0;
 
   final _searchController = TextEditingController();
   final _tableHScrollController = ScrollController();
@@ -906,8 +906,7 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
   Widget _rubricActionHeader() {
     return Container(
       height: 44,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.center,
       decoration: const BoxDecoration(
         color: Color(0xFFF8FAFC),
         border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
@@ -1142,62 +1141,131 @@ class _RubricEngineScreenState extends ConsumerState<RubricEngineScreen> {
     final canDelete = rubric['can_delete'] != false;
     final rubricId = _asInt(rubric['id']);
 
-    String tooltipMessage = 'Edit rubric criteria';
+    String tooltipMessage = 'More actions';
     if (isHardLocked) {
       tooltipMessage = rubric['lock_reason']?.toString() ?? 'View locked rubric';
     } else if (isSoftLocked && assignedContext != null && assignedContext.isNotEmpty) {
-      tooltipMessage = 'Edit rubric (Assigned to $assignedContext)';
+      tooltipMessage = 'Rubric options (Assigned to $assignedContext)';
     }
 
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Tooltip(
-          message: tooltipMessage,
-          child: IconButton(
-            onPressed: state.isSaving
-                ? null
-                : () => _openRubricEditor(rubric: rubric, readOnly: isHardLocked),
-            icon: Icon(
-              isHardLocked ? Icons.lock_outline_rounded : Icons.edit_outlined,
-              size: 17,
-              color: isHardLocked ? const Color(0xFF64748B) : DefensysUi.primaryMaroon,
-            ),
-            style: IconButton.styleFrom(
-              minimumSize: const Size(34, 34),
-              padding: EdgeInsets.zero,
-              visualDensity: VisualDensity.compact,
-              hoverColor: const Color(0xFFF1F5F9),
-            ),
+    return Theme(
+      data: Theme.of(context).copyWith(
+        popupMenuTheme: PopupMenuThemeData(
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(10),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
+          ),
+          elevation: 6,
+          shadowColor: Colors.black.withValues(alpha: 0.1),
+        ),
+      ),
+      child: PopupMenuButton<String>(
+        tooltip: tooltipMessage,
+        enabled: !state.isSaving,
+        icon: Container(
+          width: 32,
+          height: 30,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFF8FAFC),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          child: const Icon(
+            Icons.more_horiz_rounded,
+            size: 17,
+            color: AppColors.textPrimary,
           ),
         ),
-        if (canDelete && rubricId != null) ...[
-          const SizedBox(width: 4),
-          Tooltip(
-            message: 'Delete rubric',
-            child: IconButton(
-              onPressed: state.isSaving
-                  ? null
-                  : () => _confirmDelete(
-                        rubricId,
-                        rubric['name']?.toString() ?? 'rubric',
-                        rubric: rubric,
-                      ),
-              icon: const Icon(
-                Icons.delete_outline_rounded,
-                size: 17,
-                color: AppColors.danger,
+        padding: EdgeInsets.zero,
+        offset: const Offset(0, 36),
+        onSelected: (value) {
+          switch (value) {
+            case 'view':
+              _openRubricEditor(rubric: rubric, readOnly: true);
+              break;
+            case 'edit':
+              _openRubricEditor(rubric: rubric, readOnly: false);
+              break;
+            case 'delete':
+              if (rubricId != null) {
+                _confirmDelete(
+                  rubricId,
+                  rubric['name']?.toString() ?? 'rubric',
+                  rubric: rubric,
+                );
+              }
+              break;
+          }
+        },
+        itemBuilder: (context) => [
+          if (isHardLocked)
+            const PopupMenuItem<String>(
+              value: 'view',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.visibility_outlined, size: 15, color: Color(0xFF2563EB)),
+                  SizedBox(width: 9),
+                  Text(
+                    'View Details',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
-              style: IconButton.styleFrom(
-                minimumSize: const Size(34, 34),
-                padding: EdgeInsets.zero,
-                visualDensity: VisualDensity.compact,
-                hoverColor: const Color(0xFFFFF1F2),
+            )
+          else ...[
+            const PopupMenuItem<String>(
+              value: 'edit',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.edit_outlined, size: 15, color: AppColors.textPrimary),
+                  SizedBox(width: 9),
+                  Text(
+                    'Edit Rubric',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ],
               ),
             ),
-          ),
+            if (rubricId != null) ...[
+              const PopupMenuDivider(height: 1),
+              PopupMenuItem<String>(
+                value: 'delete',
+                height: 36,
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.delete_outline_rounded,
+                      size: 15,
+                      color: canDelete ? AppColors.danger : const Color(0xFF94A3B8),
+                    ),
+                    const SizedBox(width: 9),
+                    Text(
+                      'Delete Rubric',
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w700,
+                        color: canDelete ? AppColors.danger : const Color(0xFF94A3B8),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
         ],
-      ],
+      ),
     );
   }
 

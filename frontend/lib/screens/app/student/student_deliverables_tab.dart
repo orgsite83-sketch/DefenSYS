@@ -150,7 +150,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final selectedStage = Map<String, dynamic>.from(
       team['selected_stage'] as Map? ?? const {},
     );
-    final configured = selectedStage['deliverables_configured'] == true;
+    final isPresentationOnly = selectedStage['is_presentation_only'] == true;
+    final configured = selectedStage['deliverables_configured'] == true || isPresentationOnly;
     final endorsed = selectedStage['endorsed'] == true;
     final pre = _deliverables(selectedStage, 'pre');
     final vault = _deliverables(selectedStage, 'post');
@@ -187,8 +188,8 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     Builder(
                       builder: (context) {
                         final detail = selectedStage['stage_status_detail']?.toString();
-                        String label = endorsed ? 'Endorsed' : 'Awaiting Endorsement';
-                        Color bg = endorsed ? Colors.green.shade600 : Colors.orange.shade600;
+                        String label = endorsed ? 'Endorsed' : (isPresentationOnly ? 'Oral / Demo' : 'Awaiting Endorsement');
+                        Color bg = endorsed ? Colors.green.shade600 : (isPresentationOnly ? const Color(0xFF2563EB) : Colors.orange.shade600);
 
                         if (detail == 'passed') {
                           label = 'Completed';
@@ -265,7 +266,114 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                 ),
               ],
 
-              if (!configured)
+              if (isPresentationOnly)
+                Container(
+                  padding: const EdgeInsets.all(20),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.03),
+                        blurRadius: 8,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFDCFCE7),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Icon(
+                              Icons.campaign_rounded,
+                              color: Color(0xFF15803D),
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          const Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Presentation / Demo Milestone',
+                                  style: TextStyle(
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w800,
+                                    color: Color(0xFF14532D),
+                                  ),
+                                ),
+                                SizedBox(height: 3),
+                                Text(
+                                  'No document submissions are required for this milestone.',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    color: Color(0xFF166534),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 14),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: const Color(0xFFDCFCE7)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                  Icon(
+                                    endorsed ? Icons.verified_rounded : Icons.pending_actions_rounded,
+                                    size: 16,
+                                    color: endorsed ? const Color(0xFF16A34A) : const Color(0xFFD97706),
+                                  ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  endorsed
+                                      ? 'Adviser Endorsed — Ready for Scheduling'
+                                      : 'Awaiting Adviser Verbal Endorsement',
+                                  style: TextStyle(
+                                    fontSize: 12.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: endorsed ? const Color(0xFF15803D) : const Color(0xFFB45309),
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            Text(
+                              endorsed
+                                  ? 'Your adviser has endorsed your team. Administrators can now schedule your presentation / demo slot.'
+                                  : 'Prepare your presentation materials, slides, and live demonstration. Your adviser can endorse your readiness directly without file uploads.',
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF475569),
+                                height: 1.35,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              else if (!configured)
                 Container(
                   padding: const EdgeInsets.all(16),
                   decoration: BoxDecoration(

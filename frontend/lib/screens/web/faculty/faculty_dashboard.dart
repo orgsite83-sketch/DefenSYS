@@ -1076,9 +1076,11 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           ),
         );
       case 'defense_board':
+        final isImport =
+            GoRouterState.of(context).uri.path == FacultyRoutes.defenseScheduleBulkImport;
         return Container(
           color: Colors.white,
-          child: const DefenseBoardScreen(),
+          child: DefenseBoardScreen(initialBulkImport: isImport),
         );
       case 'grade_center':
         return Container(color: Colors.white, child: const GradeCenterScreen());

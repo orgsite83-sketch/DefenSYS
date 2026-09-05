@@ -64,6 +64,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'display_order',
             'description',
             'is_active',
+            'is_presentation_only',
             'previous_stage_id',
             'previous_stage_label',
             'previous_stage_code',
@@ -230,12 +231,13 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = DefenseStage
-        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'deliverables']
+        fields = ['label', 'code', 'display_order', 'description', 'is_active', 'is_presentation_only', 'deliverables']
         extra_kwargs = {
             'code': {'required': False, 'allow_blank': True},
             'display_order': {'required': False},
             'description': {'required': False, 'allow_blank': True},
             'is_active': {'required': False},
+            'is_presentation_only': {'required': False},
         }
 
     def validate_label(self, value):

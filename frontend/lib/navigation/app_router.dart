@@ -318,6 +318,12 @@ List<RouteBase> _adminRoutes() {
         GoRoute(
           path: 'defense-board',
           builder: (_, __) => const SizedBox.shrink(),
+          routes: [
+            GoRoute(
+              path: 'import',
+              builder: (_, __) => const SizedBox.shrink(),
+            ),
+          ],
         ),
         GoRoute(
           path: 'defense-stages',
@@ -386,6 +392,12 @@ List<RouteBase> _facultyRoutes() {
         GoRoute(
           path: 'defense-board',
           builder: (_, __) => const SizedBox.shrink(),
+          routes: [
+            GoRoute(
+              path: 'import',
+              builder: (_, __) => const SizedBox.shrink(),
+            ),
+          ],
         ),
         GoRoute(
           path: 'grade-center',

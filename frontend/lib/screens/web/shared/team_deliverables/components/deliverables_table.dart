@@ -1011,7 +1011,47 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     required bool configured,
     required int done,
     required int total,
+    bool isPresentationOnly = false,
   }) {
+    if (isPresentationOnly) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: const [
+              Text(
+                'Oral / Presentation Milestone',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              Text(
+                'No Uploads Required',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF2563EB),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: const LinearProgressIndicator(
+              value: 1.0,
+              minHeight: 6,
+              backgroundColor: Color(0xFFE2E8F0),
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF2563EB)),
+            ),
+          ),
+        ],
+      );
+    }
+
     final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : 0.0;
     final color = done == total && total > 0 ? AppColors.success : AppColors.warning;
 
@@ -1100,8 +1140,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Map<String, dynamic> _resolveStageStatusBadge(Map<String, dynamic> stage) {
     final statusDetail = stage['stage_status_detail']?.toString();
     final endorsed = stage['endorsed'] == true;
-    final complete = stage['required_complete'] == true;
-    final configured = stage['deliverables_configured'] == true;
+    final isPresentationOnly = stage['is_presentation_only'] == true;
+    final configured = stage['deliverables_configured'] == true || isPresentationOnly;
+    final complete = stage['required_complete'] == true || isPresentationOnly;
 
     if (!configured) {
       return {
@@ -1411,6 +1452,32 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     ),
                     const SizedBox(width: 8),
                   ],
+                  if (stagePayload['is_presentation_only'] == true) ...[
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEEF2FF),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: const Color(0xFFC7D2FE)),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(Icons.record_voice_over_rounded, size: 12, color: Color(0xFF4F46E5)),
+                          SizedBox(width: 4),
+                          Text(
+                            'Oral / Demo Stage',
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF4338CA),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                  ],
                   _buildStageStatusBadge(stagePayload),
                 ],
               ),
@@ -1558,6 +1625,26 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                                     ),
                                   ),
                                 ],
+                                if (item['is_presentation_only'] == true) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFEFF6FF),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFFBFDBFE)),
+                                    ),
+                                    child: const Text(
+                                      'ORAL',
+                                      style: TextStyle(
+                                        fontSize: 8,
+                                        fontWeight: FontWeight.w800,
+                                        color: Color(0xFF1D4ED8),
+                                        letterSpacing: 0.3,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ],
                             ),
                             if (isSelected) ...[
@@ -1616,8 +1703,9 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
       vault = allDeliverables.where((d) => d['type'] == 'post').toList();
     }
 
-    final configured = stage['deliverables_configured'] == true;
-    final complete = stage['required_complete'] == true;
+    final isPresentationOnly = stage['is_presentation_only'] == true;
+    final configured = stage['deliverables_configured'] == true || isPresentationOnly;
+    final complete = stage['required_complete'] == true || isPresentationOnly;
     final endorsed = stage['endorsed'] == true;
     final canEndorse = configured && complete && !endorsed;
     final canCancelEndorsement = (stage['can_cancel_endorsement'] == true) ||
@@ -1650,10 +1738,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                 teamId,
                 0,
                 '📁 Deliverables',
-                badgeText: configured ? '$reqUploaded/$reqTotal' : null,
-                badgeColor: (configured && reqUploaded >= reqTotal && reqTotal > 0)
-                    ? AppColors.success
-                    : AppColors.textSecondary,
+                badgeText: isPresentationOnly ? 'Oral / Demo' : (configured ? '$reqUploaded/$reqTotal' : null),
+                badgeColor: isPresentationOnly
+                    ? const Color(0xFF4F46E5)
+                    : ((configured && reqUploaded >= reqTotal && reqTotal > 0)
+                        ? AppColors.success
+                        : AppColors.textSecondary),
               ),
               const SizedBox(width: 24),
               _expandedTabButton(teamId, 1, '📊 Grades & Rubric'),
@@ -1728,6 +1818,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                     configured: configuredReq,
                     done: requiredUploaded,
                     total: requiredTotal,
+                    isPresentationOnly: isPresentationOnly,
                   ),
                 );
 
@@ -1774,7 +1865,33 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
             _sectionTitle('Pre-Defense Requirements'),
             const SizedBox(height: 8),
-            if (pre.isEmpty)
+            if (isPresentationOnly)
+              Container(
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFBFDBFE)),
+                ),
+                child: const Row(
+                  children: [
+                    Icon(Icons.info_outline, size: 16, color: Color(0xFF2563EB)),
+                    SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Presentation / Demo Stage — No document uploads required. Advisers can endorse the team directly.',
+                        style: TextStyle(
+                          color: Color(0xFF1D4ED8),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else if (pre.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),
                 child: Text(
@@ -1842,9 +1959,12 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
                             builder: (dialogContext) => AlertDialog(
                               title: const Text('Endorse Team'),
                               content: Text(
-                                'Endorse ${team['name']} for $selectedStage? '
-                                'This confirms all required deliverables are complete '
-                                'and the team is ready for defense scheduling.',
+                                isPresentationOnly
+                                    ? 'Endorse ${team['name']} for $selectedStage? '
+                                      'This confirms the team is verbally prepared and ready for presentation / demo scheduling.'
+                                    : 'Endorse ${team['name']} for $selectedStage? '
+                                      'This confirms all required deliverables are complete '
+                                      'and the team is ready for defense scheduling.',
                               ),
                               actions: [
                                 TextButton(

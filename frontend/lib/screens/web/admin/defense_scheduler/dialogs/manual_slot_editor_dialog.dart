@@ -167,34 +167,46 @@ class ManualSlotEditorDialog {
                       ),
                       const SizedBox(height: 12),
                       if (scope == 'capstone') ...[
-                        DropdownButtonFormField<int?>(
-                          initialValue: stageId,
-                          decoration: const InputDecoration(labelText: 'Defense Stage'),
-                          items: state.defenseStages
-                              .map(
-                                (stage) => DropdownMenuItem<int?>(
-                                  value: asInt(stage['id']),
-                                  child: Text(stage['label']?.toString() ?? ''),
-                                ),
-                              )
-                              .toList(),
-                          onChanged: (value) async {
-                            setDialogState(() {
-                              stageId = value;
-                              rubricId = null;
-                            });
-                            if (value != null) {
-                              final semesterId = asInt(state.activeSemester?['id']);
-                              final detail = await ref
-                                  .read(defenseStagesProvider.notifier)
-                                  .fetchStageDetail(value, semesterId: semesterId);
-                              final grading = detail?['grading_config'];
-                              if (grading is Map && dialogContext.mounted) {
-                                setDialogState(() {
-                                  rubricId = asInt(grading['panel_rubric_id']);
-                                });
+                        Builder(
+                          builder: (context) {
+                            final stageItems = <DropdownMenuItem<int?>>[];
+                            final seenStageIds = <int?>{};
+                            for (final stage in state.defenseStages) {
+                              final id = asInt(stage['id']);
+                              if (id != null && seenStageIds.add(id)) {
+                                stageItems.add(
+                                  DropdownMenuItem<int?>(
+                                    value: id,
+                                    child: Text(stage['label']?.toString() ?? ''),
+                                  ),
+                                );
                               }
                             }
+                            final validStage = stageItems.any((item) => item.value == stageId) ? stageId : null;
+                            return DropdownButtonFormField<int?>(
+                              key: ValueKey('manual_stage_$validStage'),
+                              initialValue: validStage,
+                              decoration: const InputDecoration(labelText: 'Defense Stage'),
+                              items: stageItems,
+                              onChanged: (value) async {
+                                setDialogState(() {
+                                  stageId = value;
+                                  rubricId = null;
+                                });
+                                if (value != null) {
+                                  final semesterId = asInt(state.activeSemester?['id']);
+                                  final detail = await ref
+                                      .read(defenseStagesProvider.notifier)
+                                      .fetchStageDetail(value, semesterId: semesterId);
+                                  final grading = detail?['grading_config'];
+                                  if (grading is Map && dialogContext.mounted) {
+                                    setDialogState(() {
+                                      rubricId = asInt(grading['panel_rubric_id']);
+                                    });
+                                  }
+                                }
+                              },
+                            );
                           },
                         ),
                       ] else ...[

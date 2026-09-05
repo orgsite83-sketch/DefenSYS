@@ -44,6 +44,24 @@ class ParsedScheduleImport {
       isRedefense: json['is_redefense'] == true,
     );
   }
+
+  ParsedScheduleImport copyWith({
+    List<ParsedScheduleImportRow>? rows,
+    String? stage,
+    String? date,
+    String? semester,
+    String? room,
+    bool? isRedefense,
+  }) {
+    return ParsedScheduleImport(
+      rows: rows ?? this.rows,
+      stage: stage ?? this.stage,
+      date: date ?? this.date,
+      semester: semester ?? this.semester,
+      room: room ?? this.room,
+      isRedefense: isRedefense ?? this.isRedefense,
+    );
+  }
 }
 
 class ParsedScheduleImportRow {
@@ -128,6 +146,42 @@ class ParsedScheduleImportRow {
           : int.tryParse(json['slot_duration']?.toString() ?? ''),
     );
   }
+
+  ParsedScheduleImportRow copyWith({
+    int? sheetRow,
+    String? time,
+    String? teamName,
+    String? projectTitle,
+    String? adviser,
+    List<String>? members,
+    String? chair,
+    List<String>? panelMembers,
+    String? documenter,
+    String? room,
+    String? date,
+    String? stage,
+    String? startTime,
+    String? endTime,
+    int? slotDuration,
+  }) {
+    return ParsedScheduleImportRow(
+      sheetRow: sheetRow ?? this.sheetRow,
+      time: time ?? this.time,
+      teamName: teamName ?? this.teamName,
+      projectTitle: projectTitle ?? this.projectTitle,
+      adviser: adviser ?? this.adviser,
+      members: members ?? this.members,
+      chair: chair ?? this.chair,
+      panelMembers: panelMembers ?? this.panelMembers,
+      documenter: documenter ?? this.documenter,
+      room: room ?? this.room,
+      date: date ?? this.date,
+      stage: stage ?? this.stage,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      slotDuration: slotDuration ?? this.slotDuration,
+    );
+  }
 }
 
 ParsedScheduleImport parseScheduleImportFile({
@@ -140,6 +194,13 @@ ParsedScheduleImport parseScheduleImportFile({
   }
 
   final workbook = Excel.decodeBytes(bytes);
+  final allRows = <ParsedScheduleImportRow>[];
+  String? detectedStage;
+  String? detectedDate;
+  String? detectedSemester;
+  String? detectedRoom;
+  var isRedefense = false;
+
   for (final tableName in workbook.tables.keys) {
     final sheet = workbook.tables[tableName];
     if (sheet == null || sheet.rows.isEmpty) {
@@ -150,10 +211,23 @@ ParsedScheduleImport parseScheduleImportFile({
         .toList(growable: false);
     final parsed = parseScheduleImportMatrix(matrix);
     if (parsed.rows.isNotEmpty) {
-      return parsed;
+      allRows.addAll(parsed.rows);
+      detectedStage ??= parsed.stage;
+      detectedDate ??= parsed.date;
+      detectedSemester ??= parsed.semester;
+      detectedRoom ??= parsed.room;
+      if (parsed.isRedefense) isRedefense = true;
     }
   }
-  return const ParsedScheduleImport(rows: []);
+
+  return ParsedScheduleImport(
+    rows: allRows,
+    stage: detectedStage,
+    date: detectedDate,
+    semester: detectedSemester,
+    room: detectedRoom,
+    isRedefense: isRedefense,
+  );
 }
 
 ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
@@ -161,112 +235,157 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
     return const ParsedScheduleImport(rows: []);
   }
 
-  final headerIndex = _findHeaderIndex(matrix);
-  if (headerIndex < 0) {
-    return const ParsedScheduleImport(rows: []);
-  }
-
-  final metadata = _readMetadata(matrix.take(headerIndex).toList());
-
-  // Fallback for official client template layout (preceding rows without explicit key labels)
-  if (headerIndex >= 1) {
-    final titleRows = matrix.take(headerIndex).toList();
-    final firstCells = titleRows
-        .map((row) => row.firstWhere((cell) => cell.trim().isNotEmpty, orElse: () => ''))
-        .map((cell) => cell.trim())
-        .where((cell) => cell.isNotEmpty)
-        .toList();
-
-    if (firstCells.length >= 3) {
-      if (metadata['stage'] == null || metadata['stage']!.isEmpty) {
-        metadata['stage'] = firstCells[0];
-      }
-      if (metadata['date'] == null || metadata['date']!.isEmpty) {
-        metadata['date'] = firstCells[1];
-      }
-      if (metadata['room'] == null || metadata['room']!.isEmpty) {
-        metadata['room'] = firstCells[2];
-      }
-    } else if (firstCells.isNotEmpty) {
-      for (final cell in firstCells) {
-        final lowerCell = cell.toLowerCase();
-        final isDate = RegExp(r'\d').hasMatch(cell) && (
-            lowerCell.contains('jan') ||
-            lowerCell.contains('feb') ||
-            lowerCell.contains('mar') ||
-            lowerCell.contains('apr') ||
-            lowerCell.contains('may') ||
-            lowerCell.contains('jun') ||
-            lowerCell.contains('jul') ||
-            lowerCell.contains('aug') ||
-            lowerCell.contains('sep') ||
-            lowerCell.contains('oct') ||
-            lowerCell.contains('nov') ||
-            lowerCell.contains('dec') ||
-            cell.contains('/') ||
-            (cell.contains('-') && !lowerCell.contains('room'))
-        );
-        final isRoom = lowerCell.contains('room') || lowerCell.contains('venue') || lowerCell.contains('hall') || lowerCell.contains('lab');
-
-        if (isDate) {
-          metadata['date'] ??= cell;
-        } else if (isRoom) {
-          metadata['room'] ??= cell;
-        } else {
-          metadata['stage'] ??= cell;
-        }
-      }
-    }
-  }
-
-  final headers = matrix[headerIndex].map(_normalizeHeader).toList();
-  int column(List<String> aliases) {
-    for (var i = 0; i < headers.length; i++) {
-      if (aliases.contains(headers[i])) {
-        return i;
-      }
-    }
-    return -1;
-  }
-
-  final timeCol = column(['time', 'timeslot', 'schedule', 'defensetime']);
-  final teamCol = column(['teamname', 'team']);
-  final projectCol = column(['capstoneproject', 'project', 'projecttitle']);
-  final adviserCol = column(['adviser', 'advisor']);
-  final memberCol = column(['teammembers', 'members', 'studentmembers']);
-  final chairCol = column(['chair', 'panelchair', 'chairperson']);
-  final panelCols = [
-    column(['panelmember1', 'panel1', 'member1']),
-    column(['panelmember2', 'panel2', 'member2']),
-    column(['panelmember3', 'panel3', 'member3']),
-  ].where((index) => index >= 0).toList();
-  final documenterCol = column(['documenter', 'secretary', 'recorder']);
-  final roomCol = column(['room', 'venue', 'roomvenue']);
-  final dateCol = column(['date', 'defensedate', 'scheduleddate']);
-  final stageCol = column(['stage', 'defensestage', 'event', 'pitevent']);
-  final semesterCol = column(['semester', 'term']);
+  final metadata = <String, String>{};
+  String currentStage = '';
+  String currentDate = '';
+  String currentRoom = '';
+  String currentSemester = '';
 
   final grouped = <String, _ImportGroup>{};
   final fillDown = <int, String>{};
 
-  for (var rowIndex = headerIndex + 1; rowIndex < matrix.length; rowIndex++) {
+  var headerFound = false;
+  var timeCol = -1;
+  var teamCol = -1;
+  var projectCol = -1;
+  var adviserCol = -1;
+  var memberCol = -1;
+  var chairCol = -1;
+  var panelCols = <int>[];
+  var documenterCol = -1;
+  var roomCol = -1;
+  var dateCol = -1;
+  var stageCol = -1;
+  var semesterCol = -1;
+
+  void applyHeader(List<String> row) {
+    final headers = row.map(_normalizeHeader).toList();
+    int column(List<String> aliases) {
+      for (var i = 0; i < headers.length; i++) {
+        if (aliases.contains(headers[i])) return i;
+      }
+      return -1;
+    }
+
+    timeCol = column(['time', 'timeslot', 'schedule', 'defensetime']);
+    teamCol = column(['teamname', 'team']);
+    projectCol = column(['capstoneproject', 'project', 'projecttitle']);
+    adviserCol = column(['adviser', 'advisor']);
+    memberCol = column(['teammembers', 'members', 'studentmembers']);
+    chairCol = column(['chair', 'panelchair', 'chairperson']);
+    panelCols = [
+      column(['panelmember1', 'panel1', 'member1']),
+      column(['panelmember2', 'panel2', 'member2']),
+      column(['panelmember3', 'panel3', 'member3']),
+    ].where((index) => index >= 0).toList();
+    documenterCol = column(['documenter', 'secretary', 'recorder']);
+    roomCol = column(['room', 'venue', 'roomvenue']);
+    dateCol = column(['date', 'defensedate', 'scheduleddate']);
+    stageCol = column(['stage', 'defensestage', 'event', 'pitevent']);
+    semesterCol = column(['semester', 'term']);
+    headerFound = true;
+    fillDown.clear();
+  }
+
+  for (var rowIndex = 0; rowIndex < matrix.length; rowIndex++) {
     final rawRow = matrix[rowIndex];
     if (rawRow.every((cell) => cell.trim().isEmpty)) {
+      fillDown.clear();
       continue;
     }
 
-    String read(int index, {bool fill = true}) {
-      if (index < 0 || index >= rawRow.length) {
-        return '';
+    // 1. Repeated or initial column header row
+    if (_isHeaderRow(rawRow)) {
+      applyHeader(rawRow);
+      continue;
+    }
+
+    // 2. Preamble metadata before first table header
+    if (!headerFound) {
+      final rowMeta = _readMetadataRow(rawRow);
+      if (rowMeta['stage'] != null && rowMeta['stage']!.isNotEmpty) {
+        currentStage = rowMeta['stage']!;
+        metadata['stage'] ??= currentStage;
       }
+      if (rowMeta['date'] != null && rowMeta['date']!.isNotEmpty) {
+        currentDate = rowMeta['date']!;
+        metadata['date'] ??= currentDate;
+      }
+      if (rowMeta['room'] != null && rowMeta['room']!.isNotEmpty) {
+        currentRoom = rowMeta['room']!;
+        metadata['room'] ??= currentRoom;
+      }
+      if (rowMeta['semester'] != null && rowMeta['semester']!.isNotEmpty) {
+        currentSemester = rowMeta['semester']!;
+        metadata['semester'] ??= currentSemester;
+      }
+      continue;
+    }
+
+    // 3. Header already found; check if this row is a Section / Metadata divider row
+    final rawTime = (timeCol >= 0 && timeCol < rawRow.length) ? rawRow[timeCol].trim() : '';
+    final rawTeam = (teamCol >= 0 && teamCol < rawRow.length) ? rawRow[teamCol].trim() : '';
+    final rawMember = (memberCol >= 0 && memberCol < rawRow.length) ? rawRow[memberCol].trim() : '';
+    final parsedTime = _parseTimeRange(rawTime);
+    final hasValidTime = parsedTime.start.isNotEmpty;
+
+    // Check for repeated header text in cells (e.g. literal "Team Name" or "Time")
+    final normTeam = _normalizeHeader(rawTeam);
+    final normTime = _normalizeHeader(rawTime);
+    if (normTeam == 'teamname' || normTeam == 'team' || normTime == 'time' || normTime == 'timeslot') {
+      fillDown.clear();
+      continue;
+    }
+
+    // If row has no valid defense time, no team name, and no student member,
+    // it is a section metadata divider row (e.g. "6/19/2026" or "Room 301")
+    if (!hasValidTime && rawTeam.isEmpty && rawMember.isEmpty) {
+      final rowMeta = _readMetadataRow(rawRow);
+      if (rowMeta['stage'] != null && rowMeta['stage']!.isNotEmpty) {
+        currentStage = rowMeta['stage']!;
+        metadata['stage'] ??= currentStage;
+      }
+      if (rowMeta['date'] != null && rowMeta['date']!.isNotEmpty) {
+        currentDate = rowMeta['date']!;
+        metadata['date'] ??= currentDate;
+      }
+      if (rowMeta['room'] != null && rowMeta['room']!.isNotEmpty) {
+        currentRoom = rowMeta['room']!;
+        metadata['room'] ??= currentRoom;
+      }
+      if (rowMeta['semester'] != null && rowMeta['semester']!.isNotEmpty) {
+        currentSemester = rowMeta['semester']!;
+        metadata['semester'] ??= currentSemester;
+      }
+      fillDown.clear();
+      continue;
+    }
+
+    // 4. Read helper with fill-down support
+    String read(int index, {bool fill = true}) {
+      if (index < 0 || index >= rawRow.length) return '';
       final value = rawRow[index].trim();
       if (value.isNotEmpty) {
-        if (fill) {
-          fillDown[index] = value;
-        }
+        if (fill) fillDown[index] = value;
         return value;
       }
       return fill ? (fillDown[index] ?? '') : '';
+    }
+
+    // Check if this is a member continuation row for the current team
+    if (rawTeam.isEmpty && rawMember.isNotEmpty) {
+      if (grouped.isNotEmpty) {
+        final lastGroup = grouped.values.last;
+        if (!lastGroup.members.contains(rawMember)) {
+          lastGroup.members.add(rawMember);
+        }
+      }
+      continue;
+    }
+
+    // If no team name and no valid time, skip
+    if (rawTeam.isEmpty && !hasValidTime) {
+      continue;
     }
 
     final time = read(timeCol);
@@ -275,33 +394,27 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
     final adviser = read(adviserCol);
     final chair = read(chairCol);
     final documenter = read(documenterCol);
-    final room = read(roomCol);
-    final date = read(dateCol);
-    final stage = read(stageCol);
-    final semester = read(semesterCol);
-    if (stage.isNotEmpty) {
-      metadata['stage'] = stage;
-    }
-    if (date.isNotEmpty) {
-      metadata['date'] = date;
-    }
-    if (semester.isNotEmpty) {
-      metadata['semester'] = semester;
-    }
-    if (room.isNotEmpty) {
-      metadata['room'] ??= room;
-    }
+    final colRoom = read(roomCol, fill: false);
+    final colDate = read(dateCol, fill: false);
+    final colStage = read(stageCol, fill: false);
+    final colSemester = read(semesterCol, fill: false);
 
-    final member = read(memberCol, fill: false);
-    if (teamName.isEmpty && project.isEmpty && member.isEmpty) {
+    final effectiveRoom = colRoom.isNotEmpty ? colRoom : currentRoom;
+    final effectiveDate = colDate.isNotEmpty ? colDate : currentDate;
+    final effectiveStage = colStage.isNotEmpty ? colStage : currentStage;
+    if (colSemester.isNotEmpty) currentSemester = colSemester;
+
+    if (teamName.isEmpty && project.isEmpty) {
       continue;
     }
 
     final key = [
+      _normalizeMatch(effectiveDate),
+      _normalizeMatch(effectiveRoom),
       _normalizeMatch(time),
       _normalizeMatch(teamName),
-      _normalizeMatch(project),
     ].join('|');
+
     final group = grouped.putIfAbsent(
       key,
       () => _ImportGroup(
@@ -315,11 +428,13 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
           for (final panelCol in panelCols) read(panelCol),
         ].where((name) => name.isNotEmpty).toList(),
         documenter: documenter,
-        room: room,
-        date: date,
-        stage: stage,
+        room: effectiveRoom,
+        date: effectiveDate,
+        stage: effectiveStage,
       ),
     );
+
+    final member = read(memberCol, fill: false);
     if (member.isNotEmpty && !group.members.contains(member)) {
       group.members.add(member);
     }
@@ -349,17 +464,17 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
       })
       .toList(growable: false);
 
-  final rawStage = (metadata['stage'] ?? '').toLowerCase();
+  final rawStage = (metadata['stage'] ?? currentStage).toLowerCase();
   final isRedefense = rawStage.contains('redef') ||
       rawStage.contains('redefense') ||
       rawStage.contains('re-defense');
 
   return ParsedScheduleImport(
     rows: rows,
-    stage: metadata['stage'],
-    date: metadata['date'],
-    semester: metadata['semester'],
-    room: metadata['room'],
+    stage: metadata['stage'] ?? currentStage,
+    date: metadata['date'] ?? currentDate,
+    semester: metadata['semester'] ?? currentSemester,
+    room: metadata['room'] ?? currentRoom,
     isRedefense: isRedefense,
   );
 }
@@ -397,70 +512,125 @@ String _durationToTime(Duration duration) {
   return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
 }
 
-int _findHeaderIndex(List<List<String>> matrix) {
-  for (var i = 0; i < matrix.length; i++) {
-    final headers = matrix[i].map(_normalizeHeader).toSet();
-    final hasTeam = headers.contains('teamname') || headers.contains('team');
-    final hasSchedule =
-        headers.contains('time') ||
-        headers.contains('chair') ||
-        headers.contains('panelmember1') ||
-        headers.contains('documenter');
-    if (hasTeam && hasSchedule) {
-      return i;
-    }
-  }
-  return -1;
+bool _isHeaderRow(List<String> row) {
+  final normalized = row.map(_normalizeHeader).toSet();
+  final hasTeam = normalized.contains('teamname') || normalized.contains('team');
+  final hasSchedule = normalized.contains('time') ||
+      normalized.contains('chair') ||
+      normalized.contains('panelmember1') ||
+      normalized.contains('documenter') ||
+      normalized.contains('timeslot');
+  return hasTeam && hasSchedule;
 }
 
-Map<String, String> _readMetadata(List<List<String>> rows) {
+bool _isDateString(String text) {
+  final trimmed = text.trim();
+  if (trimmed.isEmpty) return false;
+  final lower = trimmed.toLowerCase();
+  if (RegExp(r'^\d{1,4}[-/]\d{1,2}[-/]\d{1,4}$').hasMatch(trimmed)) return true;
+  final hasDigits = RegExp(r'\d').hasMatch(trimmed);
+  final monthMatches = [
+    'jan', 'feb', 'mar', 'apr', 'may', 'jun',
+    'jul', 'aug', 'sep', 'oct', 'nov', 'dec'
+  ].any((m) => lower.contains(m));
+  return hasDigits && monthMatches && !lower.contains('room');
+}
+
+bool _isRoomString(String text) {
+  final lower = text.trim().toLowerCase();
+  if (lower.isEmpty) return false;
+  return lower.contains('room') ||
+      lower.contains('venue') ||
+      lower.contains('hall') ||
+      lower.contains('lab') ||
+      lower.contains('avr') ||
+      lower.contains('audi') ||
+      lower.startsWith('rm') ||
+      RegExp(r'^(?:smart\s+room|multimedia|conference)$').hasMatch(lower);
+}
+
+bool _isStageOrSessionString(String text) {
+  final lower = text.trim().toLowerCase();
+  if (lower.isEmpty) return false;
+  return lower.contains('proposal') ||
+      lower.contains('defense') ||
+      lower.contains('redefense') ||
+      lower.contains('capstone') ||
+      lower.contains('session') ||
+      lower.contains('day 1') ||
+      lower.contains('day 2') ||
+      lower.contains('day 3') ||
+      lower.contains('day 4') ||
+      lower.contains('morning') ||
+      lower.contains('afternoon');
+}
+
+Map<String, String> _readMetadataRow(List<String> row) {
   final result = <String, String>{};
-  final semesterRegex = RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
+  final semesterRegex =
+      RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
 
-  for (final row in rows) {
-    for (var i = 0; i < row.length; i++) {
-      final cell = row[i].trim();
-      if (cell.isEmpty) {
-        continue;
+  for (var i = 0; i < row.length; i++) {
+    final cell = row[i].trim();
+    if (cell.isEmpty) continue;
+    final normalized = _normalizeHeader(cell);
+    final next = i + 1 < row.length ? row[i + 1].trim() : '';
+    final inlineParts = cell.split(RegExp(r':\s*'));
+    final inlineValue =
+        inlineParts.length > 1 ? inlineParts.sublist(1).join(':').trim() : '';
+    final value = inlineValue.isNotEmpty ? inlineValue : next;
+
+    if (value.isNotEmpty) {
+      if (['stage', 'defensestage'].contains(normalized)) {
+        result['stage'] = value;
       }
-      final normalized = _normalizeHeader(cell);
-      final next = i + 1 < row.length ? row[i + 1].trim() : '';
-      final inlineParts = cell.split(RegExp(r':\s*'));
-      final inlineValue = inlineParts.length > 1
-          ? inlineParts.sublist(1).join(':').trim()
-          : '';
-      final value = inlineValue.isNotEmpty ? inlineValue : next;
-
-      if (value.isNotEmpty) {
-        if (['stage', 'defensestage'].contains(normalized)) {
-          result['stage'] = value;
-        }
-        if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
-          result['date'] = value;
-        }
-        if (['semester', 'term'].contains(normalized)) {
-          result['semester'] = value;
-        }
-        if (['room', 'venue', 'roomvenue'].contains(normalized)) {
-          result['room'] = value;
-        }
+      if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
+        result['date'] = value;
       }
+      if (['semester', 'term'].contains(normalized)) {
+        result['semester'] = value;
+      }
+      if (['room', 'venue', 'roomvenue'].contains(normalized)) {
+        result['room'] = value;
+      }
+    }
 
-      if (result['semester'] == null || result['semester']!.isEmpty) {
-        final semMatch = semesterRegex.firstMatch(cell);
-        if (semMatch != null) {
-          final rawSem = semMatch.group(1)!.toLowerCase();
-          if (rawSem.contains('1st')) {
-            result['semester'] = '1st Semester';
-          } else if (rawSem.contains('2nd')) {
-            result['semester'] = '2nd Semester';
-          } else if (rawSem.contains('summer')) {
-            result['semester'] = 'Summer';
-          }
+    if (result['semester'] == null || result['semester']!.isEmpty) {
+      final semMatch = semesterRegex.firstMatch(cell);
+      if (semMatch != null) {
+        final rawSem = semMatch.group(1)!.toLowerCase();
+        if (rawSem.contains('1st')) {
+          result['semester'] = '1st Semester';
+        } else if (rawSem.contains('2nd')) {
+          result['semester'] = '2nd Semester';
+        } else if (rawSem.contains('summer')) {
+          result['semester'] = 'Summer';
         }
       }
     }
+
+    if (result['date'] == null && _isDateString(cell)) {
+      result['date'] = cell;
+    } else if (result['room'] == null && _isRoomString(cell)) {
+      result['room'] = cell;
+    } else if (result['stage'] == null && _isStageOrSessionString(cell)) {
+      result['stage'] = cell;
+    }
   }
+
+  final nonEmpty =
+      row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
+  if (nonEmpty.length == 1) {
+    final single = nonEmpty.first;
+    if (result['date'] == null && _isDateString(single)) {
+      result['date'] = single;
+    } else if (result['room'] == null && _isRoomString(single)) {
+      result['room'] = single;
+    } else if (result['stage'] == null && _isStageOrSessionString(single)) {
+      result['stage'] = single;
+    }
+  }
+
   return result;
 }
 
@@ -478,8 +648,36 @@ _TimeRange _parseTimeRange(String raw) {
     return const _TimeRange(start: '', end: '', duration: null);
   }
   final parts = text.split(RegExp(r'\s*(?:-|–|—|to)\s*', caseSensitive: false));
-  final start = _parseTime(parts.first);
-  final end = parts.length > 1 ? _parseTime(parts[1]) : '';
+  if (parts.isEmpty) {
+    return const _TimeRange(start: '', end: '', duration: null);
+  }
+  var startStr = parts.first.trim();
+  var endStr = parts.length > 1 ? parts[1].trim() : '';
+
+  // If end has AM/PM but start doesn't, inherit meridiem intelligently
+  final upperStart = startStr.toUpperCase();
+  final upperEnd = endStr.toUpperCase();
+  final hasStartMeridiem = upperStart.contains('AM') || upperStart.contains('PM');
+  final hasEndMeridiem = upperEnd.contains('AM') || upperEnd.contains('PM');
+
+  if (!hasStartMeridiem && hasEndMeridiem) {
+    if (upperEnd.contains('PM')) {
+      final startHourMatch = RegExp(r'^(\d{1,2})').firstMatch(startStr);
+      final startHour = int.tryParse(startHourMatch?.group(1) ?? '') ?? 0;
+      final endHourMatch = RegExp(r'^(\d{1,2})').firstMatch(endStr);
+      final endHour = int.tryParse(endHourMatch?.group(1) ?? '') ?? 0;
+      if (startHour <= endHour || endHour == 12) {
+        startStr += ' PM';
+      } else {
+        startStr += ' AM';
+      }
+    } else if (upperEnd.contains('AM')) {
+      startStr += ' AM';
+    }
+  }
+
+  final start = _parseTime(startStr);
+  final end = endStr.isNotEmpty ? _parseTime(endStr) : '';
   return _TimeRange(
     start: start,
     end: end,
@@ -497,8 +695,8 @@ String _parseTime(String raw) {
   final meridiem = text.endsWith('AM')
       ? 'AM'
       : text.endsWith('PM')
-      ? 'PM'
-      : '';
+          ? 'PM'
+          : '';
   if (meridiem.isNotEmpty) {
     text = text.substring(0, text.length - 2);
   }
@@ -508,12 +706,18 @@ String _parseTime(String raw) {
   }
   var hour = int.tryParse(match.group(1) ?? '') ?? 0;
   final minute = int.tryParse(match.group(2) ?? '0') ?? 0;
+
   if (meridiem == 'PM' && hour < 12) {
     hour += 12;
   }
   if (meridiem == 'AM' && hour == 12) {
     hour = 0;
   }
+  // In typical academic schedules, afternoon slots like "1:00" to "6:00" without meridiem are PM
+  if (meridiem.isEmpty && hour >= 1 && hour <= 6) {
+    hour += 12;
+  }
+
   if (hour < 0 || hour > 23 || minute < 0 || minute > 59) {
     return '';
   }

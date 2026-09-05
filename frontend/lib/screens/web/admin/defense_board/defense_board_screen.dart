@@ -15,7 +15,6 @@ import '../defense_scheduler/components/team_readiness_tracker.dart';
 import '../defense_scheduler/defense_scheduler_screen.dart';
 import '../defense_scheduler/dialogs/manual_slot_editor_dialog.dart';
 import '../defense_scheduler/dialogs/team_deliverables_review_dialog.dart';
-import '../defense_scheduler/dialogs/venue_conflict_dialog.dart';
 import '../defense_scheduler/models/schedule_import_models.dart';
 import '../grade_center/grade_center_screen.dart';
 import '../admin_shell.dart';
@@ -25,9 +24,15 @@ import '../widgets/defensys_admin_shell.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../../faculty/minutes_form_screen.dart';
 import '../../../../utils/import/schedule_import_draft.dart';
+import 'components/defense_schedule_bulk_import_view.dart';
 
 class DefenseBoardScreen extends ConsumerStatefulWidget {
-  const DefenseBoardScreen({super.key});
+  const DefenseBoardScreen({
+    super.key,
+    this.initialBulkImport = false,
+  });
+
+  final bool initialBulkImport;
 
   @override
   ConsumerState<DefenseBoardScreen> createState() => _DefenseBoardScreenState();
@@ -52,15 +57,27 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
   final Map<String, int> _sessionPages = {};
   bool _hasImportDraft = false;
   ScheduleImportDraft? _savedImportDraft;
+  bool _showScheduleBulkImport = false;
 
   @override
   void initState() {
     super.initState();
+    if (widget.initialBulkImport) {
+      _showScheduleBulkImport = true;
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(defenseBoardProvider.notifier).fetchBoard();
       ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
       _checkImportDraft();
     });
+  }
+
+  @override
+  void didUpdateWidget(covariant DefenseBoardScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.initialBulkImport != oldWidget.initialBulkImport) {
+      _showScheduleBulkImport = widget.initialBulkImport;
+    }
   }
 
   Future<void> _checkImportDraft() async {
@@ -125,6 +142,27 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
             _selectedMinutesScheduleId = null;
           });
           ref.read(defenseBoardProvider.notifier).fetchBoard();
+        },
+      );
+    }
+
+    if (_showScheduleBulkImport) {
+      final user = ref.watch(authProvider).user;
+      final isAdmin = user?['role'] == 'admin' || user?['is_superuser'] == true;
+      final isPitLead = user?['is_pit_lead'] == true;
+      final effectiveScope = isPitLead && !isAdmin ? 'pit' : 'capstone';
+
+      return DefenseScheduleBulkImportView(
+        scope: effectiveScope,
+        initialStageId: _schedulerStageId ?? _selectedReadinessStageId,
+        initialEventName: _schedulerEventName,
+        onBack: () {
+          setState(() {
+            _showScheduleBulkImport = false;
+          });
+          _checkImportDraft();
+          ref.read(defenseBoardProvider.notifier).fetchBoard();
+          ref.read(defenseSchedulerProvider.notifier).fetchSchedules();
         },
       );
     }
@@ -3277,46 +3315,11 @@ class _DefenseBoardScreenState extends ConsumerState<DefenseBoardScreen> {
 
     final schedNotifier = ref.read(defenseSchedulerProvider.notifier);
     await schedNotifier.fetchSchedules();
-    final schedState = ref.read(defenseSchedulerProvider);
-    final scope = isAdmin ? 'capstone' : 'pit';
 
     if (!mounted) return;
-
-    await ScheduleImportDialog.show(
-      context,
-      ref,
-      state: schedState,
-      scope: scope,
-      initialStageId: null,
-      initialEventName: '',
-      initialRubricId: null,
-      initialAdviserRubricId: null,
-      initialPeerRubricId: null,
-      initialCapstonePeerRubricId: null,
-      initialDate: '',
-      initialRoom: '',
-      initialDuration: '60',
-      initialPanelWeight: '80',
-      initialPeerWeight: '20',
-      canScheduleScope: (s, sc) {
-        if (sc == 'capstone') return isAdmin && s.canScheduleCapstone;
-        if (sc == 'pit') return isPitLead && !isAdmin && s.canSchedulePit;
-        return false;
-      },
-      scheduleNoticeMessage: (s) {
-        if (isAdmin) {
-          return 'Scheduling Capstone defenses is strictly reserved for Administrators.';
-        }
-        if (isPitLead) {
-          return 'PIT scheduling is strictly managed by the PIT Lead.';
-        }
-        return 'Defense scheduling is restricted.';
-      },
-    );
-
-    if (!mounted) return;
-    await _checkImportDraft();
-    ref.read(defenseBoardProvider.notifier).fetchBoard();
+    setState(() {
+      _showScheduleBulkImport = true;
+    });
   }
 
   void _openScheduler({String? scope, int? stageId, String? eventName}) {

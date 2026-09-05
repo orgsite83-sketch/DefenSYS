@@ -414,11 +414,35 @@ def submissions_for(team, stage_label):
     }
 
 
+def is_presentation_stage(team, stage_label):
+    if not stage_label:
+        return False
+    if not team or getattr(team, 'is_capstone', True):
+        stage = defense_stage_for_label(stage_label)
+        if stage and getattr(stage, 'is_presentation_only', False):
+            return True
+    else:
+        from defense.scheduler.models import PitEventGradingConfig
+        sem = getattr(team, 'semester', None)
+        if sem:
+            config = PitEventGradingConfig.objects.filter(
+                semester=sem,
+                event_name__iexact=stage_label.strip(),
+            ).prefetch_related('deliverables').first()
+            if config and not config.deliverables.exists():
+                return True
+    return False
+
+
 def stage_deliverables_configured(team, stage_label):
+    if is_presentation_stage(team, stage_label):
+        return True
     return bool(get_deliverable_definitions_for_team(team, stage_label))
 
 
 def required_complete(team, stage_label):
+    if is_presentation_stage(team, stage_label):
+        return True
     configured = stage_deliverables_configured(team, stage_label)
     if not configured:
         return False
@@ -806,7 +830,8 @@ def stage_payload(team, stage_label):
     required_items = [item for item in pre_items if item['required']]
     archive_required_items = [item for item in archive_items if item['required']]
 
-    configured = len(definitions) > 0
+    is_pres = is_presentation_stage(team, stage_label)
+    configured = len(definitions) > 0 or is_pres
     archive_required_complete = (
         not archive_required_items
         or all(item['uploaded'] for item in archive_required_items)
@@ -817,6 +842,7 @@ def stage_payload(team, stage_label):
     return {
         'stage_label': stage_label,
         'deliverables_configured': configured,
+        'is_presentation_only': is_pres,
         'endorsed': is_endorsed,
         'is_officially_complete': is_stage_officially_complete,
         'has_active_schedule': has_active_schedule,

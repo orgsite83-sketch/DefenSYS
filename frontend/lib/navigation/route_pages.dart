@@ -12,6 +12,7 @@ import '../screens/web/admin/team_detail_page.dart';
 import '../screens/web/faculty/pit_lead_cohort_section_detail_screen.dart';
 import '../services/dashboard_provider.dart';
 import '../services/rubric_engine_provider.dart';
+import '../services/unsaved_changes_provider.dart';
 import 'admin_route_paths.dart';
 
 class AdminTeamDetailRoute extends ConsumerWidget {
@@ -310,7 +311,10 @@ class AdminDefenseStageEditorRoute extends ConsumerWidget {
     return DefenseStageEditorScreen(
       stageId: stageId,
       initialTab: initialTab,
-      onBack: () => context.pop(),
+      onBack: () {
+        ref.read(unsavedChangesProvider.notifier).setDirty(false);
+        context.pop();
+      },
     );
   }
 }

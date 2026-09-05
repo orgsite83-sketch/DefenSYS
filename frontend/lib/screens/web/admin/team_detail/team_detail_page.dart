@@ -914,7 +914,9 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
               if (!widget.isPitLead && isCapstone) ...[
                 const SizedBox(height: 16),
                 DropdownButtonFormField<int?>(
-                  value: _adviserId,
+                  value: detailState.advisers.any((a) => _asInt(a['id']) == _adviserId)
+                      ? _adviserId
+                      : null,
                   decoration: const InputDecoration(
                     labelText: 'Adviser',
                     border: OutlineInputBorder(),

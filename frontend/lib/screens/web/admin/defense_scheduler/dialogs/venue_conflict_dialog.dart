@@ -104,6 +104,51 @@ class ScheduleImportDialog {
       peerRubricId = existingDraft.peerRubricId ?? peerRubricId;
       panelWeight = existingDraft.panelWeight;
       peerWeight = existingDraft.peerWeight;
+
+      if (!isPit) {
+        final rawStage = parsed.stage?.trim() ?? '';
+        if (rawStage.isNotEmpty) {
+          final match = findBestMatch<Map<String, dynamic>>(
+            source: rawStage,
+            items: state.defenseStages,
+            labelGetter: (s) => s['label']?.toString() ?? '',
+          );
+          if (match.isMatched) {
+            headerMatch = match;
+          }
+        }
+        if (importStageId != null &&
+            !state.defenseStages.any((s) => asInt(s['id']) == importStageId)) {
+          if (headerMatch != null && headerMatch.isMatched) {
+            importStageId = asInt(headerMatch.item?['id']);
+          } else {
+            importStageId = null;
+            headerMatch = null;
+          }
+        }
+      } else {
+        final rawEvent = parsed.stage?.trim() ?? '';
+        if (rawEvent.isNotEmpty) {
+          final match = findBestMatch<Map<String, dynamic>>(
+            source: rawEvent,
+            items: state.pitEvents,
+            labelGetter: (e) => e['event_name']?.toString() ?? '',
+          );
+          if (match.isMatched) {
+            headerMatch = match;
+          }
+        }
+        if (importEventName.isNotEmpty &&
+            !state.pitEvents.any((e) => e['event_name'] == importEventName)) {
+          if (headerMatch != null && headerMatch.isMatched) {
+            importEventName = headerMatch.label;
+          } else {
+            importEventName = '';
+            headerMatch = null;
+          }
+        }
+      }
+
       draftRestored = true;
       draftSavedAt = existingDraft.savedAt;
       lastSavedSnapshot = currentDraftSnapshot();
@@ -1593,14 +1638,36 @@ class ScheduleImportDialog {
     required VoidCallback onContextChanged,
   }) {
     final isPit = scope == 'pit';
-    final stageItems = state.defenseStages
-        .map(
-          (stage) => DropdownMenuItem<int?>(
-            value: asInt(stage['id']),
+    final stageItems = <DropdownMenuItem<int?>>[];
+    final seenStageIds = <int?>{};
+    for (final stage in state.defenseStages) {
+      final id = asInt(stage['id']);
+      if (id != null && seenStageIds.add(id)) {
+        stageItems.add(
+          DropdownMenuItem<int?>(
+            value: id,
             child: Text(stage['label']?.toString() ?? ''),
           ),
-        )
-        .toList();
+        );
+      }
+    }
+    final effectiveStageId = stageItems.any((item) => item.value == stageId) ? stageId : null;
+
+    final pitEventItems = <DropdownMenuItem<String>>[];
+    final seenEvents = <String>{};
+    for (final e in state.pitEvents) {
+      final name = e['event_name']?.toString() ?? '';
+      if (name.isNotEmpty && seenEvents.add(name)) {
+        pitEventItems.add(
+          DropdownMenuItem<String>(
+            value: name,
+            child: Text(name),
+          ),
+        );
+      }
+    }
+    final effectiveEventName = pitEventItems.any((e) => e.value == eventName) ? eventName : null;
+
     final pRubricName = _getRubricName(state, panelRubricId, panelRubricName);
     final aRubricName = _getRubricName(state, adviserRubricId, adviserRubricName);
     final peRubricName = isPit
@@ -1650,17 +1717,10 @@ class ScheduleImportDialog {
                     ? _labeledField(
                         'PIT Event',
                         DropdownButtonFormField<String>(
-                          initialValue: state.pitEvents.any((e) => e['event_name'] == eventName)
-                              ? eventName
-                              : null,
+                          key: ValueKey('pit_event_$effectiveEventName'),
+                          initialValue: effectiveEventName,
                           decoration: const InputDecoration(hintText: 'Select PIT event'),
-                          items: state.pitEvents.map((e) {
-                            final name = e['event_name']?.toString() ?? '';
-                            return DropdownMenuItem<String>(
-                              value: name,
-                              child: Text(name),
-                            );
-                          }).toList(),
+                          items: pitEventItems,
                           onChanged: onEventChanged,
                         ),
                         extra: _buildHeaderMatchIndicator(headerMatch),
@@ -1668,7 +1728,8 @@ class ScheduleImportDialog {
                     : _labeledField(
                         'Stage',
                         DropdownButtonFormField<int?>(
-                          initialValue: stageId,
+                          key: ValueKey('stage_$effectiveStageId'),
+                          initialValue: effectiveStageId,
                           decoration: const InputDecoration(hintText: 'Select stage if not detected'),
                           items: stageItems,
                           onChanged: onStageChanged,

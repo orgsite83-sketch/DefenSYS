@@ -75,6 +75,10 @@ class DefenseStage(models.Model):
     display_order = models.PositiveSmallIntegerField(default=1)
     description = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
+    is_presentation_only = models.BooleanField(
+        default=False,
+        help_text='If true, this stage is an oral presentation, pitch, or demo day with no file uploads required.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
