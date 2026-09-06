@@ -86,6 +86,14 @@ class ScheduleRunContainer extends ConsumerStatefulWidget {
 class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   bool _isGenerating = false;
   bool _isConfirming = false;
+  int? _selectedChairId;
+
+  int? get _effectiveChairId {
+    if (_selectedChairId != null && widget.selectedPanelistIds.contains(_selectedChairId)) {
+      return _selectedChairId;
+    }
+    return widget.selectedPanelistIds.isNotEmpty ? widget.selectedPanelistIds.first : null;
+  }
 
   bool _canScheduleCurrentScope() {
     return widget.canScheduleScope(widget.state, widget.scope);
@@ -276,6 +284,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       return null;
     }
 
+    final effectiveChair = _effectiveChairId;
     final payload = <String, dynamic>{
       'scope': widget.scope,
       'defense_stage_id': widget.scope == 'capstone' ? widget.stageId : null,
@@ -286,6 +295,7 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
       'slot_duration': int.tryParse(widget.durationController.text.trim()) ?? 60,
       'room': room,
       'panelist_ids': widget.selectedPanelistIds.toList(),
+      if (effectiveChair != null) 'chair_panelist_id': effectiveChair,
       if (widget.scope == 'capstone' && widget.documenterId != null)
         'documenter_id': widget.documenterId,
     };
@@ -696,9 +706,9 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
             children: [
               Row(
                 children: [
-                  const Expanded(
+                  Expanded(
                     child: Row(
-                      children: [
+                      children: const [
                         CircleAvatar(
                           radius: 12,
                           backgroundColor: AppColors.maroon,
@@ -712,12 +722,15 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                           ),
                         ),
                         SizedBox(width: 10),
-                        Text(
-                          'Step 1: Set Up Defense Schedule',
-                          style: TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w900,
-                            color: AppColors.textPrimary,
+                        Flexible(
+                          child: Text(
+                            'Step 1: Set Up Defense Schedule',
+                            style: TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w900,
+                              color: AppColors.textPrimary,
+                            ),
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                       ],
@@ -1075,6 +1088,88 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
                       ),
                     ),
                   ),
+                  if (widget.selectedPanelistIds.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                    const SizedBox(height: 14),
+                    Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
+                      children: [
+                        const Text(
+                          '👑 Presiding Panel Chair',
+                          style: TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFEF3C7),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: const Text(
+                            'Verdict Authority',
+                            style: TextStyle(
+                              color: Color(0xFFB45309),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      'Choose which panelist presides and issues the official stage verdict.',
+                      style: TextStyle(fontSize: 12, color: Color(0xFF64748B)),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: selectedPanelists.map((panelist) {
+                        final id = asInt(panelist['id']);
+                        final name = panelist['name']?.toString() ??
+                            panelist['full_name']?.toString() ??
+                            panelist['username']?.toString() ??
+                            'Panelist';
+                        final isChair = (id == _effectiveChairId);
+
+                        return ChoiceChip(
+                          label: Text(
+                            isChair ? '👑 $name (Chair)' : name,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: isChair ? FontWeight.w800 : FontWeight.w500,
+                              color: isChair ? const Color(0xFF92400E) : const Color(0xFF344054),
+                            ),
+                          ),
+                          selected: isChair,
+                          onSelected: (selected) {
+                            if (selected && id != null) {
+                              setState(() => _selectedChairId = id);
+                            }
+                          },
+                          backgroundColor: const Color(0xFFF8FAFC),
+                          selectedColor: const Color(0xFFFEF3C7),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                            side: BorderSide(
+                              color: isChair ? const Color(0xFFF59E0B) : const Color(0xFFE2E8F0),
+                              width: isChair ? 1.5 : 1.0,
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
                 ],
               ),
             ),
@@ -1500,12 +1595,20 @@ class _ScheduleRunContainerState extends ConsumerState<ScheduleRunContainer> {
   }
 
   String _panelNamesFromSelection(DefenseSchedulerState state) {
+    final effectiveChair = _effectiveChairId;
     final names = state.panelists
         .where((p) {
           final id = asInt(p['id']);
           return id != null && widget.selectedPanelistIds.contains(id);
         })
-        .map((p) => p['name']?.toString() ?? p['full_name']?.toString() ?? p['username']?.toString() ?? '')
+        .map((p) {
+          final id = asInt(p['id']);
+          final name = p['name']?.toString() ?? p['full_name']?.toString() ?? p['username']?.toString() ?? '';
+          if (id == effectiveChair) {
+            return '👑 $name (Chair)';
+          }
+          return name;
+        })
         .where((n) => n.isNotEmpty)
         .toList();
     if (names.isEmpty) return 'No panelists assigned';

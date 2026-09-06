@@ -233,6 +233,255 @@ void main() {
       expect(rows[0].stageIssues.first, contains('rubrics are incomplete'));
       expect(rows[0].teamIssues, isEmpty);
     });
+
+    test('dynamically recalculates end time and timeLabel when slotDuration is provided', () {
+      expect(addMinutesToTimeString('09:30', 120), equals('11:30'));
+      expect(addMinutesToTimeString('09:00', 40), equals('09:40'));
+      expect(addMinutesToTimeString('11:45', 30), equals('12:15'));
+
+      final parsed = ParsedScheduleImport(
+        stage: stageLabel,
+        date: '2026-06-18',
+        room: 'Room 301',
+        rows: const [
+          ParsedScheduleImportRow(
+            sheetRow: 1,
+            time: '09:30 - 10:00',
+            teamName: 'Team Alpha',
+            projectTitle: 'Project Alpha',
+            adviser: 'Ricardo Fontanilla',
+            members: [],
+            chair: 'Jonathan Beltran',
+            panelMembers: [],
+            documenter: 'Cecilia Magbanua',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: stageLabel,
+            startTime: '09:30',
+            endTime: '10:00',
+            slotDuration: 30,
+          ),
+        ],
+      );
+
+      final rows = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId,
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        slotDuration: 120,
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows[0].duration, equals(120));
+      expect(rows[0].effectiveEndTime, equals('11:30'));
+      expect(rows[0].timeLabel, equals('09:30 - 11:30'));
+      expect(rows[0].toPayload()['slot_duration'], equals(120));
+    });
+
+    test('flags stage mismatch issue when spreadsheet stage differs from active stage', () {
+      final parsed = ParsedScheduleImport(
+        stage: 'coloqium',
+        date: '2026-06-18',
+        room: 'Room 301',
+        rows: const [
+          ParsedScheduleImportRow(
+            sheetRow: 1,
+            time: '09:00 - 09:30',
+            teamName: 'Team Alpha', // Endorsed for Concept Proposal
+            projectTitle: 'Project Alpha',
+            adviser: 'Ricardo Fontanilla',
+            members: [],
+            chair: 'Jonathan Beltran',
+            panelMembers: [],
+            documenter: 'Cecilia Magbanua',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: 'coloqium',
+            startTime: '09:00',
+            endTime: '09:30',
+            slotDuration: 30,
+          ),
+        ],
+      );
+
+      final rows = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId, // Concept Proposal
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows[0].ready, isFalse);
+      expect(rows[0].hasStageIssue, isTrue);
+      expect(rows[0].stageIssues.first, contains('coloqium'));
+      expect(rows[0].stageIssues.first, contains('Project Proposal'));
+    });
+
+    test('accepts row when spreadsheet stage matches active stage case-insensitively', () {
+      final parsed = ParsedScheduleImport(
+        stage: 'PROJECT PROPOSAL',
+        date: '2026-06-18',
+        room: 'Room 301',
+        rows: const [
+          ParsedScheduleImportRow(
+            sheetRow: 1,
+            time: '09:00 - 09:30',
+            teamName: 'Team Alpha', // Endorsed for Project Proposal
+            projectTitle: 'Project Alpha',
+            adviser: 'Ricardo Fontanilla',
+            members: [],
+            chair: 'Jonathan Beltran',
+            panelMembers: [],
+            documenter: 'Cecilia Magbanua',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: 'PROJECT PROPOSAL',
+            startTime: '09:00',
+            endTime: '09:30',
+            slotDuration: 30,
+          ),
+        ],
+      );
+
+      final rows = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId, // Project Proposal
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows[0].hasStageIssue, isFalse);
+      expect(rows[0].ready, isTrue);
+    });
+
+    test('correctly maps chairPanelistId from chair column and includes in toPayload()', () {
+      final parsed = ParsedScheduleImport(
+        stage: stageLabel,
+        date: '2026-06-18',
+        room: 'Room 301',
+        rows: const [
+          ParsedScheduleImportRow(
+            sheetRow: 1,
+            time: '09:00 - 09:30',
+            teamName: 'Team Alpha',
+            projectTitle: 'Project Alpha',
+            adviser: 'Ricardo Fontanilla',
+            members: [],
+            chair: 'Jonathan Beltran', // id: 101
+            panelMembers: ['Cecilia Magbanua'], // id: 102
+            documenter: 'Ricardo Fontanilla',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: stageLabel,
+            startTime: '09:00',
+            endTime: '09:30',
+            slotDuration: 30,
+          ),
+        ],
+      );
+
+      final rows = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId,
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      );
+
+      expect(rows, hasLength(1));
+      expect(rows[0].chairPanelistId, equals(101));
+      expect(rows[0].panelistIds, containsAll([101, 102]));
+
+      final payload = rows[0].toPayload();
+      expect(payload['chair_panelist_id'], equals(101));
+      expect(payload['panelist_ids'], equals([101, 102]));
+    });
+
+    test('defaults chairPanelistId to first panelist when explicit chair column is empty', () {
+      final parsed = ParsedScheduleImport(
+        stage: stageLabel,
+        date: '2026-06-18',
+        room: 'Room 301',
+        rows: const [
+          ParsedScheduleImportRow(
+            sheetRow: 1,
+            time: '09:00 - 09:30',
+            teamName: 'Team Alpha',
+            projectTitle: 'Project Alpha',
+            adviser: 'Ricardo Fontanilla',
+            members: [],
+            chair: '',
+            panelMembers: ['Cecilia Magbanua', 'Jonathan Beltran'], // ids: 102, 101
+            documenter: 'Ricardo Fontanilla',
+            room: 'Room 301',
+            date: '2026-06-18',
+            stage: stageLabel,
+            startTime: '09:00',
+            endTime: '09:30',
+            slotDuration: 30,
+          ),
+        ],
+      );
+
+      final rows = buildScheduleImportPreviewRows(
+        parsed,
+        testState,
+        scope: 'capstone',
+        stageId: stageId,
+        eventName: '',
+        date: '2026-06-18',
+        room: 'Room 301',
+        fallbackDuration: 30,
+        panelRubricId: 1,
+        adviserRubricId: 2,
+        peerRubricId: 3,
+        panelWeight: 50,
+        peerWeight: 20,
+      );
+
+      expect(rows, hasLength(1));
+      // First panelist in roster becomes the default presiding chair
+      expect(rows[0].chairPanelistId, equals(102));
+      expect(rows[0].toPayload()['chair_panelist_id'], equals(102));
+    });
   });
 }
 

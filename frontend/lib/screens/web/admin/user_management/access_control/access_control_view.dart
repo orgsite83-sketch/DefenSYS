@@ -410,7 +410,7 @@ class _AccessControlViewState extends ConsumerState<AccessControlView> {
                                       icon: Icons.groups_2_outlined,
                                       title: 'Defense Panelist',
                                       subtitle:
-                                          'Participates as evaluator on defense panels.',
+                                          'Eligible pool member for automated defense scheduler. (In timetable bulk import, all faculty can be assigned).',
                                       value: _isPanelist,
                                       enabled: !widget.state.isSaving,
                                       onChanged: (v) =>

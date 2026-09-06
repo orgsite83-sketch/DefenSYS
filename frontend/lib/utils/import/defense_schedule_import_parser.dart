@@ -187,10 +187,14 @@ class ParsedScheduleImportRow {
 ParsedScheduleImport parseScheduleImportFile({
   required Uint8List bytes,
   required String filename,
+  Iterable<String>? configuredStages,
 }) {
   final lower = filename.toLowerCase();
   if (lower.endsWith('.csv')) {
-    return parseScheduleImportMatrix(_csvToMatrix(utf8.decode(bytes)));
+    return parseScheduleImportMatrix(
+      _csvToMatrix(utf8.decode(bytes)),
+      configuredStages: configuredStages,
+    );
   }
 
   final workbook = Excel.decodeBytes(bytes);
@@ -209,7 +213,10 @@ ParsedScheduleImport parseScheduleImportFile({
     final matrix = sheet.rows
         .map((row) => row.map(_excelCellText).toList(growable: false))
         .toList(growable: false);
-    final parsed = parseScheduleImportMatrix(matrix);
+    final parsed = parseScheduleImportMatrix(
+      matrix,
+      configuredStages: configuredStages,
+    );
     if (parsed.rows.isNotEmpty) {
       allRows.addAll(parsed.rows);
       detectedStage ??= parsed.stage;
@@ -230,7 +237,10 @@ ParsedScheduleImport parseScheduleImportFile({
   );
 }
 
-ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
+ParsedScheduleImport parseScheduleImportMatrix(
+  List<List<String>> matrix, {
+  Iterable<String>? configuredStages,
+}) {
   if (matrix.isEmpty) {
     return const ParsedScheduleImport(rows: []);
   }
@@ -302,7 +312,11 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
 
     // 2. Preamble metadata before first table header
     if (!headerFound) {
-      final rowMeta = _readMetadataRow(rawRow);
+      final rowMeta = _readMetadataRow(
+        rawRow,
+        configuredStages: configuredStages,
+        isPreamble: true,
+      );
       if (rowMeta['stage'] != null && rowMeta['stage']!.isNotEmpty) {
         currentStage = rowMeta['stage']!;
         metadata['stage'] ??= currentStage;
@@ -340,7 +354,11 @@ ParsedScheduleImport parseScheduleImportMatrix(List<List<String>> matrix) {
     // If row has no valid defense time, no team name, and no student member,
     // it is a section metadata divider row (e.g. "6/19/2026" or "Room 301")
     if (!hasValidTime && rawTeam.isEmpty && rawMember.isEmpty) {
-      final rowMeta = _readMetadataRow(rawRow);
+      final rowMeta = _readMetadataRow(
+        rawRow,
+        configuredStages: configuredStages,
+        isPreamble: false,
+      );
       if (rowMeta['stage'] != null && rowMeta['stage']!.isNotEmpty) {
         currentStage = rowMeta['stage']!;
         metadata['stage'] ??= currentStage;
@@ -549,14 +567,26 @@ bool _isRoomString(String text) {
       RegExp(r'^(?:smart\s+room|multimedia|conference)$').hasMatch(lower);
 }
 
-bool _isStageOrSessionString(String text) {
+bool _matchesConfiguredStage(String text, Iterable<String>? configuredStages) {
+  if (configuredStages == null || configuredStages.isEmpty) return false;
+  final clean = text.trim().toLowerCase();
+  if (clean.isEmpty) return false;
+  for (final stage in configuredStages) {
+    final cleanStage = stage.trim().toLowerCase();
+    if (cleanStage.isEmpty) continue;
+    if (clean == cleanStage ||
+        clean.contains(cleanStage) ||
+        cleanStage.contains(clean)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+bool _isSessionDividerString(String text) {
   final lower = text.trim().toLowerCase();
   if (lower.isEmpty) return false;
-  return lower.contains('proposal') ||
-      lower.contains('defense') ||
-      lower.contains('redefense') ||
-      lower.contains('capstone') ||
-      lower.contains('session') ||
+  return lower.contains('session') ||
       lower.contains('day 1') ||
       lower.contains('day 2') ||
       lower.contains('day 3') ||
@@ -565,7 +595,11 @@ bool _isStageOrSessionString(String text) {
       lower.contains('afternoon');
 }
 
-Map<String, String> _readMetadataRow(List<String> row) {
+Map<String, String> _readMetadataRow(
+  List<String> row, {
+  Iterable<String>? configuredStages,
+  bool isPreamble = false,
+}) {
   final result = <String, String>{};
   final semesterRegex =
       RegExp(r'\b(1st|2nd|Summer)\s*(?:Semester|sem)?\b', caseSensitive: false);
@@ -581,7 +615,7 @@ Map<String, String> _readMetadataRow(List<String> row) {
     final value = inlineValue.isNotEmpty ? inlineValue : next;
 
     if (value.isNotEmpty) {
-      if (['stage', 'defensestage'].contains(normalized)) {
+      if (['stage', 'defensestage', 'event', 'pitevent'].contains(normalized)) {
         result['stage'] = value;
       }
       if (['date', 'defensedate', 'scheduleddate'].contains(normalized)) {
@@ -613,8 +647,11 @@ Map<String, String> _readMetadataRow(List<String> row) {
       result['date'] = cell;
     } else if (result['room'] == null && _isRoomString(cell)) {
       result['room'] = cell;
-    } else if (result['stage'] == null && _isStageOrSessionString(cell)) {
-      result['stage'] = cell;
+    } else if (result['stage'] == null) {
+      if (_matchesConfiguredStage(cell, configuredStages) ||
+          _isSessionDividerString(cell)) {
+        result['stage'] = cell;
+      }
     }
   }
 
@@ -622,12 +659,19 @@ Map<String, String> _readMetadataRow(List<String> row) {
       row.map((c) => c.trim()).where((c) => c.isNotEmpty).toList();
   if (nonEmpty.length == 1) {
     final single = nonEmpty.first;
-    if (result['date'] == null && _isDateString(single)) {
-      result['date'] = single;
-    } else if (result['room'] == null && _isRoomString(single)) {
-      result['room'] = single;
-    } else if (result['stage'] == null && _isStageOrSessionString(single)) {
-      result['stage'] = single;
+    if (_isDateString(single)) {
+      result['date'] ??= single;
+    } else if (_isRoomString(single)) {
+      result['room'] ??= single;
+    } else if (result['stage'] == null) {
+      if (isPreamble) {
+        // In preamble before column headers, any single cell that is not a date,
+        // room, or semester is the preamble stage/title header!
+        result['stage'] = single;
+      } else if (_matchesConfiguredStage(single, configuredStages) ||
+          _isSessionDividerString(single)) {
+        result['stage'] = single;
+      }
     }
   }
 

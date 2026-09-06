@@ -191,6 +191,20 @@ def panelist_result_payload(team_grade, panelist_key):
             'peer': peer_w,
             **({'adviser': team_grade.adviser_weight} if team_grade.is_capstone and team_grade.adviser_weight else {}),
         },
+        'verdict': team_grade.verdict or '',
+        'verdict_remarks': team_grade.verdict_remarks or '',
+        'verdict_by_name': (
+            f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
+            or team_grade.verdict_by.username
+        ) if team_grade.verdict_by else '',
+        'revision_deadline': (
+            team_grade.revision_deadline.isoformat()
+            if team_grade.revision_deadline
+            else None
+        ),
+        'attempt_count': team_grade.attempt_count or 1,
+        'schedule_id': team_grade.schedule_id,
+        'grade_id': team_grade.id,
         '_sort_date': team_grade.schedule.scheduled_date if team_grade.schedule_id else None,
         '_sort_time': team_grade.schedule.start_time if team_grade.schedule_id else None,
     }

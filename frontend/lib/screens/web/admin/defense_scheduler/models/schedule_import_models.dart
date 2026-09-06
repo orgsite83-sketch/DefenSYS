@@ -209,13 +209,28 @@ enum ScheduleImportRowType {
   invalid,
 }
 
+String addMinutesToTimeString(String time, int minutesToAdd) {
+  final clean = time.trim();
+  if (clean.isEmpty || minutesToAdd <= 0) return clean;
+  final parts = clean.split(':');
+  if (parts.length < 2) return clean;
+  final hour = int.tryParse(parts[0]);
+  final minute = int.tryParse(parts[1]);
+  if (hour == null || minute == null) return clean;
+  final totalMinutes = hour * 60 + minute + minutesToAdd;
+  final endHour = (totalMinutes ~/ 60) % 24;
+  final endMinute = totalMinutes % 60;
+  return '${endHour.toString().padLeft(2, '0')}:${endMinute.toString().padLeft(2, '0')}';
+}
+
 class ScheduleImportPreviewRow {
   const ScheduleImportPreviewRow({
     required this.source,
     required this.scope,
     required this.teamId,
     required this.panelistIds,
-    this.documenterId,
+    this.chairPanelistId,
+    required this.documenterId,
     required this.stageId,
     required this.eventName,
     required this.panelRubricId,
@@ -237,6 +252,7 @@ class ScheduleImportPreviewRow {
   final String scope;
   final int? teamId;
   final List<int> panelistIds;
+  final int? chairPanelistId;
   final int? documenterId;
   final int? stageId;
   final String eventName;
@@ -269,14 +285,23 @@ class ScheduleImportPreviewRow {
       rowType == ScheduleImportRowType.alreadyScheduled;
   bool get isNotEndorsed => rowType == ScheduleImportRowType.notEndorsed;
 
+  String get effectiveEndTime {
+    if (source.startTime.isEmpty) return source.endTime;
+    if (duration > 0) {
+      return addMinutesToTimeString(source.startTime, duration);
+    }
+    return source.endTime;
+  }
+
   String get timeLabel {
     if (source.startTime.isEmpty) {
       return source.time.isEmpty ? '-' : source.time;
     }
-    if (source.endTime.isEmpty) {
+    final end = effectiveEndTime;
+    if (end.isEmpty) {
       return source.startTime;
     }
-    return '${source.startTime} - ${source.endTime}';
+    return '${source.startTime} - $end';
   }
 
   String get teamLabel => source.teamName.isEmpty ? '-' : source.teamName;
@@ -303,6 +328,7 @@ class ScheduleImportPreviewRow {
         'slot_duration': duration,
         'room': room,
         'panelist_ids': panelistIds,
+        if (chairPanelistId != null) 'chair_panelist_id': chairPanelistId,
       };
     }
     return {
@@ -316,6 +342,7 @@ class ScheduleImportPreviewRow {
       'slot_duration': duration,
       'room': room,
       'panelist_ids': panelistIds,
+      if (chairPanelistId != null) 'chair_panelist_id': chairPanelistId,
       if (documenterId != null) 'documenter_id': documenterId,
     };
   }
@@ -527,6 +554,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   required String eventName,
   required String date,
   required String room,
+  int? slotDuration,
   required int fallbackDuration,
   required int? panelRubricId,
   required int? adviserRubricId,
@@ -535,6 +563,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
   required int peerWeight,
 }) {
   final isPit = scope == 'pit';
+  final effectiveSlotDuration =
+      (slotDuration != null && slotDuration > 0) ? slotDuration : null;
   return parsed.rows.map((source) {
     final stageIssues = <String>[];
     final teamIssues = <String>[];
@@ -546,7 +576,8 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     final rowRoom = source.room.trim().isNotEmpty
         ? source.room.trim()
         : room.trim();
-    final duration = source.slotDuration ?? fallbackDuration;
+    final duration =
+        effectiveSlotDuration ?? (source.slotDuration ?? fallbackDuration);
     final teamMatch = matchTeam(source, state, scope: scope);
     final panelistMatches = <ImportNameMatch>[];
 
@@ -571,6 +602,23 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     if (isPit) {
       if (eventName.trim().isEmpty) {
         stageIssues.add('Select a PIT event.');
+      } else if (source.stage.trim().isNotEmpty) {
+        final eventMatch = findBestMatch<Map<String, dynamic>>(
+          source: source.stage,
+          items: state.pitEvents,
+          labelGetter: (e) => e['event_name']?.toString() ?? '',
+        );
+        if (eventMatch.isMatched) {
+          if (eventMatch.label.trim().toLowerCase() != eventName.trim().toLowerCase()) {
+            stageIssues.add(
+              'Spreadsheet event "${source.stage}" matches "${eventMatch.label}", not active event "$eventName".',
+            );
+          }
+        } else {
+          stageIssues.add(
+            'Spreadsheet event "${source.stage}" does not match active event "$eventName".',
+          );
+        }
       }
       if (panelRubricId == null) {
         stageIssues.add('Panel rubric is missing.');
@@ -581,6 +629,31 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
     } else {
       if (stageId == null) {
         stageIssues.add('Select a defense stage.');
+      } else {
+        final stageObj = state.defenseStages.firstWhere(
+          (s) => asInt(s['id']) == stageId,
+          orElse: () => <String, dynamic>{},
+        );
+        final targetStageLabel = stageObj['label']?.toString() ?? '';
+        if (targetStageLabel.isNotEmpty && source.stage.trim().isNotEmpty) {
+          final stageMatch = findBestMatch<Map<String, dynamic>>(
+            source: source.stage,
+            items: state.defenseStages,
+            labelGetter: (s) => s['label']?.toString() ?? '',
+          );
+          if (stageMatch.isMatched) {
+            final matchedId = asInt(stageMatch.item?['id']);
+            if (matchedId != stageId) {
+              stageIssues.add(
+                'Spreadsheet stage "${source.stage}" matches "${stageMatch.label}", not active stage "$targetStageLabel".',
+              );
+            }
+          } else {
+            stageIssues.add(
+              'Spreadsheet stage "${source.stage}" does not match active stage "$targetStageLabel".',
+            );
+          }
+        }
       }
       if (panelRubricId == null ||
           adviserRubricId == null ||
@@ -718,6 +791,11 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       slotIssues.add('At least one chair or panel member is required.');
     }
 
+    int? effectiveChairId = chairMatch.id;
+    if (effectiveChairId == null && panelistIds.isNotEmpty) {
+      effectiveChairId = panelistIds.first;
+    }
+
     final allIssues = <String>[...stageIssues, ...teamIssues, ...slotIssues];
 
     return ScheduleImportPreviewRow(
@@ -725,6 +803,7 @@ List<ScheduleImportPreviewRow> buildScheduleImportPreviewRows(
       scope: scope,
       teamId: teamMatch.id,
       panelistIds: panelistIds,
+      chairPanelistId: effectiveChairId,
       documenterId: documenterId,
       stageId: stageId,
       eventName: eventName,

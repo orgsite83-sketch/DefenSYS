@@ -160,6 +160,13 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 ? Map<String, dynamic>.from(team['panel_rubric'] as Map)
                 : null,
             scheduledDate: scheduledDate,
+            isChair: team['is_chair'] == true,
+            verdict: team['verdict']?.toString(),
+            verdictRemarks: team['verdict_remarks']?.toString(),
+            verdictByName: team['verdict_by_name']?.toString(),
+            revisionDeadline: team['revision_deadline']?.toString(),
+            attemptCount: (team['attempt_count'] as num?)?.toInt() ?? 1,
+            gradeId: (team['grade_id'] as num?)?.toInt(),
           );
         }).toList();
 

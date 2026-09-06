@@ -148,41 +148,59 @@ class AssignmentsTab extends StatelessWidget {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Event / Stage Pill
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: scopeColor,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        hasValidScope
-                            ? (isCapstone ? Icons.school : Icons.badge)
-                            : Icons.warning_amber_rounded,
-                        size: 13,
-                        color: Colors.white,
+                // Event / Stage Pill + Chair Indicator
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: scopeColor,
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(width: 4),
-                      Text(
-                        t.scopeLabel.toUpperCase(),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 0.5,
-                        ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            hasValidScope
+                                ? (isCapstone ? Icons.school : Icons.badge)
+                                : Icons.warning_amber_rounded,
+                            size: 13,
+                            color: Colors.white,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            t.scopeLabel.toUpperCase(),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ],
                       ),
+                    ),
+                    if (t.isChair) ...[
+                      const SizedBox(width: 6),
+                      _chairBadge(),
                     ],
-                  ),
+                  ],
                 ),
 
-                // Status Badge (Draft, Posted, Scheduled)
-                isLockedByDate
-                    ? _statusBadge('Scheduled')
-                    : _statusBadge(isPosted ? 'Posted' : 'Draft'),
+                // Verdict Badge + Status Badge (Draft, Posted, Scheduled)
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (t.hasVerdict) ...[
+                      _verdictBadge(t.verdict),
+                      const SizedBox(width: 6),
+                    ],
+                    isLockedByDate
+                        ? _statusBadge('Scheduled')
+                        : _statusBadge(isPosted ? 'Posted' : 'Draft'),
+                  ],
+                ),
               ],
             ),
           ),
@@ -400,6 +418,89 @@ class AssignmentsTab extends StatelessWidget {
               fontSize: 10,
               color: badgeColor,
               fontWeight: FontWeight.bold,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _chairBadge() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFEF3C7),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF59E0B)),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(Icons.gavel_rounded, size: 11, color: Color(0xFF92400E)),
+          SizedBox(width: 3),
+          Text(
+            'CHAIR',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF92400E),
+              letterSpacing: 0.5,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _verdictBadge(String? verdict) {
+    if (verdict == null || verdict.isEmpty) return const SizedBox.shrink();
+    final isApproved = verdict == 'approved';
+    final isRevisions = verdict == 'approved_with_revisions';
+    final isForRedefense = verdict == 'for_redefense';
+
+    final Color color = isApproved
+        ? const Color(0xFF10B981)
+        : isRevisions
+            ? const Color(0xFFD97706)
+            : isForRedefense
+                ? const Color(0xFFEF4444)
+                : Colors.grey;
+
+    final String label = isApproved
+        ? 'APPROVED'
+        : isRevisions
+            ? 'REVISIONS'
+            : isForRedefense
+                ? 'RE-DEFENSE'
+                : verdict.toUpperCase();
+
+    final IconData icon = isApproved
+        ? Icons.check_circle
+        : isRevisions
+            ? Icons.edit_calendar
+            : isForRedefense
+                ? Icons.replay_rounded
+                : Icons.info_outline;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.6)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 11, color: color),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              color: color,
+              letterSpacing: 0.4,
             ),
           ),
         ],

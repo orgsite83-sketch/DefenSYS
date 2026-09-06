@@ -154,6 +154,14 @@ class OverallResultsTab extends StatelessWidget {
             ? 'Failed'
             : 'Pending';
 
+    final verdict = result['verdict']?.toString() ?? '';
+    final verdictRemarks = result['verdict_remarks']?.toString() ?? '';
+    final verdictByName = result['verdict_by_name']?.toString() ?? '';
+    final attemptCount = result['attempt_count'] ?? 1;
+    final hasVerdict = verdict.isNotEmpty;
+    final isForRedefense = verdict == 'for_redefense';
+    final isRevisions = verdict == 'approved_with_revisions';
+
     return Card(
       margin: const EdgeInsets.only(bottom: 16),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
@@ -217,6 +225,87 @@ class OverallResultsTab extends StatelessWidget {
               ],
             ),
           ),
+
+          // ── Official Verdict Banner (if available) ──
+          if (hasVerdict) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: isForRedefense
+                      ? Colors.red.shade50
+                      : isRevisions
+                          ? Colors.amber.shade50
+                          : Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isForRedefense
+                        ? Colors.red.shade200
+                        : isRevisions
+                            ? Colors.amber.shade200
+                            : Colors.green.shade200,
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          isForRedefense
+                              ? Icons.replay_rounded
+                              : isRevisions
+                                  ? Icons.edit_calendar
+                                  : Icons.check_circle,
+                          size: 15,
+                          color: isForRedefense
+                              ? Colors.red.shade800
+                              : isRevisions
+                                  ? Colors.amber.shade900
+                                  : Colors.green.shade800,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            isForRedefense
+                                ? 'VERDICT: FOR RE-DEFENSE (Attempt #$attemptCount)'
+                                : isRevisions
+                                    ? 'VERDICT: APPROVED WITH REVISIONS'
+                                    : 'VERDICT: APPROVED',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: isForRedefense
+                                  ? Colors.red.shade900
+                                  : isRevisions
+                                      ? Colors.amber.shade900
+                                      : Colors.green.shade900,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (verdictByName.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Rendered by Chair: $verdictByName',
+                        style: TextStyle(fontSize: 10, color: Colors.grey.shade700),
+                      ),
+                    ],
+                    if (verdictRemarks.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        'Directives: $verdictRemarks',
+                        style: const TextStyle(fontSize: 11, color: Color(0xFF374151)),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
 
           // ── Panel Score Bar ──
           Padding(

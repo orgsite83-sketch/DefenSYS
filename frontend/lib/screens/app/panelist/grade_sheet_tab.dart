@@ -40,6 +40,10 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
   final Map<String, List<Criterion>> _studentCriteria = {};
   final Map<String, TextEditingController> _studentRemarksControllers = {};
   TextEditingController _teamRemarksController = TextEditingController();
+  TextEditingController _verdictRemarksController = TextEditingController();
+  String _selectedVerdict = 'approved';
+  DateTime? _revisionDeadline;
+  bool _isSubmittingVerdict = false;
   int _selectedStudentIndex = 0;
 
   @override
@@ -54,6 +58,7 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       controller.dispose();
     }
     _teamRemarksController.dispose();
+    _verdictRemarksController.dispose();
     super.dispose();
   }
 
@@ -99,6 +104,10 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
       _studentRemarksControllers.clear();
       _teamRemarksController.dispose();
       _teamRemarksController = TextEditingController();
+      _verdictRemarksController.dispose();
+      _verdictRemarksController = TextEditingController(text: team.verdictRemarks ?? '');
+      _selectedVerdict = (team.verdict != null && team.verdict!.isNotEmpty) ? team.verdict! : 'approved';
+      _revisionDeadline = team.revisionDeadline != null ? DateTime.tryParse(team.revisionDeadline!) : null;
 
       final embedded = team.panelRubric;
       if (embedded != null) {
@@ -328,6 +337,33 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (team.isChair) ...[
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFEF3C7),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFF59E0B)),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.gavel_rounded, size: 16, color: Color(0xFF92400E)),
+                          SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'You are presiding as the Panel Chair for this defense hearing.',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: Color(0xFF92400E),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
@@ -760,6 +796,12 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
             ),
           ),
+          if (team.isCapstone) ...[
+            const SizedBox(height: 14),
+            team.isChair
+                ? _buildChairVerdictCard(team)
+                : _buildPanelistVerdictCard(team),
+          ],
         ],
       ),
     );
@@ -1145,5 +1187,541 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
         },
       ),
     );
+  }
+
+  Widget _buildChairVerdictCard(TeamData team) {
+    final hasVerdict = team.hasVerdict;
+    final isForRedefense = _selectedVerdict == 'for_redefense';
+    final isRevisions = _selectedVerdict == 'approved_with_revisions';
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: hasVerdict
+              ? (team.isForRedefense
+                  ? Colors.red.shade300
+                  : team.isApprovedWithRevisions
+                      ? Colors.amber.shade300
+                      : Colors.green.shade300)
+              : DefensysTokens.gold.withValues(alpha: 0.5),
+          width: 1.5,
+        ),
+      ),
+      elevation: 3,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Header
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF3C7),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.gavel_rounded,
+                    size: 20,
+                    color: Color(0xFF92400E),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Panel Chair Official Verdict',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: DefensysTokens.maroon,
+                        ),
+                      ),
+                      Text(
+                        'Issue the official stage decision for ${team.name}.',
+                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                ),
+                if (hasVerdict) _verdictStatusChip(team.verdict!),
+              ],
+            ),
+
+            if (team.isForRedefense) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Text(
+                        'Team marked for Re-defense (Attempt #${team.attemptCount}). The team is now eligible for Attempt #${team.attemptCount + 1} re-scheduling in the Defense Scheduler.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.red.shade900,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const Divider(height: 24),
+            const Text(
+              'OFFICIAL STAGE VERDICT',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // Radio Options
+            _verdictRadioOption(
+              value: 'approved',
+              title: 'Approved',
+              description: 'The team successfully passed with no mandatory re-defense.',
+              icon: Icons.check_circle,
+              color: const Color(0xFF10B981),
+            ),
+            const SizedBox(height: 8),
+            _verdictRadioOption(
+              value: 'approved_with_revisions',
+              title: 'Approved with Revisions',
+              description: 'Passed, but required manuscript or system changes must be submitted.',
+              icon: Icons.edit_calendar,
+              color: const Color(0xFFD97706),
+            ),
+            const SizedBox(height: 8),
+            _verdictRadioOption(
+              value: 'for_redefense',
+              title: 'For Re-defense',
+              description: 'Concept rejected, prototype unsatisfactory, or major deficiencies requiring re-presentation.',
+              icon: Icons.replay_rounded,
+              color: const Color(0xFFEF4444),
+            ),
+
+            if (isRevisions) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.event, size: 18, color: Color(0xFF92400E)),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Revision Deadline (Optional)',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Color(0xFF92400E),
+                            ),
+                          ),
+                          Text(
+                            _revisionDeadline != null
+                                ? DateFormat('MMMM d, yyyy').format(_revisionDeadline!)
+                                : 'No deadline set',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Colors.grey.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    TextButton.icon(
+                      onPressed: () async {
+                        final picked = await showDatePicker(
+                          context: context,
+                          initialDate: _revisionDeadline ?? DateTime.now().add(const Duration(days: 14)),
+                          firstDate: DateTime.now(),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (picked != null) {
+                          setState(() => _revisionDeadline = picked);
+                        }
+                      },
+                      icon: const Icon(Icons.calendar_today, size: 14),
+                      label: Text(_revisionDeadline != null ? 'Change' : 'Set Date'),
+                      style: TextButton.styleFrom(
+                        foregroundColor: const Color(0xFF92400E),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+            const Text(
+              'PANEL INSTRUCTIONS & DIRECTIVES FOR TEAM',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 0.5,
+                color: Color(0xFF6B7280),
+              ),
+            ),
+            const SizedBox(height: 6),
+            TextField(
+              controller: _verdictRemarksController,
+              maxLines: 3,
+              decoration: InputDecoration(
+                hintText: isForRedefense
+                    ? 'Enter reasons for re-defense and specific instructions for Attempt #${team.attemptCount + 1}...'
+                    : 'Enter panel directives, recommendations, or required manuscript updates...',
+                hintStyle: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                contentPadding: const EdgeInsets.all(12),
+              ),
+            ),
+
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: TactileButton.primary(
+                label: _isSubmittingVerdict
+                    ? 'Submitting Verdict...'
+                    : (hasVerdict ? 'Update Official Verdict' : 'Submit Official Verdict'),
+                onPressed: _isSubmittingVerdict ? null : () => _confirmSubmitVerdict(team),
+                icon: const Icon(Icons.gavel_rounded, size: 16, color: Colors.white),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _verdictRadioOption({
+    required String value,
+    required String title,
+    required String description,
+    required IconData icon,
+    required Color color,
+  }) {
+    final isSelected = _selectedVerdict == value;
+    return InkWell(
+      onTap: () => setState(() => _selectedVerdict = value),
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.08) : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(
+            color: isSelected ? color : Colors.grey.shade300,
+            width: isSelected ? 1.5 : 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            Radio<String>(
+              value: value,
+              groupValue: _selectedVerdict,
+              activeColor: color,
+              onChanged: (val) {
+                if (val != null) setState(() => _selectedVerdict = val);
+              },
+            ),
+            Icon(icon, size: 20, color: color),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: isSelected ? color : Colors.black87,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    description,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.grey.shade600,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildPanelistVerdictCard(TeamData team) {
+    if (!team.hasVerdict) {
+      return Card(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        elevation: 1,
+        color: Colors.grey.shade50,
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Row(
+            children: [
+              Icon(Icons.info_outline, size: 20, color: Colors.grey.shade600),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'The official defense stage verdict will be rendered by the Panel Chair.',
+                  style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Card(
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(
+          color: team.isForRedefense
+              ? Colors.red.shade300
+              : team.isApprovedWithRevisions
+                  ? Colors.amber.shade300
+                  : Colors.green.shade300,
+          width: 1.5,
+        ),
+      ),
+      elevation: 2,
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.gavel_rounded, size: 18, color: DefensysTokens.maroon),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'Official Stage Verdict',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 14,
+                        color: DefensysTokens.maroon,
+                      ),
+                    ),
+                  ],
+                ),
+                _verdictStatusChip(team.verdict!),
+              ],
+            ),
+            if (team.verdictByName != null && team.verdictByName!.isNotEmpty) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Issued by Panel Chair: ${team.verdictByName}',
+                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              ),
+            ],
+            if (team.verdictRemarks != null && team.verdictRemarks!.isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.grey.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Panel Directives / Instructions:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF374151),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      team.verdictRemarks!,
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF1F2937)),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _verdictStatusChip(String verdict) {
+    final isApproved = verdict == 'approved';
+    final isRevisions = verdict == 'approved_with_revisions';
+    final isForRedefense = verdict == 'for_redefense';
+
+    final Color color = isApproved
+        ? const Color(0xFF10B981)
+        : isRevisions
+            ? const Color(0xFFD97706)
+            : isForRedefense
+                ? const Color(0xFFEF4444)
+                : Colors.grey;
+
+    final String label = isApproved
+        ? 'APPROVED'
+        : isRevisions
+            ? 'APPROVED W/ REVISIONS'
+            : isForRedefense
+                ? 'FOR RE-DEFENSE'
+                : verdict.toUpperCase();
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withValues(alpha: 0.5)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.bold,
+          color: color,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _confirmSubmitVerdict(TeamData team) async {
+    final directives = _verdictRemarksController.text.trim();
+    if (_selectedVerdict == 'for_redefense' && directives.isEmpty) {
+      showValidationToast(
+        context,
+        'Please enter the reasons / directives for Re-defense so the team knows what to address.',
+      );
+      return;
+    }
+
+    if (_selectedVerdict == 'for_redefense') {
+      final confirmed = await confirmDestructive(
+        context,
+        title: 'Issue Re-defense Verdict?',
+        message:
+            'Marking this team for Re-defense will record Attempt #${team.attemptCount} into history and open the team for Attempt #${team.attemptCount + 1} re-scheduling in the Defense Scheduler.\n\nAre you sure you want to proceed?',
+        confirmLabel: 'Issue Re-defense',
+      );
+      if (!confirmed || !mounted) return;
+    }
+
+    await _submitVerdict(team);
+  }
+
+  Future<void> _submitVerdict(TeamData team) async {
+    if (team.scheduleId.isEmpty) {
+      showValidationToast(context, 'Schedule ID is missing for this team.');
+      return;
+    }
+
+    final directives = _verdictRemarksController.text.trim();
+    setState(() => _isSubmittingVerdict = true);
+    showInfoToast(context, 'Submitting official defense verdict...');
+
+    try {
+      final httpClient = ref.read(authenticatedHttpClientProvider);
+      final verdictUrl = Uri.parse(
+        '${ApiConfig.defenseSchedulesUrl}/${team.scheduleId}/verdict/',
+      );
+
+      final payload = <String, dynamic>{
+        'verdict': _selectedVerdict,
+        'verdict_remarks': directives,
+        if (_revisionDeadline != null && _selectedVerdict == 'approved_with_revisions')
+          'revision_deadline': DateFormat('yyyy-MM-dd').format(_revisionDeadline!),
+      };
+
+      final response = await httpClient.patch(
+        verdictUrl,
+        body: json.encode(payload),
+      );
+
+      if (!mounted) return;
+      dismissFeedbackToasts();
+      setState(() => _isSubmittingVerdict = false);
+
+      if (response.statusCode == 200) {
+        setState(() {
+          team.verdict = _selectedVerdict;
+          team.verdictRemarks = directives;
+          if (_revisionDeadline != null && _selectedVerdict == 'approved_with_revisions') {
+            team.revisionDeadline = DateFormat('yyyy-MM-dd').format(_revisionDeadline!);
+          }
+        });
+
+        widget.onGradesSubmitted?.call();
+
+        if (_selectedVerdict == 'for_redefense') {
+          showSuccessToast(
+            context,
+            'Team marked for Re-defense. Eligible for Attempt #2 in Defense Scheduler.',
+          );
+        } else if (_selectedVerdict == 'approved_with_revisions') {
+          showSuccessToast(context, 'Verdict recorded: Approved with Revisions.');
+        } else {
+          showSuccessToast(context, 'Verdict recorded: Approved.');
+        }
+      } else {
+        showErrorToast(
+          context,
+          friendlyHttpErrorMessage(response.statusCode, response.body),
+        );
+      }
+    } on SessionExpiredException {
+      if (mounted) setState(() => _isSubmittingVerdict = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isSubmittingVerdict = false);
+        dismissFeedbackToasts();
+        showErrorToast(context, 'Error submitting verdict: $e');
+      }
+    }
   }
 }

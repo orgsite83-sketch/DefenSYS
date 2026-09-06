@@ -63,6 +63,7 @@ class ManualSlotEditorDialog {
     final duration = TextEditingController(text: initialDuration);
     final room = TextEditingController(text: initialRoom);
     final panelIds = <int>{...initialSelectedPanelistIds};
+    int? chairId = panelIds.isNotEmpty ? panelIds.first : null;
     int? documenterId = initialDocumenterId;
 
     if (!context.mounted) return;
@@ -353,17 +354,87 @@ class ManualSlotEditorDialog {
                                     setDialogState(() {
                                       if (value) {
                                         panelIds.add(id);
+                                        if (chairId == null) {
+                                          chairId = id;
+                                        }
                                         if (documenterId == id) {
                                           documenterId = null;
                                         }
                                       } else {
                                         panelIds.remove(id);
+                                        if (chairId == id) {
+                                          chairId = panelIds.isNotEmpty
+                                              ? panelIds.first
+                                              : null;
+                                        }
                                       }
                                     });
                                   },
                           );
                         }).toList(),
                       ),
+                      if (panelIds.isNotEmpty) ...[
+                        const SizedBox(height: 14),
+                        const Align(
+                          alignment: Alignment.centerLeft,
+                          child: Text(
+                            '👑 Presiding Panel Chair',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w800,
+                              fontSize: 13,
+                              color: Color(0xFF1E293B),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: panelIds.map((id) {
+                            final panelist = state.panelists.firstWhere(
+                              (p) => asInt(p['id']) == id,
+                              orElse: () => {'id': id, 'name': 'Panelist #$id'},
+                            );
+                            final name =
+                                panelist['name']?.toString() ?? 'Panelist #$id';
+                            final isChair = (chairId ?? panelIds.first) == id;
+                            return ChoiceChip(
+                              avatar: isChair
+                                  ? const Text(
+                                      '👑',
+                                      style: TextStyle(fontSize: 13),
+                                    )
+                                  : null,
+                              label: Text(
+                                isChair ? '$name (Chair)' : name,
+                                style: TextStyle(
+                                  fontWeight: isChair
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isChair
+                                      ? AppColors.maroon
+                                      : const Color(0xFF334155),
+                                ),
+                              ),
+                              selected: isChair,
+                              selectedColor: const Color(0xFFFEECEC),
+                              backgroundColor: const Color(0xFFF8FAFC),
+                              side: BorderSide(
+                                color: isChair
+                                    ? AppColors.maroon
+                                    : const Color(0xFFE2E8F0),
+                              ),
+                              onSelected: (selected) {
+                                if (selected) {
+                                  setDialogState(() {
+                                    chairId = id;
+                                  });
+                                }
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
                       if (scope == 'capstone') ...[
                         const SizedBox(height: 16),
                         Row(
@@ -524,6 +595,9 @@ class ManualSlotEditorDialog {
       }
     }
 
+    final effectiveChairId =
+        chairId ?? (panelIds.isNotEmpty ? panelIds.first : null);
+
     final schedulePayload = {
       'scope': scope,
       'team_id': teamId,
@@ -535,6 +609,7 @@ class ManualSlotEditorDialog {
       'slot_duration': int.tryParse(durationText) ?? 60,
       'room': roomText,
       'panelist_ids': panelIds.toList(),
+      if (effectiveChairId != null) 'chair_panelist_id': effectiveChairId,
       if (scope == 'capstone') 'documenter_id': documenterId,
     };
     if (scope == 'pit') {

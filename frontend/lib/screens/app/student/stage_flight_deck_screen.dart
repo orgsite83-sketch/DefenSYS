@@ -54,24 +54,44 @@ class _StageFlightDeckScreenState extends ConsumerState<StageFlightDeckScreen> {
     final team = widget.studentData?['team'] as Map<String, dynamic>?;
     final isCapstone = team?['isCapstone'] == true;
 
-    // Available stage options
+    // Available stage options dynamically resolved without hardcoding
+    final backendStageOptions = (widget.studentData?['stage_options'] as List?)
+            ?.map((e) => e.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList() ??
+        const <String>[];
+
+    final stagesList = (teamData?['stages'] as List? ??
+            widget.studentData?['stages'] as List? ??
+            [])
+        .cast<Map<String, dynamic>>();
+
+    final stagesListOptions = stagesList
+        .map((s) => s['stage_label']?.toString().trim() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+
     final stageOptions = delivState.stageOptions.isNotEmpty
         ? delivState.stageOptions
-        : (isCapstone
-            ? const ['Project Proposal', 'Colloquium', 'Final Defense']
-            : const ['Milestone 1', 'Milestone 2', 'Final Showcase']);
+        : (backendStageOptions.isNotEmpty
+            ? backendStageOptions
+            : stagesListOptions);
 
     if (!stageOptions.contains(_currentStageLabel) && stageOptions.isNotEmpty) {
       _currentStageLabel = stageOptions.first;
     }
 
-    final activeStageName = teamData?['current_stage']?.toString() ??
+    final rawActiveStageName = teamData?['current_stage']?.toString() ??
         teamData?['current_defense_stage']?.toString() ??
         teamData?['ready_for_stage']?.toString() ??
+        team?['currentStage']?.toString() ??
+        team?['readyForStage']?.toString() ??
+        widget.studentData?['current_stage']?.toString() ??
         (stageOptions.isNotEmpty ? stageOptions.first : '');
 
-    final stagesList =
-        (teamData?['stages'] as List? ?? []).cast<Map<String, dynamic>>();
+    final activeStageName = stageOptions.any((s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
+        ? rawActiveStageName
+        : (stageOptions.isNotEmpty ? stageOptions.first : rawActiveStageName);
 
     final stageInfo = stagesList.firstWhere(
       (s) =>

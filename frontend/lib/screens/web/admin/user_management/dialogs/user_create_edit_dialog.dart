@@ -323,6 +323,10 @@ class _UserCreateEditDialogState extends State<UserCreateEditDialog> {
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Defense Panelist'),
+                  subtitle: const Text(
+                    'Eligible pool for automatic scheduler generation. (In timetable bulk import, any faculty member can be assigned).',
+                    style: TextStyle(fontSize: 11.5, color: Color(0xFF64748B)),
+                  ),
                   value: _isPanelist,
                   onChanged: (value) {
                     setState(() {

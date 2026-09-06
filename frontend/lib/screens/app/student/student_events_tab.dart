@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/capstone_deliverables_provider.dart';
@@ -26,6 +27,10 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     with SingleTickerProviderStateMixin {
   late TabController _subTabController;
   int _activeSubIndex = 0;
+  Timer? _countdownTimer;
+  Duration? _timeUntilDefense;
+  bool _isDefensePast = false;
+  String? _selectedStageForView;
 
   String? get _studentYearLevel {
     final y = widget.studentData?['year_level']?.toString().trim();
@@ -51,6 +56,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     });
 
     widget.subTabNotifier?.addListener(_onSubTabNotifierChanged);
+    _startCountdown();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
@@ -58,6 +64,59 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             yearLevel: widget.isCapstone ? null : _studentYearLevel,
           );
     });
+  }
+
+  void _startCountdown() {
+    _calculateRemainingTime();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (mounted) {
+        setState(() {
+          _calculateRemainingTime();
+        });
+      }
+    });
+  }
+
+  void _calculateRemainingTime() {
+    final schedule = widget.studentData?['schedule'] as Map<String, dynamic>? ??
+        widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
+    final dateStr = schedule?['date']?.toString() ?? schedule?['scheduled_date']?.toString();
+    final timeStr = schedule?['startTime']?.toString() ?? schedule?['start_time']?.toString();
+
+    if (dateStr == null || dateStr.trim().isEmpty) {
+      _timeUntilDefense = null;
+      _isDefensePast = false;
+      return;
+    }
+
+    try {
+      DateTime scheduledDate;
+      if (timeStr != null && timeStr.contains(':')) {
+        final parsedDate = DateTime.parse(dateStr);
+        final timeClean = timeStr.toUpperCase().replaceAll('AM', '').replaceAll('PM', '').trim();
+        final timeParts = timeClean.split(':');
+        int hour = int.tryParse(timeParts[0]) ?? 9;
+        final minute = timeParts.length > 1 ? (int.tryParse(timeParts[1]) ?? 0) : 0;
+        if (timeStr.toUpperCase().contains('PM') && hour < 12) hour += 12;
+        scheduledDate = DateTime(parsedDate.year, parsedDate.month, parsedDate.day, hour, minute);
+      } else {
+        scheduledDate = DateTime.parse(dateStr);
+      }
+
+      final now = DateTime.now();
+      final diff = scheduledDate.difference(now);
+
+      if (diff.isNegative) {
+        _isDefensePast = true;
+        _timeUntilDefense = Duration.zero;
+      } else {
+        _isDefensePast = false;
+        _timeUntilDefense = diff;
+      }
+    } catch (_) {
+      _timeUntilDefense = null;
+      _isDefensePast = false;
+    }
   }
 
   void _onSubTabNotifierChanged() {
@@ -82,6 +141,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   @override
   void dispose() {
     widget.subTabNotifier?.removeListener(_onSubTabNotifierChanged);
+    _countdownTimer?.cancel();
     _subTabController.dispose();
     super.dispose();
   }
@@ -101,12 +161,19 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final delivState = ref.watch(capstoneDeliverablesProvider);
     final isCapstone = widget.isCapstone;
 
-    final stageOptions = delivState.stageOptions;
-    final selectedStage = delivState.selectedStage;
+    final backendStageOptions = (widget.studentData?['stage_options'] as List?)
+            ?.map((e) => e.toString().trim())
+            .where((s) => s.isNotEmpty)
+            .toList() ??
+        const <String>[];
+    final stageOptions = delivState.stageOptions.isNotEmpty
+        ? delivState.stageOptions
+        : backendStageOptions;
 
     final team = widget.studentData?['team'] as Map<String, dynamic>?;
     final scheduleData = widget.studentData?['schedule'] as Map<String, dynamic>? ??
         widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
+    final grades = widget.studentData?['grades'] as Map<String, dynamic>?;
 
     final peerEvalAllowed = widget.studentData?['peerEvalEnabled'] == true;
     final teammates = (widget.studentData?['members'] as List? ?? [])
@@ -124,41 +191,46 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             .cast<Map<String, dynamic>>();
 
     final teamData = delivState.teams.firstOrNull;
-    final stagesList = (teamData?['stages'] as List? ?? []).cast<Map<String, dynamic>>();
+    final stagesList = (teamData?['stages'] as List? ?? widget.studentData?['stages'] as List? ?? [])
+        .cast<Map<String, dynamic>>();
 
-    final activeStageName = teamData?['current_stage']?.toString() ??
+    final rawActiveStageName = teamData?['current_stage']?.toString() ??
         teamData?['current_defense_stage']?.toString() ??
         teamData?['ready_for_stage']?.toString() ??
+        team?['currentStage']?.toString() ??
+        team?['readyForStage']?.toString() ??
+        team?['ready_for_stage']?.toString() ??
+        widget.studentData?['current_stage']?.toString() ??
         (stageOptions.isNotEmpty ? stageOptions.first : '');
 
-    String getStageStatusLabel(String stageName) {
-      final normStage = stageName.trim().toLowerCase();
-      final normActive = activeStageName.trim().toLowerCase();
+    final activeStageName = stageOptions.any(
+            (s) => s.trim().toLowerCase() == rawActiveStageName.trim().toLowerCase())
+        ? rawActiveStageName
+        : (stageOptions.isNotEmpty ? stageOptions.first : rawActiveStageName);
 
-      final stageInfo = stagesList.firstWhere(
-        (s) => s['stage_label']?.toString().trim().toLowerCase() == normStage,
-        orElse: () => <String, dynamic>{},
-      );
+    final selectedStage = (_selectedStageForView != null &&
+            stageOptions.any((s) =>
+                s.trim().toLowerCase() == _selectedStageForView!.trim().toLowerCase()))
+        ? _selectedStageForView!
+        : (delivState.selectedStage.isNotEmpty &&
+                stageOptions.any((s) =>
+                    s.trim().toLowerCase() ==
+                    delivState.selectedStage.trim().toLowerCase()))
+            ? delivState.selectedStage
+            : (activeStageName.isNotEmpty
+                ? activeStageName
+                : (stageOptions.firstOrNull ?? ''));
 
-      final isStageOfficiallyComplete = stageInfo['is_officially_complete'] == true;
-      final isStagePassed = stageInfo['stage_status_detail']?.toString() == 'passed' ||
-          stageInfo['stage_progress_status']?.toString() == 'passed';
+    final isSelectedStageActive =
+        selectedStage.trim().toLowerCase() == activeStageName.trim().toLowerCase();
+    final selectedStageIndex = stageOptions
+        .indexWhere((s) => s.trim().toLowerCase() == selectedStage.trim().toLowerCase());
+    final activeStageIndex = stageOptions
+        .indexWhere((s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase());
 
-      final stageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normStage);
-      final activeIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normActive);
-
-      if (isStageOfficiallyComplete || isStagePassed || (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex)) {
-        return 'Completed';
-      }
-      if (normStage == normActive) {
-        return 'Current';
-      }
-      return 'Upcoming';
-    }
-
-    final isSelectedStageActive = selectedStage.trim().toLowerCase() == activeStageName.trim().toLowerCase();
-    final selectedStageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == selectedStage.trim().toLowerCase());
-    final activeStageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase());
+    final adviserName = team?['adviserName']?.toString() ??
+        team?['adviser_name']?.toString() ??
+        (isCapstone ? 'Unassigned' : 'N/A');
 
     return Scaffold(
       backgroundColor: Colors.grey.shade50,
@@ -171,7 +243,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              // Stage / Event Selection Area
+              // 1. CAPSTONE DEFENSE STAGES (HORIZONTAL PROGRESS STEPPER AT THE TOP)
               if (delivState.isLoading && stageOptions.isEmpty)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 24),
@@ -180,140 +252,57 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                 )
               else if (stageOptions.isNotEmpty) ...[
-                // Ultra-Compact Stage Selector Bar
-                Row(
-                  children: [
-                    Expanded(
-                      child: InkWell(
-                        onTap: () => _showStagePickerBottomSheet(
-                          context,
-                          stageOptions,
-                          selectedStage,
-                          activeStageName,
-                          isCapstone,
-                          stagesList,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(color: const Color(0xFFE2E8F0)),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withValues(alpha: 0.03),
-                                blurRadius: 6,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                padding: const EdgeInsets.all(6),
-                                decoration: BoxDecoration(
-                                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(8),
-                                ),
-                                child: Icon(
-                                  isCapstone ? Icons.alt_route_rounded : Icons.event_available_rounded,
-                                  size: 16,
-                                  color: DefensysTokens.maroon,
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      isCapstone ? 'DEFENSE STAGE' : 'EXHIBITION EVENT',
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        letterSpacing: 0.5,
-                                        fontWeight: FontWeight.w700,
-                                        color: Colors.grey.shade500,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            selectedStage.isNotEmpty
-                                                ? selectedStage
-                                                : (stageOptions.firstOrNull ?? 'Select Event'),
-                                            style: const TextStyle(
-                                              fontSize: 13.5,
-                                              fontWeight: FontWeight.bold,
-                                              color: DefensysTokens.textPrimary,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 6),
-                                        _buildStatusBadge(getStageStatusLabel(selectedStage)),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFF1F5F9),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Text(
-                                      '${stageOptions.length} ${isCapstone ? "Stages" : "Events"}',
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w600,
-                                        color: DefensysTokens.textSecondary,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 2),
-                                    const Icon(
-                                      Icons.keyboard_arrow_down_rounded,
-                                      size: 16,
-                                      color: DefensysTokens.textSecondary,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                _buildCapstoneStagesStepper(
+                  stageOptions: stageOptions,
+                  activeStageName: activeStageName,
+                  selectedStageName: selectedStage,
+                  stagesList: stagesList,
+                  grades: grades,
+                  isCapstone: isCapstone,
+                  onStageSelected: (stage) {
+                    setState(() {
+                      _selectedStageForView = stage;
+                    });
+                    ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                          scope: isCapstone ? 'capstone' : 'pit',
+                          yearLevel: isCapstone ? null : _studentYearLevel,
+                          selectedStage: stage,
+                        );
+                  },
                 ),
+                const SizedBox(height: 12),
 
                 // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages)
                 if (!isSelectedStageActive && activeStageName.isNotEmpty) ...[
                   Builder(
                     builder: (context) {
-                      final isPastStage = selectedStageIndex != -1 && activeStageIndex != -1 && selectedStageIndex < activeStageIndex;
+                      final isPastStage = selectedStageIndex != -1 &&
+                          activeStageIndex != -1 &&
+                          selectedStageIndex < activeStageIndex;
                       return Container(
+                        margin: const EdgeInsets.only(bottom: 12),
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         decoration: BoxDecoration(
-                          color: isPastStage ? const Color(0xFFFFFBEB) : const Color(0xFFF1F5F9),
+                          color: isPastStage
+                              ? const Color(0xFFFFFBEB)
+                              : const Color(0xFFF1F5F9),
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isPastStage ? const Color(0xFFFDE68A) : const Color(0xFFCBD5E1),
+                            color: isPastStage
+                                ? const Color(0xFFFDE68A)
+                                : const Color(0xFFCBD5E1),
                           ),
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              isPastStage ? Icons.history_rounded : Icons.lock_clock_rounded,
+                              isPastStage
+                                  ? Icons.history_rounded
+                                  : Icons.lock_clock_rounded,
                               size: 16,
-                              color: isPastStage ? const Color(0xFFB45309) : const Color(0xFF475569),
+                              color: isPastStage
+                                  ? const Color(0xFFB45309)
+                                  : const Color(0xFF475569),
                             ),
                             const SizedBox(width: 8),
                             Expanded(
@@ -324,14 +313,22 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 style: TextStyle(
                                   fontSize: 11.5,
                                   fontWeight: FontWeight.w500,
-                                  color: isPastStage ? const Color(0xFF92400E) : const Color(0xFF334155),
+                                  color: isPastStage
+                                      ? const Color(0xFF92400E)
+                                      : const Color(0xFF334155),
                                 ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: 6),
                             InkWell(
                               onTap: () {
-                                ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                                setState(() {
+                                  _selectedStageForView = activeStageName;
+                                });
+                                ref
+                                    .read(capstoneDeliverablesProvider.notifier)
+                                    .fetchDeliverables(
                                       scope: isCapstone ? 'capstone' : 'pit',
                                       yearLevel: isCapstone ? null : _studentYearLevel,
                                       selectedStage: activeStageName,
@@ -339,22 +336,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               },
                               borderRadius: BorderRadius.circular(6),
                               child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 3.5),
                                 decoration: BoxDecoration(
-                                  color: isPastStage ? const Color(0xFFFEF3C7) : Colors.white,
+                                  color: isPastStage
+                                      ? const Color(0xFFFEF3C7)
+                                      : Colors.white,
                                   borderRadius: BorderRadius.circular(6),
                                   border: Border.all(
                                     color: isPastStage
-                                        ? const Color(0xFFF59E0B).withValues(alpha: 0.4)
-                                        : const Color(0xFF94A3B8).withValues(alpha: 0.4),
+                                        ? const Color(0xFFF59E0B)
+                                            .withValues(alpha: 0.4)
+                                        : const Color(0xFF94A3B8)
+                                            .withValues(alpha: 0.4),
                                   ),
                                 ),
                                 child: Text(
-                                  'Jump to Current',
+                                  'Current ($activeStageName) →',
                                   style: TextStyle(
-                                    fontSize: 11,
+                                    fontSize: 10.5,
                                     fontWeight: FontWeight.bold,
-                                    color: isPastStage ? const Color(0xFFB45309) : DefensysTokens.maroon,
+                                    color: isPastStage
+                                        ? const Color(0xFFB45309)
+                                        : DefensysTokens.maroon,
                                   ),
                                 ),
                               ),
@@ -365,15 +369,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     },
                   ),
                 ],
-
-                const SizedBox(height: 12),
               ],
 
-              // Sub-Tabs: Schedule, Deliverables, Peer Eval (Fixed to fit 100% of screen width)
+              // 2. SUB-TABS: SCHEDULE, DELIVERABLES, PEER EVAL (DRIVEN DYNAMICALLY BY SELECTED STAGE)
               Builder(
                 builder: (context) {
                   final hasPendingDeliverables = delivState.hasPendingDeliverables;
-                  final hasPendingPeer = StudentTaskBadgeHelper.hasPendingPeerEval(widget.studentData);
+                  final hasPendingPeer =
+                      StudentTaskBadgeHelper.hasPendingPeerEval(widget.studentData);
 
                   return Container(
                     width: double.infinity,
@@ -399,63 +402,77 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                       ),
                       labelColor: Colors.white,
                       unselectedLabelColor: DefensysTokens.textSecondary,
-                      labelStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
-                      unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
+                      labelStyle:
+                          const TextStyle(fontWeight: FontWeight.bold, fontSize: 11.5),
+                      unselectedLabelStyle:
+                          const TextStyle(fontWeight: FontWeight.w600, fontSize: 11.5),
                       padding: const EdgeInsets.all(3),
                       dividerColor: Colors.transparent,
                       tabs: [
                         const Tab(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Icon(Icons.calendar_today_rounded, size: 13),
-                              SizedBox(width: 4),
-                              Text('Schedule'),
-                            ],
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.calendar_today_rounded, size: 13),
+                                SizedBox(width: 4),
+                                Text('Schedule'),
+                              ],
+                            ),
                           ),
                         ),
                         Tab(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.folder_outlined, size: 13),
-                              const SizedBox(width: 4),
-                              const Text('Deliverables'),
-                              if (hasPendingDeliverables) ...[
-                                const SizedBox(width: 5),
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 1),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.folder_outlined, size: 13),
+                                const SizedBox(width: 4),
+                                const Text('Deliverables'),
+                                if (hasPendingDeliverables) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 1),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                         Tab(
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              const Icon(Icons.star_outline_rounded, size: 13),
-                              const SizedBox(width: 4),
-                              const Text('Peer Eval'),
-                              if (hasPendingPeer) ...[
-                                const SizedBox(width: 5),
-                                Container(
-                                  width: 6,
-                                  height: 6,
-                                  decoration: BoxDecoration(
-                                    color: Colors.redAccent,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(color: Colors.white, width: 1),
+                          child: FittedBox(
+                            fit: BoxFit.scaleDown,
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Icon(Icons.star_outline_rounded, size: 13),
+                                const SizedBox(width: 4),
+                                const Text('Peer Eval'),
+                                if (hasPendingPeer) ...[
+                                  const SizedBox(width: 4),
+                                  Container(
+                                    width: 6,
+                                    height: 6,
+                                    decoration: BoxDecoration(
+                                      color: Colors.redAccent,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(color: Colors.white, width: 1),
+                                    ),
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
+                            ),
                           ),
                         ),
                       ],
@@ -466,12 +483,22 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
               const SizedBox(height: 16),
 
-              // Active Sub-Tab View
+              // 3. ACTIVE SUB-TAB VIEW (STAGE STATUS / DELIVERABLES / PEER EVAL)
               Builder(
                 builder: (context) {
                   switch (_activeSubIndex) {
                     case 0:
-                      return _buildScheduleTab(scheduleData, selectedStage, team);
+                      return _buildScheduleTab(
+                        selectedStageName: selectedStage,
+                        activeStageName: activeStageName,
+                        stageOptions: stageOptions,
+                        stagesList: stagesList,
+                        schedule: scheduleData,
+                        grades: grades,
+                        team: team,
+                        adviserName: adviserName,
+                        isCapstone: isCapstone,
+                      );
                     case 1:
                       return StudentDeliverablesTab(
                         isCapstone: isCapstone,
@@ -488,7 +515,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         myPeerSubmissions: myPeerSubmissions,
                         studentId: widget.studentData?['student']?['id']?.toString() ?? '',
                         teamId: team?['id']?.toString() ?? '',
-                        peerWeight: (widget.studentData?['weights']?['peer'] as num?)?.toInt() ?? 20,
+                        peerWeight:
+                            (widget.studentData?['weights']?['peer'] as num?)?.toInt() ?? 20,
                         onPeerSubmitted: _refreshAll,
                         onRefresh: _refreshAll,
                         isEmbedded: true,
@@ -506,60 +534,31 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     );
   }
 
-  Widget _buildScheduleTab(
-    Map<String, dynamic>? schedule,
-    String stageName,
-    Map<String, dynamic>? team,
-  ) {
-    if (schedule == null || schedule.isEmpty) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.all(24),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
-        ),
-        child: Column(
-          children: [
-            Icon(Icons.event_available_outlined, size: 40, color: Colors.grey.shade400),
-            const SizedBox(height: 10),
-            Text(
-              'No active defense schedule posted for "$stageName" yet.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade700,
-              ),
-            ),
-            const SizedBox(height: 4),
-            Text(
-              'Once scheduled by faculty, room assignment and panelists will appear here.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-            ),
-          ],
-        ),
-      );
-    }
+  // ─── HORIZONTAL PROGRESS STEPPER AT THE TOP ───────────────────────────────
 
-    final scheduledDate = schedule['scheduled_date']?.toString() ?? '—';
-    final startTime = schedule['start_time']?.toString() ?? '—';
-    final room = schedule['room']?.toString() ?? 'TBD';
-    final panelists = schedule['panelists'] as List? ?? [];
-    final documenter = schedule['documenter'] as Map? ?? {};
+  Widget _buildCapstoneStagesStepper({
+    required List<String> stageOptions,
+    required String activeStageName,
+    required String selectedStageName,
+    required List<Map<String, dynamic>> stagesList,
+    required Map<String, dynamic>? grades,
+    required bool isCapstone,
+    required ValueChanged<String> onStageSelected,
+  }) {
+    final activeStageIdx = stageOptions.indexWhere(
+      (s) => s.trim().toLowerCase() == activeStageName.trim().toLowerCase(),
+    );
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(18),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
+            color: Colors.black.withValues(alpha: 0.03),
             blurRadius: 8,
             offset: const Offset(0, 2),
           ),
@@ -569,33 +568,809 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(7),
+                      ),
+                      child: Icon(
+                        isCapstone ? Icons.alt_route_rounded : Icons.event_available_rounded,
+                        size: 16,
+                        color: DefensysTokens.maroon,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        isCapstone ? 'Capstone Defense Stages' : 'Milestone Stages',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: DefensysTokens.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  'Stage ${activeStageIdx >= 0 ? activeStageIdx + 1 : 1} of ${stageOptions.length}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.maroon,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: const [
+              Icon(
+                Icons.touch_app_outlined,
+                size: 11.5,
+                color: DefensysTokens.textSecondary,
+              ),
+              SizedBox(width: 4),
+              Expanded(
+                child: Text(
+                  'Tap any stage above to inspect its details in the tabs below',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    color: DefensysTokens.textSecondary,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Horizontal Progress Track
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final stepCount = stageOptions.length;
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: List.generate(stepCount * 2 - 1, (index) {
+                  // Even index: Milestone Node
+                  if (index % 2 == 0) {
+                    final stageIdx = index ~/ 2;
+                    final stageLabel = stageOptions[stageIdx];
+                    final normStage = stageLabel.trim().toLowerCase();
+                    final normSelected = selectedStageName.trim().toLowerCase();
+                    final isSelected = normStage == normSelected;
+
+                    final stageInfo = stagesList.firstWhere(
+                      (s) =>
+                          s['stage_label']?.toString().trim().toLowerCase() ==
+                          normStage,
+                      orElse: () => <String, dynamic>{},
+                    );
+
+                    final isCleared = stageInfo['is_officially_complete'] == true ||
+                        stageInfo['stage_status_detail']?.toString() == 'passed' ||
+                        stageInfo['stage_progress_status']?.toString() == 'passed' ||
+                        (stageIdx < activeStageIdx && activeStageIdx != -1);
+
+                    final isActive = (stageIdx == activeStageIdx) ||
+                        (!isCleared && (stageIdx == 0 || stageIdx <= activeStageIdx));
+
+                    return Expanded(
+                      flex: 3,
+                      child: InkWell(
+                        onTap: () {
+                          onStageSelected(stageLabel);
+                        },
+                        borderRadius: BorderRadius.circular(10),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              // Status label
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (isCleared)
+                                    const Padding(
+                                      padding: EdgeInsets.only(right: 2),
+                                      child: Icon(
+                                        Icons.check_circle_rounded,
+                                        size: 9,
+                                        color: Color(0xFF15803D),
+                                      ),
+                                    ),
+                                  Text(
+                                    isCleared
+                                        ? 'Passed'
+                                        : (isActive ? 'Current' : 'Upcoming'),
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      fontWeight: FontWeight.w700,
+                                      color: isCleared
+                                          ? const Color(0xFF15803D)
+                                          : (isActive
+                                              ? DefensysTokens.maroon
+                                              : const Color(0xFF94A3B8)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+
+                              // Node Circle with Selection Ring
+                              Container(
+                                width: 34,
+                                height: 34,
+                                decoration: BoxDecoration(
+                                  color: isCleared
+                                      ? const Color(0xFF16A34A)
+                                      : (isActive
+                                          ? DefensysTokens.maroon
+                                          : const Color(0xFFF1F5F9)),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: isSelected
+                                        ? (isCleared
+                                            ? const Color(0xFF15803D)
+                                            : DefensysTokens.maroon)
+                                        : (isCleared
+                                            ? const Color(0xFF16A34A)
+                                            : (isActive
+                                                ? DefensysTokens.maroon
+                                                : const Color(0xFFCBD5E1))),
+                                    width: isSelected ? 3.0 : (isActive ? 2.5 : 1.5),
+                                  ),
+                                  boxShadow: isSelected
+                                      ? [
+                                          BoxShadow(
+                                            color: (isCleared
+                                                    ? const Color(0xFF16A34A)
+                                                    : DefensysTokens.maroon)
+                                                .withValues(alpha: 0.45),
+                                            blurRadius: 10,
+                                            spreadRadius: 2,
+                                          ),
+                                        ]
+                                      : (isActive
+                                          ? [
+                                              BoxShadow(
+                                                color: DefensysTokens.maroon
+                                                    .withValues(alpha: 0.35),
+                                                blurRadius: 8,
+                                                spreadRadius: 1,
+                                              ),
+                                            ]
+                                          : (isCleared
+                                              ? [
+                                                  BoxShadow(
+                                                    color: const Color(0xFF16A34A)
+                                                        .withValues(alpha: 0.25),
+                                                    blurRadius: 6,
+                                                    offset: const Offset(0, 2),
+                                                  ),
+                                                ]
+                                              : null)),
+                                ),
+                                child: Center(
+                                  child: isCleared
+                                      ? const Icon(
+                                          Icons.check_rounded,
+                                          size: 19,
+                                          color: Colors.white,
+                                        )
+                                      : (isActive
+                                          ? Text(
+                                              '${stageIdx + 1}',
+                                              style: const TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.w900,
+                                                color: Colors.white,
+                                              ),
+                                            )
+                                          : const Icon(
+                                              Icons.lock_outline_rounded,
+                                              size: 14,
+                                              color: Color(0xFF94A3B8),
+                                            )),
+                                ),
+                              ),
+                              const SizedBox(height: 6),
+
+                              // Stage Title
+                              Text(
+                                stageLabel,
+                                textAlign: TextAlign.center,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w900
+                                      : (isActive
+                                          ? FontWeight.w800
+                                          : (isCleared
+                                              ? FontWeight.w700
+                                              : FontWeight.w600)),
+                                  color: isSelected
+                                      ? (isCleared
+                                          ? const Color(0xFF15803D)
+                                          : DefensysTokens.maroon)
+                                      : (isActive
+                                          ? DefensysTokens.textPrimary
+                                          : (isCleared
+                                              ? const Color(0xFF1E293B)
+                                              : DefensysTokens.textSecondary)),
+                                ),
+                              ),
+                              if (isSelected) ...[
+                                const SizedBox(height: 2),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 5, vertical: 1),
+                                  decoration: BoxDecoration(
+                                    color: isCleared
+                                        ? const Color(0xFFDCFCE7)
+                                        : DefensysTokens.maroon
+                                            .withValues(alpha: 0.1),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: isCleared
+                                          ? const Color(0xFF86EFAC)
+                                          : DefensysTokens.maroon
+                                              .withValues(alpha: 0.25),
+                                      width: 0.8,
+                                    ),
+                                  ),
+                                  child: Text(
+                                    'Viewing ↓',
+                                    style: TextStyle(
+                                      fontSize: 7.5,
+                                      fontWeight: FontWeight.bold,
+                                      color: isCleared
+                                          ? const Color(0xFF15803D)
+                                          : DefensysTokens.maroon,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  } else {
+                    // Odd index: Connecting track line
+                    final stageBeforeIdx = index ~/ 2;
+                    final isLineCompleted = stageBeforeIdx < activeStageIdx;
+
+                    return Expanded(
+                      flex: 2,
+                      child: Padding(
+                        padding: const EdgeInsets.only(top: 28),
+                        child: Container(
+                          height: 3,
+                          decoration: BoxDecoration(
+                            color: isLineCompleted
+                                ? const Color(0xFF16A34A)
+                                : const Color(0xFFE2E8F0),
+                            borderRadius: BorderRadius.circular(2),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+                }),
+              );
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── RICH STAGE STATUS / SCHEDULE SUB-TAB ─────────────────────────────────
+
+  Widget _buildScheduleTab({
+    required String selectedStageName,
+    required String activeStageName,
+    required List<String> stageOptions,
+    required List<Map<String, dynamic>> stagesList,
+    required Map<String, dynamic>? schedule,
+    required Map<String, dynamic>? grades,
+    required Map<String, dynamic>? team,
+    required String adviserName,
+    required bool isCapstone,
+  }) {
+    final normSelected = selectedStageName.trim().toLowerCase();
+    final normActive = activeStageName.trim().toLowerCase();
+
+    final selectedIdx = stageOptions.indexWhere(
+      (s) => s.trim().toLowerCase() == normSelected,
+    );
+    final activeIdx = stageOptions.indexWhere(
+      (s) => s.trim().toLowerCase() == normActive,
+    );
+
+    final stageInfo = stagesList.firstWhere(
+      (s) => s['stage_label']?.toString().trim().toLowerCase() == normSelected,
+      orElse: () => <String, dynamic>{},
+    );
+
+    final isCleared = stageInfo['is_officially_complete'] == true ||
+        stageInfo['stage_status_detail']?.toString() == 'passed' ||
+        stageInfo['stage_progress_status']?.toString() == 'passed' ||
+        (selectedIdx != -1 && activeIdx != -1 && selectedIdx < activeIdx);
+
+    final isActive = (normSelected == normActive);
+    final isUpcoming = !isCleared && !isActive;
+
+    // Resolve Grade / Deliberation data
+    final stageGradeMap = (stageInfo['grade'] as Map<String, dynamic>?) ??
+        (grades != null && grades['stage']?.toString().trim().toLowerCase() == normSelected
+            ? grades
+            : null);
+
+    final finalScore = stageGradeMap?['final_grade'] ??
+        stageGradeMap?['grade'] ??
+        (isCleared ? (stageInfo['score'] ?? 'Passed') : null);
+
+    final resultStr =
+        stageGradeMap?['result']?.toString() ?? (isCleared ? 'PASSED' : null);
+
+    final completedDate = stageInfo['completed_date']?.toString() ??
+        stageGradeMap?['completed_date']?.toString() ??
+        stageGradeMap?['date']?.toString() ??
+        'Completed';
+
+    final remarks = stageGradeMap?['remarks']?.toString() ??
+        stageInfo['remarks']?.toString();
+
+    final presScore = stageGradeMap?['presentation']?.toString();
+    final techScore = stageGradeMap?['technical']?.toString();
+    final qnaScore = stageGradeMap?['qna']?.toString();
+
+    // Resolve Schedule & Venue
+    final scheduledDate = schedule?['date']?.toString() ??
+        schedule?['scheduled_date']?.toString() ??
+        stageInfo['schedule']?['date']?.toString();
+    final startTime = schedule?['startTime']?.toString() ??
+        schedule?['start_time']?.toString() ??
+        stageInfo['schedule']?['startTime']?.toString() ??
+        stageInfo['schedule']?['start_time']?.toString();
+    final room = schedule?['room']?.toString() ??
+        stageInfo['schedule']?['room']?.toString();
+    final panelists = (schedule?['panelists'] as List?) ??
+        (stageInfo['schedule']?['panelists'] as List?) ??
+        [];
+    final documenter = (schedule?['documenter'] as Map?) ??
+        (stageInfo['schedule']?['documenter'] as Map?) ??
+        {};
+
+    final hasSchedule = scheduledDate != null && scheduledDate.trim().isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Row
+          Row(
             children: [
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
-                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                  color: isCleared
+                      ? const Color(0xFF16A34A).withValues(alpha: 0.1)
+                      : DefensysTokens.maroon.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(8),
                 ),
-                child: const Icon(Icons.event_seat_rounded, color: DefensysTokens.maroon, size: 20),
+                child: Icon(
+                  isCleared
+                      ? Icons.verified_rounded
+                      : Icons.calendar_month_rounded,
+                  color: isCleared ? const Color(0xFF15803D) : DefensysTokens.maroon,
+                  size: 20,
+                ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 12),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Defense Schedule for $stageName',
+                      'Defense Status for $selectedStageName',
                       style: const TextStyle(
                         fontSize: 15,
                         fontWeight: FontWeight.bold,
                         color: DefensysTokens.textPrimary,
                       ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isCleared
+                          ? 'Milestone Cleared & Evaluated'
+                          : (isActive ? 'Active Stage Deliberation' : 'Upcoming Stage'),
+                      style: TextStyle(
+                        fontSize: 11.5,
+                        color: isCleared
+                            ? const Color(0xFF15803D)
+                            : DefensysTokens.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isCleared
+                      ? const Color(0xFFDCFCE7)
+                      : (isActive ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9)),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                    color: isCleared
+                        ? const Color(0xFF86EFAC)
+                        : (isActive
+                            ? const Color(0xFFFCA5A5)
+                            : const Color(0xFFCBD5E1)),
+                  ),
+                ),
+                child: Text(
+                  isCleared ? 'Passed ✓' : (isActive ? 'Current' : 'Upcoming'),
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.bold,
+                    color: isCleared
+                        ? const Color(0xFF15803D)
+                        : (isActive ? DefensysTokens.maroon : const Color(0xFF64748B)),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const Divider(height: 24, color: Color(0xFFE2E8F0)),
+
+          // ── CASE 1: CLEARED / PASSED STAGE ──
+          if (isCleared) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0FDF4),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFBBF7D0)),
+              ),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: const BoxDecoration(
+                      color: Color(0xFF16A34A),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.verified_rounded,
+                      color: Colors.white,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Deliberation Result: ${resultStr ?? 'PASSED'}',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF15803D),
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            color: Color(0xFF166534),
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
+            // Rubric Criteria Breakdown (if scores exist)
+            if (presScore != null || techScore != null || qnaScore != null) ...[
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    if (presScore != null)
+                      Expanded(child: _buildCriteriaScore('Presentation', '$presScore/30')),
+                    if (techScore != null)
+                      Expanded(child: _buildCriteriaScore('Technical', '$techScore/50')),
+                    if (qnaScore != null)
+                      Expanded(child: _buildCriteriaScore('Q&A Defense', '$qnaScore/20')),
+                  ],
+                ),
+              ),
+            ],
+
+            // Panel Remarks Feedback (if remarks exist)
+            if (remarks != null && remarks.trim().isNotEmpty) ...[
+              const SizedBox(height: 12),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Icon(
+                      Icons.format_quote_rounded,
+                      size: 16,
+                      color: Color(0xFF94A3B8),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Panel Feedback: "$remarks"',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          fontStyle: FontStyle.italic,
+                          color: DefensysTokens.textPrimary,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            const SizedBox(height: 12),
+          ]
+
+          // ── CASE 2: ACTIVE STAGE ──
+          else if (isActive) ...[
+            if (hasSchedule) ...[
+              _scheduleMetaRow(Icons.calendar_month_outlined, 'Date & Time',
+                  '$scheduledDate${startTime != null ? ' at $startTime' : ''}'),
+              const SizedBox(height: 10),
+              _scheduleMetaRow(Icons.location_on_outlined, 'Room / Venue',
+                  room?.isNotEmpty == true ? room! : 'Room TBA'),
+
+              if (panelists.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _scheduleMetaRow(
+                  Icons.people_outline_rounded,
+                  'Defense Panelists',
+                  panelists.map((p) => p['name'] ?? p['username'] ?? 'Panelist').join(', '),
+                ),
+              ],
+
+              if (documenter.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _scheduleMetaRow(
+                  Icons.edit_note_rounded,
+                  'Assigned Documenter',
+                  documenter['name']?.toString() ?? documenter['username']?.toString() ?? '—',
+                ),
+              ],
+
+              const SizedBox(height: 14),
+
+              // Countdown / Passed State
+              if (_timeUntilDefense != null && !_isDefensePast) ...[
+                const Text(
+                  'DEFENSE COUNTDOWN:',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.textSecondary,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(child: _buildCountdownDigit(_timeUntilDefense!.inDays, 'Days')),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _buildCountdownDigit(
+                            _timeUntilDefense!.inHours % 24, 'Hours')),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _buildCountdownDigit(
+                            _timeUntilDefense!.inMinutes % 60, 'Mins')),
+                    const SizedBox(width: 6),
+                    Expanded(
+                        child: _buildCountdownDigit(
+                            _timeUntilDefense!.inSeconds % 60, 'Secs')),
+                  ],
+                ),
+                const SizedBox(height: 14),
+              ] else if (_isDefensePast) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF1F5F9),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.history_rounded, size: 16, color: Color(0xFF64748B)),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          'Defense date passed ($scheduledDate). Awaiting deliberation evaluation.',
+                          style: const TextStyle(fontSize: 11, color: Color(0xFF475569)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+              ],
+            ] else ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Column(
+                  children: [
+                    Icon(Icons.event_available_outlined, size: 36, color: Colors.grey.shade400),
+                    const SizedBox(height: 10),
+                    Text(
+                      'Defense schedule will be posted once assigned by the panel.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.grey.shade700,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Panelists, room assignment, and schedule will appear here once finalized.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 14),
+            ],
+          ]
+
+          // ── CASE 3: UPCOMING STAGE ──
+          else if (isUpcoming) ...[
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_outline_rounded, size: 22, color: Color(0xFF64748B)),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Upcoming Milestone: $selectedStageName',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                            color: DefensysTokens.textPrimary,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Defense scheduling, deliverables, and deliberation will unlock after successfully completing $activeStageName.',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            color: DefensysTokens.textSecondary,
+                            height: 1.3,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+          ],
+
+          // Adviser Endorsement Row
+          Row(
+            children: [
+              const Icon(
+                Icons.verified_user_rounded,
+                size: 16,
+                color: Color(0xFF16A34A),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Adviser: $adviserName',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.textPrimary,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Text(
-                      team?['name']?.toString() ?? 'Team',
+                      isCleared
+                          ? 'Milestone Endorsed & Completed ✓'
+                          : 'Approved & Endorsed for Defense ✓',
                       style: const TextStyle(
-                        fontSize: 12,
-                        color: DefensysTokens.textSecondary,
+                        fontSize: 10,
+                        color: Color(0xFF15803D),
+                        fontWeight: FontWeight.w600,
                       ),
                     ),
                   ],
@@ -603,30 +1378,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               ),
             ],
           ),
-          const Divider(height: 24, color: Color(0xFFE2E8F0)),
-
-          // Info Rows
-          _scheduleMetaRow(Icons.calendar_month_outlined, 'Date & Time', '$scheduledDate at $startTime'),
-          const SizedBox(height: 10),
-          _scheduleMetaRow(Icons.location_on_outlined, 'Room / Venue', room),
-
-          if (panelists.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _scheduleMetaRow(
-              Icons.people_outline_rounded,
-              'Defense Panelists',
-              panelists.map((p) => p['name'] ?? p['username'] ?? 'Panelist').join(', '),
-            ),
-          ],
-
-          if (documenter.isNotEmpty) ...[
-            const SizedBox(height: 10),
-            _scheduleMetaRow(
-              Icons.edit_note_rounded,
-              'Assigned Documenter',
-              documenter['name']?.toString() ?? documenter['username']?.toString() ?? '—',
-            ),
-          ],
         ],
       ),
     );
@@ -663,43 +1414,34 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     );
   }
 
-  Widget _buildStatusBadge(String statusLabel) {
-    Color badgeBg;
-    Color badgeTextColor;
-    IconData? statusIcon;
-
-    if (statusLabel == 'Current') {
-      badgeBg = Colors.green.shade50;
-      badgeTextColor = Colors.green.shade700;
-      statusIcon = Icons.bolt_rounded;
-    } else if (statusLabel == 'Completed') {
-      badgeBg = Colors.blue.shade50;
-      badgeTextColor = Colors.blue.shade700;
-      statusIcon = Icons.check_rounded;
-    } else {
-      badgeBg = Colors.amber.shade50;
-      badgeTextColor = Colors.amber.shade800;
-      statusIcon = Icons.lock_outline_rounded;
-    }
-
+  Widget _buildCountdownDigit(int value, String unit) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       decoration: BoxDecoration(
-        color: badgeBg,
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: badgeTextColor.withValues(alpha: 0.25)),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(statusIcon, size: 11, color: badgeTextColor),
-          const SizedBox(width: 2),
           Text(
-            statusLabel,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.bold,
-              color: badgeTextColor,
+            value.toString().padLeft(2, '0'),
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+              color: DefensysTokens.maroon,
+              letterSpacing: -0.5,
+            ),
+          ),
+          const SizedBox(height: 1),
+          Text(
+            unit.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 8.5,
+              fontWeight: FontWeight.w700,
+              color: DefensysTokens.textSecondary,
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -707,248 +1449,32 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     );
   }
 
-  void _showStagePickerBottomSheet(
-    BuildContext context,
-    List<String> stageOptions,
-    String selectedStage,
-    String activeStageName,
-    bool isCapstone,
-    List<Map<String, dynamic>> stagesList,
-  ) {
-    String getStatus(String stageName) {
-      final normStage = stageName.trim().toLowerCase();
-      final normActive = activeStageName.trim().toLowerCase();
-
-      final stageInfo = stagesList.firstWhere(
-        (s) => s['stage_label']?.toString().trim().toLowerCase() == normStage,
-        orElse: () => <String, dynamic>{},
-      );
-
-      final isStageOfficiallyComplete = stageInfo['is_officially_complete'] == true;
-      final isStagePassed = stageInfo['stage_status_detail']?.toString() == 'passed' ||
-          stageInfo['stage_progress_status']?.toString() == 'passed';
-
-      final stageIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normStage);
-      final activeIndex = stageOptions.indexWhere((s) => s.trim().toLowerCase() == normActive);
-
-      if (isStageOfficiallyComplete || isStagePassed || (stageIndex != -1 && activeIndex != -1 && stageIndex < activeIndex)) {
-        return 'Completed';
-      }
-      if (normStage == normActive) {
-        return 'Current';
-      }
-      return 'Upcoming';
-    }
-
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (ctx) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+  Widget _buildCriteriaScore(String label, String score) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(
+          score,
+          style: const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+            color: DefensysTokens.textPrimary,
           ),
-          padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
-          child: SafeArea(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Center(
-                  child: Container(
-                    width: 36,
-                    height: 4,
-                    margin: const EdgeInsets.only(bottom: 16),
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade300,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(8),
-                      decoration: BoxDecoration(
-                        color: DefensysTokens.maroon.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: Icon(
-                        isCapstone ? Icons.alt_route_rounded : Icons.event_available_rounded,
-                        color: DefensysTokens.maroon,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            isCapstone ? 'Select Defense Stage' : 'Select Exhibition Event',
-                            style: const TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                              color: DefensysTokens.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Switch milestone to review past or active requirements.',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade600,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                const Divider(height: 24, color: Color(0xFFE2E8F0)),
-                Flexible(
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    physics: const BouncingScrollPhysics(),
-                    itemCount: stageOptions.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 8),
-                    itemBuilder: (context, index) {
-                      final stageName = stageOptions[index];
-                      final isSelected = stageName.trim().toLowerCase() == selectedStage.trim().toLowerCase();
-                      final statusLabel = getStatus(stageName);
-
-                      Color badgeBg;
-                      Color badgeTextColor;
-                      IconData statusIcon;
-
-                      if (statusLabel == 'Current') {
-                        badgeBg = Colors.green.shade50;
-                        badgeTextColor = Colors.green.shade700;
-                        statusIcon = Icons.bolt_rounded;
-                      } else if (statusLabel == 'Completed') {
-                        badgeBg = Colors.blue.shade50;
-                        badgeTextColor = Colors.blue.shade700;
-                        statusIcon = Icons.check_circle_outline_rounded;
-                      } else {
-                        badgeBg = Colors.amber.shade50;
-                        badgeTextColor = Colors.amber.shade800;
-                        statusIcon = Icons.lock_outline_rounded;
-                      }
-
-                      return InkWell(
-                        onTap: () {
-                          Navigator.pop(ctx);
-                          if (!isSelected) {
-                            ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-                                  scope: isCapstone ? 'capstone' : 'pit',
-                                  yearLevel: isCapstone ? null : _studentYearLevel,
-                                  selectedStage: stageName,
-                                );
-                          }
-                        },
-                        borderRadius: BorderRadius.circular(12),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 150),
-                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-                          decoration: BoxDecoration(
-                            color: isSelected
-                                ? DefensysTokens.maroon.withValues(alpha: 0.05)
-                                : const Color(0xFFF8FAFC),
-                            borderRadius: BorderRadius.circular(12),
-                            border: Border.all(
-                              color: isSelected
-                                  ? DefensysTokens.maroon
-                                  : const Color(0xFFE2E8F0),
-                              width: isSelected ? 1.5 : 1.0,
-                            ),
-                          ),
-                          child: Row(
-                            children: [
-                              Container(
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  shape: BoxShape.circle,
-                                  color: isSelected
-                                      ? DefensysTokens.maroon
-                                      : const Color(0xFFE2E8F0),
-                                ),
-                                child: Center(
-                                  child: isSelected
-                                      ? const Icon(Icons.check_rounded, size: 16, color: Colors.white)
-                                      : Text(
-                                          '${index + 1}',
-                                          style: TextStyle(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.grey.shade700,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      stageName,
-                                      style: TextStyle(
-                                        fontSize: 14,
-                                        fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
-                                        color: isSelected ? DefensysTokens.maroon : DefensysTokens.textPrimary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 1),
-                                    Text(
-                                      statusLabel == 'Current'
-                                          ? 'Active milestone submissions'
-                                          : (statusLabel == 'Completed' ? 'Passed milestone archive' : 'Upcoming milestone'),
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        color: Colors.grey.shade500,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                decoration: BoxDecoration(
-                                  color: badgeBg,
-                                  borderRadius: BorderRadius.circular(8),
-                                  border: Border.all(color: badgeTextColor.withValues(alpha: 0.2)),
-                                ),
-                                child: Row(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    Icon(statusIcon, size: 12, color: badgeTextColor),
-                                    const SizedBox(width: 4),
-                                    Text(
-                                      statusLabel,
-                                      style: TextStyle(
-                                        fontSize: 11,
-                                        fontWeight: FontWeight.bold,
-                                        color: badgeTextColor,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
-                  ),
-                ),
-              ],
-            ),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        const SizedBox(height: 2),
+        Text(
+          label,
+          style: const TextStyle(
+            fontSize: 9.5,
+            color: DefensysTokens.textSecondary,
+            fontWeight: FontWeight.w500,
           ),
-        );
-      },
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+      ],
     );
   }
 }

@@ -34,8 +34,9 @@ import 'e_signature_upload_dialog.dart';
 import 'documenter_dashboard_content.dart';
 import 'minutes_form_screen.dart';
 import 'capstone_instructor_info_section.dart';
+import 'faculty_base_dashboard_content.dart';
 
-enum FacultyWorkspace { pitLead, adviser, pitInstructor, documenter }
+enum FacultyWorkspace { faculty, pitLead, adviser, pitInstructor, documenter }
 
 class WorkspaceOption {
   final FacultyWorkspace type;
@@ -109,14 +110,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
         roles['documenter'] != true &&
         roles['pit_instructor'] != true;
 
-    // Show sidebar if user has any faculty role
-    final showSidebar =
-        roles['adviser'] == true ||
-        roles['pit_lead'] == true ||
-        roles['documenter'] == true ||
-        roles['uploader'] == true ||
-        roles['pit_instructor'] == true ||
-        roles['capstone_instructor'] == true;
+    // Show sidebar for all faculty roles (unless uploader-only)
+    final showSidebar = !isOnlyUploader;
 
     // If user is only uploader, show uploader dashboard directly
     if (isOnlyUploader) {
@@ -219,11 +214,23 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     if (roles['documenter'] == true) {
       workspaces.add(const WorkspaceOption(type: FacultyWorkspace.documenter));
     }
+    workspaces.add(const WorkspaceOption(type: FacultyWorkspace.faculty));
     return workspaces;
   }
 
   bool _isSectionSupportedByWorkspace(String section, FacultyWorkspace workspace) {
     switch (workspace) {
+      case FacultyWorkspace.faculty:
+        return const {
+          'dashboard',
+          'defense_board',
+          'project_archive',
+          'repository_audit',
+          'audit_compliance',
+          'rubrics',
+          'rubric_engine',
+          'uploader',
+        }.contains(section);
       case FacultyWorkspace.pitLead:
         return const {
           'dashboard',
@@ -271,7 +278,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
   WorkspaceOption _resolvedWorkspace(Map<String, dynamic> roles) {
     final available = _availableWorkspaces(roles);
     if (available.isEmpty) {
-      return const WorkspaceOption(type: FacultyWorkspace.adviser);
+      return const WorkspaceOption(type: FacultyWorkspace.faculty);
     }
 
     final routerState = GoRouterState.of(context);
@@ -295,6 +302,8 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
 
   String _workspaceLabel(WorkspaceOption ws) {
     switch (ws.type) {
+      case FacultyWorkspace.faculty:
+        return 'Faculty Portal';
       case FacultyWorkspace.pitLead:
         final year = ws.yearLevel ?? 'Unscoped';
         return 'PIT Lead · $year';
@@ -691,6 +700,58 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     required bool isWide,
   }) {
     switch (workspace) {
+      case FacultyWorkspace.faculty:
+        return [
+          _buildSectionHeader('Dashboard'),
+          _buildSidebarItem(
+            icon: Icons.dashboard_outlined,
+            label: 'Dashboard',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('dashboard'),
+            ),
+            isActive: _activeSection == 'dashboard',
+          ),
+          _buildSectionHeader('Defense Operations'),
+          _buildSidebarItem(
+            icon: Icons.view_agenda_outlined,
+            label: 'Defense Board',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('defense_board'),
+            ),
+            isActive: _activeSection == 'defense_board',
+          ),
+          _buildSidebarItem(
+            icon: Icons.rule_outlined,
+            label: 'Rubrics',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('rubrics'),
+            ),
+            isActive: _activeSection == 'rubrics' || _activeSection == 'rubric_engine',
+          ),
+          _buildSectionHeader('Archives & Audit'),
+          _buildSidebarItem(
+            icon: Icons.manage_search,
+            label: 'Project Archive',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('project_archive'),
+            ),
+            isActive: _activeSection == 'project_archive' ||
+                _activeSection == 'repository_audit',
+          ),
+          _buildSidebarItem(
+            icon: Icons.verified_user_outlined,
+            label: 'Audit Trail',
+            onTap: () => _afterSidebarAction(
+              isWide,
+              () => _goToSection('audit_compliance'),
+            ),
+            isActive: _activeSection == 'audit_compliance',
+          ),
+        ];
       case FacultyWorkspace.pitLead:
         return [
           _buildSectionHeader('Dashboard'),
@@ -1125,6 +1186,20 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
     String? section,
   }) {
     switch (workspace) {
+      case FacultyWorkspace.faculty:
+        return FacultyBaseDashboardContent(
+          data: dashState.data,
+          facultyName: facultyName,
+          onOpenDefenseBoard: () => _goToSection('defense_board'),
+          onOpenProjectArchive: () => _goToSection('project_archive'),
+          onOpenRubrics: () => _goToSection('rubrics'),
+          onOpenSignatureUpload: () {
+            showDialog(
+              context: context,
+              builder: (context) => const ESignatureUploadDialog(),
+            );
+          },
+        );
       case FacultyWorkspace.pitLead:
         return PitLeadDashboardContent(
           data: dashState.data,

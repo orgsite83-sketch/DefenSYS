@@ -1257,6 +1257,149 @@ class DefenseSchedulerApiTests(APITestCase):
         self.assertEqual(response.status_code, 400)
         self.assertIn('already completed and passed this stage', str(response.data))
 
+    def test_panelist_assignments_includes_is_chair_and_verdict(self):
+        from decimal import Decimal
+        from grading.grades.models import TeamGrade
+        from grading.grades.services import GradeContextService
+        from student_teams.services import mark_stage_ready
+
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        schedule = self.create_scheduled_defense()
+
+        # Set panelist as chair and second_panelist as non-chair
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.panelist).update(is_chair=True)
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.second_panelist).update(is_chair=False)
+
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        grade.panel_score = Decimal('85.00')
+        grade.verdict = TeamGrade.VERDICT_APPROVED_WITH_REVISIONS
+        grade.verdict_remarks = 'Fix manuscript chapter 3'
+        grade.verdict_by = self.panelist
+        grade.save()
+
+        # 1. As panelist (Chair)
+        self.client.force_authenticate(user=self.panelist)
+        res1 = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(res1.status_code, 200)
+        teams1 = res1.data['teams']
+        self.assertEqual(len(teams1), 1)
+        self.assertTrue(teams1[0]['is_chair'])
+        self.assertEqual(teams1[0]['verdict'], TeamGrade.VERDICT_APPROVED_WITH_REVISIONS)
+        self.assertEqual(teams1[0]['verdict_remarks'], 'Fix manuscript chapter 3')
+        self.assertEqual(teams1[0]['attempt_count'], 1)
+
+        # 2. As second_panelist (Member)
+        self.client.force_authenticate(user=self.second_panelist)
+        res2 = self.client.get('/api/defense/schedules/panelist-assignments/')
+        self.assertEqual(res2.status_code, 200)
+        teams2 = res2.data['teams']
+        self.assertEqual(len(teams2), 1)
+        self.assertFalse(teams2[0]['is_chair'])
+        self.assertEqual(teams2[0]['verdict'], TeamGrade.VERDICT_APPROVED_WITH_REVISIONS)
+
+    def test_chair_can_submit_for_redefense_and_regular_panelist_blocked(self):
+        from decimal import Decimal
+        from grading.grades.models import TeamGrade, GradeAttemptHistory
+        from grading.grades.services import GradeContextService
+        from student_teams.services import mark_stage_ready, mark_stage_result
+
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        schedule = self.create_scheduled_defense()
+
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.panelist).update(is_chair=True)
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.second_panelist).update(is_chair=False)
+
+        grade, _, _ = GradeContextService.get_or_create_for_schedule(schedule)
+        grade.panel_score = Decimal('60.00')
+        grade.save()
+
+        # Non-chair panelist tries to submit verdict -> 403
+        self.client.force_authenticate(user=self.second_panelist)
+        res_fail = self.client.patch(f'/api/defense/schedules/{schedule.id}/verdict/', {
+            'verdict': 'for_redefense',
+            'verdict_remarks': 'Needs substantial rework',
+        }, format='json')
+        self.assertEqual(res_fail.status_code, 403)
+
+        # Chair submits verdict -> 200
+        self.client.force_authenticate(user=self.panelist)
+        res_ok = self.client.patch(f'/api/defense/schedules/{schedule.id}/verdict/', {
+            'verdict': 'for_redefense',
+            'verdict_remarks': 'Needs substantial rework on backend security',
+        }, format='json')
+        self.assertEqual(res_ok.status_code, 200)
+        self.assertTrue(res_ok.data['success'])
+
+        grade.refresh_from_db()
+        self.assertEqual(grade.verdict, TeamGrade.VERDICT_FOR_REDEFENSE)
+        self.assertEqual(grade.verdict_remarks, 'Needs substantial rework on backend security')
+        self.assertEqual(grade.verdict_by, self.panelist)
+
+    def test_schedule_creation_with_explicit_chair_panelist(self):
+        from student_teams.services import mark_stage_ready
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        self.client.force_authenticate(user=self.admin)
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            panelist_ids=[self.panelist.id, self.second_panelist.id],
+            chair_panelist_id=self.second_panelist.id,
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        schedule_id = response.data['schedule']['id']
+        sp_first = SchedulePanelist.objects.get(schedule_id=schedule_id, panelist=self.panelist)
+        sp_second = SchedulePanelist.objects.get(schedule_id=schedule_id, panelist=self.second_panelist)
+        self.assertFalse(sp_first.is_chair)
+        self.assertTrue(sp_second.is_chair)
+
+    def test_schedule_creation_defaults_first_panelist_as_chair(self):
+        from student_teams.services import mark_stage_ready
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        self.client.force_authenticate(user=self.admin)
+        payload = self.schedule_payload(
+            team_id=self.team.id,
+            panelist_ids=[self.panelist.id, self.second_panelist.id],
+        )
+        response = self.client.post('/api/defense/schedules/', payload, format='json')
+        self.assertEqual(response.status_code, 201)
+        schedule_id = response.data['schedule']['id']
+        sp_first = SchedulePanelist.objects.get(schedule_id=schedule_id, panelist=self.panelist)
+        sp_second = SchedulePanelist.objects.get(schedule_id=schedule_id, panelist=self.second_panelist)
+        self.assertTrue(sp_first.is_chair)
+        self.assertFalse(sp_second.is_chair)
+
+    def test_patch_schedule_updates_chair_panelist(self):
+        from student_teams.services import mark_stage_ready
+        mark_stage_ready(self.team, self.stage, user=self.admin)
+        schedule = self.create_scheduled_defense()
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.panelist).update(is_chair=True)
+        SchedulePanelist.objects.filter(schedule=schedule, panelist=self.second_panelist).update(is_chair=False)
+
+        self.client.force_authenticate(user=self.admin)
+        patch_res = self.client.patch(f'/api/defense/schedules/{schedule.id}/', {
+            'chair_panelist_id': self.second_panelist.id,
+        }, format='json')
+        self.assertEqual(patch_res.status_code, 200)
+
+        sp_first = SchedulePanelist.objects.get(schedule=schedule, panelist=self.panelist)
+        sp_second = SchedulePanelist.objects.get(schedule=schedule, panelist=self.second_panelist)
+        self.assertFalse(sp_first.is_chair)
+        self.assertTrue(sp_second.is_chair)
+
+    def test_patch_schedule_rejects_chair_not_in_schedule_panelists(self):
+        other_faculty = User.objects.create_user(
+            username='other_fac_user',
+            password='pass12345',
+            role='faculty',
+        )
+        schedule = self.create_scheduled_defense()
+        self.client.force_authenticate(user=self.admin)
+        patch_res = self.client.patch(f'/api/defense/schedules/{schedule.id}/', {
+            'chair_panelist_id': other_faculty.id,
+        }, format='json')
+        self.assertEqual(patch_res.status_code, 400)
+        self.assertIn('chair_panelist_id', patch_res.data)
+
 
 class PitEventGradingConfigTests(APITestCase):
     def setUp(self):
@@ -2126,6 +2269,8 @@ class PitEventGradingConfigTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('not permitted for your PIT year level', response.data.get('detail', ''))
+
+
 
 
 

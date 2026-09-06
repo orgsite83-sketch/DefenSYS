@@ -500,6 +500,39 @@ class DefenseSchedulerNotifier extends Notifier<DefenseSchedulerState> {
     }
   }
 
+  Future<bool> patchSchedule(
+    int scheduleId,
+    Map<String, dynamic> payload,
+  ) async {
+    state = state.copyWith(
+      isSaving: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    try {
+      final response = await _client.patch(
+        Uri.parse('$baseUrl/$scheduleId/'),
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        await fetchSchedules(successMessage: 'Schedule updated.');
+        await _refreshDependentProviders();
+        return true;
+      }
+
+      state = state.copyWith(
+        isSaving: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      return false;
+    }
+  }
+
   Future<void> _refreshDependentProviders() async {
     try {
       await ref.read(dashboardProvider('admin').notifier).fetchDashboardData(silent: true);

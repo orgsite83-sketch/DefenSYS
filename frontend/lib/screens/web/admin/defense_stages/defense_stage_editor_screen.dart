@@ -261,13 +261,22 @@ class _DefenseStageEditorScreenState
       return;
     }
 
-    // Validate deliverables labels (only in Document-Gated mode)
+    // Validate deliverables labels & archive naming templates (only in Document-Gated mode)
     if (!_isPresentationOnly) {
       for (int i = 0; i < _deliverables.length; i++) {
-        final labelVal = _deliverables[i]['label']?.toString().trim() ?? '';
+        final d = _deliverables[i];
+        final labelVal = d['label']?.toString().trim() ?? '';
         if (labelVal.isEmpty) {
           setState(() => _error = 'Deliverable label cannot be empty (item ${i + 1}).');
           return;
+        }
+        if (d['deliverable_type'] == 'post') {
+          final tpl = (d['archive_file_template'] ?? '').toString().trim();
+          final count = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(tpl).length;
+          if (count > 3) {
+            setState(() => _error = 'Template for "$labelVal" exceeds the limit of 3 variables ($count used). Phone file names have character limits.');
+            return;
+          }
         }
       }
     }
@@ -1033,7 +1042,7 @@ class _DefenseStageEditorScreenState
                                     ),
                                   ),
                                 _buildDeliverableSection(
-                                  title: 'Pre-Defense Gatekeeper Deliverables',
+                                  title: 'Pre-Defense Deliverables',
                                   subtitle: 'Required student submissions before an adviser can endorse and defense can be scheduled.',
                                   icon: Icons.folder_open_rounded,
                                   accentColor: const Color(0xFF2563EB),
@@ -1058,7 +1067,7 @@ class _DefenseStageEditorScreenState
                                           });
                                           _markDirty();
                                         },
-                                  emptyPlaceholderText: 'No pre-defense gatekeepers configured. Click "+ Add Pre-Defense" to require items (e.g. Proposal Manuscript Draft, Similarity Report).',
+                                  emptyPlaceholderText: 'No pre-defense configured. Click "+ Add Pre-Defense" to require items (e.g. Proposal Manuscript Draft, Similarity Report).',
                                   items: preDeliverables,
                                   isPost: false,
                                 ),
@@ -1083,7 +1092,7 @@ class _DefenseStageEditorScreenState
                                               'required': true,
                                               'display_order': _deliverables.length + 1,
                                               'archive_note': '',
-                                              'archive_file_template': '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                                              'archive_file_template': '{project}',
                                               'is_restricted': false,
                                             });
                                           });
@@ -1351,13 +1360,17 @@ class _DefenseStageEditorScreenState
     required String labelText,
     String? hintText,
     String? helperText,
+    String? errorText,
     Widget? prefixIcon,
+    Widget? suffixIcon,
   }) {
     return InputDecoration(
       labelText: labelText,
       hintText: hintText,
       helperText: helperText,
+      errorText: errorText,
       prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
       isDense: true,
       labelStyle: const TextStyle(
         fontSize: 13,
@@ -1911,10 +1924,23 @@ class _DefenseStageEditorScreenState
   }
 
   Widget _deliverableRow(Map<String, dynamic> item, bool isPost) {
+    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    final existingTpl = item['archive_file_template']?.toString().trim() ?? '';
+    if (isPost && (existingTpl.isEmpty || existingTpl == legacyDefault)) {
+      item['archive_file_template'] = '{project}';
+    }
+
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
-        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
+        (item['_templateController'] = TextEditingController(
+          text: item['archive_file_template']?.toString() ?? (isPost ? '{project}' : ''),
+        ));
+
+    if (isPost && templateController.text.trim() == legacyDefault) {
+      templateController.text = '{project}';
+      item['archive_file_template'] = '{project}';
+    }
 
     final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
 
@@ -2048,53 +2074,106 @@ class _DefenseStageEditorScreenState
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      TextFormField(
-                        controller: templateController,
-                        readOnly: _isLocked,
-                        decoration: _inputDecoration(
-                          labelText: 'Archive Naming Template',
-                          hintText: 'e.g. {year}.{course}.{project}.{stage}.{deliverable}.{semester}',
-                        ),
-                        style: const TextStyle(fontSize: 12.5),
-                        onChanged: (v) {
-                          setState(() {
-                            item['archive_file_template'] = v.trim();
-                          });
-                          _markDirty();
-                        },
-                      ),
-                      const SizedBox(height: 4),
-                      const Text(
-                        'Dynamic variables will be resolved upon archival save.',
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textSecondary,
-                          fontStyle: FontStyle.italic,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Wrap(
-                        spacing: 6,
-                        runSpacing: 6,
-                        children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
-                            .map((varName) => ActionChip(
-                                  label: Text(
-                                    varName,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w600,
+                      Builder(builder: (context) {
+                        final currentTemplate = templateController.text.trim();
+                        final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
+                        final varCount = varMatches.length;
+                        final isOverLimit = varCount > 3;
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            TextFormField(
+                              controller: templateController,
+                              readOnly: _isLocked,
+                              decoration: _inputDecoration(
+                                labelText: 'Archive Naming Template',
+                                hintText: 'e.g. {project}',
+                                helperText: isOverLimit
+                                    ? null
+                                    : 'Default is {project}. Max 3 variables allowed for mobile file name limits.',
+                                errorText: isOverLimit
+                                    ? 'Exceeds limit of 3 variables ($varCount/3). Phone file names have character limits.'
+                                    : null,
+                                suffixIcon: Padding(
+                                  padding: const EdgeInsets.only(right: 8),
+                                  child: Center(
+                                    widthFactor: 1.0,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                                      decoration: BoxDecoration(
+                                        color: isOverLimit
+                                            ? AppColors.danger.withValues(alpha: 0.1)
+                                            : AppColors.maroon.withValues(alpha: 0.08),
+                                        borderRadius: BorderRadius.circular(6),
+                                        border: Border.all(
+                                          color: isOverLimit
+                                              ? AppColors.danger.withValues(alpha: 0.3)
+                                              : AppColors.maroon.withValues(alpha: 0.2),
+                                        ),
+                                      ),
+                                      child: Text(
+                                        '$varCount/3 tags',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.w700,
+                                          color: isOverLimit ? AppColors.danger : AppColors.maroon,
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                  labelStyle: TextStyle(color: _isLocked ? Colors.grey : AppColors.maroon),
-                                  backgroundColor: AppColors.maroon.withValues(alpha: 0.05),
-                                  side: BorderSide(color: AppColors.maroon.withValues(alpha: 0.15)),
-                                  padding: EdgeInsets.zero,
-                                  onPressed: _isLocked
-                                      ? null
-                                      : () => _insertVariable(item, templateController, varName),
-                                ))
-                            .toList(),
-                      ),
+                                ),
+                              ),
+                              style: const TextStyle(fontSize: 12.5),
+                              onChanged: (v) {
+                                setState(() {
+                                  item['archive_file_template'] = v.trim();
+                                });
+                                _markDirty();
+                              },
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
+                                  .map((varName) {
+                                    final isReached = varCount >= 3;
+                                    return ActionChip(
+                                      label: Text(
+                                        varName,
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                      labelStyle: TextStyle(
+                                        color: _isLocked
+                                            ? Colors.grey
+                                            : (isReached ? Colors.grey.shade600 : AppColors.maroon),
+                                      ),
+                                      backgroundColor: isReached
+                                          ? Colors.grey.shade100
+                                          : AppColors.maroon.withValues(alpha: 0.05),
+                                      side: BorderSide(
+                                        color: isReached
+                                            ? Colors.grey.shade300
+                                            : AppColors.maroon.withValues(alpha: 0.15),
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      tooltip: isReached
+                                          ? 'Maximum 3 variables limit reached for phone file names'
+                                          : 'Insert $varName',
+                                      onPressed: _isLocked
+                                          ? null
+                                          : () => _insertVariable(item, templateController, varName),
+                                    );
+                                  })
+                                  .toList(),
+                            ),
+                          ],
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -2189,22 +2268,55 @@ class _DefenseStageEditorScreenState
     return resolved;
   }
 
-
   void _insertVariable(Map<String, dynamic> item, TextEditingController controller, String variable) {
     final text = controller.text;
     final selection = controller.selection;
-    
+
+    // Check if replacing existing selection containing variables
+    int varCount = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(text).length;
+    if (selection.isValid && !selection.isCollapsed) {
+      final selectedText = text.substring(selection.start, selection.end);
+      final replacedVars = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(selectedText).length;
+      varCount -= replacedVars;
+    }
+
+    if (varCount >= 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Limit reached: At most 3 variables allowed for mobile phone file name compatibility.'),
+          backgroundColor: AppColors.maroon,
+          duration: Duration(seconds: 2),
+        ),
+      );
+      return;
+    }
+
     String newText;
     int newCursorPosition;
 
-    if (selection.isValid) {
+    if (selection.isValid && !selection.isCollapsed) {
       final start = selection.start;
       final end = selection.end;
       newText = text.replaceRange(start, end, variable);
       newCursorPosition = start + variable.length;
     } else {
-      newText = text + variable;
-      newCursorPosition = newText.length;
+      final insertPos = (selection.isValid && selection.isCollapsed)
+          ? selection.start
+          : text.length;
+      final before = text.substring(0, insertPos);
+      final after = text.substring(insertPos);
+
+      // Smart dot separator formatting
+      String inserted = variable;
+      if (before.trim().isNotEmpty && !before.trim().endsWith('.')) {
+        inserted = '.$variable';
+      }
+      if (after.trim().isNotEmpty && !after.trim().startsWith('.')) {
+        inserted = '$inserted.';
+      }
+
+      newText = before + inserted + after;
+      newCursorPosition = before.length + inserted.length;
     }
 
     setState(() {

@@ -18,6 +18,16 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'is_restricted',
         ]
 
+    def validate_archive_file_template(self, value):
+        if value:
+            import re
+            vars_found = re.findall(r'\{[a-zA-Z0-9_]+\}', value)
+            if len(vars_found) > 3:
+                raise serializers.ValidationError(
+                    f'Archive naming template cannot exceed 3 dynamic variables (found {len(vars_found)}). Phone filenames have character limits.'
+                )
+        return value
+
 
 def check_stage_locked(stage, semester=None):
     if not semester:
@@ -301,11 +311,22 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
 
     def _create_deliverables(self, stage, deliverables_data):
         """Create deliverables for a stage"""
+        import re
         for deliverable_data in deliverables_data:
             dtype = deliverable_data.get('deliverable_type', StageDeliverable.TYPE_PRE)
             required = deliverable_data.get('required')
             if required is None:
                 required = dtype == StageDeliverable.TYPE_PRE
+            tpl = (deliverable_data.get('archive_file_template') or '').strip()
+            if dtype == StageDeliverable.TYPE_POST and not tpl:
+                tpl = '{project}'
+            if tpl:
+                vars_found = re.findall(r'\{[a-zA-Z0-9_]+\}', tpl)
+                if len(vars_found) > 3:
+                    label = deliverable_data.get('label') or 'Deliverable'
+                    raise serializers.ValidationError({
+                        'deliverables': f'Template for "{label}" exceeds 3 variables ({len(vars_found)} found). Mobile phone file names have character limits.'
+                    })
             StageDeliverable.objects.create(
                 defense_stage=stage,
                 deliverable_id=deliverable_data.get('deliverable_id', ''),
@@ -314,7 +335,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 required=bool(required),
                 display_order=deliverable_data.get('display_order', 1),
                 archive_note=deliverable_data.get('archive_note', ''),
-                archive_file_template=deliverable_data.get('archive_file_template', ''),
+                archive_file_template=tpl,
                 is_restricted=bool(deliverable_data.get('is_restricted', False)),
             )
 

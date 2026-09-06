@@ -4,7 +4,7 @@ from django.contrib.auth import get_user_model
 from rest_framework.test import APITestCase
 
 from academic_period_management.models import SchoolYear, Semester
-from defense.scheduler.models import DefenseSchedule
+from defense.scheduler.models import DefenseSchedule, SchedulePanelist
 from defense.stages.models import DefenseStage
 from grading.grades.models import TeamGrade
 from student_teams.models import StudentTeam, TeamMembership
@@ -63,6 +63,57 @@ class DashboardApiTests(APITestCase):
         self.assertEqual(response.data['advised_teams'], [])
         self.assertIsNotNone(response.data['pit_lead_overview'])
         self.assertIn('stats', response.data['pit_lead_overview'])
+
+    def test_faculty_dashboard_includes_panelist_assignments(self):
+        faculty = User.objects.create_user(
+            username='panelist-fac',
+            password='pass12345',
+            role='faculty',
+            is_panelist=True,
+        )
+        leader = User.objects.create_user(
+            username='lead-student',
+            password='pass12345',
+            role='student',
+        )
+        semester = Semester.objects.create(
+            school_year=SchoolYear.objects.create(label='2024-2025'),
+            label=Semester.FIRST,
+            is_active=True,
+        )
+        team = StudentTeam.objects.create(
+            name='Team Test',
+            leader=leader,
+            semester=semester,
+            level='4th Year Capstone',
+            year_level='4th Year',
+        )
+        stage = DefenseStage.objects.create(label='Proposal Defense', display_order=1)
+        schedule = DefenseSchedule.objects.create(
+            scope=DefenseSchedule.SCOPE_CAPSTONE,
+            team=team,
+            semester=semester,
+            defense_stage=stage,
+            scheduled_date='2026-09-15',
+            start_time='10:00:00',
+            room='Room 401',
+        )
+        SchedulePanelist.objects.create(
+            schedule=schedule,
+            panelist=faculty,
+            is_chair=True,
+            order=0,
+        )
+
+        self.client.force_authenticate(user=faculty)
+        response = self.client.get('/api/dashboards/faculty/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['panelist_assignments']), 1)
+        assignment = response.data['panelist_assignments'][0]
+        self.assertEqual(assignment['schedule_id'], schedule.id)
+        self.assertTrue(assignment['is_chair'])
+        self.assertEqual(assignment['room'], 'Room 401')
+        self.assertEqual(assignment['team_name'], 'Team Test')
 
     def test_pure_adviser_has_no_pit_lead_overview(self):
         adviser = User.objects.create_user(

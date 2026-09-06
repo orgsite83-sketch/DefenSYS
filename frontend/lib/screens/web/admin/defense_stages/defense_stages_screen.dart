@@ -2155,6 +2155,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required String labelText,
     String? hintText,
     String? helperText,
+    String? errorText,
     Widget? prefixIcon,
     Widget? suffixIcon,
   }) {
@@ -2162,6 +2163,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       labelText: labelText,
       hintText: hintText,
       helperText: helperText,
+      errorText: errorText,
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
       labelStyle: const TextStyle(
@@ -2881,10 +2883,23 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required void Function(void Function()) setDialogState,
     required TextEditingController stageLabelCtrl,
   }) {
+    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    final existingTpl = item['archive_file_template']?.toString().trim() ?? '';
+    if (isPost && (existingTpl.isEmpty || existingTpl == legacyDefault)) {
+      item['archive_file_template'] = '{project}';
+    }
+
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
-        (item['_templateController'] = TextEditingController(text: item['archive_file_template']?.toString() ?? ''));
+        (item['_templateController'] = TextEditingController(
+          text: item['archive_file_template']?.toString() ?? (isPost ? '{project}' : ''),
+        ));
+
+    if (isPost && templateController.text.trim() == legacyDefault) {
+      templateController.text = '{project}';
+      item['archive_file_template'] = '{project}';
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
@@ -3014,28 +3029,70 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               children: [
                 Expanded(
                   flex: 3,
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      TextFormField(
-                        controller: templateController,
-                        decoration: _dialogInputDecoration(
-                          labelText: 'Archive Naming Template',
-                          hintText: 'e.g. {year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                  child: Builder(builder: (context) {
+                    final currentTemplate = templateController.text.trim();
+                    final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
+                    final varCount = varMatches.length;
+                    final isOverLimit = varCount > 3;
+
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        TextFormField(
+                          controller: templateController,
+                          decoration: _dialogInputDecoration(
+                            labelText: 'Archive Naming Template',
+                            hintText: 'e.g. {project}',
+                            helperText: isOverLimit
+                                ? null
+                                : 'Default is {project}. Max 3 variables allowed for phone file names.',
+                            errorText: isOverLimit
+                                ? 'Exceeds limit of 3 variables ($varCount/3). Shorten for phone file name limit.'
+                                : null,
+                            suffixIcon: Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: Center(
+                                widthFactor: 1.0,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: isOverLimit
+                                        ? AppColors.danger.withValues(alpha: 0.1)
+                                        : AppColors.maroon.withValues(alpha: 0.08),
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(
+                                      color: isOverLimit
+                                          ? AppColors.danger.withValues(alpha: 0.3)
+                                          : AppColors.maroon.withValues(alpha: 0.2),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    '$varCount/3 tags',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: isOverLimit ? AppColors.danger : AppColors.maroon,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                          style: const TextStyle(fontSize: 12),
+                          onChanged: (value) {
+                            setDialogState(() {
+                              item['archive_file_template'] = value.trim();
+                            });
+                          },
                         ),
-                        style: const TextStyle(fontSize: 12),
-                        onChanged: (value) {
-                          setDialogState(() {
-                            item['archive_file_template'] = value.trim();
-                          });
-                        },
-                      ),
-                      const SizedBox(height: 5),
-                      Wrap(
-                        spacing: 4,
-                        runSpacing: 4,
-                        children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
-                            .map((varName) => ActionChip(
+                        const SizedBox(height: 5),
+                        Wrap(
+                          spacing: 4,
+                          runSpacing: 4,
+                          children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
+                              .map((varName) {
+                                final isReached = varCount >= 3;
+                                return ActionChip(
                                   label: Text(
                                     varName,
                                     style: const TextStyle(
@@ -3043,17 +3100,30 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                       fontWeight: FontWeight.w700,
                                     ),
                                   ),
-                                  labelStyle: const TextStyle(color: AppColors.maroon),
-                                  backgroundColor: AppColors.maroon.withValues(alpha: 0.05),
-                                  side: BorderSide(color: AppColors.maroon.withValues(alpha: 0.15)),
+                                  labelStyle: TextStyle(
+                                    color: isReached ? Colors.grey.shade600 : AppColors.maroon,
+                                  ),
+                                  backgroundColor: isReached
+                                      ? Colors.grey.shade100
+                                      : AppColors.maroon.withValues(alpha: 0.05),
+                                  side: BorderSide(
+                                    color: isReached
+                                        ? Colors.grey.shade300
+                                        : AppColors.maroon.withValues(alpha: 0.15),
+                                  ),
                                   padding: EdgeInsets.zero,
                                   visualDensity: VisualDensity.compact,
+                                  tooltip: isReached
+                                      ? 'Maximum 3 variables limit reached'
+                                      : 'Insert $varName',
                                   onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
-                                ))
-                            .toList(),
-                      ),
-                    ],
-                  ),
+                                );
+                              })
+                              .toList(),
+                        ),
+                      ],
+                    );
+                  }),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -3863,7 +3933,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             'required': true,
                                             'display_order': deliverables.length + 1,
                                             'archive_note': '',
-                                            'archive_file_template': '{year}.{course}.{project}.{stage}.{deliverable}.{semester}',
+                                            'archive_file_template': '{project}',
                                             'is_restricted': false,
                                           });
                                         });
@@ -3970,6 +4040,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                         showValidationToast(context, 'Deliverable name cannot be empty (item ${i + 1}).');
                                         return;
                                       }
+                                      if (deliverables[i]['deliverable_type'] == 'post') {
+                                        final tpl = (deliverables[i]['archive_file_template'] ?? '').toString().trim();
+                                        final vCount = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(tpl).length;
+                                        if (vCount > 3) {
+                                          setDialogState(() => activeTab = 2);
+                                          showValidationToast(context, 'Deliverable "$dLabel" template exceeds 3 variables ($vCount used). Limit is 3 for phone file names.');
+                                          return;
+                                        }
+                                      }
                                     }
                                   }
                                   Navigator.pop(dialogContext, true);
@@ -4064,18 +4143,44 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   ) {
     final text = controller.text;
     final selection = controller.selection;
-    
+
+    int varCount = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(text).length;
+    if (selection.isValid && !selection.isCollapsed) {
+      final selectedText = text.substring(selection.start, selection.end);
+      final replacedVars = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(selectedText).length;
+      varCount -= replacedVars;
+    }
+
+    if (varCount >= 3) {
+      showValidationToast(context, 'Maximum 3 variables allowed for mobile phone file name limits.');
+      return;
+    }
+
     String newText;
     int newCursorPosition;
 
-    if (selection.isValid) {
+    if (selection.isValid && !selection.isCollapsed) {
       final start = selection.start;
       final end = selection.end;
       newText = text.replaceRange(start, end, variable);
       newCursorPosition = start + variable.length;
     } else {
-      newText = text + variable;
-      newCursorPosition = newText.length;
+      final insertPos = (selection.isValid && selection.isCollapsed)
+          ? selection.start
+          : text.length;
+      final before = text.substring(0, insertPos);
+      final after = text.substring(insertPos);
+
+      String inserted = variable;
+      if (before.trim().isNotEmpty && !before.trim().endsWith('.')) {
+        inserted = '.$variable';
+      }
+      if (after.trim().isNotEmpty && !after.trim().startsWith('.')) {
+        inserted = '$inserted.';
+      }
+
+      newText = before + inserted + after;
+      newCursorPosition = before.length + inserted.length;
     }
 
     setDialogState(() {

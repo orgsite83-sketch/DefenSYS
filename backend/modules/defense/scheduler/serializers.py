@@ -475,6 +475,7 @@ class ScheduleBaseSerializer(serializers.Serializer):
     slot_duration = serializers.IntegerField(min_value=15, max_value=240, default=60)
     room = serializers.CharField(max_length=120)
     panelist_ids = serializers.ListField(child=serializers.IntegerField(), min_length=1)
+    chair_panelist_id = serializers.IntegerField(required=False, allow_null=True)
     archive_file_template = serializers.CharField(required=False, allow_blank=True, max_length=255)
     documenter_id = serializers.IntegerField(required=False, allow_null=True)
 
@@ -490,6 +491,9 @@ class ScheduleBaseSerializer(serializers.Serializer):
         self._validate_scheduler_scope_open(attrs)
         attrs['defense_stage'] = self._resolve_defense_stage(attrs)
         attrs['panelists'] = self._resolve_panelists(attrs['panelist_ids'])
+        if attrs.get('chair_panelist_id') and attrs.get('panelist_ids'):
+            if attrs['chair_panelist_id'] not in attrs['panelist_ids']:
+                raise serializers.ValidationError({'chair_panelist_id': 'Chair panelist must be one of the assigned panelists.'})
         attrs['rubric'] = self._resolve_rubric(attrs)
         attrs['documenter'] = self._resolve_documenter(attrs)
         if attrs['scope'] == DefenseSchedule.SCOPE_PIT:
@@ -818,6 +822,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     @transaction.atomic
     def create(self, validated_data):
+        chair_panelist_id = validated_data.pop('chair_panelist_id', None)
         panelists = validated_data.pop('panelists')
         actor = getattr(self.context.get('request'), 'user', None)
         self._ensure_panelist_roles(panelists, changed_by=actor)
@@ -828,7 +833,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             **validated_data,
             created_by=actor,
         )
-        self._sync_panelists(schedule, panelists)
+        self._sync_panelists(schedule, panelists, chair_panelist_id=chair_panelist_id)
         self._sync_grade_row(schedule)
         if schedule.documenter:
             send_documenter_assignment_notification(schedule)
@@ -836,6 +841,7 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
 
     def _pop_schedule_meta(self, validated_data):
         validated_data.pop('panelist_ids', None)
+        validated_data.pop('chair_panelist_id', None)
         validated_data.pop('documenter_id', None)
         validated_data.pop('defense_stage_id', None)
         validated_data.pop('rubric_id', None)
@@ -926,9 +932,15 @@ class DefenseScheduleWriteSerializer(ScheduleBaseSerializer):
             if done_qs.exists():
                 raise serializers.ValidationError({'team_id': f'Team {attrs["team"].name} has already completed this PIT event.'})
 
-    def _sync_panelists(self, schedule, panelists):
+    def _sync_panelists(self, schedule, panelists, chair_panelist_id=None):
+        chair_id = chair_panelist_id or (panelists[0].id if panelists else None)
         SchedulePanelist.objects.bulk_create([
-            SchedulePanelist(schedule=schedule, panelist=panelist, order=index)
+            SchedulePanelist(
+                schedule=schedule,
+                panelist=panelist,
+                order=index,
+                is_chair=(panelist.id == chair_id),
+            )
             for index, panelist in enumerate(panelists)
         ])
 
@@ -946,8 +958,14 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
         attrs = self.validated_data
         teams = self._ready_teams(attrs)
         start_minutes = attrs['start_time'].hour * 60 + attrs['start_time'].minute
-        slots = []
+        chair_id = attrs.get('chair_panelist_id') or (attrs['panelists'][0].id if attrs.get('panelists') else None)
+        panelists_data = []
+        for p in attrs['panelists']:
+            p_data = PanelistOptionSerializer(p).data
+            p_data['is_chair'] = (p.id == chair_id)
+            panelists_data.append(p_data)
 
+        slots = []
         for index, team in enumerate(teams):
             slot_start = minutes_to_time(start_minutes + attrs['slot_duration'] * index)
             slot_end = minutes_to_time(start_minutes + attrs['slot_duration'] * (index + 1))
@@ -963,7 +981,8 @@ class GenerateSchedulePlanSerializer(ScheduleBaseSerializer):
                 'end_time': slot_end,
                 'slot_duration': attrs['slot_duration'],
                 'room': attrs['room'],
-                'panelists': PanelistOptionSerializer(attrs['panelists'], many=True).data,
+                'chair_panelist_id': chair_id,
+                'panelists': panelists_data,
             })
         return slots
 
@@ -1095,6 +1114,7 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
             self._ensure_documenter_role(attrs['documenter'], changed_by=actor)
         batch_id = uuid.uuid4()
         start_minutes = attrs['start_time'].hour * 60 + attrs['start_time'].minute
+        chair_id = attrs.get('chair_panelist_id') or (attrs['panelists'][0].id if attrs.get('panelists') else None)
         schedules = []
         for index, team in enumerate(attrs['teams']):
             schedule = DefenseSchedule.objects.create(
@@ -1114,7 +1134,12 @@ class ConfirmSchedulePlanSerializer(ScheduleBaseSerializer):
                 created_by=actor,
             )
             SchedulePanelist.objects.bulk_create([
-                SchedulePanelist(schedule=schedule, panelist=panelist, order=order)
+                SchedulePanelist(
+                    schedule=schedule,
+                    panelist=panelist,
+                    order=order,
+                    is_chair=(panelist.id == chair_id),
+                )
                 for order, panelist in enumerate(attrs['panelists'])
             ])
             schedules.append(schedule)
@@ -1194,10 +1219,14 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
         required=False,
         allow_null=True,
     )
+    chair_panelist_id = serializers.IntegerField(
+        required=False,
+        allow_null=True,
+    )
 
     class Meta:
         model = DefenseSchedule
-        fields = ['status', 'documenter_id']
+        fields = ['status', 'documenter_id', 'chair_panelist_id']
 
     @property
     def schedule_instance(self):
@@ -1214,6 +1243,14 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(
                 f'Cannot change status from "{current}" to "{value}".'
             )
+        return value
+
+    def validate_chair_panelist_id(self, value):
+        if value is None:
+            return None
+        schedule = self.schedule_instance
+        if not schedule.panel_assignments.filter(panelist_id=value).exists():
+            raise serializers.ValidationError('The designated chair must be one of the panelists assigned to this defense schedule.')
         return value
 
     def validate_documenter_id(self, value):
@@ -1266,6 +1303,11 @@ class DefenseSchedulePatchSerializer(serializers.ModelSerializer):
                 reason='patch_serializer_update',
                 request=request,
             )
+
+        new_chair_id = validated_data.get('chair_panelist_id', 'not_provided')
+        if new_chair_id != 'not_provided' and new_chair_id is not None:
+            schedule.panel_assignments.all().update(is_chair=False)
+            schedule.panel_assignments.filter(panelist_id=new_chair_id).update(is_chair=True)
 
         if new_doc_id != 'not_provided':
             if new_doc_id is not None:

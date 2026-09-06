@@ -114,5 +114,49 @@ Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Docume
       expect(result.rows[5].date, equals('6/19/2026'));
       expect(result.rows[5].teamName, equals('Team NexGen'));
     });
+
+    test('parses spreadsheet with coloqium in preamble row without hardcoded stage words', () {
+      const csv = '''
+coloqium,,,,,,,
+6/18/2026,,,,,,,
+Room 301,,,,,,,
+Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Documenter
+9:00AM-9:30AM,Team SkyLedger,Alumni Career Tracker,Ricardo Fontanilla,Marcus Villar,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+''';
+      final bytes = Uint8List.fromList(utf8.encode(csv));
+      final result = parseScheduleImportFile(
+        bytes: bytes,
+        filename: 'schedule_import.csv',
+        configuredStages: ['Concept Proposal', 'Project Proposal'],
+      );
+
+      expect(result.stage, equals('coloqium'));
+      expect(result.date, equals('6/18/2026'));
+      expect(result.room, equals('Room 301'));
+      expect(result.rows, hasLength(1));
+      expect(result.rows.first.stage, equals('coloqium'));
+    });
+
+    test('parses dynamic custom stage and preserves uppercase / caps lock in stage header', () {
+      const csv = '''
+FINAL ORAL EXAMINATION,,,,,,,
+2026-07-20,,,,,,,
+AVR 1,,,,,,,
+Time,Team Name,Capstone Project,Adviser,Team Members,Chair,Panel Member 1,Documenter
+1:00PM-2:00PM,Team CyberShield,Threat Analytics,Ricardo Fontanilla,Alice Guo,Maricel Suarez,Jonathan Beltran,Cecilia Magbanua
+''';
+      final bytes = Uint8List.fromList(utf8.encode(csv));
+      final result = parseScheduleImportFile(
+        bytes: bytes,
+        filename: 'oral_exam.csv',
+        configuredStages: ['Final Oral Examination', 'Concept Proposal'],
+      );
+
+      expect(result.stage, equals('FINAL ORAL EXAMINATION'));
+      expect(result.date, equals('2026-07-20'));
+      expect(result.room, equals('AVR 1'));
+      expect(result.rows.first.stage, equals('FINAL ORAL EXAMINATION'));
+    });
   });
 }
+

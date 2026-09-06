@@ -152,46 +152,25 @@ class _DefenseScheduleBulkImportViewState
       _panelWeight = existingDraft.panelWeight;
       _peerWeight = existingDraft.peerWeight;
 
-      if (!_isPit) {
-        final rawStage = _parsed?.stage?.trim() ?? '';
-        if (rawStage.isNotEmpty) {
-          final match = findBestMatch<Map<String, dynamic>>(
-            source: rawStage,
-            items: schedState.defenseStages,
-            labelGetter: (s) => s['label']?.toString() ?? '',
-          );
-          if (match.isMatched) {
-            _headerMatch = match;
+      _evaluateStageMatching(
+        parsed: _parsed!,
+        schedState: schedState,
+      );
+
+      if (existingDraft.stageId != null) {
+        _importStageId = existingDraft.stageId;
+        if (_headerMatch != null && _headerMatch!.isMatched) {
+          final matchedId = asInt(_headerMatch!.item?['id']);
+          if (matchedId == _importStageId) {
+            _mismatchWarning = null;
           }
         }
-        if (_importStageId != null &&
-            !schedState.defenseStages.any((s) => asInt(s['id']) == _importStageId)) {
-          if (_headerMatch != null && _headerMatch!.isMatched) {
-            _importStageId = asInt(_headerMatch!.item?['id']);
-          } else {
-            _importStageId = null;
-            _headerMatch = null;
-          }
-        }
-      } else {
-        final rawEvent = _parsed?.stage?.trim() ?? '';
-        if (rawEvent.isNotEmpty) {
-          final match = findBestMatch<Map<String, dynamic>>(
-            source: rawEvent,
-            items: schedState.pitEvents,
-            labelGetter: (e) => e['event_name']?.toString() ?? '',
-          );
-          if (match.isMatched) {
-            _headerMatch = match;
-          }
-        }
-        if (_importEventName.isNotEmpty &&
-            !schedState.pitEvents.any((e) => e['event_name'] == _importEventName)) {
-          if (_headerMatch != null && _headerMatch!.isMatched) {
-            _importEventName = _headerMatch!.label;
-          } else {
-            _importEventName = '';
-            _headerMatch = null;
+      }
+      if (existingDraft.eventName.isNotEmpty) {
+        _importEventName = existingDraft.eventName;
+        if (_headerMatch != null && _headerMatch!.isMatched) {
+          if (_headerMatch!.label.toLowerCase() == _importEventName.toLowerCase()) {
+            _mismatchWarning = null;
           }
         }
       }
@@ -365,6 +344,75 @@ class _DefenseScheduleBulkImportViewState
     _scheduleDraftSave();
   }
 
+  void _evaluateStageMatching({
+    required ParsedScheduleImport parsed,
+    required DefenseSchedulerState schedState,
+  }) {
+    final rawStage = parsed.stage?.trim() ?? '';
+    MatchResult<dynamic>? resolvedMatch;
+    String? warning;
+
+    if (_isPit) {
+      final activeEventName = (widget.initialEventName ?? '').trim();
+      if (rawStage.isNotEmpty) {
+        resolvedMatch = findBestMatch<Map<String, dynamic>>(
+          source: rawStage,
+          items: schedState.pitEvents,
+          labelGetter: (e) => e['event_name']?.toString() ?? '',
+        );
+        if (resolvedMatch.isMatched) {
+          final matchedName = resolvedMatch.label;
+          if (activeEventName.isNotEmpty &&
+              matchedName.toLowerCase() != activeEventName.toLowerCase()) {
+            warning =
+                'File header specifies "$rawStage" (matched to "$matchedName"), while active PIT event is "$activeEventName".';
+          }
+          _importEventName = matchedName;
+        } else {
+          warning =
+              'File header specifies event "$rawStage", which does not match active event "$activeEventName" (or any registered PIT event for this semester).';
+          if (_importEventName.isEmpty) _importEventName = activeEventName;
+        }
+      } else {
+        if (_importEventName.isEmpty) _importEventName = activeEventName;
+      }
+    } else {
+      final activeStageId = widget.initialStageId;
+      final activeStageObj = schedState.defenseStages.firstWhere(
+        (s) => asInt(s['id']) == activeStageId,
+        orElse: () => schedState.defenseStages.isNotEmpty
+            ? schedState.defenseStages.first
+            : <String, dynamic>{},
+      );
+      final activeStageLabel = activeStageObj['label']?.toString() ?? '';
+
+      if (rawStage.isNotEmpty) {
+        resolvedMatch = findBestMatch<Map<String, dynamic>>(
+          source: rawStage,
+          items: schedState.defenseStages,
+          labelGetter: (s) => s['label']?.toString() ?? '',
+        );
+        if (resolvedMatch.isMatched) {
+          final matchedStageId = asInt(resolvedMatch.item?['id']);
+          if (activeStageId != null && matchedStageId != activeStageId) {
+            warning =
+                'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while active defense stage is "$activeStageLabel".';
+          }
+          _importStageId = matchedStageId;
+        } else {
+          warning =
+              'File header specifies stage "$rawStage", which does not match active stage "$activeStageLabel" (or any stage in your Academic Stage Chain).';
+          _importStageId ??= activeStageId ?? asInt(activeStageObj['id']);
+        }
+      } else {
+        _importStageId ??= activeStageId ?? asInt(activeStageObj['id']);
+      }
+    }
+
+    _headerMatch = resolvedMatch;
+    _mismatchWarning = warning;
+  }
+
   Future<void> _pickFile() async {
     final schedState = ref.read(defenseSchedulerProvider);
     final result = await FilePicker.platform.pickFiles(
@@ -383,56 +431,26 @@ class _DefenseScheduleBulkImportViewState
     }
 
     try {
-      final parsedResult = parseScheduleImportFile(bytes: bytes, filename: file.name);
-      final rawStage = parsedResult.stage?.trim() ?? '';
-      MatchResult<dynamic>? resolvedMatch;
-      String? warning;
+      final configuredStages = _isPit
+          ? schedState.pitEvents
+              .map((e) => e['event_name']?.toString() ?? '')
+              .where((n) => n.isNotEmpty)
+              .toList()
+          : schedState.defenseStages
+              .map((s) => s['label']?.toString() ?? '')
+              .where((l) => l.isNotEmpty)
+              .toList();
 
-      if (_isPit) {
-        resolvedMatch = findBestMatch<Map<String, dynamic>>(
-          source: rawStage,
-          items: schedState.pitEvents,
-          labelGetter: (e) => e['event_name']?.toString() ?? '',
-        );
-        if (resolvedMatch.isMatched) {
-          final matchedName = resolvedMatch.label;
-          if (_importEventName.isNotEmpty &&
-              _importEventName != matchedName &&
-              (widget.initialEventName ?? '').trim().isNotEmpty &&
-              widget.initialEventName!.trim() == _importEventName) {
-            warning =
-                'File header specifies "$rawStage" (matched to "$matchedName"), while scheduler was previously set to "$_importEventName".';
-          }
-          _importEventName = matchedName;
-        } else if (rawStage.isNotEmpty) {
-          warning =
-              'File header "$rawStage" could not be matched to any registered PIT event for this semester.';
-        }
-      } else {
-        resolvedMatch = findBestMatch<Map<String, dynamic>>(
-          source: rawStage,
-          items: schedState.defenseStages,
-          labelGetter: (s) => s['label']?.toString() ?? '',
-        );
-        if (resolvedMatch.isMatched) {
-          final matchedStageId = asInt(resolvedMatch.item?['id']);
-          if (_importStageId != null &&
-              _importStageId != matchedStageId &&
-              widget.initialStageId != null &&
-              widget.initialStageId == _importStageId) {
-            final prevLabel = schedState.defenseStages.firstWhere(
-              (s) => asInt(s['id']) == _importStageId,
-              orElse: () => <String, dynamic>{},
-            )['label'] ?? '';
-            warning =
-                'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while scheduler was previously set to "$prevLabel".';
-          }
-          _importStageId = matchedStageId;
-        } else if (rawStage.isNotEmpty) {
-          warning =
-              'File header "$rawStage" could not be matched to any Capstone defense stage.';
-        }
-      }
+      final parsedResult = parseScheduleImportFile(
+        bytes: bytes,
+        filename: file.name,
+        configuredStages: configuredStages,
+      );
+
+      _evaluateStageMatching(
+        parsed: parsedResult,
+        schedState: schedState,
+      );
 
       final defaultRoom = parsedResult.room?.trim() ?? '';
       final rowsWithInitialRoom = defaultRoom.isNotEmpty
@@ -447,14 +465,18 @@ class _DefenseScheduleBulkImportViewState
       setState(() {
         _parsed = parsedResult.copyWith(rows: rowsWithInitialRoom);
         _fileName = file.name;
-        _headerMatch = resolvedMatch;
-        _mismatchWarning = warning;
         _draftRestored = false;
         if (parsedResult.date != null && parsedResult.date!.isNotEmpty) {
           _dateController.text = normalizeImportDate(parsedResult.date!);
         }
         if (defaultRoom.isNotEmpty) {
           _roomController.text = defaultRoom;
+        }
+        final detectedDuration = parsedResult.rows
+            .map((r) => r.slotDuration)
+            .firstWhere((d) => d != null && d > 0, orElse: () => null);
+        if (detectedDuration != null) {
+          _durationController.text = detectedDuration.toString();
         }
       });
 
@@ -521,6 +543,7 @@ class _DefenseScheduleBulkImportViewState
             eventName: _importEventName,
             date: _dateController.text,
             room: _roomController.text,
+            slotDuration: int.tryParse(_durationController.text.trim()),
             fallbackDuration:
                 int.tryParse(_durationController.text.trim()) ?? 60,
             panelRubricId: _panelRubricId,
@@ -1448,275 +1471,350 @@ class _DefenseScheduleBulkImportViewState
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
           decoration: const BoxDecoration(
-            color: Colors.white,
+            color: Color(0xFFF8FAFC),
             border: Border(
-              bottom: BorderSide(color: Color(0xFFE5E7EB)),
+              bottom: BorderSide(color: Color(0xFFE2E8F0)),
             ),
           ),
           child: Wrap(
-            spacing: 12,
-            runSpacing: 8,
+            spacing: 16,
+            runSpacing: 10,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              // 1. Stage or PIT Event
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(
-                    _isPit ? Icons.event_note_rounded : Icons.school_outlined,
-                    size: 14,
-                    color: const Color(0xFF64748B),
-                  ),
-                  const SizedBox(width: 5),
-                  Text(
-                    _isPit ? 'Event:' : 'Stage:',
-                    style: const TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  if (_isPit) ...[
-                    Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<String>(
-                          key: ValueKey('compact_pit_event_$effectiveEventName'),
-                          value: effectiveEventName,
-                          isDense: true,
-                          hint: const Text(
-                            'Select PIT event',
-                            style: TextStyle(
-                                fontSize: 11.5, color: Color(0xFF94A3B8)),
-                          ),
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 16,
-                            color: Color(0xFF64748B),
-                          ),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
-                          ),
-                          items: pitEventItems,
-                          onChanged: (val) async {
-                            setState(() {
-                              _importEventName = val ?? '';
-                              _headerMatch = null;
-                            });
-                            if (val != null) {
-                              await _loadPitEventConfig(val);
-                            }
-                          },
-                        ),
-                      ),
-                    ),
-                  ] else ...[
-                    Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: DropdownButtonHideUnderline(
-                        child: DropdownButton<int?>(
-                          key: ValueKey('compact_stage_$effectiveStageId'),
-                          value: effectiveStageId,
-                          isDense: true,
-                          hint: const Text(
-                            'Select stage',
-                            style: TextStyle(
-                                fontSize: 11.5, color: Color(0xFF94A3B8)),
-                          ),
-                          icon: const Icon(
-                            Icons.keyboard_arrow_down_rounded,
-                            size: 16,
-                            color: Color(0xFF64748B),
-                          ),
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF1E293B),
-                          ),
-                          items: stageItems,
-                          onChanged: (val) async {
-                            setState(() {
-                              _importStageId = val;
-                              _headerMatch = null;
-                            });
-                            await _loadStageRubrics(val);
-                          },
-                        ),
-                      ),
+              // 1. Target Scope Group (Stage or PIT Event + Match indicator)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x06000000),
+                      blurRadius: 2,
+                      offset: Offset(0, 1),
                     ),
                   ],
-                  if (_headerMatch != null) ...[
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(5),
+                      decoration: BoxDecoration(
+                        color: _isPit ? const Color(0xFFEFF6FF) : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(
+                        _isPit ? Icons.event_note_rounded : Icons.school_outlined,
+                        size: 15,
+                        color: _isPit ? const Color(0xFF2563EB) : DefensysUi.primaryMaroon,
+                      ),
+                    ),
                     const SizedBox(width: 8),
-                    _buildCompactHeaderMatchIndicator(_headerMatch!),
-                  ],
-                ],
-              ),
-
-              // 2. Defense Start Date
-              Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.calendar_today_outlined,
-                    size: 14,
-                    color: Color(0xFF64748B),
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Defense Start Date:',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  InkWell(
-                    onTap: () async {
-                      final now = DateTime.now();
-                      final today = DateTime(now.year, now.month, now.day);
-                      final picked = await showDatePicker(
-                        context: context,
-                        initialDate:
-                            DateTime.tryParse(_dateController.text) ?? today,
-                        firstDate: today,
-                        lastDate: DateTime(now.year + 3, now.month, now.day),
-                      );
-                      if (picked != null) {
-                        setState(() {
-                          _dateController.text = formatScheduleDate(picked);
-                        });
-                        _scheduleDraftSave();
-                      }
-                    },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      height: 32,
-                      padding: const EdgeInsets.symmetric(horizontal: 9),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFFCBD5E1)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(
-                            Icons.calendar_month_outlined,
-                            size: 13,
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _isPit ? 'TARGET EVENT' : 'TARGET STAGE',
+                          style: const TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: 0.5,
                             color: Color(0xFF64748B),
                           ),
-                          const SizedBox(width: 6),
-                          Text(
-                            _dateController.text.isNotEmpty
-                                ? _dateController.text
-                                : 'YYYY-MM-DD',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: _dateController.text.isNotEmpty
-                                  ? const Color(0xFF1E293B)
-                                  : const Color(0xFF94A3B8),
+                        ),
+                        const SizedBox(height: 1),
+                        if (_isPit) ...[
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<String>(
+                              key: ValueKey('compact_pit_event_$effectiveEventName'),
+                              value: effectiveEventName,
+                              isDense: true,
+                              hint: const Text(
+                                'Select PIT event',
+                                style: TextStyle(
+                                    fontSize: 12, color: Color(0xFF94A3B8)),
+                              ),
+                              icon: const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: 16,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                              items: pitEventItems,
+                              onChanged: (val) async {
+                                setState(() {
+                                  _importEventName = val ?? '';
+                                  if (_headerMatch != null && _headerMatch!.isMatched) {
+                                    if (_headerMatch!.label.toLowerCase() == (val ?? '').toLowerCase()) {
+                                      _mismatchWarning = null;
+                                    } else {
+                                      _mismatchWarning =
+                                          'File header specifies "${_headerMatch!.sourceText}" (matched to "${_headerMatch!.label}"), while selected target event is "$val".';
+                                    }
+                                  } else if (_headerMatch != null && !_headerMatch!.isMatched && _headerMatch!.sourceText.isNotEmpty) {
+                                    _mismatchWarning =
+                                        'File header specifies event "${_headerMatch!.sourceText}", which does not match selected event "$val" (or any registered PIT event for this semester).';
+                                  }
+                                });
+                                if (val != null) {
+                                  await _loadPitEventConfig(val);
+                                }
+                              },
+                            ),
+                          ),
+                        ] else ...[
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<int?>(
+                              key: ValueKey('compact_stage_$effectiveStageId'),
+                              value: effectiveStageId,
+                              isDense: true,
+                              hint: const Text(
+                                'Select stage',
+                                style: TextStyle(
+                                    fontSize: 12, color: Color(0xFF94A3B8)),
+                              ),
+                              icon: const Padding(
+                                padding: EdgeInsets.only(left: 4),
+                                child: Icon(
+                                  Icons.keyboard_arrow_down_rounded,
+                                  size: 16,
+                                  color: Color(0xFF475569),
+                                ),
+                              ),
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0F172A),
+                              ),
+                              items: stageItems,
+                              onChanged: (val) async {
+                                setState(() {
+                                  _importStageId = val;
+                                  if (_headerMatch != null && _headerMatch!.isMatched) {
+                                    final matchedId = asInt(_headerMatch!.item?['id']);
+                                    if (matchedId == val) {
+                                      _mismatchWarning = null;
+                                    } else {
+                                      final targetObj = schedState.defenseStages.firstWhere(
+                                        (s) => asInt(s['id']) == val,
+                                        orElse: () => <String, dynamic>{},
+                                      );
+                                      final targetLabel = targetObj['label'] ?? '';
+                                      _mismatchWarning =
+                                          'File header specifies "${_headerMatch!.sourceText}" (matched to "${_headerMatch!.label}"), while selected target stage is "$targetLabel".';
+                                    }
+                                  } else if (_headerMatch != null && !_headerMatch!.isMatched && _headerMatch!.sourceText.isNotEmpty) {
+                                    final targetObj = schedState.defenseStages.firstWhere(
+                                      (s) => asInt(s['id']) == val,
+                                      orElse: () => <String, dynamic>{},
+                                    );
+                                    final targetLabel = targetObj['label'] ?? '';
+                                    _mismatchWarning =
+                                        'File header specifies stage "${_headerMatch!.sourceText}", which does not match selected stage "$targetLabel" (or any stage in your Academic Stage Chain).';
+                                  }
+                                });
+                                await _loadStageRubrics(val);
+                              },
                             ),
                           ),
                         ],
-                      ),
+                      ],
                     ),
-                  ),
-                ],
+                    if (_headerMatch != null) ...[
+                      const SizedBox(width: 8),
+                      _buildCompactHeaderMatchIndicator(_headerMatch!),
+                    ],
+                  ],
+                ),
               ),
 
-              // 3. Duration
+              // Vertical Divider between Scope and Parameters
+              Container(
+                height: 28,
+                width: 1,
+                color: const Color(0xFFCBD5E1),
+              ),
+
+              // 2. Schedule Parameters Group (Date + Duration)
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(
-                    Icons.timer_outlined,
-                    size: 14,
-                    color: Color(0xFF64748B),
-                  ),
-                  const SizedBox(width: 5),
-                  const Text(
-                    'Duration:',
-                    style: TextStyle(
-                      fontSize: 11.5,
-                      fontWeight: FontWeight.w700,
-                      color: Color(0xFF475569),
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Container(
-                    height: 32,
-                    width: 80,
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFFCBD5E1)),
-                    ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _durationController,
-                            keyboardType: TextInputType.number,
-                            style: const TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF1E293B),
-                            ),
-                            decoration: const InputDecoration(
-                              isDense: true,
-                              contentPadding: EdgeInsets.zero,
-                              border: InputBorder.none,
-                              hintText: '60',
-                              hintStyle: TextStyle(
-                                  fontSize: 12, color: Color(0xFF94A3B8)),
-                            ),
-                            onChanged: (_) {
-                              setState(() {});
-                              _scheduleDraftSave();
-                            },
+                  // Start Date
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.calendar_today_outlined,
+                        size: 13.5,
+                        color: Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'Start Date:',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF475569),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      InkWell(
+                        onTap: () async {
+                          final now = DateTime.now();
+                          final today = DateTime(now.year, now.month, now.day);
+                          final picked = await showDatePicker(
+                            context: context,
+                            initialDate:
+                                DateTime.tryParse(_dateController.text) ?? today,
+                            firstDate: today,
+                            lastDate: DateTime(now.year + 3, now.month, now.day),
+                          );
+                          if (picked != null) {
+                            setState(() {
+                              _dateController.text = formatScheduleDate(picked);
+                            });
+                            _scheduleDraftSave();
+                          }
+                        },
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          height: 32,
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(color: const Color(0xFFCBD5E1)),
+                            boxShadow: const [
+                              BoxShadow(
+                                color: Color(0x06000000),
+                                blurRadius: 2,
+                                offset: Offset(0, 1),
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.calendar_month_outlined,
+                                size: 13,
+                                color: Color(0xFF64748B),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                _dateController.text.isNotEmpty
+                                    ? _dateController.text
+                                    : 'YYYY-MM-DD',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w600,
+                                  color: _dateController.text.isNotEmpty
+                                      ? const Color(0xFF1E293B)
+                                      : const Color(0xFF94A3B8),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
-                        const Text(
-                          'min',
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF64748B),
-                          ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(width: 14),
+
+                  // Slot Duration
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.timer_outlined,
+                        size: 14,
+                        color: Color(0xFF64748B),
+                      ),
+                      const SizedBox(width: 5),
+                      const Text(
+                        'Slot Duration:',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF475569),
                         ),
-                      ],
-                    ),
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        height: 32,
+                        width: 96,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x06000000),
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _durationController,
+                                keyboardType: TextInputType.number,
+                                style: const TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF1E293B),
+                                ),
+                                decoration: const InputDecoration(
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.zero,
+                                  border: InputBorder.none,
+                                  hintText: '60',
+                                  hintStyle: TextStyle(
+                                      fontSize: 12, color: Color(0xFF94A3B8)),
+                                ),
+                                onChanged: (_) {
+                                  setState(() {});
+                                  _scheduleDraftSave();
+                                },
+                              ),
+                            ),
+                            const Text(
+                              'min/slot',
+                              style: TextStyle(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
 
-              // Vertical Divider
+              // Vertical Divider between Parameters and Rubrics
               Container(
-                height: 18,
+                height: 28,
                 width: 1,
                 color: const Color(0xFFCBD5E1),
-                margin: const EdgeInsets.symmetric(horizontal: 2),
               ),
 
-              // 5. Rubrics
+              // 3. Evaluation Rubrics Group
               Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1900,11 +1998,11 @@ class _DefenseScheduleBulkImportViewState
     if (match.sourceText.isEmpty) return const SizedBox.shrink();
     if (match.isExact) {
       return Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
         decoration: BoxDecoration(
           color: const Color(0xFFF0FDF4),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(5),
           border: Border.all(color: const Color(0xFFBBF7D0)),
         ),
         child: Row(
@@ -1926,11 +2024,11 @@ class _DefenseScheduleBulkImportViewState
     }
     if (match.isCanonical || match.isFuzzy) {
       return Container(
-        height: 32,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
+        height: 26,
+        padding: const EdgeInsets.symmetric(horizontal: 7),
         decoration: BoxDecoration(
           color: const Color(0xFFEFF8FF),
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(5),
           border: Border.all(color: const Color(0xFFB2DDFF)),
         ),
         child: Row(
@@ -1951,11 +2049,11 @@ class _DefenseScheduleBulkImportViewState
       );
     }
     return Container(
-      height: 32,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 7),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFBEB),
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(5),
         border: Border.all(color: const Color(0xFFFDE68A)),
       ),
       child: Row(
@@ -4262,11 +4360,13 @@ class _CommitteeSessionGroup {
         : (first.timeLabel.contains('-')
             ? first.timeLabel.split('-').first.trim()
             : first.timeLabel);
-    final end = last.source.endTime.isNotEmpty
-        ? last.source.endTime
-        : (last.timeLabel.contains('-')
-            ? last.timeLabel.split('-').last.trim()
-            : last.timeLabel);
+    final end = last.effectiveEndTime.isNotEmpty
+        ? last.effectiveEndTime
+        : (last.source.endTime.isNotEmpty
+            ? last.source.endTime
+            : (last.timeLabel.contains('-')
+                ? last.timeLabel.split('-').last.trim()
+                : last.timeLabel));
     if (start.isEmpty || end.isEmpty || rows.length == 1) {
       return rows.first.timeLabel;
     }

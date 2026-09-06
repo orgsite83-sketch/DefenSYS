@@ -29,6 +29,14 @@ class TeamData {
   bool isPosted;
   final List<Map<String, dynamic>> submittedSubmissions;
 
+  final bool isChair;
+  String? verdict;
+  String? verdictRemarks;
+  String? verdictByName;
+  String? revisionDeadline;
+  int attemptCount;
+  int? gradeId;
+
   TeamData({
     required this.name,
     required this.project,
@@ -47,7 +55,19 @@ class TeamData {
     this.adviserWeight = 0,
     this.panelRubric,
     this.scheduledDate,
+    this.isChair = false,
+    this.verdict,
+    this.verdictRemarks,
+    this.verdictByName,
+    this.revisionDeadline,
+    this.attemptCount = 1,
+    this.gradeId,
   });
+
+  bool get hasVerdict => verdict != null && verdict!.isNotEmpty;
+  bool get isApproved => verdict == 'approved';
+  bool get isApprovedWithRevisions => verdict == 'approved_with_revisions';
+  bool get isForRedefense => verdict == 'for_redefense';
 
   bool get hasValidScope => scope == 'capstone' || scope == 'pit';
   String get scopeLabel {

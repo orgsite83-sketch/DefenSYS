@@ -56,14 +56,35 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
   }
 
   Future<void> _refreshDashboardAndNotifications() async {
+    final team = (ref.read(dashboardProvider('student')).data?['team']) as Map<String, dynamic>?;
+    final isCapstone = team?['isCapstone'] == true;
+    final yearLevel = ref.read(dashboardProvider('student')).data?['year_level']?.toString().trim();
+
     await Future.wait([
       ref.read(dashboardProvider('student').notifier).fetchDashboardData(),
       ref.read(notificationsProvider.notifier).fetchNotifications(),
+      if (team != null)
+        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+          scope: isCapstone ? 'capstone' : 'pit',
+          yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+        ),
     ]);
   }
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(dashboardProvider('student'), (prev, next) {
+      final team = next.data?['team'] as Map<String, dynamic>?;
+      if (team != null) {
+        final isCapstone = team['isCapstone'] == true;
+        final yearLevel = next.data?['year_level']?.toString().trim();
+        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+          scope: isCapstone ? 'capstone' : 'pit',
+          yearLevel: isCapstone ? null : (yearLevel?.isNotEmpty == true ? yearLevel : null),
+        );
+      }
+    });
+
     final dashState = ref.watch(dashboardProvider('student'));
     final delivState = ref.watch(capstoneDeliverablesProvider);
 
@@ -119,8 +140,13 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
     final grades = dataToPass['grades'] as Map<String, dynamic>?;
     final String stageName = schedule?['stage']?.toString() ??
         grades?['stage']?.toString() ??
+        team?['currentStage']?.toString() ??
+        team?['readyForStage']?.toString() ??
+        dataToPass['current_stage']?.toString() ??
         delivState.currentTeamSelectedStage?.toString() ??
-        'Project Proposal';
+        (delivState.stageOptions.isNotEmpty ? delivState.stageOptions.first : null) ??
+        (dataToPass['stage_options'] as List?)?.firstOrNull?.toString() ??
+        '';
     final isPassed = grades?['result'] == 'PASSED' || grades?['is_published'] == true;
 
     final tabChildren = <Widget>[

@@ -107,6 +107,8 @@ def _user_payload(user, active_semester=None):
         'team_id': team_id,
         'is_project_manager': is_project_manager,
         'managed_section': managed_section,
+        'has_e_signature': bool(getattr(user, 'e_signature', None)),
+        'e_signature_url': user.e_signature.url if getattr(user, 'e_signature', None) else None,
     }
 
 
@@ -218,6 +220,8 @@ def _latest_academic_record(user):
 
 def _team_payload(team):
     memberships = list(team.memberships.select_related('student').all())
+    from repository.deliverables.services import current_stage_for_team
+    active_stage = current_stage_for_team(team) if team else None
     return {
         'id': team.id,
         'name': team.name,
@@ -229,8 +233,8 @@ def _team_payload(team):
         'schoolYear': team.semester.school_year.label,
         'status': team.status,
         'isCapstone': team.is_capstone,
-        'currentStage': team.current_defense_stage or team.ready_for_stage or None,
-        'readyForStage': team.ready_for_stage,
+        'currentStage': team.current_defense_stage or team.ready_for_stage or active_stage,
+        'readyForStage': team.ready_for_stage or active_stage,
         'deliverableCount': team.deliverable_submissions.count(),
         'adviserName': _display_name(team.adviser) if team.adviser else None,
         'leaderName': _display_name(team.leader),
@@ -245,6 +249,49 @@ def _team_payload(team):
             for membership in memberships
         ],
     }
+
+
+def _panelist_assignments_payload(user, active_sem=None):
+    from defense.scheduler.models import SchedulePanelist
+    qs = (
+        SchedulePanelist.objects.filter(panelist=user)
+        .select_related(
+            'schedule',
+            'schedule__team',
+            'schedule__defense_stage',
+            'schedule__rubric',
+            'schedule__semester',
+        )
+        .order_by('schedule__scheduled_date', 'schedule__start_time')
+    )
+    if active_sem:
+        qs = qs.filter(schedule__semester=active_sem)
+
+    results = []
+    for sp in qs:
+        sched = sp.schedule
+        team = sched.team
+        results.append({
+            'id': sp.id,
+            'schedule_id': sched.id,
+            'scheduled_date': str(sched.scheduled_date),
+            'start_time': sched.start_time.strftime('%H:%M') if sched.start_time else '',
+            'slot_duration': sched.slot_duration,
+            'room': sched.room,
+            'status': sched.status,
+            'scope': sched.scope,
+            'stage_label': sched.stage_label,
+            'is_chair': sp.is_chair,
+            'order': sp.order,
+            'team_id': team.id if team else None,
+            'team_name': team.name if team else 'Unassigned Team',
+            'project_title': team.project_title if team else '',
+            'year_level': team.year_level if team else '',
+            'section': team.section if team else '',
+            'rubric_id': sched.rubric_id,
+            'rubric_name': sched.rubric.name if sched.rubric else '',
+        })
+    return results
 
 
 def _pit_teams_queryset(user, *, scope='active'):
@@ -1154,19 +1201,21 @@ class FacultyDashboardView(APIView):
             pit_teams = _pit_teams_queryset(user)
         pit_lead_overview = _pit_lead_overview_payload(user, active_sem=active_sem)
         pit_assistant = None  # Repository assistant feature removed
+        panelist_assignments = _panelist_assignments_payload(user, active_sem=active_sem)
 
         return Response({
             'faculty': _user_payload(user, active_sem),
             'roles': _faculty_roles(user),
             'active_roles': _active_role_labels(user),
             'advised_teams': [_team_payload(team) for team in advised_teams],
-            'panelist_assignments': [],
+            'panelist_assignments': panelist_assignments,
             'pit_teams': [_team_payload(team) for team in pit_teams],
             'capstone_info_teams': [_team_payload(team) for team in capstone_info_teams],
             'pit_lead_year': user.pit_lead_year if user.is_pit_lead else None,
             'pit_lead_overview': pit_lead_overview,
             'active_semester': _active_semester_label(active_sem),
             'is_documenter': user.is_documenter,
+            'has_e_signature': bool(getattr(user, 'e_signature', None)),
         })
 
 
@@ -1301,6 +1350,31 @@ class StudentDashboardView(APIView):
         if team and team.is_capstone:
             weights['adviser'] = raw_weights['adviser_weight']
 
+        # Dynamically resolve configured stages for student's team
+        stage_options = []
+        stages_payload = []
+        if team:
+            if team.is_capstone:
+                from repository.deliverables.services import STAGE_OPTIONS, stage_payload
+                stage_options = list(STAGE_OPTIONS)
+            else:
+                from defense.scheduler.models import PitEventGradingConfig
+                from repository.deliverables.services import stage_payload
+                from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
+                configs_qs = PitEventGradingConfig.objects.filter(semester=team.semester)
+                if team.year_level:
+                    exclude_filter = Q()
+                    for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                        if y != team.year_level:
+                            for hint in hints:
+                                exclude_filter |= Q(event_name__icontains=hint)
+                    if exclude_filter:
+                        configs_qs = configs_qs.exclude(exclude_filter)
+                stage_options = list(
+                    configs_qs.order_by('event_name').values_list('event_name', flat=True)
+                )
+            stages_payload = [stage_payload(team, stage) for stage in stage_options]
+
         return Response({
             'student': _user_payload(user, active_sem),
             'academic_record': {
@@ -1332,6 +1406,9 @@ class StudentDashboardView(APIView):
             'project_title': team_payload['projectTitle'] if team_payload else None,
             'status': team_payload['status'] if team_payload else 'No team assigned',
             'deliverables': deliverables_payload,
+            'stage_options': stage_options,
+            'stages': stages_payload,
+            'current_stage': team_payload['currentStage'] if team_payload else (stage_options[0] if stage_options else None),
             'final_grade': None,
         })
 

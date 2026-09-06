@@ -505,6 +505,21 @@ class PanelistAssignmentsView(APIView):
             ).values_list('schedule_id', flat=True)
         )
 
+        # Get set of schedule IDs where this panelist is designated as chair
+        chair_schedule_ids = set(
+            SchedulePanelist.objects.filter(
+                schedule_id__in=[s.id for s in schedules],
+                panelist_id=panelist_id,
+                is_chair=True,
+            ).values_list('schedule_id', flat=True)
+        )
+
+        team_grades = (
+            TeamGrade.objects.filter(schedule_id__in=[s.id for s in schedules])
+            .select_related('verdict_by')
+        )
+        grade_map = {tg.schedule_id: tg for tg in team_grades}
+
         teams_data = []
         rubrics_data = []
         seen_rubric_ids = set()
@@ -528,10 +543,15 @@ class PanelistAssignmentsView(APIView):
                     ],
                 })
 
+            is_chair = schedule.id in chair_schedule_ids
+            team_grade = grade_map.get(schedule.id)
+
             team_payload = _team_assignment_payload(
                 schedule,
                 is_posted=is_posted,
                 submissions=submissions_data,
+                is_chair=is_chair,
+                team_grade=team_grade,
             )
             teams_data.append(team_payload)
 
@@ -564,7 +584,7 @@ class PanelistResultsView(APIView):
         )
         team_grades = (
             TeamGrade.objects.filter(id__in=grade_ids)
-            .select_related('team', 'team__leader', 'schedule')
+            .select_related('team', 'team__leader', 'schedule', 'verdict_by')
             .prefetch_related(
                 'breakdowns',
                 'student_grades',
@@ -811,11 +831,34 @@ class PanelistGradeSubmissionView(APIView):
             )
 
 
-def _team_assignment_payload(schedule, is_posted=False, submissions=None):
+def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_chair=False, team_grade=None):
     team = schedule.team
     raw_weights = weights_for_schedule(schedule)
     grade_weights = _grade_weights_payload(schedule, raw_weights)
     panel_rubric = _panel_rubric_payload(schedule.rubric, grade_weights)
+
+    verdict = None
+    verdict_remarks = ''
+    verdict_by_name = ''
+    revision_deadline = None
+    attempt_count = 1
+    grade_id = None
+    if team_grade:
+        verdict = team_grade.verdict or ''
+        verdict_remarks = team_grade.verdict_remarks or ''
+        if team_grade.verdict_by:
+            verdict_by_name = (
+                f"{team_grade.verdict_by.first_name} {team_grade.verdict_by.last_name}".strip()
+                or team_grade.verdict_by.username
+            )
+        revision_deadline = (
+            team_grade.revision_deadline.isoformat()
+            if team_grade.revision_deadline
+            else None
+        )
+        attempt_count = team_grade.attempt_count or 1
+        grade_id = team_grade.id
+
     return {
         'id': team.id,
         'schedule_id': schedule.id,
@@ -833,6 +876,13 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None):
         'is_posted': is_posted,
         'is_submitted': is_posted,
         'submissions': submissions or [],
+        'is_chair': is_chair,
+        'verdict': verdict,
+        'verdict_remarks': verdict_remarks,
+        'verdict_by_name': verdict_by_name,
+        'revision_deadline': revision_deadline,
+        'attempt_count': attempt_count,
+        'grade_id': grade_id,
         'members': [
             {
                 'id': m.student_id,

@@ -435,7 +435,21 @@ class ScheduleImportDialog {
                 }
 
                 try {
-                  final parsedResult = parseScheduleImportFile(bytes: bytes, filename: file.name);
+                  final configuredStages = isPit
+                      ? state.pitEvents
+                          .map((e) => e['event_name']?.toString() ?? '')
+                          .where((n) => n.isNotEmpty)
+                          .toList()
+                      : state.defenseStages
+                          .map((s) => s['label']?.toString() ?? '')
+                          .where((l) => l.isNotEmpty)
+                          .toList();
+
+                  final parsedResult = parseScheduleImportFile(
+                    bytes: bytes,
+                    filename: file.name,
+                    configuredStages: configuredStages,
+                  );
                   final rawStage = parsedResult.stage?.trim() ?? '';
                   MatchResult<dynamic>? resolvedMatch;
                   String? warning;
@@ -448,19 +462,24 @@ class ScheduleImportDialog {
                     );
                     if (resolvedMatch.isMatched) {
                       final matchedName = resolvedMatch.label;
-                      if (importEventName.isNotEmpty &&
-                          importEventName != matchedName &&
-                          initialEventName.trim().isNotEmpty &&
-                          initialEventName.trim() == importEventName) {
+                      if (initialEventName.trim().isNotEmpty &&
+                          matchedName.toLowerCase() != initialEventName.trim().toLowerCase()) {
                         warning =
-                            'File header specifies "$rawStage" (matched to "$matchedName"), while scheduler was previously set to "$importEventName".';
+                            'File header specifies "$rawStage" (matched to "$matchedName"), while active PIT event is "$initialEventName".';
                       }
                       importEventName = matchedName;
                     } else if (rawStage.isNotEmpty) {
                       warning =
-                          'File header "$rawStage" could not be matched to any registered PIT event for this semester.';
+                          'File header specifies event "$rawStage", which does not match active event "$initialEventName" (or any registered PIT event for this semester).';
                     }
                   } else {
+                    final activeStageObj = state.defenseStages.firstWhere(
+                      (s) => asInt(s['id']) == initialStageId,
+                      orElse: () => state.defenseStages.isNotEmpty
+                          ? state.defenseStages.first
+                          : <String, dynamic>{},
+                    );
+                    final activeStageLabel = activeStageObj['label']?.toString() ?? '';
                     resolvedMatch = findBestMatch<Map<String, dynamic>>(
                       source: rawStage,
                       items: state.defenseStages,
@@ -468,21 +487,14 @@ class ScheduleImportDialog {
                     );
                     if (resolvedMatch.isMatched) {
                       final matchedStageId = asInt(resolvedMatch.item?['id']);
-                      if (importStageId != null &&
-                          importStageId != matchedStageId &&
-                          initialStageId != null &&
-                          initialStageId == importStageId) {
-                        final prevLabel = state.defenseStages.firstWhere(
-                          (s) => asInt(s['id']) == importStageId,
-                          orElse: () => <String, dynamic>{},
-                        )['label'] ?? '';
+                      if (initialStageId != null && matchedStageId != initialStageId) {
                         warning =
-                            'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while scheduler was previously set to "$prevLabel".';
+                            'File header specifies "$rawStage" (matched to "${resolvedMatch.label}"), while active defense stage is "$activeStageLabel".';
                       }
                       importStageId = matchedStageId;
                     } else if (rawStage.isNotEmpty) {
                       warning =
-                          'File header "$rawStage" could not be matched to any Capstone defense stage.';
+                          'File header specifies stage "$rawStage", which does not match active stage "$activeStageLabel" (or any stage in your Academic Stage Chain).';
                     }
                   }
 
