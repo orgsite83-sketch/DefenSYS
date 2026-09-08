@@ -1134,9 +1134,9 @@ class GradeContextService:
         return grade, created, changed
 
     @staticmethod
-    def get_or_create_unscheduled_team(team, *, repair_placeholders=True):
+    def get_or_create_unscheduled_team(team, *, stage_label=None, repair_placeholders=True):
         scope = _scope_for_team(team)
-        stage_label = _context_for_team(team)
+        stage_label = (stage_label or _context_for_team(team) or '').strip()
         if not stage_label or stage_label == 'Unscheduled':
             return None, False
         weights = default_weights(scope)
@@ -1187,20 +1187,29 @@ class GradeContextService:
         return GradeContextService.get_or_create_for_schedule(schedule)[0]
 
     @staticmethod
-    def get_for_current_student_peer_context(team):
+    def get_for_current_student_peer_context(team, stage_label=None, create_if_missing=False):
         scope = _scope_for_team(team)
+        target_stage = (stage_label or _context_for_team(team) or '').strip()
         if scope == TeamGrade.SCOPE_CAPSTONE:
-            grade = canonical_capstone_grade_for_team(team, team.semester)
-            if grade is None:
-                grade, _created = GradeContextService.get_or_create_unscheduled_team(team)
+            grade = canonical_capstone_grade_for_team(team, team.semester, stage_label=target_stage)
+            if grade is not None:
                 return resolve_canonical_capstone_grade(grade)
-            return resolve_canonical_capstone_grade(grade)
+            if create_if_missing and target_stage and not _is_unscheduled_placeholder_label(target_stage):
+                grade, _created = GradeContextService.get_or_create_unscheduled_team(team, stage_label=target_stage)
+                return resolve_canonical_capstone_grade(grade) if grade else None
+            return None
 
         grades = list(
             TeamGrade.objects.filter(team=team, scope=scope)
             .select_related('semester', 'pit_event_config')
             .order_by('-updated_at', '-id')
         )
+        if target_stage:
+            grades = [
+                g for g in grades
+                if (g.stage_label and g.stage_label.strip().lower() == target_stage.lower())
+                or (g.pit_event_config and g.pit_event_config.event_name.strip().lower() == target_stage.lower())
+            ]
         if len(grades) == 1:
             return grades[0]
         if len(grades) > 1:
@@ -1214,8 +1223,10 @@ class GradeContextService:
             raise ValidationError({
                 'pit_event_config_id': 'PIT peer evaluation requires a single open event context.'
             })
-        grade, _created = GradeContextService.get_or_create_unscheduled_team(team)
-        return grade
+        if create_if_missing and target_stage and not _is_unscheduled_placeholder_label(target_stage):
+            grade, _created = GradeContextService.get_or_create_unscheduled_team(team, stage_label=target_stage)
+            return grade
+        return None
 
     @staticmethod
     def get_for_adviser_context(adviser, grade):

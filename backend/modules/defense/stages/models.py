@@ -51,6 +51,51 @@ class StageDeliverable(models.Model):
         default=False,
         help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
+    is_defense_material = models.BooleanField(
+        default=True,
+        help_text='If true, this pre-defense deliverable is visible to defense panelists during oral grading.',
+    )
+    VERDICT_CONDITION_ALL_PASS = 'all_pass'
+    VERDICT_CONDITION_REVISIONS_ONLY = 'revisions_only'
+    VERDICT_CONDITION_CHOICES = (
+        (VERDICT_CONDITION_ALL_PASS, 'All Passing Defenses'),
+        (VERDICT_CONDITION_REVISIONS_ONLY, 'Revisions Verdict Only'),
+    )
+    verdict_condition = models.CharField(
+        max_length=20,
+        choices=VERDICT_CONDITION_CHOICES,
+        default=VERDICT_CONDITION_ALL_PASS,
+        help_text='Condition under which this post-defense deliverable is required.',
+    )
+    FORMAT_ANY = 'any'
+    FORMAT_PDF = 'pdf'
+    FORMAT_VIDEO = 'video'
+    FORMAT_IMAGE = 'image'
+    FORMAT_PRESENTATION = 'presentation'
+    FORMAT_DOCUMENT = 'document'
+    FORMAT_SPREADSHEET = 'spreadsheet'
+    FORMAT_ARCHIVE = 'archive'
+    FORMAT_AUDIO = 'audio'
+
+    FORMAT_CHOICES = (
+        (FORMAT_ANY, 'Any File Format'),
+        (FORMAT_PDF, 'PDF Document (.pdf)'),
+        (FORMAT_VIDEO, 'Video (.mp4, .mov, .webm)'),
+        (FORMAT_IMAGE, 'Image / Poster (.png, .jpg, .svg)'),
+        (FORMAT_PRESENTATION, 'Presentation Slides (.pptx, .ppt, .pdf)'),
+        (FORMAT_DOCUMENT, 'Word / Document (.docx, .doc, .pdf)'),
+        (FORMAT_SPREADSHEET, 'Spreadsheet (.xlsx, .xls, .csv)'),
+        (FORMAT_ARCHIVE, 'Archive / Source Code (.zip, .rar, .7z)'),
+        (FORMAT_AUDIO, 'Audio Recording (.mp3, .wav, .aac)'),
+    )
+
+    file_format = models.CharField(
+        max_length=30,
+        choices=FORMAT_CHOICES,
+        default=FORMAT_ANY,
+        blank=True,
+        help_text='Allowed file format category for this deliverable.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

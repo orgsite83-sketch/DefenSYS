@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
 import '../../../../services/documenter_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
-import '../../../../utils/pdf_viewer.dart';
+import '../../../../utils/universal_file_viewer.dart';
 import '../../admin/widgets/defensys_admin_shell.dart';
 import '../../../../toasts/feedback_toast.dart';
 

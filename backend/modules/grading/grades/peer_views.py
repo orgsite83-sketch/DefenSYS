@@ -14,6 +14,7 @@ class PeerEvaluationSubmitSerializer(serializers.Serializer):
     breakdown = serializers.ListField(child=serializers.DictField(), required=False, default=list)
     total = serializers.DecimalField(max_digits=7, decimal_places=2)
     max = serializers.DecimalField(max_digits=7, decimal_places=2)
+    stage = serializers.CharField(required=False, allow_blank=True, default='')
 
 
 class StudentPeerEvaluationSubmitView(APIView):
@@ -32,6 +33,7 @@ class StudentPeerEvaluationSubmitView(APIView):
                 breakdown=data.get('breakdown') or [],
                 total=data['total'],
                 max_score=data['max'],
+                stage_label=data.get('stage') or None,
             )
         except DjangoValidationError as exc:
             return Response(exc.message_dict if hasattr(exc, 'message_dict') else {'detail': exc.messages}, status=status.HTTP_400_BAD_REQUEST)

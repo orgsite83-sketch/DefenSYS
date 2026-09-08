@@ -8,7 +8,7 @@ from django.db.models import Avg, Q
 from repository.deliverables.models import DeliverableSubmission
 from repository.deliverables.services import display_name
 from repository.archive.models import ArchiveEntry
-from grading.grades.models import TeamGrade, GradeBreakdown, PanelistCriterionScore
+from grading.grades.models import TeamGrade, GradeBreakdown, PanelistCriterionScore, PeerEvaluationSubmission
 from grading.rubrics.models import Rubric, RubricCriterion
 from defense.stages.models import DefenseStage
 from defense.scheduler.models import PitEventGradingConfig
@@ -750,6 +750,66 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
             Q(team_grade__defense_stage_id=stage_id) | Q(team_grade__stage_label__iexact=stage_id) | Q(rubric__defense_stage_id=stage_id)
         )
 
+    # Also aggregate peer evaluation submissions for criteria breakdown
+    peer_submissions_qs = PeerEvaluationSubmission.objects.select_related(
+        'team_grade',
+        'team_grade__semester',
+        'team_grade__semester__school_year',
+        'team_grade__defense_stage',
+    ).all()
+    if academic_year:
+        peer_submissions_qs = peer_submissions_qs.filter(team_grade__semester__school_year__label=academic_year)
+    if scope and scope != 'all':
+        peer_submissions_qs = peer_submissions_qs.filter(team_grade__scope=scope)
+    if stage_id and stage_id != 'all':
+        peer_submissions_qs = peer_submissions_qs.filter(
+            Q(team_grade__defense_stage_id=stage_id) | Q(team_grade__stage_label__iexact=stage_id)
+        )
+
+    class PeerBreakdownAdapter:
+        def __init__(self, criterion_name, normalized_score, max_score, team_grade):
+            self.evaluation_type = 'peer'
+            self.criterion_name = criterion_name
+            self.normalized_score = normalized_score
+            self.max_score = max_score
+            self.team_grade = team_grade
+            self.team_grade_id = team_grade.id if team_grade else None
+            self.rubric_id = None
+            self.rubric = None
+
+    peer_breakdowns = []
+    # If filtered to a specific rubric, only include peer submissions if that rubric is of type peer
+    allow_peer = True
+    if not is_all:
+        try:
+            target_rubric = Rubric.objects.filter(id=rubric_id).first()
+            if target_rubric and target_rubric.evaluation_type != Rubric.EVAL_PEER:
+                allow_peer = False
+        except Exception:
+            pass
+
+    if allow_peer:
+        for sub in peer_submissions_qs:
+            for b in (sub.breakdown or []):
+                crit_name = b.get('criteriaName') or b.get('name') or b.get('criterion_name')
+                if not crit_name:
+                    continue
+                try:
+                    b_max = float(b.get('max', 0) or b.get('max_score', 0))
+                    b_score = float(b.get('score', 0))
+                    if b_max > 0:
+                        norm = (b_score / b_max) * 100.0
+                        peer_breakdowns.append(
+                            PeerBreakdownAdapter(
+                                criterion_name=str(crit_name).strip(),
+                                normalized_score=norm,
+                                max_score=b_max,
+                                team_grade=sub.team_grade,
+                            )
+                        )
+                except (ValueError, TypeError):
+                    continue
+
     matrix = []
 
     if is_all:
@@ -760,12 +820,16 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
 
         for name, criteria_list in grouped_criteria.items():
             first_c = criteria_list[0]
-            rubric_names = sorted(list({c.rubric.name for c in criteria_list}))
+            rubric_names = sorted(list({c.rubric.name for c in criteria_list if c.rubric}))
             rubric_str = ', '.join(rubric_names)
             
             matching_breakdowns = list(breakdowns_qs.filter(
                 criterion_name__iexact=name
             ))
+            matching_breakdowns.extend([
+                pb for pb in peer_breakdowns
+                if pb.criterion_name.lower() == name.lower()
+            ])
             scores = [float(b.normalized_score) for b in matching_breakdowns if b.max_score > 0]
             eval_count = len(scores)
 
@@ -774,10 +838,9 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
 
             divergence = None
             divergence_status = 'Aligned'
-            if evaluator_breakdown['panel']['score'] is not None and evaluator_breakdown['adviser']['score'] is not None:
-                p_val = evaluator_breakdown['panel']['score']
-                a_val = evaluator_breakdown['adviser']['score']
-                diff = round(abs(p_val - a_val), 1)
+            present_eval_scores = [v['score'] for v in evaluator_breakdown.values() if v['score'] is not None]
+            if len(present_eval_scores) >= 2:
+                diff = round(max(present_eval_scores) - min(present_eval_scores), 1)
                 divergence = diff
                 if diff >= 15.0:
                     divergence_status = f'High Divergence ({diff}%)'
@@ -827,7 +890,7 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
                 'scale': first_c.scale,
                 'evaluations_count': eval_count,
                 'average_score': avg_score,
-                'score': avg_score or 0.0,
+                'score': avg_score,
                 'min_score': min_score,
                 'max_score': max_score,
                 'benchmark': 75.0,
@@ -850,13 +913,27 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
             matching_breakdowns = list(breakdowns_qs.filter(
                 Q(criterion_name__iexact=criterion.name) | Q(rubric=criterion.rubric, criterion_name__icontains=criterion.name)
             ))
+            matching_breakdowns.extend([
+                pb for pb in peer_breakdowns
+                if pb.criterion_name.lower() == criterion.name.strip().lower()
+            ])
             scores = [float(b.normalized_score) for b in matching_breakdowns if b.max_score > 0]
             eval_count = len(scores)
 
             evaluator_breakdown = _compute_evaluator_breakdown(matching_breakdowns)
             stage_breakdown = _compute_stage_breakdown(matching_breakdowns)
-            divergence = _compute_divergence_delta(evaluator_breakdown)
-            divergence_status = 'High Discrepancy' if divergence >= 15.0 else ('Moderate' if divergence >= 8.0 else 'Aligned')
+            present_eval_scores = [v['score'] for v in evaluator_breakdown.values() if v['score'] is not None]
+            divergence = None
+            divergence_status = 'Aligned'
+            if len(present_eval_scores) >= 2:
+                diff = round(max(present_eval_scores) - min(present_eval_scores), 1)
+                divergence = diff
+                if diff >= 15.0:
+                    divergence_status = f'High Divergence ({diff}%)'
+                elif diff >= 8.0:
+                    divergence_status = f'Moderate Divergence ({diff}%)'
+                else:
+                    divergence_status = f'Aligned (±{diff}%)'
 
             if scores:
                 avg_score = round(sum(scores) / eval_count, 1)
@@ -889,17 +966,17 @@ def dynamic_criteria_matrix_for(academic_year=None, rubric_id=None, stage_id=Non
                 'id': str(criterion.id),
                 'criterion_id': criterion.id,
                 'name': criterion.name,
-                'rubric_name': criterion.rubric.name,
-                'rubric_id': str(criterion.rubric.id),
+                'rubric_name': criterion.rubric.name if criterion.rubric else 'Rubric',
+                'rubric_id': str(criterion.rubric.id) if criterion.rubric else '',
                 'stage_id': c_stage_id,
                 'stage_name': c_stage_name,
                 'stage_label': c_stage_name,
-                'weight': float(criterion.weight),
+                'weight': float(criterion.weight) if criterion.weight else None,
                 'max_score': criterion.max_score,
                 'scale': criterion.scale,
                 'evaluations_count': eval_count,
                 'average_score': avg_score,
-                'score': avg_score or 0.0,
+                'score': avg_score,
                 'min_score': min_score,
                 'max_score': max_score,
                 'benchmark': 75.0,

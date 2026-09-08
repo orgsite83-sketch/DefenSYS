@@ -391,7 +391,9 @@ class _GradeCenterTeamDetailScreenState
           if (state.error != null) ...[
             const SizedBox(height: 14),
             ErrorBanner(
-              title: 'Failed to load grade details',
+              title: state.isRefreshingGrade
+                  ? 'Failed to load grade details'
+                  : 'Action failed',
               message: state.error!,
               onRetry: _reloadGrade,
             ),

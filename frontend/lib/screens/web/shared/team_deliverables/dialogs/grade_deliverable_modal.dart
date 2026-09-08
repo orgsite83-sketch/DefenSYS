@@ -196,6 +196,7 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
   final String selectedStage;
   final bool isAdviser;
   final Map<String, Map<String, TextEditingController>> teamCriteriaScoreCtrls;
+  final Map<String, Map<dynamic, Map<String, TextEditingController>>> teamStudentCriteriaScoreCtrls;
   final Map<String, TextEditingController> teamManualScoreCtrls;
   final Map<String, Map<String, dynamic>?> teamSelectedRubrics;
 
@@ -205,6 +206,7 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
     required this.selectedStage,
     required this.isAdviser,
     required this.teamCriteriaScoreCtrls,
+    required this.teamStudentCriteriaScoreCtrls,
     required this.teamManualScoreCtrls,
     required this.teamSelectedRubrics,
   });
@@ -214,6 +216,8 @@ class GradeDeliverableTab extends ConsumerStatefulWidget {
 }
 
 class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
+  int _selectedStudentIndex = 0;
+
   Map<String, dynamic>? _assignedRubricFromGrade(Map<String, dynamic> grade) {
     final rubricId = grade['assigned_adviser_rubric_id'];
     if (rubricId == null) {
@@ -224,8 +228,61 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       'id': rubricId,
       'name': grade['assigned_adviser_rubric_name']?.toString() ?? 'Adviser rubric',
       'scale': grade['assigned_adviser_rubric_scale'],
+      'target_type': grade['assigned_adviser_rubric_target_type']?.toString() ?? 'team',
       'criteria': criteria is List ? criteria : [],
     };
+  }
+
+  List<Map<String, dynamic>> _getMembers(Map<String, dynamic> gradeRecord) {
+    final raw = widget.team['members'];
+    if (raw is List && raw.isNotEmpty) {
+      return raw.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    final gradeMembers = gradeRecord['members'];
+    if (gradeMembers is List && gradeMembers.isNotEmpty) {
+      return gradeMembers.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    final pps = gradeRecord['peer_per_student'];
+    if (pps is List && pps.isNotEmpty) {
+      return pps.map((e) {
+        final m = e as Map;
+        return {
+          'id': m['student_id'] ?? m['id'],
+          'student_id': m['student_id'] ?? m['id'],
+          'name': m['student_name'] ?? 'Student',
+          'is_leader': false,
+        };
+      }).toList();
+    }
+    return [];
+  }
+
+  List<Map<String, dynamic>> _getTeamCriteria(Map<String, dynamic>? rubric) {
+    if (rubric == null) return [];
+    final criteria = (rubric['criteria'] as List? ?? []);
+    final targetType = rubric['target_type']?.toString() ?? 'team';
+    if (targetType == 'individual') return [];
+    if (targetType == 'team') {
+      return criteria.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return criteria
+        .where((c) => (c as Map)['target_type']?.toString() == 'team')
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
+  }
+
+  List<Map<String, dynamic>> _getIndividualCriteria(Map<String, dynamic>? rubric) {
+    if (rubric == null) return [];
+    final criteria = (rubric['criteria'] as List? ?? []);
+    final targetType = rubric['target_type']?.toString() ?? 'team';
+    if (targetType == 'team') return [];
+    if (targetType == 'individual') {
+      return criteria.map((e) => Map<String, dynamic>.from(e as Map)).toList();
+    }
+    return criteria
+        .where((c) => (c as Map)['target_type']?.toString() == 'individual')
+        .map((e) => Map<String, dynamic>.from(e as Map))
+        .toList();
   }
 
   void _initializeGradingControllersForTeam(
@@ -246,62 +303,131 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     widget.teamManualScoreCtrls[key] = manualCtrl;
 
     final criteriaCtrls = <String, TextEditingController>{};
+    final studentCriteriaCtrls = <dynamic, Map<String, TextEditingController>>{};
     final assigned = _assignedRubricFromGrade(gradeRecord);
     widget.teamSelectedRubrics[key] = assigned;
 
     if (assigned != null) {
-      final savedScores = <String, String>{};
+      final teamSaved = <String, String>{};
+      final studentSaved = <dynamic, Map<String, String>>{};
       if (gradeRecord['breakdowns'] is List) {
         for (final row in gradeRecord['breakdowns'] as List) {
           if (row is! Map) continue;
           if (row['evaluation_type']?.toString() != 'adviser') continue;
           final name = row['criterion_name']?.toString() ?? '';
-          if (name.isNotEmpty) {
-            savedScores[name] = row['score']?.toString() ?? '';
+          final sId = row['student_id'] ?? row['student'];
+          final scoreVal = row['score']?.toString() ?? '';
+          if (name.isEmpty) continue;
+          if (sId == null) {
+            teamSaved[name] = scoreVal;
+          } else {
+            studentSaved.putIfAbsent(sId, () => {})[name] = scoreVal;
           }
         }
       }
 
-      for (final c in (assigned['criteria'] as List? ?? [])) {
-        final cMap = c as Map;
-        final name = cMap['name']?.toString() ?? '';
-        criteriaCtrls[name] = TextEditingController(text: savedScores[name] ?? '');
+      final teamCrits = _getTeamCriteria(assigned);
+      final indCrits = _getIndividualCriteria(assigned);
+      final members = _getMembers(gradeRecord);
+
+      for (final c in teamCrits) {
+        final name = c['name']?.toString() ?? '';
+        criteriaCtrls[name] = TextEditingController(text: teamSaved[name] ?? '');
+      }
+
+      for (final m in members) {
+        final sId = m['id'] ?? m['student_id'];
+        final subMap = <String, TextEditingController>{};
+        for (final c in indCrits) {
+          final name = c['name']?.toString() ?? '';
+          subMap[name] = TextEditingController(text: studentSaved[sId]?[name] ?? '');
+        }
+        studentCriteriaCtrls[sId] = subMap;
       }
     }
     widget.teamCriteriaScoreCtrls[key] = criteriaCtrls;
+    widget.teamStudentCriteriaScoreCtrls[key] = studentCriteriaCtrls;
   }
 
-  double _computeTotalScoreForTeam(int teamId, String stageLabel) {
+  double _computeStudentScore(
+    int teamId,
+    String stageLabel,
+    dynamic studentId,
+    Map<String, dynamic> gradeRecord,
+  ) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return 0;
-    final criteria = (rubric['criteria'] as List? ?? []);
-    if (criteria.isEmpty) return 0;
+    final targetType = rubric['target_type']?.toString() ?? 'team';
+    final teamCrits = _getTeamCriteria(rubric);
+    final indCrits = _getIndividualCriteria(rubric);
+
     double total = 0;
     double maxTotal = 0;
-    final subMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
-    for (final c in criteria) {
-      final name = (c as Map)['name']?.toString() ?? '';
-      final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final entered = double.tryParse(subMap[name]?.text ?? '') ?? 0;
-      total += entered.clamp(0, maxScore);
-      maxTotal += maxScore;
+
+    final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
+    if (targetType == 'team' || targetType == 'both') {
+      for (final c in teamCrits) {
+        final name = c['name']?.toString() ?? '';
+        final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+        final entered = double.tryParse(teamSubMap[name]?.text ?? '') ?? 0;
+        total += entered.clamp(0, maxScore);
+        maxTotal += maxScore;
+      }
     }
+
+    if (studentId != null && (targetType == 'individual' || targetType == 'both')) {
+      final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
+      for (final c in indCrits) {
+        final name = c['name']?.toString() ?? '';
+        final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+        final entered = double.tryParse(studentSubMap[name]?.text ?? '') ?? 0;
+        total += entered.clamp(0, maxScore);
+        maxTotal += maxScore;
+      }
+    }
+
     if (maxTotal == 0) return 0;
     return (total / maxTotal * 100).clamp(0, 100);
   }
 
-  bool _allCriteriaFilledForTeam(int teamId, String stageLabel) {
+  double _computeOverallTeamScore(
+    int teamId,
+    String stageLabel,
+    Map<String, dynamic> gradeRecord,
+  ) {
+    final key = '$teamId-$stageLabel';
+    final rubric = widget.teamSelectedRubrics[key];
+    if (rubric == null) {
+      final manualCtrl = widget.teamManualScoreCtrls[key];
+      return (double.tryParse(manualCtrl?.text ?? '') ?? 0).clamp(0, 100);
+    }
+    final targetType = rubric['target_type']?.toString() ?? 'team';
+    if (targetType == 'team') {
+      return _computeStudentScore(teamId, stageLabel, null, gradeRecord);
+    }
+    final members = _getMembers(gradeRecord);
+    if (members.isEmpty) {
+      return _computeStudentScore(teamId, stageLabel, null, gradeRecord);
+    }
+    double sum = 0;
+    for (final m in members) {
+      final sId = m['id'] ?? m['student_id'];
+      sum += _computeStudentScore(teamId, stageLabel, sId, gradeRecord);
+    }
+    return (sum / members.length).clamp(0, 100);
+  }
+
+  bool _isTeamCriteriaComplete(int teamId, String stageLabel) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return false;
-    final criteria = (rubric['criteria'] as List? ?? []);
-    if (criteria.isEmpty) return false;
-    final subMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
-    for (final c in criteria) {
-      final name = (c as Map)['name']?.toString() ?? '';
+    final teamCrits = _getTeamCriteria(rubric);
+    final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
+    for (final c in teamCrits) {
+      final name = c['name']?.toString() ?? '';
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final text = subMap[name]?.text.trim() ?? '';
+      final text = teamSubMap[name]?.text.trim() ?? '';
       if (text.isEmpty) return false;
       final value = double.tryParse(text);
       if (value == null || value < 0 || value > maxScore) return false;
@@ -309,21 +435,82 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     return true;
   }
 
-  int _filledCountForTeam(int teamId, String stageLabel) {
+  bool _isStudentCriteriaComplete(int teamId, String stageLabel, dynamic studentId) {
+    final key = '$teamId-$stageLabel';
+    final rubric = widget.teamSelectedRubrics[key];
+    if (rubric == null) return false;
+    final indCrits = _getIndividualCriteria(rubric);
+    if (indCrits.isEmpty) return true;
+    final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {};
+    for (final c in indCrits) {
+      final name = c['name']?.toString() ?? '';
+      final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+      final text = studentSubMap[name]?.text.trim() ?? '';
+      if (text.isEmpty) return false;
+      final value = double.tryParse(text);
+      if (value == null || value < 0 || value > maxScore) return false;
+    }
+    return true;
+  }
+
+  bool _allCriteriaFilledForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+    final key = '$teamId-$stageLabel';
+    final rubric = widget.teamSelectedRubrics[key];
+    if (rubric == null) return false;
+    if (!_isTeamCriteriaComplete(teamId, stageLabel)) return false;
+    final indCrits = _getIndividualCriteria(rubric);
+    if (indCrits.isNotEmpty) {
+      final members = _getMembers(gradeRecord);
+      if (members.isEmpty) return false;
+      for (final m in members) {
+        final sId = m['id'] ?? m['student_id'];
+        if (!_isStudentCriteriaComplete(teamId, stageLabel, sId)) return false;
+      }
+    }
+    return true;
+  }
+
+  int _filledCountForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
     final key = '$teamId-$stageLabel';
     final rubric = widget.teamSelectedRubrics[key];
     if (rubric == null) return 0;
-    final criteria = (rubric['criteria'] as List? ?? []);
     int count = 0;
-    final subMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
-    for (final c in criteria) {
-      final name = (c as Map)['name']?.toString() ?? '';
+    final teamCrits = _getTeamCriteria(rubric);
+    final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
+    for (final c in teamCrits) {
+      final name = c['name']?.toString() ?? '';
       final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
-      final text = subMap[name]?.text.trim() ?? '';
+      final text = teamSubMap[name]?.text.trim() ?? '';
       final value = double.tryParse(text);
       if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) count++;
     }
+
+    final indCrits = _getIndividualCriteria(rubric);
+    if (indCrits.isNotEmpty) {
+      final members = _getMembers(gradeRecord);
+      for (final m in members) {
+        final sId = m['id'] ?? m['student_id'];
+        final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
+        for (final c in indCrits) {
+          final name = c['name']?.toString() ?? '';
+          final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+          final text = studentSubMap[name]?.text.trim() ?? '';
+          final value = double.tryParse(text);
+          if (text.isNotEmpty && value != null && value >= 0 && value <= maxScore) count++;
+        }
+      }
+    }
     return count;
+  }
+
+  int _totalCountForTeam(int teamId, String stageLabel, Map<String, dynamic> gradeRecord) {
+    final key = '$teamId-$stageLabel';
+    final rubric = widget.teamSelectedRubrics[key];
+    if (rubric == null) return 0;
+    final teamCrits = _getTeamCriteria(rubric);
+    final indCrits = _getIndividualCriteria(rubric);
+    final members = _getMembers(gradeRecord);
+    return teamCrits.length + (indCrits.length * (members.isEmpty ? 1 : members.length));
   }
 
   Future<void> _submitAdviserGrade({
@@ -339,29 +526,60 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     }
 
     final rubric = widget.teamSelectedRubrics[key];
-    final subMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
     final manualCtrl = widget.teamManualScoreCtrls[key];
 
     double adviserScore;
     List<Map<String, dynamic>> criteriaScores = [];
+    List<Map<String, dynamic>> teamCriteriaScores = [];
+    List<Map<String, dynamic>> studentSubmissions = [];
     int? rubricId;
 
     if (rubric != null) {
-      final criteria = (rubric['criteria'] as List? ?? []);
-      for (final c in criteria) {
-        final cMap = c as Map;
-        final name = cMap['name']?.toString() ?? '';
-        final maxScore = ((cMap['max_score'] as num?) ?? 10).toDouble();
-        final entered = (double.tryParse(subMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
-        criteriaScores.add({
+      rubricId = rubric['id'] as int?;
+      final targetType = rubric['target_type']?.toString() ?? 'team';
+      final teamCrits = _getTeamCriteria(rubric);
+      final indCrits = _getIndividualCriteria(rubric);
+      final members = _getMembers(gradeRecord);
+      final teamSubMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
+
+      for (final c in teamCrits) {
+        final name = c['name']?.toString() ?? '';
+        final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+        final entered = (double.tryParse(teamSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
+        final entry = {
           'criterion_name': name,
           'score': entered,
           'max_score': maxScore,
-          'display_order': cMap['display_order'] ?? 0,
+          'display_order': c['display_order'] ?? 0,
+        };
+        teamCriteriaScores.add(entry);
+        if (targetType == 'team') {
+          criteriaScores.add(entry);
+        }
+      }
+
+      for (final m in members) {
+        final sId = m['id'] ?? m['student_id'];
+        final studentSubMap = widget.teamStudentCriteriaScoreCtrls[key]?[sId] ?? const {};
+        final sScores = <Map<String, dynamic>>[];
+        for (final c in indCrits) {
+          final name = c['name']?.toString() ?? '';
+          final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
+          final entered = (double.tryParse(studentSubMap[name]?.text ?? '') ?? 0).clamp(0, maxScore);
+          sScores.add({
+            'criterion_name': name,
+            'score': entered,
+            'max_score': maxScore,
+            'display_order': c['display_order'] ?? 0,
+          });
+        }
+        studentSubmissions.add({
+          'student_id': sId,
+          'criteria_scores': sScores,
         });
       }
-      adviserScore = _computeTotalScoreForTeam(teamId, stageLabel);
-      rubricId = rubric['id'] as int?;
+
+      adviserScore = _computeOverallTeamScore(teamId, stageLabel, gradeRecord);
     } else {
       if (manualCtrl == null) return;
       adviserScore = double.tryParse(manualCtrl.text) ?? 0;
@@ -373,6 +591,8 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
           adviserScore: adviserScore,
           rubricId: rubricId,
           criteriaScores: criteriaScores,
+          teamCriteriaScores: teamCriteriaScores,
+          studentSubmissions: studentSubmissions,
         );
 
     if (success && mounted) {
@@ -502,17 +722,28 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     );
   }
 
-  Widget _buildCriteriaTableForTeam(int teamId, String stageLabel, Map<String, dynamic> rubric, {bool isReadOnly = false}) {
-    final criteria = (rubric['criteria'] as List? ?? []);
+  Widget _buildCriteriaTable({
+    required List<Map<String, dynamic>> criteria,
+    required bool isTeam,
+    dynamic studentId,
+    required int teamId,
+    required String stageLabel,
+    bool isReadOnly = false,
+  }) {
     if (criteria.isEmpty) {
-      return const Text(
-        'This rubric has no criteria defined.',
-        style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+      return const Padding(
+        padding: EdgeInsets.all(12),
+        child: Text(
+          'No criteria defined for this section.',
+          style: TextStyle(color: AppColors.textSecondary, fontStyle: FontStyle.italic),
+        ),
       );
     }
 
     final key = '$teamId-$stageLabel';
-    final subMap = widget.teamCriteriaScoreCtrls[key] ?? const {};
+    final subMap = isTeam
+        ? (widget.teamCriteriaScoreCtrls[key] ?? const {})
+        : (widget.teamStudentCriteriaScoreCtrls[key]?[studentId] ?? const {});
 
     return Container(
       decoration: BoxDecoration(
@@ -523,7 +754,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
       child: Column(
         children: criteria.asMap().entries.map((entry) {
           final i = entry.key;
-          final c = entry.value as Map;
+          final c = entry.value;
           final name = c['name']?.toString() ?? '';
           final desc = c['description']?.toString() ?? '';
           final maxScore = ((c['max_score'] as num?) ?? 10).toDouble();
@@ -607,9 +838,24 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final teamId = parseAsInt(widget.team['id']);
     final gradingState = ref.watch(adviserGradingProvider);
     
+    final stagePayload = (widget.team['stages'] is List)
+        ? (widget.team['stages'] as List).firstWhere(
+            (s) => s is Map && s['stage_label']?.toString() == widget.selectedStage,
+            orElse: () => null,
+          )
+        : null;
+
     final gradeRecord = gradingState.grades.firstWhere(
       (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == widget.selectedStage,
-      orElse: () => widget.team['grade'] is Map ? Map<String, dynamic>.from(widget.team['grade'] as Map) : <String, dynamic>{},
+      orElse: () {
+        if (widget.team['grade'] is Map && widget.team['grade']['stage_label']?.toString() == widget.selectedStage) {
+          return Map<String, dynamic>.from(widget.team['grade'] as Map);
+        }
+        if (stagePayload is Map && stagePayload['grade'] is Map && stagePayload['grade']['stage_label']?.toString() == widget.selectedStage) {
+          return Map<String, dynamic>.from(stagePayload['grade'] as Map);
+        }
+        return <String, dynamic>{};
+      },
     );
 
     _initializeGradingControllersForTeam(teamId, widget.selectedStage, gradeRecord);
@@ -647,6 +893,15 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
     final key = '$teamId-${widget.selectedStage}';
     final assignedRubric = widget.teamSelectedRubrics[key];
     final isAlreadyGraded = adviserScore != null;
+
+    final targetType = assignedRubric?['target_type']?.toString() ?? 'team';
+    final teamCrits = _getTeamCriteria(assignedRubric);
+    final indCrits = _getIndividualCriteria(assignedRubric);
+    final members = _getMembers(gradeRecord);
+
+    if (_selectedStudentIndex >= members.length && members.isNotEmpty) {
+      _selectedStudentIndex = 0;
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -777,10 +1032,31 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
             Row(
               children: [
                 _sectionTitle('Rubric: ${assignedRubric['name']} (${assignedRubric['scale'] ?? ''})'),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  margin: const EdgeInsets.only(bottom: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.maroon.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                  child: Text(
+                    targetType == 'both'
+                        ? 'Both (Team & Individual)'
+                        : targetType == 'individual'
+                            ? 'Individual'
+                            : 'Team',
+                    style: const TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.maroon,
+                    ),
+                  ),
+                ),
                 const Spacer(),
                 Builder(builder: (_) {
-                  final total = (assignedRubric['criteria'] as List? ?? []).length;
-                  final filled = _filledCountForTeam(teamId, widget.selectedStage);
+                  final total = _totalCountForTeam(teamId, widget.selectedStage, gradeRecord);
+                  final filled = _filledCountForTeam(teamId, widget.selectedStage, gradeRecord);
                   final allDone = filled == total && total > 0;
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -803,32 +1079,262 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
               ],
             ),
             const SizedBox(height: 10),
-            _buildCriteriaTableForTeam(teamId, widget.selectedStage, assignedRubric, isReadOnly: isGradingLocked),
-            const SizedBox(height: 16),
-            // Computed score
+
+            // Team-wide criteria section
+            if (teamCrits.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.groups_outlined, size: 16, color: AppColors.maroon),
+                  const SizedBox(width: 6),
+                  Text(
+                    targetType == 'both' ? 'Team-Wide Criteria' : 'Criteria',
+                    style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: _isTeamCriteriaComplete(teamId, widget.selectedStage)
+                          ? AppColors.success.withValues(alpha: 0.1)
+                          : Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: Text(
+                      _isTeamCriteriaComplete(teamId, widget.selectedStage) ? '✓ Complete' : 'Required',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: _isTeamCriteriaComplete(teamId, widget.selectedStage)
+                            ? AppColors.success
+                            : AppColors.textSecondary,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              _buildCriteriaTable(
+                criteria: teamCrits,
+                isTeam: true,
+                teamId: teamId,
+                stageLabel: widget.selectedStage,
+                isReadOnly: isGradingLocked,
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Individual criteria section
+            if (indCrits.isNotEmpty) ...[
+              Row(
+                children: [
+                  const Icon(Icons.person_outline_rounded, size: 16, color: AppColors.maroon),
+                  const SizedBox(width: 6),
+                  const Text(
+                    'Individual Criteria (Score Each Member)',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: AppColors.textPrimary),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+
+              if (members.isNotEmpty) ...[
+                // Horizontal student tabs
+                SizedBox(
+                  height: 40,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: members.length,
+                    separatorBuilder: (_, __) => const SizedBox(width: 8),
+                    itemBuilder: (_, idx) {
+                      final m = members[idx];
+                      final sId = m['id'] ?? m['student_id'];
+                      final isSelected = _selectedStudentIndex == idx;
+                      final isComplete = _isStudentCriteriaComplete(teamId, widget.selectedStage, sId);
+                      final isLeader = m['is_leader'] == true || m['role']?.toString() == 'leader';
+                      final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
+
+                      return InkWell(
+                        onTap: () => setState(() => _selectedStudentIndex = idx),
+                        borderRadius: BorderRadius.circular(8),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected ? AppColors.maroon : Colors.white,
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: isSelected ? AppColors.maroon : const Color(0xFFE2E8F0),
+                              width: isSelected ? 1.5 : 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isLeader) ...[
+                                Icon(Icons.star_rounded,
+                                    size: 14, color: isSelected ? Colors.amberAccent : Colors.amber.shade700),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                m['name']?.toString() ?? 'Student',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                                  color: isSelected ? Colors.white : AppColors.textPrimary,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: isSelected
+                                      ? Colors.white.withValues(alpha: 0.2)
+                                      : isComplete
+                                          ? AppColors.success.withValues(alpha: 0.1)
+                                          : Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  isComplete ? '${sScore.toStringAsFixed(1)}%' : 'Pending',
+                                  style: TextStyle(
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.bold,
+                                    color: isSelected
+                                        ? Colors.white
+                                        : isComplete
+                                            ? AppColors.success
+                                            : AppColors.textSecondary,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 10),
+
+                // Active student criteria form
+                if (_selectedStudentIndex < members.length) ...[
+                  Builder(builder: (_) {
+                    final activeMember = members[_selectedStudentIndex];
+                    final sId = activeMember['id'] ?? activeMember['student_id'];
+                    final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
+                    return Container(
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            decoration: BoxDecoration(
+                              color: AppColors.maroon.withValues(alpha: 0.04),
+                              borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
+                              border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+                            ),
+                            child: Row(
+                              children: [
+                                Text(
+                                  'Scoring: ${activeMember['name']}',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12.5,
+                                    color: AppColors.maroon,
+                                  ),
+                                ),
+                                const Spacer(),
+                                Text(
+                                  'Student Score: ${sScore.toStringAsFixed(2)} / 100',
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 12,
+                                    color: AppColors.textSecondary,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          _buildCriteriaTable(
+                            criteria: indCrits,
+                            isTeam: false,
+                            studentId: sId,
+                            teamId: teamId,
+                            stageLabel: widget.selectedStage,
+                            isReadOnly: isGradingLocked,
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ] else ...[
+                const Text('No members found in this team.', style: TextStyle(color: AppColors.textSecondary)),
+              ],
+              const SizedBox(height: 16),
+            ],
+
+            // Score Summary Card
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
                 color: AppColors.maroon.withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
               ),
-              child: Row(
+              child: Column(
                 children: [
-                  Text(
-                    'Computed Adviser Score:',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                  if (targetType != 'team' && members.isNotEmpty) ...[
+                    ...members.map((m) {
+                      final sId = m['id'] ?? m['student_id'];
+                      final sScore = _computeStudentScore(teamId, widget.selectedStage, sId, gradeRecord);
+                      final isComplete = _isStudentCriteriaComplete(teamId, widget.selectedStage, sId);
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 2),
+                        child: Row(
+                          children: [
+                            Text(
+                              m['name']?.toString() ?? 'Student',
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                            ),
+                            const Spacer(),
+                            Text(
+                              isComplete ? '${sScore.toStringAsFixed(2)} / 100' : 'Incomplete',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: isComplete ? AppColors.maroon : Colors.grey,
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                    const Divider(height: 16, color: Color(0xFFE2E8F0)),
+                  ],
+                  Row(
+                    children: [
+                      Text(
+                        targetType != 'team' ? 'Overall Team Adviser Score (Avg):' : 'Computed Adviser Score:',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: AppColors.textPrimary),
+                      ),
+                      const Spacer(),
+                      Text(
+                        _computeOverallTeamScore(teamId, widget.selectedStage, gradeRecord).toStringAsFixed(2),
+                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maroon),
+                      ),
+                      const Text(' / 100', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                    ],
                   ),
-                  const Spacer(),
-                  Text(
-                    _computeTotalScoreForTeam(teamId, widget.selectedStage).toStringAsFixed(2),
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: AppColors.maroon),
-                  ),
-                  Text(' / 100', style: const TextStyle(color: AppColors.textSecondary, fontSize: 12)),
                 ],
               ),
             ),
             const SizedBox(height: 16),
+
             // Submit Button
             Builder(builder: (_) {
               if (isGradingLocked) {
@@ -852,7 +1358,7 @@ class _GradeDeliverableTabState extends ConsumerState<GradeDeliverableTab> {
                   ),
                 );
               }
-              final canSubmit = _allCriteriaFilledForTeam(teamId, widget.selectedStage);
+              final canSubmit = _allCriteriaFilledForTeam(teamId, widget.selectedStage, gradeRecord);
               return SizedBox(
                 width: double.infinity,
                 child: DefensysSaveButton(

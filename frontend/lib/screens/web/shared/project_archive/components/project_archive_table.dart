@@ -37,32 +37,17 @@ class ProjectArchiveTable extends ConsumerStatefulWidget {
 }
 
 class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
-  static const _kRepoMinTableWidth = 1515.0;
-  static const _kRepoActionColumnWidth = 140.0;
-  static const _kRepoDataTableWidth =
-      _kRepoMinTableWidth - _kRepoActionColumnWidth;
-  static const _kDeliverableMinTableWidth = 1100.0;
+  static const _kRepoMinTableWidth = 1100.0;
+  static const _kDeliverableMinTableWidth = 1000.0;
 
-  final _teamSearchController = TextEditingController();
-  String _teamSearchQuery = '';
-  String _selectedPitEventFilter = '';
-  final Set<String> _collapsedPitEvents = {};
-  String _mainViewMode = 'stage';
-
-  @override
-  void dispose() {
-    _teamSearchController.dispose();
-    super.dispose();
-  }
+  String _mainViewMode = 'team';
+  final Set<String> _expandedTeamIds = {};
+  bool _hasManuallyToggledExpansion = false;
 
   String _scopeKey(RepositoryAuditState state) =>
       state.scope['scope']?.toString() ?? 'admin';
 
-  int _asInt(dynamic value) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
+
 
   List<Map<String, dynamic>> _mapList(dynamic value) {
     if (value is! List) return [];
@@ -185,8 +170,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 const Text(
                   'Project Archive Records',
                   style: TextStyle(
-                    color: AppColors.maroon,
-                    fontSize: 15.5,
+                    color: Color(0xFF0F172A),
+                    fontSize: 16,
                     fontWeight: FontWeight.w800,
                     letterSpacing: -0.2,
                   ),
@@ -369,7 +354,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         borderRadius: BorderRadius.circular(8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 150),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
           decoration: BoxDecoration(
             color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(8),
@@ -389,7 +374,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               Icon(
                 icon,
                 size: 14,
-                color: selected ? AppColors.maroon : const Color(0xFF64748B),
+                color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
               ),
               const SizedBox(width: 6),
               Text(
@@ -397,7 +382,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-                  color: selected ? AppColors.maroon : const Color(0xFF64748B),
+                  color: selected ? const Color(0xFF0F172A) : const Color(0xFF64748B),
                 ),
               ),
             ],
@@ -416,9 +401,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          modeBtn('By Stage', Icons.style_rounded, 'stage'),
-          const SizedBox(width: 2),
           modeBtn('By Team', Icons.groups_rounded, 'team'),
+          const SizedBox(width: 2),
+          modeBtn('By Stage', Icons.style_rounded, 'stage'),
         ],
       ),
     );
@@ -429,21 +414,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
       decoration: BoxDecoration(
-        color: AppColors.maroon.withValues(alpha: 0.08),
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(4),
-        border: Border.all(color: AppColors.maroon.withValues(alpha: 0.15)),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Icon(Icons.groups_rounded, size: 11, color: AppColors.maroon),
+          const Icon(Icons.groups_rounded, size: 11, color: Color(0xFF64748B)),
           const SizedBox(width: 4),
           Text(
             teamName,
             style: const TextStyle(
-              color: AppColors.maroon,
+              color: Color(0xFF334155),
               fontSize: 10,
-              fontWeight: FontWeight.w800,
+              fontWeight: FontWeight.w700,
             ),
           ),
         ],
@@ -453,33 +438,33 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _advancedFiltersButton() {
     return SizedBox(
-      height: 43,
+      height: 40,
       child: OutlinedButton.icon(
         onPressed: widget.onToggleAdvancedFilters,
         icon: Icon(
           widget.showAdvancedFilters
               ? Icons.filter_alt_off_rounded
               : Icons.filter_alt_rounded,
-          size: 16,
+          size: 15,
           color: widget.showAdvancedFilters
               ? AppColors.maroon
-              : AppColors.textPrimary,
+              : const Color(0xFF475569),
         ),
         label: Text(widget.showAdvancedFilters ? 'Hide Filters' : 'Filters'),
         style: OutlinedButton.styleFrom(
           foregroundColor: widget.showAdvancedFilters
               ? AppColors.maroon
-              : AppColors.textPrimary,
+              : const Color(0xFF0F172A),
           side: BorderSide(
             color: widget.showAdvancedFilters
                 ? AppColors.maroon
-                : const Color(0xFFD1D5DB),
+                : const Color(0xFFE2E8F0),
           ),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           textStyle:
-              const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -487,7 +472,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _searchField(RepositoryAuditState state) {
     return SizedBox(
-      height: 43,
+      height: 40,
       child: TextField(
         controller: widget.searchController,
         enabled: !state.isSaving,
@@ -495,12 +480,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         decoration: InputDecoration(
           prefixIcon: const Icon(
             Icons.search_rounded,
-            color: AppColors.textSecondary,
-            size: 19,
+            color: Color(0xFF94A3B8),
+            size: 18,
           ),
-          hintText: 'Search by file name, course, or semester...',
+          hintText: 'Search by file name, course, team, or semester...',
           hintStyle: const TextStyle(
-            color: AppColors.textSecondary,
+            color: Color(0xFF94A3B8),
             fontSize: 13,
           ),
           filled: true,
@@ -510,16 +495,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             vertical: 10,
           ),
           border: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
           enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(8),
             borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
           focusedBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(10),
-            borderSide: const BorderSide(color: AppColors.maroon),
+            borderRadius: BorderRadius.circular(8),
+            borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
           ),
         ),
         onSubmitted: (value) {
@@ -533,7 +518,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
   Widget _clearFiltersButton() {
     return SizedBox(
-      height: 43,
+      height: 40,
       child: OutlinedButton.icon(
         onPressed: () {
           widget.searchController.clear();
@@ -553,16 +538,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 clearTeam: true,
               );
         },
-        icon: const Icon(Icons.refresh_rounded, size: 16),
+        icon: const Icon(Icons.refresh_rounded, size: 15),
         label: const Text('Clear Filters'),
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
+          foregroundColor: const Color(0xFF475569),
           side: const BorderSide(color: Color(0xFFE2E8F0)),
           shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          padding: const EdgeInsets.symmetric(horizontal: 18),
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           textStyle:
-              const TextStyle(fontSize: 13, fontWeight: FontWeight.w800),
+              const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700),
         ),
       ),
     );
@@ -700,53 +685,31 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _wrapWithHorizontalScroll({
-    required double minDataWidth,
-    required Widget dataPane,
-    required Widget? actionColumn,
+    required double minWidth,
+    required Widget child,
   }) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final actionWidth =
-            actionColumn == null ? 0.0 : _kRepoActionColumnWidth;
-        final dataAreaWidth = (constraints.maxWidth - actionWidth).clamp(
-          0.0,
-          double.infinity,
-        );
-        final needsHorizontalScroll = dataAreaWidth < minDataWidth;
+        final needsHorizontalScroll = constraints.maxWidth < minWidth;
 
-        Widget pane = dataPane;
+        Widget content = child;
         if (needsHorizontalScroll) {
-          pane = Scrollbar(
-            controller: widget.tableHScrollController,
+          content = Scrollbar(
             thumbVisibility: true,
             notificationPredicate: (notification) =>
                 notification.metrics.axis == Axis.horizontal,
             child: SingleChildScrollView(
-              controller: widget.tableHScrollController,
               scrollDirection: Axis.horizontal,
-              child: SizedBox(width: minDataWidth, child: dataPane),
+              child: SizedBox(width: minWidth, child: child),
             ),
-          );
-        }
-
-        if (actionColumn == null) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [pane, _tableScrollHint()],
           );
         }
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(child: pane),
-                actionColumn,
-              ],
-            ),
-            _tableScrollHint(),
+            content,
+            if (needsHorizontalScroll) _tableScrollHint(),
           ],
         );
       },
@@ -757,8 +720,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final compact = state.teamId.isNotEmpty;
     final entries = state.entries;
     return _wrapWithHorizontalScroll(
-      minDataWidth: _kRepoDataTableWidth,
-      dataPane: Column(
+      minWidth: compact ? 880.0 : _kRepoMinTableWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _repositoryHeaderData(compactColumns: compact),
@@ -766,9 +729,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             (entry) => _repositoryRowData(entry, compactColumns: compact),
           ),
         ],
-      ),
-      actionColumn: _repositoryActionColumn(
-        entries.map(_repositoryRowAction).toList(),
       ),
     );
   }
@@ -778,80 +738,30 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       height: 44,
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFC),
-        borderRadius: const BorderRadius.horizontal(left: Radius.circular(6)),
+        borderRadius: BorderRadius.circular(6),
         border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
-          _tableHeaderCell('File Name', flex: 3.45),
+          _tableHeaderCell('File Name', flex: compactColumns ? 3.5 : 2.8),
           if (!compactColumns) ...[
-            _tableHeaderCell('Year Level', flex: 0.74),
-            _tableHeaderCell('Academic Year', flex: 0.94),
-            _tableHeaderCell('Course', flex: 0.62),
+            _tableHeaderCell('Year Level', flex: 0.8),
+            _tableHeaderCell('Academic Year', flex: 0.9),
+            _tableHeaderCell('Course', flex: 0.65),
           ],
-          _tableHeaderCell('Semester', flex: 0.78),
-          _tableHeaderCell('Status', flex: 0.95),
-          _tableHeaderCell('Uploaded', flex: 0.74),
+          _tableHeaderCell('Semester', flex: compactColumns ? 1.1 : 0.85),
+          _tableHeaderCell('Status', flex: 1.0),
+          _tableHeaderCell('Uploaded', flex: 0.85),
+          _tableHeaderCell('Actions', flex: 1.1, alignment: Alignment.centerRight),
         ],
-      ),
-    );
-  }
-
-  Widget _repositoryActionColumn(
-    List<Widget> actionRows, {
-    double headerHeight = 44,
-  }) {
-    return SizedBox(
-      width: _kRepoActionColumnWidth,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          _repositoryActionHeader(height: headerHeight),
-          ...actionRows,
-        ],
-      ),
-    );
-  }
-
-  Widget _repositoryActionHeader({double height = 44}) {
-    return Container(
-      height: height,
-      alignment: Alignment.centerLeft,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: const BorderRadius.horizontal(right: Radius.circular(6)),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: const Text(
-        'Actions',
-        style: TextStyle(
-          color: Color(0xFF64748B),
-          fontSize: 11.5,
-          fontWeight: FontWeight.w700,
-          letterSpacing: 0.3,
-        ),
-      ),
-    );
-  }
-
-  Widget _repositoryActionSpacer({double height = 40}) {
-    return Container(
-      height: height,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          left: BorderSide(color: Color(0xFFE2E8F0)),
-          bottom: BorderSide(color: Color(0xFFE2E8F0)),
-        ),
       ),
     );
   }
 
   Widget _emptyRepositoryTable() {
     return _wrapWithHorizontalScroll(
-      minDataWidth: _kRepoDataTableWidth,
-      dataPane: Column(
+      minWidth: _kRepoMinTableWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _repositoryHeaderData(),
@@ -878,18 +788,18 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                   ),
                 ),
                 const SizedBox(height: 12),
-                Text(
+                const Text(
                   'No archive records found',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF1E293B),
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
                   ),
                 ),
                 const SizedBox(height: 4),
-                Text(
+                const Text(
                   'Try searching or adjusting your filter settings',
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Color(0xFF64748B),
                     fontSize: 12.5,
                     fontWeight: FontWeight.w500,
@@ -900,18 +810,17 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           ),
         ],
       ),
-      actionColumn: _repositoryActionColumn([
-        _repositoryActionSpacer(height: 220),
-      ]),
     );
   }
 
   Widget _repositoryRowData(
     Map<String, dynamic> entry, {
     bool compactColumns = false,
+    bool showTeamBadge = true,
   }) {
     final isPit = entry['type'] == 'pit';
     final isMissing = entry['is_missing'] == true;
+    final hasFile = entry['has_file'] == true && !isMissing;
     final title = isPit
         ? entry['file_name']?.toString() ?? ''
         : entry['deliverable_label']?.toString() ??
@@ -922,19 +831,29 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final teamName = entry['team_name']?.toString() ?? entry['team']?.toString() ?? '';
 
     return Container(
-      constraints: const BoxConstraints(minHeight: 66),
+      constraints: const BoxConstraints(minHeight: 64),
       decoration: const BoxDecoration(
         color: Colors.white,
-        border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
+        border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
       ),
       child: Row(
         children: [
           _tableCell(
             Row(
               children: [
-                const Icon(
-                  Icons.picture_as_pdf_rounded,
-                  color: Colors.redAccent,
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFEF2F2),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFFECACA)),
+                  ),
+                  child: const Icon(
+                    Icons.picture_as_pdf_rounded,
+                    color: Color(0xFFDC2626),
+                    size: 15,
+                  ),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -942,7 +861,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     mainAxisSize: MainAxisSize.min,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      if (widget.state.teamId.isEmpty && teamName.isNotEmpty) ...[
+                      if (showTeamBadge && widget.state.teamId.isEmpty && teamName.isNotEmpty) ...[
                         _teamBadge(teamName),
                         const SizedBox(height: 3),
                       ],
@@ -953,9 +872,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: AppColors.textPrimary,
+                          color: Color(0xFF0F172A),
                           fontSize: 13,
-                          fontWeight: FontWeight.w900,
+                          fontWeight: FontWeight.w700,
                         ),
                       ),
                       const SizedBox(height: 3),
@@ -969,7 +888,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
-                          color: AppColors.textSecondary,
+                          color: Color(0xFF64748B),
                           fontSize: 11,
                           fontWeight: FontWeight.w500,
                         ),
@@ -979,76 +898,64 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 ),
               ],
             ),
-            flex: 3.45,
+            flex: compactColumns ? 3.5 : 2.8,
           ),
           if (!compactColumns) ...[
             _tableCell(
               _yearBadge(entry['year_level']?.toString() ?? ''),
-              flex: 0.74,
+              flex: 0.8,
             ),
             _tableCell(
               _bodyText(entry['academic_year']?.toString() ?? ''),
-              flex: 0.94,
+              flex: 0.9,
             ),
             _tableCell(
               _bodyText(entry['course']?.toString() ?? ''),
-              flex: 0.62,
+              flex: 0.65,
             ),
           ],
           _tableCell(
             _bodyText(entry['semester']?.toString() ?? ''),
-            flex: 0.78,
+            flex: compactColumns ? 1.1 : 0.85,
           ),
           _tableCell(
-            Row(
-              children: [
-                _kindBadge(entry['submission_kind']?.toString()),
-                const SizedBox(width: 6),
-                Flexible(
-                  child: _statusBadge(entry['status']?.toString() ?? ''),
-                ),
-              ],
-            ),
-            flex: 0.95,
+            _statusBadge(entry['status']?.toString() ?? ''),
+            flex: 1.0,
           ),
-          _tableCell(_bodyText(_prettyDate(entry['uploaded_at'])), flex: 0.74),
+          _tableCell(
+            _bodyText(_prettyDate(entry['uploaded_at'])),
+            flex: 0.85,
+          ),
+          _tableCell(
+            hasFile ? _rowActions(entry) : const SizedBox.shrink(),
+            flex: 1.1,
+            alignment: Alignment.centerRight,
+          ),
         ],
       ),
     );
   }
 
-  Widget _repositoryRowAction(Map<String, dynamic> entry) {
-    final isMissing = entry['is_missing'] == true;
-    final hasFile = entry['has_file'] == true && !isMissing;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 66),
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          left: BorderSide(color: Color(0xFFE5E7EB)),
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-      ),
-      child: hasFile ? _rowActions(entry) : const SizedBox.shrink(),
-    );
-  }
-
-  Widget _tableHeaderCell(String label, {required double flex}) {
+  Widget _tableHeaderCell(
+    String label, {
+    required double flex,
+    Alignment alignment = Alignment.centerLeft,
+  }) {
     return Expanded(
       flex: (flex * 100).round(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Align(
-          alignment: Alignment.centerLeft,
+          alignment: alignment,
           child: Text(
             label,
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF5D6678),
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
+              color: Color(0xFF64748B),
+              fontSize: 11.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.3,
             ),
           ),
         ),
@@ -1056,12 +963,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     );
   }
 
-  Widget _tableCell(Widget child, {required double flex}) {
+  Widget _tableCell(
+    Widget child, {
+    required double flex,
+    Alignment alignment = Alignment.centerLeft,
+  }) {
     return Expanded(
       flex: (flex * 100).round(),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 15),
-        child: Align(alignment: Alignment.centerLeft, child: child),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        child: Align(alignment: alignment, child: child),
       ),
     );
   }
@@ -1080,20 +991,22 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   }
 
   Widget _yearBadge(String value) {
+    if (value.isEmpty || value == '-') return const SizedBox.shrink();
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF),
-        borderRadius: BorderRadius.circular(999),
+        color: const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Text(
-        value.isEmpty ? '-' : value,
+        value,
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
-          color: Color(0xFF2563EB),
+          color: Color(0xFF475569),
           fontSize: 11,
-          fontWeight: FontWeight.w900,
+          fontWeight: FontWeight.w600,
         ),
       ),
     );
@@ -1119,35 +1032,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return StatusBadge.inactive(label: s.isEmpty ? 'Approved' : s);
   }
 
-  Widget _kindBadge(String? kind) {
-    final label = switch (kind) {
-      'pre' => 'Pre-defense',
-      'post' => 'Post-defense',
-      'pit' => 'Post-defense',
-      _ => 'File',
-    };
-    final color = switch (kind) {
-      'pre' => const Color(0xFF2563EB),
-      'post' => AppColors.maroon,
-      'pit' => AppColors.maroon,
-      _ => AppColors.textSecondary,
-    };
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 10.5,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
-  }
 
   Widget _rowActions(Map<String, dynamic> entry) {
     final fileUrl = entry['file_url']?.toString() ?? '';
@@ -1169,13 +1053,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
     final actionIconColor = isPendingResubmission
         ? const Color(0xFFD97706)
-        : (isReplacementUnlocked ? const Color(0xFF0D9488) : const Color(0xFF2563EB));
+        : (isReplacementUnlocked ? const Color(0xFF0D9488) : const Color(0xFF475569));
 
-    final actionTooltip = isPendingResubmission
-        ? 'Student Re-upload Pending (Needs Revision)'
+    final actionLabel = isPendingResubmission
+        ? 'Review Re-upload'
         : (isReplacementUnlocked
-            ? 'File Replacement Unlocked for Team (Click to manage)'
-            : 'Request team resubmission / replace file');
+            ? 'Manage File Access'
+            : 'Request Resubmission / Replace');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -1183,25 +1067,88 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         _actionIcon(
           tooltip: 'View PDF',
           icon: Icons.visibility_outlined,
-          color: const Color(0xFF2563EB),
+          color: const Color(0xFF475569),
           onTap: () => widget.onViewPdf(fileUrl, fileName),
         ),
-        const SizedBox(width: 3),
-        _actionIcon(
-          tooltip: 'Download',
-          icon: Icons.download_rounded,
-          color: const Color(0xFF059669),
-          onTap: () => widget.onDownloadFile(fileUrl, fileName),
-        ),
-        if (entry['can_override'] == true) ...[
-          const SizedBox(width: 3),
-          _actionIcon(
-            tooltip: actionTooltip,
-            icon: actionIconData,
-            color: actionIconColor,
-            onTap: () => widget.onOverrideStatus(entry),
+        const SizedBox(width: 4),
+        PopupMenuButton<String>(
+          tooltip: 'More actions',
+          offset: const Offset(0, 32),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+            side: const BorderSide(color: Color(0xFFE2E8F0)),
           ),
-        ],
+          color: Colors.white,
+          elevation: 4,
+          padding: EdgeInsets.zero,
+          icon: Container(
+            padding: const EdgeInsets.all(6),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
+            child: const Icon(
+              Icons.more_vert_rounded,
+              color: Color(0xFF475569),
+              size: 15,
+            ),
+          ),
+          onSelected: (value) {
+            switch (value) {
+              case 'view':
+                widget.onViewPdf(fileUrl, fileName);
+                break;
+              case 'download':
+                widget.onDownloadFile(fileUrl, fileName);
+                break;
+              case 'override':
+                widget.onOverrideStatus(entry);
+                break;
+            }
+          },
+          itemBuilder: (context) => [
+            const PopupMenuItem<String>(
+              value: 'download',
+              height: 36,
+              child: Row(
+                children: [
+                  Icon(Icons.download_rounded, size: 15, color: Color(0xFF475569)),
+                  SizedBox(width: 9),
+                  Text(
+                    'Download File',
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF0F172A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (entry['can_override'] == true) ...[
+              const PopupMenuDivider(height: 1),
+              PopupMenuItem<String>(
+                value: 'override',
+                height: 36,
+                child: Row(
+                  children: [
+                    Icon(actionIconData, size: 15, color: actionIconColor),
+                    const SizedBox(width: 9),
+                    Text(
+                      actionLabel,
+                      style: TextStyle(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                        color: actionIconColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
       ],
     );
   }
@@ -1220,10 +1167,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: Container(
           padding: const EdgeInsets.all(6),
           decoration: BoxDecoration(
-            color: color.withValues(alpha: 0.10),
+            color: const Color(0xFFF8FAFC),
             borderRadius: BorderRadius.circular(6),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
           ),
-          child: Icon(icon, color: color, size: 16),
+          child: Icon(icon, color: color, size: 15),
         ),
       ),
     );
@@ -1236,10 +1184,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Text(
-        'Pick a deliverable to compare all teams. Pick a team to see that team\'s full file list.',
-        style: TextStyle(
-          color: AppColors.textSecondary.withValues(alpha: 0.9),
-          fontSize: 11.5,
+        'Pick a deliverable to compare all teams, or explore teams and their submitted archive records below.',
+        style: const TextStyle(
+          color: Color(0xFF64748B),
+          fontSize: 12,
           fontWeight: FontWeight.w500,
         ),
       ),
@@ -1257,480 +1205,69 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       );
     }
     if (state.teamId.isNotEmpty) {
-      return Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(width: 260, child: _buildTeamSidebar(state)),
-          const SizedBox(width: 18),
-          Expanded(child: _buildTeamDetailPanel(state)),
-        ],
-      );
-    }
-    return Row(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        SizedBox(width: 260, child: _buildTeamSidebar(state)),
-        const SizedBox(width: 18),
-        Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              _browseModeTip(state),
-              _buildAllTeamsBrowsePanel(state)
-            ],
-          ),
-        ),
-      ],
-    );
-  }
-
-  List<String> _teamStagesFromEntries(RepositoryAuditState state, String teamId) {
-    final stages = <String>{};
-    for (final entry in state.entries) {
-      if (entry['team_id']?.toString() == teamId && entry['has_file'] == true) {
-        final stage = entry['stage']?.toString() ?? '';
-        if (stage.isNotEmpty) stages.add(stage);
-      }
-    }
-    return stages.toList();
-  }
-
-  Map<String, List<Map<String, dynamic>>> _groupPitTeamsByEvent(
-    List<Map<String, dynamic>> pitTeams,
-    RepositoryAuditState state,
-  ) {
-    final grouped = <String, List<Map<String, dynamic>>>{};
-    for (final team in pitTeams) {
-      final level = team['level']?.toString() ?? '';
-      final course = team['course_code']?.toString() ?? '';
-      String eventKey = 'PIT Event';
-      if (level.isNotEmpty && course.isNotEmpty) {
-        eventKey = '$level ($course)';
-      } else if (level.isNotEmpty) {
-        eventKey = level;
-      } else if (course.isNotEmpty) {
-        eventKey = course;
-      }
-      grouped.putIfAbsent(eventKey, () => []).add(team);
-    }
-    return grouped;
-  }
-
-  Widget _buildPitEventFilterChips(List<String> eventKeys) {
-    if (eventKeys.length <= 1) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 4),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            InkWell(
-              onTap: () => setState(() => _selectedPitEventFilter = ''),
-              borderRadius: BorderRadius.circular(20),
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: _selectedPitEventFilter.isEmpty
-                      ? const Color(0xFF2563EB)
-                      : const Color(0xFF2563EB).withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: _selectedPitEventFilter.isEmpty
-                        ? const Color(0xFF2563EB)
-                        : const Color(0xFF2563EB).withValues(alpha: 0.2),
-                  ),
-                ),
-                child: Text(
-                  'All Events',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: _selectedPitEventFilter.isEmpty
-                        ? FontWeight.w800
-                        : FontWeight.w600,
-                    color: _selectedPitEventFilter.isEmpty
-                        ? Colors.white
-                        : const Color(0xFF2563EB),
-                  ),
-                ),
-              ),
-            ),
-            ...eventKeys.map((evt) {
-              final selected = _selectedPitEventFilter == evt;
-              return Padding(
-                padding: const EdgeInsets.only(left: 4),
-                child: InkWell(
-                  onTap: () => setState(() {
-                    _selectedPitEventFilter = selected ? '' : evt;
-                  }),
-                  borderRadius: BorderRadius.circular(20),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: selected
-                          ? const Color(0xFF2563EB)
-                          : const Color(0xFF2563EB).withValues(alpha: 0.08),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: selected
-                            ? const Color(0xFF2563EB)
-                            : const Color(0xFF2563EB).withValues(alpha: 0.2),
-                      ),
-                    ),
-                    child: Text(
-                      evt,
-                      style: TextStyle(
-                        fontSize: 10,
-                        fontWeight:
-                            selected ? FontWeight.w800 : FontWeight.w600,
-                        color: selected ? Colors.white : const Color(0xFF2563EB),
-                      ),
-                    ),
-                  ),
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTeamSidebar(RepositoryAuditState state) {
-    final allTeams = _mapList(state.options['team_counts']);
-    
-    final teams = _teamSearchQuery.isEmpty
-        ? allTeams
-        : allTeams.where((team) {
-            final name = (team['name']?.toString() ?? '').toLowerCase();
-            final level = (team['level']?.toString() ?? '').toLowerCase();
-            final project = (_teamProjectFromEntries(state, team['id']?.toString() ?? '') ?? '').toLowerCase();
-            return name.contains(_teamSearchQuery) ||
-                level.contains(_teamSearchQuery) ||
-                project.contains(_teamSearchQuery);
-          }).toList();
-
-    final capstoneTeams =
-        teams.where((team) => _teamTrack(team) == 'capstone').toList();
-    final pitTeams = teams.where((team) => _teamTrack(team) == 'pit').toList();
-    final showCapstone = state.type.isEmpty || state.type == 'capstone';
-    final showPit = state.type.isEmpty || state.type == 'pit';
-
-    Widget capstoneSection() {
-      if (capstoneTeams.isEmpty) return const SizedBox.shrink();
       return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'CAPSTONE TEAMS',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.maroon.withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${capstoneTeams.length}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: AppColors.maroon,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 6),
-          ...capstoneTeams.map((team) {
-            final id = team['id']?.toString() ?? '';
-            final name = team['name']?.toString() ?? 'Team';
-            final level = team['level']?.toString() ?? '';
-            final project = _teamProjectFromEntries(state, id) ?? '';
-            final track = _teamTrack(team);
-            final pre = _asInt(team['pre']);
-            final vault = _asInt(team['post']);
-            final stages = _teamStagesFromEntries(state, id);
-            return _sidebarTeamTile(
-              state,
-              id: id,
-              name: name,
-              level: level,
-              projectTitle: project,
-              preCount: pre,
-              vaultCount: vault,
-              track: track,
-              stages: stages,
-            );
-          }),
-        ],
-      );
-    }
-
-    Widget pitSection() {
-      if (pitTeams.isEmpty) return const SizedBox.shrink();
-      final pitGroups = _groupPitTeamsByEvent(pitTeams, state);
-      final eventKeys = pitGroups.keys.toList();
-
-      final filteredGroups = _selectedPitEventFilter.isEmpty
-          ? pitGroups
-          : Map.fromEntries(
-              pitGroups.entries.where((e) => e.key == _selectedPitEventFilter),
-            );
-
-      return Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const SizedBox(height: 14),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text(
-                  'PIT TEAMS (BY EVENT)',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.8,
-                    color: Color(0xFF64748B),
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF2563EB).withValues(alpha: 0.1),
-                    borderRadius: BorderRadius.circular(999),
-                  ),
-                  child: Text(
-                    '${pitTeams.length}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w800,
-                      color: Color(0xFF2563EB),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          _buildPitEventFilterChips(eventKeys),
-          const SizedBox(height: 4),
-          ...filteredGroups.entries.map((group) {
-            final eventTitle = group.key;
-            final eventTeams = group.value;
-            final isCollapsed = _collapsedPitEvents.contains(eventTitle);
-
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                InkWell(
-                  onTap: () {
-                    setState(() {
-                      if (isCollapsed) {
-                        _collapsedPitEvents.remove(eventTitle);
-                      } else {
-                        _collapsedPitEvents.add(eventTitle);
-                      }
-                    });
-                  },
-                  borderRadius: BorderRadius.circular(6),
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                    child: Row(
-                      children: [
-                        Icon(
-                          isCollapsed
-                              ? Icons.keyboard_arrow_right_rounded
-                              : Icons.keyboard_arrow_down_rounded,
-                          size: 16,
-                          color: const Color(0xFF2563EB),
-                        ),
-                        const SizedBox(width: 4),
-                        const Icon(
-                          Icons.event_note_rounded,
-                          size: 13,
-                          color: Color(0xFF2563EB),
-                        ),
-                        const SizedBox(width: 5),
-                        Expanded(
-                          child: Text(
-                            eventTitle,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF2563EB),
-                            ),
-                          ),
-                        ),
-                        Container(
-                          padding:
-                              const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                          decoration: BoxDecoration(
-                            color:
-                                const Color(0xFF2563EB).withValues(alpha: 0.08),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '${eventTeams.length}',
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF2563EB),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-                if (!isCollapsed) ...[
-                  ...eventTeams.map((team) {
-                    final id = team['id']?.toString() ?? '';
-                    final name = team['name']?.toString() ?? 'Team';
-                    final level = team['level']?.toString() ?? '';
-                    final project = _teamProjectFromEntries(state, id) ?? '';
-                    final track = _teamTrack(team);
-                    final vault = _asInt(team['post']);
-                    return _sidebarTeamTile(
-                      state,
-                      id: id,
-                      name: name,
-                      level: level,
-                      projectTitle: project,
-                      preCount: 0,
-                      vaultCount: vault,
-                      track: track,
-                    );
-                  }),
-                ],
-              ],
-            );
-          }),
-        ],
-      );
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(
             children: [
-              const Icon(
-                Icons.groups_outlined,
-                size: 18,
-                color: AppColors.maroon,
-              ),
-              const SizedBox(width: 8),
-              const Text(
-                'TEAMS',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                  letterSpacing: 0.8,
-                  color: AppColors.textPrimary,
-                ),
-              ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: AppColors.maroon.withValues(alpha: 0.08),
-                  borderRadius: BorderRadius.circular(999),
-                ),
-                child: Text(
-                  '${allTeams.length}',
-                  style: const TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.maroon,
+              OutlinedButton.icon(
+                onPressed: () {
+                  ref
+                      .read(repositoryAuditProvider.notifier)
+                      .fetchEntries(clearTeam: true);
+                },
+                icon: const Icon(Icons.arrow_back_rounded, size: 15),
+                label: const Text('Back to all teams'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: const Color(0xFF475569),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  textStyle:
+                      const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 36,
-            child: TextField(
-              controller: _teamSearchController,
-              onChanged: (val) {
-                setState(() {
-                  _teamSearchQuery = val.toLowerCase().trim();
-                });
-              },
-              style: const TextStyle(fontSize: 12),
-              decoration: InputDecoration(
-                hintText: 'Filter teams...',
-                hintStyle: const TextStyle(
-                  color: Color(0xFF94A3B8),
-                  fontSize: 12,
-                ),
-                prefixIcon: const Icon(
-                  Icons.search_rounded,
-                  size: 16,
-                  color: Color(0xFF94A3B8),
-                ),
-                suffixIcon: _teamSearchQuery.isNotEmpty
-                    ? IconButton(
-                        icon: const Icon(Icons.clear_rounded, size: 14),
-                        onPressed: () {
-                          _teamSearchController.clear();
-                          setState(() => _teamSearchQuery = '');
-                        },
-                      )
-                    : null,
-                contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 10),
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: Color(0xFFE2E8F0)),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: AppColors.maroon, width: 1.5),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          _sidebarTeamTile(
-            state,
-            id: null,
-            name: 'All teams',
-            level: '',
-            projectTitle: '',
-            preCount: 0,
-            vaultCount: 0,
-            track: '',
-          ),
-          if (showCapstone) capstoneSection(),
-          if (showPit) pitSection(),
+          const SizedBox(height: 14),
+          _buildTeamDetailPanel(state),
         ],
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _browseModeTip(state),
+        _buildAllTeamsBrowsePanel(state),
+      ],
+    );
+    }
+
+  Widget _trackBadge(String track) {
+    final isPit = track == 'pit';
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+      decoration: BoxDecoration(
+        color: isPit
+            ? const Color(0xFFF1F5F9)
+            : AppColors.maroon.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(5),
+        border: Border.all(
+          color: isPit
+              ? const Color(0xFFE2E8F0)
+              : AppColors.maroon.withValues(alpha: 0.2),
+        ),
+      ),
+      child: Text(
+        isPit ? 'PIT' : 'Capstone',
+        style: TextStyle(
+          color: isPit ? const Color(0xFF475569) : AppColors.maroon,
+          fontSize: 10,
+          fontWeight: FontWeight.w700,
+        ),
       ),
     );
   }
@@ -1743,222 +1280,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       }
     }
     return null;
-  }
-
-  Widget _sidebarTeamTile(
-    RepositoryAuditState state, {
-    required String? id,
-    required String name,
-    required String level,
-    required String projectTitle,
-    required int preCount,
-    required int vaultCount,
-    required String track,
-    List<String> stages = const [],
-  }) {
-    final selected = (id ?? '') == state.teamId;
-    final isAllTeams = id == null;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 4),
-      child: Material(
-        color: selected
-            ? AppColors.maroon.withValues(alpha: 0.08)
-            : Colors.white,
-        borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: state.isSaving
-              ? null
-              : () {
-                  if (id == null) {
-                    ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(clearTeam: true);
-                  } else {
-                    ref
-                        .read(repositoryAuditProvider.notifier)
-                        .fetchEntries(teamId: id, clearDeliverable: true);
-                  }
-                },
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 150),
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: selected
-                    ? AppColors.maroon.withValues(alpha: 0.35)
-                    : const Color(0xFFE2E8F0),
-                width: selected ? 1.5 : 1,
-              ),
-              boxShadow: selected
-                  ? [
-                      BoxShadow(
-                        color: AppColors.maroon.withValues(alpha: 0.05),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Row(
-              children: [
-                AnimatedContainer(
-                  duration: const Duration(milliseconds: 150),
-                  width: 3,
-                  height: isAllTeams ? 16 : 36,
-                  decoration: BoxDecoration(
-                    color: selected ? AppColors.maroon : Colors.transparent,
-                    borderRadius: BorderRadius.circular(2),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Icon(
-                            isAllTeams
-                                ? Icons.folder_special_rounded
-                                : Icons.folder_outlined,
-                            size: 15,
-                            color: selected
-                                ? AppColors.maroon
-                                : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              name,
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontWeight:
-                                    selected ? FontWeight.w800 : FontWeight.w700,
-                                fontSize: 12.5,
-                                color: selected
-                                    ? AppColors.maroon
-                                    : AppColors.textPrimary,
-                              ),
-                            ),
-                          ),
-                          if (track.isNotEmpty) _trackBadge(track),
-                        ],
-                      ),
-                      if (!isAllTeams) ...[
-                        const SizedBox(height: 3),
-                        if (projectTitle.isNotEmpty && projectTitle != name)
-                          Text(
-                            projectTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontSize: 10.5,
-                              color: Color(0xFF64748B),
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        if (stages.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Wrap(
-                            spacing: 3,
-                            runSpacing: 2,
-                            children: stages.map((stg) {
-                              return Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-                                decoration: BoxDecoration(
-                                  color: AppColors.maroon.withValues(alpha: 0.08),
-                                  borderRadius: BorderRadius.circular(4),
-                                  border: Border.all(color: AppColors.maroon.withValues(alpha: 0.15)),
-                                ),
-                                child: Text(
-                                  stg,
-                                  style: const TextStyle(
-                                    fontSize: 9,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          ),
-                        ],
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            if (level.isNotEmpty) ...[
-                              Text(
-                                level,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  color: Color(0xFF94A3B8),
-                                  fontWeight: FontWeight.w600,
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                            const Spacer(),
-                            if (track != 'pit' && preCount > 0)
-                              _microCountPill('$preCount pre', const Color(0xFF2563EB)),
-                            if (vaultCount > 0) ...[
-                              if (track != 'pit' && preCount > 0)
-                                const SizedBox(width: 4),
-                              _microCountPill('$vaultCount post', AppColors.maroon),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _microCountPill(String label, Color color) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
-      decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.10),
-        borderRadius: BorderRadius.circular(4),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 9.5,
-          fontWeight: FontWeight.w700,
-          color: color,
-        ),
-      ),
-    );
-  }
-
-  Widget _trackBadge(String track) {
-    final isPit = track == 'pit';
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-      decoration: BoxDecoration(
-        color: (isPit ? const Color(0xFF2563EB) : AppColors.maroon).withValues(
-          alpha: 0.12,
-        ),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        isPit ? 'PIT' : 'Capstone',
-        style: TextStyle(
-          color: isPit ? const Color(0xFF2563EB) : AppColors.maroon,
-          fontSize: 9,
-          fontWeight: FontWeight.w800,
-        ),
-      ),
-    );
   }
 
   Widget _teamDetailHeader(RepositoryAuditState state) {
@@ -1975,20 +1296,13 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.maroon.withValues(alpha: 0.03),
-            Colors.white,
-          ],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.maroon.withValues(alpha: 0.2)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 8,
+            blurRadius: 6,
             offset: const Offset(0, 2),
           ),
         ],
@@ -2000,16 +1314,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             child: Row(
               children: [
                 Container(
-                  width: 44,
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: AppColors.maroon.withValues(alpha: 0.12),
+                  width: 40,
+                  height: 40,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF1F5F9),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
-                    Icons.business_center_rounded,
-                    color: AppColors.maroon,
-                    size: 22,
+                    Icons.groups_rounded,
+                    color: Color(0xFF475569),
+                    size: 20,
                   ),
                 ),
                 const SizedBox(width: 14),
@@ -2025,9 +1339,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: const TextStyle(
-                                fontWeight: FontWeight.w900,
-                                fontSize: 16,
-                                color: AppColors.maroon,
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15,
+                                color: Color(0xFF0F172A),
                                 letterSpacing: -0.2,
                               ),
                             ),
@@ -2047,7 +1361,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: const TextStyle(
-                            color: AppColors.textPrimary,
+                            color: Color(0xFF475569),
                             fontWeight: FontWeight.w600,
                             fontSize: 12.5,
                           ),
@@ -2055,7 +1369,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                       ],
                       const SizedBox(height: 2),
                       const Text(
-                        'Showing files for this team only.',
+                        'Showing archive records for this team.',
                         style: TextStyle(
                           color: Color(0xFF64748B),
                           fontSize: 11.5,
@@ -2082,19 +1396,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                     scope: 'team',
                   );
                 },
-                icon: const Icon(Icons.lock_open_rounded, size: 15),
-                label: const Text('Manage Team Access ▾'),
+                icon: const Icon(Icons.lock_open_rounded, size: 14),
+                label: const Text('Manage Access'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: AppColors.maroon,
-                  side: const BorderSide(color: AppColors.maroon),
+                  foregroundColor: const Color(0xFF0F172A),
+                  side: const BorderSide(color: Color(0xFFCBD5E1)),
                   backgroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8),
                   ),
                   textStyle: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
               ),
@@ -2116,12 +1430,14 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           _buildPitGroupedPanel(
             _entriesForTeam(state, track: 'pit'),
             compactColumns: true,
+            showTeamBadge: false,
           )
         else
           _buildCapstoneGroupedPanel(
             state,
             entries: _entriesForTeam(state, track: 'capstone'),
             compactColumns: true,
+            showTeamBadge: false,
           ),
       ],
     );
@@ -2138,6 +1454,87 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     final showCapstone = state.type.isEmpty || state.type == 'capstone';
     final showPit = state.type.isEmpty || state.type == 'pit';
 
+    final allVisibleTeams = [
+      if (showCapstone) ...capstoneTeams,
+      if (showPit) ...pitTeams,
+    ].where((team) {
+      final teamId = team['id']?.toString() ?? '';
+      final track = _teamTrack(team);
+      return state.entries.any((entry) =>
+          entry['team_id']?.toString() == teamId &&
+          entry['has_file'] == true &&
+          entry['is_missing'] != true &&
+          (track == 'pit' ? _isPitEntry(entry) : _isCapstoneEntry(entry)));
+    }).toList();
+
+    if (!_hasManuallyToggledExpansion &&
+        _expandedTeamIds.isEmpty &&
+        allVisibleTeams.isNotEmpty) {
+      _expandedTeamIds.add(allVisibleTeams.first['id']?.toString() ?? '');
+    }
+
+    Widget expandCollapseBar() {
+      if (allVisibleTeams.isEmpty) return const SizedBox.shrink();
+      final allVisibleIds =
+          allVisibleTeams.map((t) => t['id']?.toString() ?? '').toSet();
+      final isAllExpanded = _expandedTeamIds.length >= allVisibleIds.length &&
+          allVisibleIds.isNotEmpty;
+
+      return Padding(
+        padding: const EdgeInsets.only(bottom: 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Text(
+              '${allVisibleTeams.length} ${allVisibleTeams.length == 1 ? 'team' : 'teams'} in directory',
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF64748B),
+              ),
+            ),
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _hasManuallyToggledExpansion = true;
+                  if (isAllExpanded) {
+                    _expandedTeamIds.clear();
+                  } else {
+                    _expandedTeamIds.addAll(allVisibleIds);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      isAllExpanded
+                          ? Icons.unfold_less_rounded
+                          : Icons.unfold_more_rounded,
+                      size: 15,
+                      color: const Color(0xFF475569),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isAllExpanded ? 'Collapse All' : 'Expand All',
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     Widget teamCardGroup(Map<String, dynamic> team) {
       final teamId = team['id']?.toString() ?? '';
       final name = team['name']?.toString() ?? 'Team';
@@ -2153,18 +1550,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
       if (teamEntries.isEmpty) return const SizedBox.shrink();
 
-      final accentColor = track == 'pit' ? const Color(0xFF2563EB) : AppColors.maroon;
+      final isExpanded = _expandedTeamIds.contains(teamId);
 
       return Container(
-        margin: const EdgeInsets.only(bottom: 16),
+        margin: const EdgeInsets.only(bottom: 12),
         decoration: BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: const Color(0xFFE2E8F0)),
+          border: Border.all(
+            color: isExpanded ? const Color(0xFFCBD5E1) : const Color(0xFFE2E8F0),
+            width: isExpanded ? 1.2 : 1.0,
+          ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withValues(alpha: 0.02),
-              blurRadius: 6,
+              color: Colors.black.withValues(alpha: isExpanded ? 0.03 : 0.015),
+              blurRadius: isExpanded ? 8 : 4,
               offset: const Offset(0, 2),
             ),
           ],
@@ -2172,57 +1572,132 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: accentColor.withValues(alpha: 0.05),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(10)),
-                border: const Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            InkWell(
+              onTap: () {
+                setState(() {
+                  _hasManuallyToggledExpansion = true;
+                  if (isExpanded) {
+                    _expandedTeamIds.remove(teamId);
+                  } else {
+                    _expandedTeamIds.add(teamId);
+                  }
+                });
+              },
+              borderRadius: BorderRadius.vertical(
+                top: const Radius.circular(10),
+                bottom: Radius.circular(isExpanded ? 0 : 10),
               ),
-              child: Row(
-                children: [
-                  Icon(
-                    Icons.groups_rounded,
-                    size: 16,
-                    color: accentColor,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: isExpanded ? const Color(0xFFF8FAFC) : Colors.white,
+                  borderRadius: BorderRadius.vertical(
+                    top: const Radius.circular(10),
+                    bottom: Radius.circular(isExpanded ? 0 : 10),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    name,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w800,
-                      fontSize: 13.5,
-                      color: accentColor,
+                  border: isExpanded
+                      ? const Border(bottom: BorderSide(color: Color(0xFFE2E8F0)))
+                      : null,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      isExpanded
+                          ? Icons.keyboard_arrow_down_rounded
+                          : Icons.keyboard_arrow_right_rounded,
+                      size: 20,
+                      color: const Color(0xFF64748B),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  _trackBadge(track),
-                  if (level.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    _yearBadge(level),
-                  ],
-                  if (project.isNotEmpty && project != name) ...[
                     const SizedBox(width: 8),
+                    Container(
+                      width: 32,
+                      height: 32,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Icon(
+                        Icons.groups_rounded,
+                        size: 16,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
                     Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14,
+                                  color: Color(0xFF0F172A),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              _trackBadge(track),
+                              if (level.isNotEmpty) ...[
+                                const SizedBox(width: 6),
+                                _yearBadge(level),
+                              ],
+                            ],
+                          ),
+                          if (project.isNotEmpty && project != name) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              project,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                fontSize: 12,
+                                color: Color(0xFF64748B),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Container(
+                      padding:
+                          const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
                       child: Text(
-                        '· $project',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                        '${teamEntries.length} ${teamEntries.length == 1 ? 'file' : 'files'}',
                         style: const TextStyle(
-                          fontSize: 11.5,
-                          color: Color(0xFF64748B),
-                          fontWeight: FontWeight.w500,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF475569),
                         ),
                       ),
                     ),
                   ],
-                ],
+                ),
               ),
             ),
-            if (track == 'pit')
-              _buildPitGroupedPanel(teamEntries, compactColumns: true)
-            else
-              _buildCapstoneGroupedPanel(state, entries: teamEntries, compactColumns: true),
+            if (isExpanded) ...[
+              if (track == 'pit')
+                _buildPitGroupedPanel(
+                  teamEntries,
+                  compactColumns: true,
+                  showTeamBadge: false,
+                )
+              else
+                _buildCapstoneGroupedPanel(
+                  state,
+                  entries: teamEntries,
+                  compactColumns: true,
+                  showTeamBadge: false,
+                ),
+            ],
           ],
         ),
       );
@@ -2231,13 +1706,15 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        expandCollapseBar(),
         if (showCapstone && capstoneTeams.isNotEmpty) ...[
           _trackSectionTitle('CAPSTONE TEAMS & DELIVERABLES', AppColors.maroon),
           ...capstoneTeams.map(teamCardGroup),
           const SizedBox(height: 16),
         ],
         if (showPit && pitTeams.isNotEmpty) ...[
-          _trackSectionTitle('PIT TEAMS & DELIVERABLES', const Color(0xFF2563EB)),
+          _trackSectionTitle(
+              'PIT TEAMS & DELIVERABLES', const Color(0xFF475569)),
           ...pitTeams.map(teamCardGroup),
         ],
       ],
@@ -2268,27 +1745,34 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           const SizedBox(height: 20),
         ],
         if (pitEntries.isNotEmpty) ...[
-          _trackSectionTitle('PIT', const Color(0xFF2563EB)),
+          _trackSectionTitle('PIT', const Color(0xFF475569)),
           _buildPitGroupedPanel(pitEntries),
         ],
       ],
     );
   }
 
-  Widget _trackSectionTitle(String label, Color color) {
+  Widget _trackSectionTitle(String label, Color accentColor) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 4),
+      padding: const EdgeInsets.only(bottom: 12, top: 8),
       child: Row(
         children: [
-          Container(width: 4, height: 18, color: color),
+          Container(
+            width: 3.5,
+            height: 16,
+            decoration: BoxDecoration(
+              color: accentColor,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
           const SizedBox(width: 8),
           Text(
             label,
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: color,
-              letterSpacing: 0.5,
+            style: const TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+              letterSpacing: 0.4,
             ),
           ),
         ],
@@ -2300,6 +1784,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     RepositoryAuditState state, {
     required List<Map<String, dynamic>> entries,
     bool compactColumns = false,
+    bool showTeamBadge = true,
   }) {
     final groups = state.teamId.isNotEmpty && state.groupedByStage.isNotEmpty
         ? state.groupedByStage
@@ -2307,19 +1792,19 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     if (groups.isEmpty) {
       if (entries.isNotEmpty) {
         return _wrapWithHorizontalScroll(
-          minDataWidth: _kRepoDataTableWidth,
-          dataPane: Column(
+          minWidth: compactColumns ? 880.0 : _kRepoMinTableWidth,
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               _repositoryHeaderData(compactColumns: compactColumns),
               ...entries.map(
-                (entry) =>
-                    _repositoryRowData(entry, compactColumns: compactColumns),
+                (entry) => _repositoryRowData(
+                  entry,
+                  compactColumns: compactColumns,
+                  showTeamBadge: showTeamBadge,
+                ),
               ),
             ],
-          ),
-          actionColumn: _repositoryActionColumn(
-            entries.map(_repositoryRowAction).toList(),
           ),
         );
       }
@@ -2336,22 +1821,24 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
               ),
             ),
         ],
-        actionChildren:
-            entries.isEmpty ? [_repositoryActionSpacer(height: 72)] : [],
+        compactColumns: compactColumns,
       );
     }
-    return _buildCapstoneGroupsContent(groups, compactColumns: compactColumns);
+    return _buildCapstoneGroupsContent(
+      groups,
+      compactColumns: compactColumns,
+      showTeamBadge: showTeamBadge,
+    );
   }
 
   Widget _buildCapstoneGroupsContent(
     List<Map<String, dynamic>> groups, {
     bool compactColumns = false,
+    bool showTeamBadge = true,
   }) {
     final dataChildren = <Widget>[
       _repositoryHeaderData(compactColumns: compactColumns),
     ];
-    final actionChildren = <Widget>[];
-    const subsectionHeight = 40.0;
     var totalValidRows = 0;
 
     for (final group in groups) {
@@ -2368,36 +1855,27 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       totalValidRows += preRows.length + postRows.length;
 
       dataChildren.add(_stageTitle(stage));
-      actionChildren.add(_repositoryActionSpacer(height: 32));
 
       void addSubsection(
         String title,
-        Color color,
         List<Map<String, dynamic>> rows,
       ) {
         if (rows.isEmpty) return;
-        dataChildren.add(_subsectionHeader(title, color));
-        actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
+        dataChildren.add(_subsectionHeader(title));
         for (final row in rows) {
           dataChildren.add(
-            _repositoryRowData(row, compactColumns: compactColumns),
+            _repositoryRowData(
+              row,
+              compactColumns: compactColumns,
+              showTeamBadge: showTeamBadge,
+            ),
           );
-          actionChildren.add(_repositoryRowAction(row));
         }
       }
 
-      addSubsection(
-        'Pre-defense deliverables',
-        const Color(0xFFEFF6FF),
-        preRows,
-      );
-      addSubsection(
-        'Post-defense deliverables',
-        const Color(0xFFFFF1F2),
-        postRows,
-      );
-      dataChildren.add(const SizedBox(height: 12));
-      actionChildren.add(_repositoryActionSpacer(height: 12));
+      addSubsection('Pre-defense deliverables', preRows);
+      addSubsection('Post-defense deliverables', postRows);
+      dataChildren.add(const SizedBox(height: 8));
     }
 
     if (totalValidRows == 0) {
@@ -2413,26 +1891,25 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
             ),
           ),
         ],
-        actionChildren: [_repositoryActionSpacer(height: 72)],
+        compactColumns: compactColumns,
       );
     }
 
     return _wrapGroupedTable(
       dataChildren: dataChildren,
-      actionChildren: actionChildren,
+      compactColumns: compactColumns,
     );
   }
 
   Widget _buildPitGroupedPanel(
     List<Map<String, dynamic>> entries, {
     bool compactColumns = false,
+    bool showTeamBadge = true,
   }) {
     final groups = _clientGroupByPitCourse(entries);
     final dataChildren = <Widget>[
       _repositoryHeaderData(compactColumns: compactColumns),
     ];
-    final actionChildren = <Widget>[];
-    const subsectionHeight = 40.0;
 
     if (groups.isEmpty) {
       dataChildren.add(
@@ -2445,10 +1922,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           ),
         ),
       );
-      actionChildren.add(_repositoryActionSpacer(height: 72));
       return _wrapGroupedTable(
         dataChildren: dataChildren,
-        actionChildren: actionChildren,
+        compactColumns: compactColumns,
       );
     }
 
@@ -2457,8 +1933,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       final rows = _mapList(group['pit_post']);
       if (rows.isEmpty) continue;
 
-      dataChildren.add(_stageTitle(course, color: const Color(0xFF2563EB)));
-      actionChildren.add(_repositoryActionSpacer(height: 32));
+      dataChildren.add(_stageTitle(course, color: const Color(0xFF475569)));
 
       final preRows =
           rows.where((row) => row['submission_kind'] == 'pre').toList();
@@ -2469,63 +1944,54 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
 
       void addSubsection(
         String title,
-        Color color,
         List<Map<String, dynamic>> subRows,
       ) {
         if (subRows.isEmpty) return;
-        dataChildren.add(_subsectionHeader(title, color));
-        actionChildren.add(_repositoryActionSpacer(height: subsectionHeight));
+        dataChildren.add(_subsectionHeader(title));
         for (final row in subRows) {
           dataChildren.add(
-            _repositoryRowData(row, compactColumns: compactColumns),
+            _repositoryRowData(
+              row,
+              compactColumns: compactColumns,
+              showTeamBadge: showTeamBadge,
+            ),
           );
-          actionChildren.add(_repositoryRowAction(row));
         }
       }
 
-      addSubsection(
-        'Pre-defense deliverables',
-        const Color(0xFFEFF6FF),
-        preRows,
-      );
-      addSubsection(
-        'Post-defense deliverables',
-        const Color(0xFFFFF1F2),
-        postRows,
-      );
+      addSubsection('Pre-defense deliverables', preRows);
+      addSubsection('Post-defense deliverables', postRows);
 
-      dataChildren.add(const SizedBox(height: 12));
-      actionChildren.add(_repositoryActionSpacer(height: 12));
+      dataChildren.add(const SizedBox(height: 8));
     }
 
     return _wrapGroupedTable(
       dataChildren: dataChildren,
-      actionChildren: actionChildren,
+      compactColumns: compactColumns,
     );
   }
 
   Widget _wrapGroupedTable({
     required List<Widget> dataChildren,
-    required List<Widget> actionChildren,
+    bool compactColumns = false,
   }) {
     return _wrapWithHorizontalScroll(
-      minDataWidth: _kRepoDataTableWidth,
-      dataPane: Column(
+      minWidth: compactColumns ? 880.0 : _kRepoMinTableWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: dataChildren,
       ),
-      actionColumn: _repositoryActionColumn(actionChildren),
     );
   }
 
   Widget _stageTitle(String stage, {Color color = AppColors.maroon}) {
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10, top: 12),
+      padding: const EdgeInsets.only(bottom: 8, top: 12, left: 14),
       child: Row(
         children: [
           Container(
-            width: 4,
-            height: 18,
+            width: 3.5,
+            height: 14,
             decoration: BoxDecoration(
               color: color,
               borderRadius: BorderRadius.circular(2),
@@ -2534,11 +2000,11 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           const SizedBox(width: 8),
           Text(
             stage.toUpperCase(),
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: color,
-              letterSpacing: 0.6,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF0F172A),
+              letterSpacing: 0.5,
             ),
           ),
         ],
@@ -2592,31 +2058,30 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     }).toList();
   }
 
-  Widget _subsectionHeader(String title, Color background) {
+  Widget _subsectionHeader(String title) {
     final isPre = title.toLowerCase().contains('pre-defense');
-    final icon = isPre ? Icons.folder_open_rounded : Icons.inventory_2_rounded;
-    final iconColor = isPre ? const Color(0xFF2563EB) : AppColors.maroon;
-
-    return Container(
-      width: double.infinity,
-      margin: const EdgeInsets.only(bottom: 8, top: 6),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: background,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: iconColor.withValues(alpha: 0.15)),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(top: 14, bottom: 8, left: 14, right: 14),
       child: Row(
         children: [
-          Icon(icon, size: 16, color: iconColor),
-          const SizedBox(width: 8),
+          Icon(
+            isPre ? Icons.file_present_rounded : Icons.inventory_2_outlined,
+            size: 14,
+            color: const Color(0xFF64748B),
+          ),
+          const SizedBox(width: 6),
           Text(
-            title,
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: iconColor,
+            title.toUpperCase(),
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.8,
+              color: Color(0xFF64748B),
             ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Container(height: 1, color: const Color(0xFFE2E8F0)),
           ),
         ],
       ),
@@ -2626,8 +2091,8 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   Widget _repositoryDeliverableTable(RepositoryAuditState state) {
     final entries = state.entries;
     return _wrapWithHorizontalScroll(
-      minDataWidth: _kDeliverableMinTableWidth,
-      dataPane: Column(
+      minWidth: _kDeliverableMinTableWidth,
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _deliverableFocusHeader(state),
@@ -2635,10 +2100,6 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           _deliverableTableHeaderData(),
           ...entries.map(_repositoryDeliverableRowData),
         ],
-      ),
-      actionColumn: _repositoryActionColumn(
-        entries.map(_repositoryDeliverableRowAction).toList(),
-        headerHeight: 44,
       ),
     );
   }
@@ -2678,9 +2139,10 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
   Widget _deliverableTableHeaderData() {
     return Container(
       height: 44,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF0F1F4),
-        borderRadius: BorderRadius.horizontal(left: Radius.circular(5)),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Row(
         children: [
@@ -2688,8 +2150,9 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           _tableHeaderCell('Project', flex: 1.4),
           _tableHeaderCell('Stage', flex: 0.9),
           _tableHeaderCell('File', flex: 1.6),
-          _tableHeaderCell('Status', flex: 0.8),
-          _tableHeaderCell('Uploaded', flex: 0.7),
+          _tableHeaderCell('Status', flex: 0.9),
+          _tableHeaderCell('Uploaded', flex: 0.8),
+          _tableHeaderCell('Actions', flex: 1.1, alignment: Alignment.centerRight),
         ],
       ),
     );
@@ -2700,6 +2163,7 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
     return Container(
       constraints: const BoxConstraints(minHeight: 58),
       decoration: const BoxDecoration(
+        color: Colors.white,
         border: Border(bottom: BorderSide(color: Color(0xFFE5E7EB))),
       ),
       child: Row(
@@ -2719,26 +2183,16 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
           ),
           _tableCell(
             _statusBadge(entry['status']?.toString() ?? ''),
-            flex: 0.8,
+            flex: 0.9,
           ),
-          _tableCell(_bodyText(_prettyDate(entry['uploaded_at'])), flex: 0.7),
+          _tableCell(_bodyText(_prettyDate(entry['uploaded_at'])), flex: 0.8),
+          _tableCell(
+            hasFile ? _rowActions(entry) : const SizedBox.shrink(),
+            flex: 1.1,
+            alignment: Alignment.centerRight,
+          ),
         ],
       ),
-    );
-  }
-
-  Widget _repositoryDeliverableRowAction(Map<String, dynamic> entry) {
-    final hasFile = entry['has_file'] == true;
-    return Container(
-      constraints: const BoxConstraints(minHeight: 58),
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(
-        border: Border(
-          left: BorderSide(color: Color(0xFFE5E7EB)),
-          bottom: BorderSide(color: Color(0xFFE5E7EB)),
-        ),
-      ),
-      child: hasFile ? _rowActions(entry) : const SizedBox.shrink(),
     );
   }
 }

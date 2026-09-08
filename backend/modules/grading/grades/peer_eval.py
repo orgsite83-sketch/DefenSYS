@@ -29,8 +29,10 @@ def _resolve_evaluatee(team, evaluatee_id):
     raise ValidationError({'evaluateeId': 'Evaluatee must be a member of this team.'})
 
 
-def _grade_for_team(team):
-    return GradeContextService.get_for_current_student_peer_context(team)
+def _grade_for_team(team, stage_label=None, create_if_missing=False):
+    return GradeContextService.get_for_current_student_peer_context(
+        team, stage_label=stage_label, create_if_missing=create_if_missing
+    )
 
 
 def _peer_max_score(grade):
@@ -215,7 +217,7 @@ def sync_peer_summaries(grade):
 
 
 @transaction.atomic
-def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdown, total, max_score):
+def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdown, total, max_score, stage_label=None):
     if getattr(evaluator, 'role', None) != 'student':
         raise ValidationError({'detail': 'Only students can submit peer evaluations.'})
 
@@ -231,7 +233,8 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
     if evaluatee.id == evaluator.id:
         raise ValidationError({'evaluateeId': 'You cannot evaluate yourself.'})
 
-    grade = _grade_for_team(team)
+    target_stage = (stage_label or getattr(team, 'current_defense_stage', None) or getattr(team, 'ready_for_stage', None) or '').strip()
+    grade = _grade_for_team(team, stage_label=target_stage, create_if_missing=True)
     if grade is None:
         raise ValidationError({'detail': 'Peer grading is not open for this team (no active defense stage or schedule).'})
 
@@ -270,18 +273,34 @@ def submit_student_peer_evaluation(*, evaluator, team_id, evaluatee_id, breakdow
     }
 
 
-def peer_criteria_payload(team):
+def peer_criteria_payload(team, stage_label=None):
     if not team:
         return []
 
+    target_stage = (stage_label or getattr(team, 'current_defense_stage', None) or getattr(team, 'ready_for_stage', None) or '').strip()
     try:
-        grade = _grade_for_team(team)
+        grade = _grade_for_team(team, stage_label=target_stage)
     except ValidationError:
-        return []
-    if grade is None or not peer_grading_allowed_for_grade(grade):
-        return []
+        grade = None
 
-    rubric = find_matching_rubric(grade, Rubric.EVAL_PEER)
+    if grade is not None:
+        if not peer_grading_allowed_for_grade(grade):
+            return []
+        rubric = find_matching_rubric(grade, Rubric.EVAL_PEER)
+    else:
+        rubric = None
+        if target_stage:
+            if getattr(team, 'is_capstone', True):
+                from defense.stages.models import DefenseStage, StageGradingConfig
+                stage_obj = DefenseStage.objects.filter(label=target_stage).first()
+                if stage_obj:
+                    cfg = StageGradingConfig.objects.filter(defense_stage=stage_obj, semester=team.semester).first()
+                    if cfg and cfg.peer_rubric:
+                        rubric = cfg.peer_rubric
+            else:
+                from defense.scheduler.pit_config import peer_rubric_for_pit_event
+                rubric = peer_rubric_for_pit_event(team.semester, target_stage)
+
     if rubric:
         return [
             {
@@ -295,13 +314,16 @@ def peer_criteria_payload(team):
     return []
 
 
-def peer_submissions_for_evaluator(team, evaluator):
-    if not team:
+def peer_submissions_for_evaluator(team, evaluator, stage_label=None):
+    if not team or not evaluator:
         return []
 
+    target_stage = (stage_label or getattr(team, 'current_defense_stage', None) or getattr(team, 'ready_for_stage', None) or '').strip()
     try:
-        grade = _grade_for_team(team)
+        grade = _grade_for_team(team, stage_label=target_stage)
     except ValidationError:
+        return []
+    if grade is None:
         return []
     rows = PeerEvaluationSubmission.objects.filter(
         team_grade=grade,
@@ -314,6 +336,7 @@ def peer_submissions_for_evaluator(team, evaluator):
             'total': float(row.total_score),
             'max': float(row.max_score),
             'breakdown': row.breakdown or [],
+            'stage': grade.stage_label,
         }
         for row in rows
     ]

@@ -196,6 +196,7 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
   }
 
   Widget _buildStats(RepositoryAuditState state) {
+    final missingCount = _count(state, 'missing_required');
     if (_scopeKey(state) == 'admin' &&
         (state.type.isEmpty || state.type == 'capstone')) {
       return Row(
@@ -206,9 +207,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
                   ? 'Matching records'
                   : 'Total records',
               value: _count(state, 'total'),
-              valueColor: const Color(0xFF0F2743),
-              icon: Icons.folder_copy_outlined,
-              iconTint: const Color(0xFFCBD5E1),
+              valueColor: const Color(0xFF0F172A),
+              icon: Icons.folder_open_rounded,
+              iconTint: const Color(0xFF475569),
             ),
           ),
           const SizedBox(width: 14),
@@ -216,9 +217,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
             child: _metricCard(
               title: 'Pre-defense',
               value: _count(state, 'pre_defense'),
-              valueColor: const Color(0xFF2563EB),
-              icon: Icons.upload_file_outlined,
-              iconTint: const Color(0xFFBFDBFE),
+              valueColor: const Color(0xFF0F172A),
+              icon: Icons.upload_file_rounded,
+              iconTint: const Color(0xFF475569),
             ),
           ),
           const SizedBox(width: 14),
@@ -226,19 +227,21 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
             child: _metricCard(
               title: 'Post-defense',
               value: _count(state, 'archive_submissions'),
-              valueColor: AppColors.maroon,
+              valueColor: const Color(0xFF0F172A),
               icon: Icons.inventory_2_outlined,
-              iconTint: const Color(0xFFFECDD3),
+              iconTint: AppColors.maroon,
             ),
           ),
           const SizedBox(width: 14),
           Expanded(
             child: _metricCard(
               title: 'Missing required',
-              value: _count(state, 'missing_required'),
-              valueColor: const Color(0xFFD97706),
+              value: missingCount,
+              valueColor: missingCount > 0
+                  ? const Color(0xFFB45309)
+                  : const Color(0xFF0F172A),
               icon: Icons.error_outline_rounded,
-              iconTint: const Color(0xFFFDE68A),
+              iconTint: const Color(0xFFD97706),
             ),
           ),
         ],
@@ -250,9 +253,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           child: _metricCard(
             title: 'Total Managed Records',
             value: _count(state, 'total'),
-            valueColor: const Color(0xFF0F2743),
-            icon: Icons.folder_copy_outlined,
-            iconTint: const Color(0xFFCBD5E1),
+            valueColor: const Color(0xFF0F172A),
+            icon: Icons.folder_open_rounded,
+            iconTint: const Color(0xFF475569),
           ),
         ),
         const SizedBox(width: 18),
@@ -260,9 +263,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           child: _metricCard(
             title: 'Needs Revision',
             value: _count(state, 'needs_revision'),
-            valueColor: const Color(0xFFD97706),
+            valueColor: const Color(0xFFB45309),
             icon: Icons.description_outlined,
-            iconTint: const Color(0xFFFDE68A),
+            iconTint: const Color(0xFFD97706),
           ),
         ),
         const SizedBox(width: 18),
@@ -270,9 +273,9 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           child: _metricCard(
             title: 'Approved Archive Entries',
             value: _count(state, 'approved'),
-            valueColor: const Color(0xFF059669),
-            icon: Icons.description_outlined,
-            iconTint: const Color(0xFFA7F3D0),
+            valueColor: const Color(0xFF0F172A),
+            icon: Icons.task_alt_rounded,
+            iconTint: const Color(0xFF059669),
           ),
         ),
       ],

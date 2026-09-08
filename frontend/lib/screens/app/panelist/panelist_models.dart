@@ -28,6 +28,7 @@ class TeamData {
   final DateTime? scheduledDate;
   bool isPosted;
   final List<Map<String, dynamic>> submittedSubmissions;
+  final List<Map<String, dynamic>> defenseMaterials;
 
   final bool isChair;
   String? verdict;
@@ -50,6 +51,7 @@ class TeamData {
     required this.criteria,
     required this.isPosted,
     this.submittedSubmissions = const [],
+    this.defenseMaterials = const [],
     this.panelWeight = 50,
     this.peerWeight = 20,
     this.adviserWeight = 0,

@@ -859,6 +859,13 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         attempt_count = team_grade.attempt_count or 1
         grade_id = team_grade.id
 
+    from repository.deliverables.services import stage_payload
+    stage_info = stage_payload(team, schedule.stage_label)
+    defense_materials = [
+        item for item in stage_info.get('pre', [])
+        if item.get('is_defense_material', True) and item.get('uploaded')
+    ]
+
     return {
         'id': team.id,
         'schedule_id': schedule.id,
@@ -876,6 +883,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'is_posted': is_posted,
         'is_submitted': is_posted,
         'submissions': submissions or [],
+        'defense_materials': defense_materials,
         'is_chair': is_chair,
         'verdict': verdict,
         'verdict_remarks': verdict_remarks,

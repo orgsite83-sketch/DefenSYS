@@ -1063,6 +1063,9 @@ class _DefenseStageEditorScreenState
                                               'archive_note': '',
                                               'archive_file_template': '',
                                               'is_restricted': false,
+                                              'is_defense_material': true,
+                                              'verdict_condition': 'all_pass',
+                                              'file_format': 'any',
                                             });
                                           });
                                           _markDirty();
@@ -1094,6 +1097,9 @@ class _DefenseStageEditorScreenState
                                               'archive_note': '',
                                               'archive_file_template': '{project}',
                                               'is_restricted': false,
+                                              'is_defense_material': false,
+                                              'verdict_condition': 'all_pass',
+                                              'file_format': 'any',
                                             });
                                           });
                                           _markDirty();
@@ -1993,6 +1999,35 @@ class _DefenseStageEditorScreenState
                   border: Border.all(color: const Color(0xFFE5E7EB)),
                   borderRadius: BorderRadius.circular(8),
                 ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: (item['file_format']?.toString().isNotEmpty == true)
+                        ? item['file_format'].toString()
+                        : 'any',
+                    isDense: true,
+                    borderRadius: BorderRadius.circular(8),
+                    style: const TextStyle(fontSize: 12.5, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                    items: _deliverableFormatDropdownItems(),
+                    onChanged: _isLocked
+                        ? null
+                        : (val) {
+                            setState(() {
+                              item['file_format'] = val ?? 'any';
+                            });
+                            _markDirty();
+                          },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                height: 48,
+                padding: const EdgeInsets.symmetric(horizontal: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF9FAFB),
+                  border: Border.all(color: const Color(0xFFE5E7EB)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2039,6 +2074,40 @@ class _DefenseStageEditorScreenState
               ),
             ],
           ),
+          if (!isPost) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Checkbox(
+                  value: item['is_defense_material'] != false,
+                  activeColor: const Color(0xFF2563EB),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: _isLocked
+                      ? null
+                      : (v) {
+                          setState(() {
+                            item['is_defense_material'] = v == true;
+                          });
+                          _markDirty();
+                        },
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Defense Material (Visible to Defense Panelists)',
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Tooltip(
+                  message: 'When checked, defense panelists evaluate this document during oral grading (e.g. Concept Paper, Chapters 1-3, Pitch Deck). Uncheck for administrative forms (e.g. Adviser Acceptance, Panel Nomination).',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ],
           if (isPost) ...[
             const SizedBox(height: 10),
             Row(
@@ -2062,6 +2131,65 @@ class _DefenseStageEditorScreenState
                     fontWeight: FontWeight.w600,
                     color: AppColors.textPrimary,
                   ),
+                ),
+                const SizedBox(width: 6),
+                const Tooltip(
+                  message: 'When checked, this file is stored privately for faculty and administrative records only. It will not be published or searchable to other students in the public institutional repository.',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.rule_rounded, size: 15, color: AppColors.maroon),
+                const SizedBox(width: 6),
+                const Text(
+                  'Submission Rule:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: item['verdict_condition']?.toString() == 'revisions_only' ? 'revisions_only' : 'all_pass',
+                      isDense: true,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all_pass',
+                          child: Text('Required for All Passing Teams'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'revisions_only',
+                          child: Text('Only for Approved with Revisions (Not required if Approved with no revisions)'),
+                        ),
+                      ],
+                      onChanged: _isLocked
+                          ? null
+                          : (val) {
+                              setState(() {
+                                item['verdict_condition'] = val ?? 'all_pass';
+                              });
+                              _markDirty();
+                            },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Tooltip(
+                  message: 'Select "Only for Approved with Revisions" for deliverables like "Signed Matrix of Revision". Teams with an Approved verdict (no revisions) are automatically excused from submitting this file.',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
                 ),
               ],
             ),
@@ -2206,7 +2334,11 @@ class _DefenseStageEditorScreenState
                         ),
                         const SizedBox(height: 6),
                         SelectableText(
-                          _resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? ''),
+                          _resolvePreview(
+                            item['archive_file_template']?.toString() ?? '',
+                            item['label']?.toString() ?? '',
+                            format: item['file_format']?.toString() ?? 'any',
+                          ),
                           style: const TextStyle(
                             fontSize: 11.5,
                             fontFamily: 'monospace',
@@ -2226,10 +2358,114 @@ class _DefenseStageEditorScreenState
     );
   }
 
-  String _resolvePreview(String template, String deliverableLabel) {
+  List<DropdownMenuItem<String>> _deliverableFormatDropdownItems() {
+    return const [
+      DropdownMenuItem(
+        value: 'any',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.all_inclusive, size: 14, color: Colors.blueGrey),
+            SizedBox(width: 6),
+            Text('Any File Type'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'pdf',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFEF4444)),
+            SizedBox(width: 6),
+            Text('PDF Document (.pdf)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'video',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.video_library_outlined, size: 14, color: Color(0xFF8B5CF6)),
+            SizedBox(width: 6),
+            Text('Video (.mp4, .mov)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'image',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.image_outlined, size: 14, color: Color(0xFF06B6D4)),
+            SizedBox(width: 6),
+            Text('Image / Poster (.png, .jpg)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'presentation',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.slideshow_outlined, size: 14, color: Color(0xFFEA580C)),
+            SizedBox(width: 6),
+            Text('Slides (.pptx, .ppt)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'document',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.description_outlined, size: 14, color: Color(0xFF2563EB)),
+            SizedBox(width: 6),
+            Text('Word / Doc (.docx, .doc)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'spreadsheet',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.table_chart_outlined, size: 14, color: Color(0xFF10B981)),
+            SizedBox(width: 6),
+            Text('Spreadsheet (.xlsx, .csv)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'archive',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_zip_outlined, size: 14, color: Color(0xFF64748B)),
+            SizedBox(width: 6),
+            Text('Archive (.zip, .rar)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'audio',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.audiotrack_outlined, size: 14, color: Color(0xFFF43F5E)),
+            SizedBox(width: 6),
+            Text('Audio (.mp3, .wav)'),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _resolvePreview(String template, String deliverableLabel, {String format = 'any'}) {
     final cleanTemplate = template.trim();
     final finalTemplate = cleanTemplate.isEmpty 
-        ? '{project}.pdf'
+        ? '{project}'
         : cleanTemplate;
 
     String slugify(String val) {
@@ -2261,8 +2497,38 @@ class _DefenseStageEditorScreenState
         .replaceAll('{deliverable}', deliverable)
         .replaceAll('{semester}', semester);
 
-    if (!resolved.toLowerCase().endsWith('.pdf')) {
-      resolved += '.pdf';
+    String defaultExt;
+    switch (format) {
+      case 'pdf':
+        defaultExt = '.pdf';
+        break;
+      case 'video':
+        defaultExt = '.mp4';
+        break;
+      case 'image':
+        defaultExt = '.png';
+        break;
+      case 'presentation':
+        defaultExt = '.pptx';
+        break;
+      case 'document':
+        defaultExt = '.docx';
+        break;
+      case 'spreadsheet':
+        defaultExt = '.xlsx';
+        break;
+      case 'archive':
+        defaultExt = '.zip';
+        break;
+      case 'audio':
+        defaultExt = '.mp3';
+        break;
+      default:
+        defaultExt = '.pdf';
+    }
+
+    if (!resolved.contains('.')) {
+      resolved += defaultExt;
     }
 
     return resolved;

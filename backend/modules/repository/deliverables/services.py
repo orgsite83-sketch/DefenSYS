@@ -65,6 +65,9 @@ def get_deliverable_definitions(stage_label):
                 'archive_note': d.archive_note,
                 'archive_file_template': d.archive_file_template,
                 'is_restricted': d.is_restricted,
+                'is_defense_material': getattr(d, 'is_defense_material', True),
+                'verdict_condition': getattr(d, 'verdict_condition', 'all_pass'),
+                'file_format': getattr(d, 'file_format', 'any') or 'any',
             }
             for d in deliverables
             if (d.deliverable_id or '').strip()
@@ -97,6 +100,9 @@ def get_deliverable_definitions_for_team(team, stage_label):
             'archive_note': d.archive_note,
             'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
+            'is_defense_material': True,
+            'verdict_condition': 'all_pass',
+            'file_format': getattr(d, 'file_format', 'any') or 'any',
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
         if (d.deliverable_id or '').strip()
@@ -398,6 +404,16 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
 
     if is_stage_unlocked_by_admin(team, stage_label, deliverable_type='post') or is_stage_unlocked_by_admin(team, stage_label, deliverable_type='all') or is_stage_unlocked_by_admin(team, stage_label):
         return True
+
+    from grading.grades.models import TeamGrade
+    stage_grade = TeamGrade.objects.filter(
+        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+        team=team,
+        semester=team.semester,
+    ).order_by('-updated_at', '-id').first()
+    if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+        return False
+
     if is_stage_defense_done(team, stage_label):
         return True
     return DefenseSchedule.objects.filter(
@@ -602,6 +618,15 @@ def is_stage_defense_done(team, stage_label):
             Q(semester=sem) if sem else Q()
         ).exists()
 
+    from grading.grades.models import TeamGrade
+    stage_grade = TeamGrade.objects.filter(
+        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+        team=team,
+        semester=team.semester,
+    ).order_by('-updated_at', '-id').first()
+    if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+        return False
+
     return progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule or is_officially_complete
 
 
@@ -729,7 +754,7 @@ def toggle_global_stage_deliverables_unlock(stage_label, user, scope='capstone',
 
 
 
-def stage_payload(team, stage_label):
+def stage_payload(team, stage_label, evaluator=None):
     submitted = submissions_for(team, stage_label)
     definitions = get_deliverable_definitions_for_team(team, stage_label)
     unlocked = archive_unlocked(team, stage_label)
@@ -797,9 +822,53 @@ def stage_payload(team, stage_label):
         and not is_defense_done
     )
 
+    # Resolve stage-scoped grade first so deliverable waiver conditions can evaluate it
+    from grading.grades.models import TeamGrade
+    if is_capstone:
+        stage_grade = TeamGrade.objects.filter(
+            Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+            team=team,
+            semester=team.semester,
+            scope=TeamGrade.SCOPE_CAPSTONE,
+        ).order_by('-updated_at', '-id').first()
+    else:
+        stage_grade = TeamGrade.objects.filter(
+            Q(pit_event_config__event_name=stage_label) | Q(stage_label=stage_label),
+            team=team,
+            semester=team.semester,
+            scope=TeamGrade.SCOPE_PIT,
+        ).order_by('-updated_at', '-id').first()
+
+    grade_data = None
+    if stage_grade:
+        grade_data = {
+            'id': stage_grade.id,
+            'schedule_id': stage_grade.schedule_id,
+            'stage_label': stage_grade.stage_label,
+            'panel_score': float(stage_grade.panel_score) if stage_grade.panel_score is not None else None,
+            'peer_score': float(stage_grade.peer_score) if stage_grade.peer_score is not None else None,
+            'adviser_score': float(stage_grade.adviser_score) if stage_grade.adviser_score is not None else None,
+            'final_grade': float(stage_grade.final_grade) if stage_grade.final_grade is not None else None,
+            'status': stage_grade.status,
+            'result': stage_grade.result,
+            'verdict': stage_grade.verdict or '',
+            'verdict_remarks': stage_grade.verdict_remarks or '',
+            'revision_deadline': stage_grade.revision_deadline.isoformat() if stage_grade.revision_deadline else None,
+            'attempt_count': stage_grade.attempt_count or 1,
+            'is_officially_complete': is_stage_officially_complete,
+        }
+
     for item in definitions:
         submission = submitted.get(item['id'])
         is_vault = item['type'] == DeliverableSubmission.TYPE_POST
+        verdict_cond = item.get('verdict_condition', 'all_pass')
+        is_defense_material = item.get('is_defense_material', True)
+
+        is_waived = False
+        if is_vault and verdict_cond == 'revisions_only':
+            if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_APPROVED:
+                is_waived = True
+
         can_review_item = can_faculty_review_post if is_vault else can_faculty_review_pre
         
         suggested = ''
@@ -818,9 +887,13 @@ def stage_payload(team, stage_label):
             'required': item['required'],
             'type': item['type'],
             'archive_note': item.get('archive_note', ''),
+            'file_format': item.get('file_format', 'any'),
             'suggested_file_name': suggested,
             'uploaded': submission is not None,
             'locked': is_vault and not unlocked,
+            'is_defense_material': is_defense_material,
+            'verdict_condition': verdict_cond,
+            'is_waived': is_waived,
             'can_faculty_review': can_review_item,
             'submission': submission_payload(submission) if submission else None,
         })
@@ -828,7 +901,7 @@ def stage_payload(team, stage_label):
     pre_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_PRE]
     archive_items = [item for item in rows if item['type'] == DeliverableSubmission.TYPE_POST]
     required_items = [item for item in pre_items if item['required']]
-    archive_required_items = [item for item in archive_items if item['required']]
+    archive_required_items = [item for item in archive_items if item['required'] and not item.get('is_waived')]
 
     is_pres = is_presentation_stage(team, stage_label)
     configured = len(definitions) > 0 or is_pres
@@ -836,8 +909,55 @@ def stage_payload(team, stage_label):
         not archive_required_items
         or all(item['uploaded'] for item in archive_required_items)
     )
-    
     stage_status_detail = compute_stage_status_detail(team, stage_label, configured, archive_required_complete)
+
+    # Resolve stage-scoped schedule
+    stage_sched = active_schedules.order_by('-scheduled_date', '-start_time', '-id').first()
+    schedule_data = None
+    if stage_sched:
+        panelists_list = []
+        if hasattr(stage_sched, 'panelists'):
+            for p in stage_sched.panelists.all():
+                panelists_list.append({
+                    'id': p.id,
+                    'name': display_name(p),
+                    'username': p.username,
+                })
+        doc_data = None
+        if getattr(stage_sched, 'documenter', None):
+            doc_data = {
+                'id': stage_sched.documenter.id,
+                'name': display_name(stage_sched.documenter),
+                'username': stage_sched.documenter.username,
+            }
+        schedule_data = {
+            'id': stage_sched.id,
+            'stage': stage_sched.stage_label,
+            'date': stage_sched.scheduled_date.isoformat() if stage_sched.scheduled_date else None,
+            'scheduled_date': stage_sched.scheduled_date.isoformat() if stage_sched.scheduled_date else None,
+            'startTime': str(stage_sched.start_time) if stage_sched.start_time else None,
+            'start_time': str(stage_sched.start_time) if stage_sched.start_time else None,
+            'slotDuration': stage_sched.slot_duration,
+            'room': stage_sched.room,
+            'status': stage_sched.status,
+            'teamId': stage_sched.team_id,
+            'panelists': panelists_list,
+            'documenter': doc_data,
+        }
+
+    # Resolve stage-scoped peer evaluation data
+    from grading.grades.peer_eval import (
+        is_team_peer_eval_complete,
+        peer_criteria_payload,
+        peer_submissions_for_evaluator,
+    )
+    stage_peer_criteria = peer_criteria_payload(team, stage_label=stage_label)
+    stage_peer_submissions = (
+        peer_submissions_for_evaluator(team, evaluator, stage_label=stage_label)
+        if evaluator
+        else []
+    )
+    stage_peer_complete = bool(stage_grade and is_team_peer_eval_complete(stage_grade))
 
     return {
         'stage_label': stage_label,
@@ -873,6 +993,11 @@ def stage_payload(team, stage_label):
         'pre': pre_items,
         'post': archive_items,
         'deliverables': rows,
+        'schedule': schedule_data,
+        'grade': grade_data,
+        'peer_criteria': stage_peer_criteria,
+        'my_peer_submissions': stage_peer_submissions,
+        'peer_eval_complete': stage_peer_complete,
     }
 
 

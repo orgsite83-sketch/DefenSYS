@@ -56,6 +56,7 @@ class BridgeService {
     required List<Map<String, dynamic>> breakdown,
     required double total,
     required double max,
+    String? stage,
   }) async {
     try {
       final response = await httpClient.post(
@@ -66,6 +67,7 @@ class BridgeService {
           'breakdown': breakdown,
           'total': total,
           'max': max,
+          if (stage != null && stage.isNotEmpty) 'stage': stage,
         }),
       );
 

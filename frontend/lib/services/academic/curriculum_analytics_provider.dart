@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
-import '../../utils/platform/pdf_viewer.dart';
+import '../../utils/platform/universal_file_viewer.dart';
 import '../network/authenticated_client.dart';
 
 final curriculumAnalyticsProvider =

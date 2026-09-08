@@ -1,6 +1,9 @@
 // Stub implementation for non-web platforms
 import 'package:flutter/material.dart';
 
+export 'universal_file_viewer_models.dart';
+export 'universal_file_viewer_widgets.dart';
+
 Future<void> downloadBytesFile({
   required List<int> bytes,
   required String fileName,

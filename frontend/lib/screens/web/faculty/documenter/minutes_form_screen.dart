@@ -5,7 +5,7 @@ import 'package:intl/intl.dart';
 import '../../../../services/documenter_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
-import '../../../../utils/pdf_viewer.dart';
+import '../../../../utils/universal_file_viewer.dart';
 import '../e_signature_upload_dialog.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/widgets.dart';

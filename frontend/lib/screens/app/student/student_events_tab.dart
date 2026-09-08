@@ -78,10 +78,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
   }
 
   void _calculateRemainingTime() {
-    final schedule = widget.studentData?['schedule'] as Map<String, dynamic>? ??
+    final stages = (widget.studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final currentStageLabel = widget.studentData?['current_stage']?.toString().trim().toLowerCase();
+    final targetStage = _selectedStageForView?.trim().toLowerCase() ?? currentStageLabel;
+
+    Map<String, dynamic>? activeSchedule;
+    final topSchedule = widget.studentData?['schedule'] as Map<String, dynamic>? ??
         widget.studentData?['defense_schedule'] as Map<String, dynamic>?;
-    final dateStr = schedule?['date']?.toString() ?? schedule?['scheduled_date']?.toString();
-    final timeStr = schedule?['startTime']?.toString() ?? schedule?['start_time']?.toString();
+
+    if (topSchedule != null &&
+        (targetStage == null || topSchedule['stage']?.toString().trim().toLowerCase() == targetStage)) {
+      activeSchedule = topSchedule;
+    } else if (targetStage != null && stages.isNotEmpty) {
+      final matchedStage = stages.firstWhere(
+        (s) => s['stage_label']?.toString().trim().toLowerCase() == targetStage,
+        orElse: () => <String, dynamic>{},
+      );
+      if (matchedStage['schedule'] is Map) {
+        activeSchedule = Map<String, dynamic>.from(matchedStage['schedule'] as Map);
+      }
+    }
+
+    final dateStr = activeSchedule?['date']?.toString() ?? activeSchedule?['scheduled_date']?.toString();
+    final timeStr = activeSchedule?['startTime']?.toString() ?? activeSchedule?['start_time']?.toString();
 
     if (dateStr == null || dateStr.trim().isEmpty) {
       _timeUntilDefense = null;
@@ -184,11 +203,6 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               widget.studentData?['student']?['id']?.toString(),
         )
         .toList();
-    final peerCriteria = (widget.studentData?['peerCriteria'] as List? ?? [])
-        .cast<Map<String, dynamic>>();
-    final myPeerSubmissions =
-        (widget.studentData?['myPeerSubmissions'] as List? ?? [])
-            .cast<Map<String, dynamic>>();
 
     final teamData = delivState.teams.firstOrNull;
     final stagesList = (teamData?['stages'] as List? ?? widget.studentData?['stages'] as List? ?? [])
@@ -252,6 +266,29 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ),
                 )
               else if (stageOptions.isNotEmpty) ...[
+                // Outstanding Post-Defense Action Required Banner
+                Builder(
+                  builder: (context) {
+                    final stageWithPending = StudentTaskBadgeHelper
+                        .firstStageWithPendingPostDeliverables(stagesList);
+                    if (stageWithPending == null) return const SizedBox.shrink();
+                    return _buildPendingPostActionBanner(
+                      pendingStageInfo: stageWithPending,
+                      selectedStageName: selectedStage,
+                      onStageSelected: (stage) {
+                        setState(() {
+                          _selectedStageForView = stage;
+                          _calculateRemainingTime();
+                        });
+                        ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                              scope: isCapstone ? 'capstone' : 'pit',
+                              yearLevel: isCapstone ? null : _studentYearLevel,
+                              selectedStage: stage,
+                            );
+                      },
+                    );
+                  },
+                ),
                 _buildCapstoneStagesStepper(
                   stageOptions: stageOptions,
                   activeStageName: activeStageName,
@@ -262,6 +299,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   onStageSelected: (stage) {
                     setState(() {
                       _selectedStageForView = stage;
+                      _calculateRemainingTime();
                     });
                     ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
                           scope: isCapstone ? 'capstone' : 'pit',
@@ -308,7 +346,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             Expanded(
                               child: Text(
                                 isPastStage
-                                    ? 'Viewing past milestone archive for "$selectedStage"'
+                                    ? (StudentTaskBadgeHelper.hasPendingPostDeliverables(
+                                            stagesList.firstWhere(
+                                          (s) =>
+                                              s['stage_label']?.toString().trim().toLowerCase() ==
+                                              selectedStage.trim().toLowerCase(),
+                                          orElse: () => <String, dynamic>{},
+                                        ))
+                                        ? 'Viewing "$selectedStage": Post-defense deliverables are pending upload below'
+                                        : 'Viewing past milestone archive for "$selectedStage"')
                                     : 'Upcoming Stage: "$selectedStage" (Deliverables open after $activeStageName)',
                                 style: TextStyle(
                                   fontSize: 11.5,
@@ -325,6 +371,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               onTap: () {
                                 setState(() {
                                   _selectedStageForView = activeStageName;
+                                  _calculateRemainingTime();
                                 });
                                 ref
                                     .read(capstoneDeliverablesProvider.notifier)
@@ -507,12 +554,38 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         hideHeader: true,
                       );
                     case 2:
+                      final stageInfo = stagesList.firstWhere(
+                        (s) =>
+                            s['stage_label']?.toString().trim().toLowerCase() ==
+                            selectedStage.trim().toLowerCase(),
+                        orElse: () => <String, dynamic>{},
+                      );
+                      final rawSubmissions = (stageInfo['my_peer_submissions'] as List? ??
+                              (widget.studentData?['myPeerSubmissions'] as List? ?? []))
+                          .cast<Map<String, dynamic>>();
+                      final stageMySubmissions = rawSubmissions.where((sub) {
+                        final subStage = sub['stage']?.toString();
+                        if (subStage == null || subStage.isEmpty) {
+                          return isSelectedStageActive;
+                        }
+                        return subStage.trim().toLowerCase() ==
+                            selectedStage.trim().toLowerCase();
+                      }).toList();
+
+                      final stagePeerCriteria = (stageInfo['peer_criteria'] as List? ??
+                              (isSelectedStageActive
+                                  ? (widget.studentData?['peerCriteria'] as List? ?? [])
+                                  : []))
+                          .cast<Map<String, dynamic>>();
+                      final stagePeerEvalAllowed = isSelectedStageActive && peerEvalAllowed;
+                      final stageHideHistory = !isSelectedStageActive && stageMySubmissions.isEmpty;
+
                       return PeerEvalTab(
                         isCapstone: isCapstone,
-                        peerEvalAllowed: peerEvalAllowed,
+                        peerEvalAllowed: stagePeerEvalAllowed,
                         teammates: teammates,
-                        peerCriteria: peerCriteria,
-                        myPeerSubmissions: myPeerSubmissions,
+                        peerCriteria: stagePeerCriteria,
+                        myPeerSubmissions: stageMySubmissions,
                         studentId: widget.studentData?['student']?['id']?.toString() ?? '',
                         teamId: team?['id']?.toString() ?? '',
                         peerWeight:
@@ -520,7 +593,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         onPeerSubmitted: _refreshAll,
                         onRefresh: _refreshAll,
                         isEmbedded: true,
-                        hideHistory: !isSelectedStageActive,
+                        hideHistory: stageHideHistory,
+                        stage: selectedStage,
                       );
                     default:
                       return const SizedBox.shrink();
@@ -530,6 +604,208 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  // ─── ACTION REQUIRED BANNER (PENDING POST-DEFENSE DELIVERABLES) ───────────
+
+  Widget _buildPendingPostActionBanner({
+    required Map<String, dynamic> pendingStageInfo,
+    required String selectedStageName,
+    required ValueChanged<String> onStageSelected,
+  }) {
+    final pendingStageLabel = pendingStageInfo['stage_label']?.toString() ?? '';
+    final pendingCount =
+        StudentTaskBadgeHelper.pendingPostDeliverablesCount(pendingStageInfo);
+    if (pendingCount <= 0 || pendingStageLabel.isEmpty) return const SizedBox.shrink();
+
+    final isPendingCurrentSelected = pendingStageLabel.trim().toLowerCase() ==
+        selectedStageName.trim().toLowerCase();
+
+    final gradeData = (pendingStageInfo['grade'] as Map<String, dynamic>?) ??
+        (pendingStageInfo['grade'] is Map ? Map<String, dynamic>.from(pendingStageInfo['grade'] as Map) : null);
+    final verdict = gradeData?['verdict']?.toString() ?? pendingStageInfo['verdict']?.toString();
+    final verdictRemarks = gradeData?['verdict_remarks']?.toString();
+    final revisionDeadline = gradeData?['revision_deadline']?.toString();
+    final isRevisions = verdict == 'approved_with_revisions';
+
+    final themeColor = isRevisions ? const Color(0xFFD97706) : const Color(0xFF2563EB);
+    final bgColor = isRevisions ? const Color(0xFFFFFBEB) : const Color(0xFFEFF6FF);
+    final borderColor = isRevisions ? const Color(0xFFFDE68A) : const Color(0xFFBFDBFE);
+    final iconBgColor = isRevisions ? const Color(0xFFF59E0B) : const Color(0xFF3B82F6);
+
+    final titleText = isRevisions ? 'Revisions & Compliance Required' : 'Post-Defense Requirements Due';
+    final descText = isRevisions
+        ? '$pendingStageLabel defense was approved with revisions. Please address the panel directives and upload the $pendingCount required post-defense deliverable${pendingCount > 1 ? 's' : ''}.'
+        : '$pendingStageLabel defense passed! Please submit the $pendingCount required final deliverable${pendingCount > 1 ? 's' : ''} to complete this milestone.';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: borderColor, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: themeColor.withValues(alpha: 0.08),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(7),
+            decoration: BoxDecoration(
+              color: iconBgColor.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              isRevisions ? Icons.assignment_late_rounded : Icons.task_alt_rounded,
+              color: themeColor,
+              size: 20,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      titleText,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.4,
+                        color: themeColor,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                      decoration: BoxDecoration(
+                        color: themeColor,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$pendingCount file${pendingCount > 1 ? 's' : ''}',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                    if (revisionDeadline != null && revisionDeadline.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: borderColor),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.schedule_rounded, size: 10, color: themeColor),
+                            const SizedBox(width: 3),
+                            Text(
+                              'Due: $revisionDeadline',
+                              style: TextStyle(
+                                fontSize: 9.5,
+                                fontWeight: FontWeight.w700,
+                                color: themeColor,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  descText,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: isRevisions ? const Color(0xFF92400E) : const Color(0xFF1E3A8A),
+                    height: 1.3,
+                  ),
+                ),
+                if (isRevisions && verdictRemarks != null && verdictRemarks.trim().isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: borderColor),
+                    ),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Icon(Icons.format_quote_rounded, size: 14, color: Color(0xFFD97706)),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            'Panel Directives: "$verdictRemarks"',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontStyle: FontStyle.italic,
+                              color: Color(0xFF78350F),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 10),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    if (!isPendingCurrentSelected) {
+                      onStageSelected(pendingStageLabel);
+                    }
+                    if (_subTabController.index != 1) {
+                      _subTabController.animateTo(1);
+                      setState(() {
+                        _activeSubIndex = 1;
+                      });
+                    }
+                  },
+                  icon: const Icon(Icons.upload_file_rounded, size: 14),
+                  label: Text(
+                    isPendingCurrentSelected && _activeSubIndex == 1
+                        ? 'Viewing Deliverables Below'
+                        : (isRevisions ? 'Upload $pendingStageLabel Revisions' : 'Upload $pendingStageLabel Files'),
+                    style: const TextStyle(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: themeColor,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -672,6 +948,76 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     final isActive = (stageIdx == activeStageIdx) ||
                         (!isCleared && (stageIdx == 0 || stageIdx <= activeStageIdx));
 
+                    final hasPendingPost =
+                        StudentTaskBadgeHelper.hasPendingPostDeliverables(stageInfo);
+                    final gradeData = (stageInfo['grade'] as Map<String, dynamic>?) ??
+                        (stageInfo['grade'] is Map ? Map<String, dynamic>.from(stageInfo['grade'] as Map) : null);
+                    final verdict = gradeData?['verdict']?.toString() ?? stageInfo['verdict']?.toString();
+
+                    final isForRedefense = verdict == 'for_redefense';
+                    final isRevisionsDue = isCleared && hasPendingPost && verdict == 'approved_with_revisions';
+                    final isRequirementsDue = isCleared && hasPendingPost && !isRevisionsDue && !isForRedefense;
+                    final isStagePassed = isCleared && !hasPendingPost && !isForRedefense;
+
+                    String statusLabel;
+                    Color statusColor;
+                    IconData? statusIcon;
+                    if (isForRedefense) {
+                      statusLabel = 'For Re-defense';
+                      statusColor = const Color(0xFFDC2626);
+                      statusIcon = Icons.replay_rounded;
+                    } else if (isRevisionsDue) {
+                      statusLabel = 'Revisions Due';
+                      statusColor = const Color(0xFFD97706);
+                      statusIcon = Icons.pending_actions_rounded;
+                    } else if (isRequirementsDue) {
+                      statusLabel = 'Requirements Due';
+                      statusColor = const Color(0xFF2563EB);
+                      statusIcon = Icons.assignment_late_rounded;
+                    } else if (isStagePassed) {
+                      statusLabel = 'Passed';
+                      statusColor = const Color(0xFF15803D);
+                      statusIcon = Icons.check_circle_rounded;
+                    } else {
+                      statusLabel = isActive ? 'Current' : 'Upcoming';
+                      statusColor = isActive ? DefensysTokens.maroon : const Color(0xFF94A3B8);
+                      statusIcon = null;
+                    }
+
+                    Color nodeBg;
+                    Color nodeBorder;
+                    if (isForRedefense) {
+                      nodeBg = const Color(0xFFEF4444);
+                      nodeBorder = const Color(0xFFDC2626);
+                    } else if (isRevisionsDue) {
+                      nodeBg = const Color(0xFFF59E0B);
+                      nodeBorder = const Color(0xFFD97706);
+                    } else if (isRequirementsDue) {
+                      nodeBg = const Color(0xFF3B82F6);
+                      nodeBorder = const Color(0xFF2563EB);
+                    } else if (isStagePassed) {
+                      nodeBg = const Color(0xFF16A34A);
+                      nodeBorder = const Color(0xFF15803D);
+                    } else {
+                      nodeBg = isActive ? DefensysTokens.maroon : const Color(0xFFF1F5F9);
+                      nodeBorder = isActive ? DefensysTokens.maroon : const Color(0xFFCBD5E1);
+                    }
+
+                    Widget nodeInner;
+                    if (isForRedefense) {
+                      nodeInner = const Icon(Icons.replay_rounded, size: 18, color: Colors.white);
+                    } else if (isRevisionsDue) {
+                      nodeInner = const Icon(Icons.pending_actions_rounded, size: 18, color: Colors.white);
+                    } else if (isRequirementsDue) {
+                      nodeInner = const Icon(Icons.upload_file_rounded, size: 18, color: Colors.white);
+                    } else if (isStagePassed) {
+                      nodeInner = const Icon(Icons.check_rounded, size: 19, color: Colors.white);
+                    } else if (isActive) {
+                      nodeInner = Text('${stageIdx + 1}', style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w900, color: Colors.white));
+                    } else {
+                      nodeInner = const Icon(Icons.lock_outline_rounded, size: 14, color: Color(0xFF94A3B8));
+                    }
+
                     return Expanded(
                       flex: 3,
                       child: InkWell(
@@ -688,27 +1034,21 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                               Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  if (isCleared)
-                                    const Padding(
-                                      padding: EdgeInsets.only(right: 2),
+                                  if (statusIcon != null)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 2),
                                       child: Icon(
-                                        Icons.check_circle_rounded,
+                                        statusIcon,
                                         size: 9,
-                                        color: Color(0xFF15803D),
+                                        color: statusColor,
                                       ),
                                     ),
                                   Text(
-                                    isCleared
-                                        ? 'Passed'
-                                        : (isActive ? 'Current' : 'Upcoming'),
+                                    statusLabel,
                                     style: TextStyle(
                                       fontSize: 9,
                                       fontWeight: FontWeight.w700,
-                                      color: isCleared
-                                          ? const Color(0xFF15803D)
-                                          : (isActive
-                                              ? DefensysTokens.maroon
-                                              : const Color(0xFF94A3B8)),
+                                      color: statusColor,
                                     ),
                                   ),
                                 ],
@@ -720,31 +1060,16 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                 width: 34,
                                 height: 34,
                                 decoration: BoxDecoration(
-                                  color: isCleared
-                                      ? const Color(0xFF16A34A)
-                                      : (isActive
-                                          ? DefensysTokens.maroon
-                                          : const Color(0xFFF1F5F9)),
+                                  color: nodeBg,
                                   shape: BoxShape.circle,
                                   border: Border.all(
-                                    color: isSelected
-                                        ? (isCleared
-                                            ? const Color(0xFF15803D)
-                                            : DefensysTokens.maroon)
-                                        : (isCleared
-                                            ? const Color(0xFF16A34A)
-                                            : (isActive
-                                                ? DefensysTokens.maroon
-                                                : const Color(0xFFCBD5E1))),
+                                    color: isSelected ? nodeBorder : nodeBg,
                                     width: isSelected ? 3.0 : (isActive ? 2.5 : 1.5),
                                   ),
                                   boxShadow: isSelected
                                       ? [
                                           BoxShadow(
-                                            color: (isCleared
-                                                    ? const Color(0xFF16A34A)
-                                                    : DefensysTokens.maroon)
-                                                .withValues(alpha: 0.45),
+                                            color: nodeBorder.withValues(alpha: 0.45),
                                             blurRadius: 10,
                                             spreadRadius: 2,
                                           ),
@@ -761,36 +1086,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                           : (isCleared
                                               ? [
                                                   BoxShadow(
-                                                    color: const Color(0xFF16A34A)
-                                                        .withValues(alpha: 0.25),
+                                                    color: nodeBorder.withValues(alpha: 0.25),
                                                     blurRadius: 6,
                                                     offset: const Offset(0, 2),
                                                   ),
                                                 ]
                                               : null)),
                                 ),
-                                child: Center(
-                                  child: isCleared
-                                      ? const Icon(
-                                          Icons.check_rounded,
-                                          size: 19,
-                                          color: Colors.white,
-                                        )
-                                      : (isActive
-                                          ? Text(
-                                              '${stageIdx + 1}',
-                                              style: const TextStyle(
-                                                fontSize: 12,
-                                                fontWeight: FontWeight.w900,
-                                                color: Colors.white,
-                                              ),
-                                            )
-                                          : const Icon(
-                                              Icons.lock_outline_rounded,
-                                              size: 14,
-                                              color: Color(0xFF94A3B8),
-                                            )),
-                                ),
+                                child: Center(child: nodeInner),
                               ),
                               const SizedBox(height: 6),
 
@@ -810,9 +1113,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                               ? FontWeight.w700
                                               : FontWeight.w600)),
                                   color: isSelected
-                                      ? (isCleared
-                                          ? const Color(0xFF15803D)
-                                          : DefensysTokens.maroon)
+                                      ? statusColor
                                       : (isActive
                                           ? DefensysTokens.textPrimary
                                           : (isCleared
@@ -826,27 +1127,15 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   padding: const EdgeInsets.symmetric(
                                       horizontal: 5, vertical: 1),
                                   decoration: BoxDecoration(
-                                    color: isCleared
-                                        ? const Color(0xFFDCFCE7)
-                                        : DefensysTokens.maroon
-                                            .withValues(alpha: 0.1),
-                                    borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(
-                                      color: isCleared
-                                          ? const Color(0xFF86EFAC)
-                                          : DefensysTokens.maroon
-                                              .withValues(alpha: 0.25),
-                                      width: 0.8,
-                                    ),
+                                    color: statusColor.withValues(alpha: 0.12),
+                                    borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Text(
-                                    'Viewing ↓',
+                                    'Viewing',
                                     style: TextStyle(
-                                      fontSize: 7.5,
-                                      fontWeight: FontWeight.bold,
-                                      color: isCleared
-                                          ? const Color(0xFF15803D)
-                                          : DefensysTokens.maroon,
+                                      fontSize: 8.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: statusColor,
                                     ),
                                   ),
                                 ),
@@ -921,6 +1210,8 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
 
     final isActive = (normSelected == normActive);
     final isUpcoming = !isCleared && !isActive;
+    final isStageEndorsed = stageInfo['endorsed'] == true;
+    final isEndorsedOrCleared = isCleared || isStageEndorsed;
 
     // Resolve Grade / Deliberation data
     final stageGradeMap = (stageInfo['grade'] as Map<String, dynamic>?) ??
@@ -947,22 +1238,20 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
     final techScore = stageGradeMap?['technical']?.toString();
     final qnaScore = stageGradeMap?['qna']?.toString();
 
-    // Resolve Schedule & Venue
-    final scheduledDate = schedule?['date']?.toString() ??
-        schedule?['scheduled_date']?.toString() ??
-        stageInfo['schedule']?['date']?.toString();
-    final startTime = schedule?['startTime']?.toString() ??
-        schedule?['start_time']?.toString() ??
-        stageInfo['schedule']?['startTime']?.toString() ??
-        stageInfo['schedule']?['start_time']?.toString();
-    final room = schedule?['room']?.toString() ??
-        stageInfo['schedule']?['room']?.toString();
-    final panelists = (schedule?['panelists'] as List?) ??
-        (stageInfo['schedule']?['panelists'] as List?) ??
-        [];
-    final documenter = (schedule?['documenter'] as Map?) ??
-        (stageInfo['schedule']?['documenter'] as Map?) ??
-        {};
+    // Resolve Schedule & Venue strictly for selected stage
+    final isTopScheduleForStage = schedule != null &&
+        schedule['stage']?.toString().trim().toLowerCase() == normSelected;
+    final stageSchedule = isTopScheduleForStage
+        ? schedule
+        : (stageInfo['schedule'] as Map<String, dynamic>?);
+
+    final scheduledDate = stageSchedule?['date']?.toString() ??
+        stageSchedule?['scheduled_date']?.toString();
+    final startTime = stageSchedule?['startTime']?.toString() ??
+        stageSchedule?['start_time']?.toString();
+    final room = stageSchedule?['room']?.toString();
+    final panelists = (stageSchedule?['panelists'] as List?) ?? [];
+    final documenter = (stageSchedule?['documenter'] as Map?) ?? {};
 
     final hasSchedule = scheduledDate != null && scheduledDate.trim().isNotEmpty;
 
@@ -1033,88 +1322,152 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                   ],
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isCleared
-                      ? const Color(0xFFDCFCE7)
-                      : (isActive ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9)),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(
-                    color: isCleared
-                        ? const Color(0xFF86EFAC)
-                        : (isActive
-                            ? const Color(0xFFFCA5A5)
-                            : const Color(0xFFCBD5E1)),
+              Builder(builder: (context) {
+                final stageVerdict = stageGradeMap?['verdict']?.toString();
+                final hasPendingPostSelected = StudentTaskBadgeHelper.hasPendingPostDeliverables(stageInfo);
+                String hBadgeText;
+                Color hBadgeBg;
+                Color hBadgeBorder;
+                Color hBadgeFg;
+
+                if (stageVerdict == 'for_redefense') {
+                  hBadgeText = 'For Re-defense';
+                  hBadgeBg = const Color(0xFFFEF2F2);
+                  hBadgeBorder = const Color(0xFFFECACA);
+                  hBadgeFg = const Color(0xFFDC2626);
+                } else if (stageVerdict == 'approved_with_revisions' && hasPendingPostSelected) {
+                  hBadgeText = 'Revisions Due';
+                  hBadgeBg = const Color(0xFFFFFBEB);
+                  hBadgeBorder = const Color(0xFFFDE68A);
+                  hBadgeFg = const Color(0xFFD97706);
+                } else if (hasPendingPostSelected) {
+                  hBadgeText = 'Requirements Due';
+                  hBadgeBg = const Color(0xFFEFF6FF);
+                  hBadgeBorder = const Color(0xFFBFDBFE);
+                  hBadgeFg = const Color(0xFF2563EB);
+                } else if (isCleared) {
+                  hBadgeText = 'Passed ✓';
+                  hBadgeBg = const Color(0xFFDCFCE7);
+                  hBadgeBorder = const Color(0xFF86EFAC);
+                  hBadgeFg = const Color(0xFF15803D);
+                } else {
+                  hBadgeText = isActive ? 'Current' : 'Upcoming';
+                  hBadgeBg = isActive ? const Color(0xFFFEF2F2) : const Color(0xFFF1F5F9);
+                  hBadgeBorder = isActive ? const Color(0xFFFCA5A5) : const Color(0xFFCBD5E1);
+                  hBadgeFg = isActive ? DefensysTokens.maroon : const Color(0xFF64748B);
+                }
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: hBadgeBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: hBadgeBorder),
                   ),
-                ),
-                child: Text(
-                  isCleared ? 'Passed ✓' : (isActive ? 'Current' : 'Upcoming'),
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold,
-                    color: isCleared
-                        ? const Color(0xFF15803D)
-                        : (isActive ? DefensysTokens.maroon : const Color(0xFF64748B)),
+                  child: Text(
+                    hBadgeText,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.bold,
+                      color: hBadgeFg,
+                    ),
                   ),
-                ),
-              ),
+                );
+              }),
             ],
           ),
           const Divider(height: 24, color: Color(0xFFE2E8F0)),
 
           // ── CASE 1: CLEARED / PASSED STAGE ──
           if (isCleared) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: const Color(0xFFF0FDF4),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: const Color(0xFFBBF7D0)),
-              ),
-              child: Row(
-                children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF16A34A),
-                      shape: BoxShape.circle,
+            Builder(builder: (context) {
+              final verdictVal = stageGradeMap?['verdict']?.toString();
+              final isWithRevs = verdictVal == 'approved_with_revisions';
+              final deadlineStr = stageGradeMap?['revision_deadline']?.toString();
+              final cBg = isWithRevs ? const Color(0xFFFFFBEB) : const Color(0xFFF0FDF4);
+              final cBorder = isWithRevs ? const Color(0xFFFDE68A) : const Color(0xFFBBF7D0);
+              final cFg = isWithRevs ? const Color(0xFFD97706) : const Color(0xFF16A34A);
+              final cText = isWithRevs ? const Color(0xFF92400E) : const Color(0xFF15803D);
+              final cSubText = isWithRevs ? const Color(0xFFB45309) : const Color(0xFF166534);
+
+              return Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: cBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: cBorder),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(8),
+                      decoration: BoxDecoration(
+                        color: cFg,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Icon(
+                        isWithRevs ? Icons.assignment_late_rounded : Icons.verified_rounded,
+                        color: Colors.white,
+                        size: 18,
+                      ),
                     ),
-                    child: const Icon(
-                      Icons.verified_rounded,
-                      color: Colors.white,
-                      size: 18,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Deliberation Result: ${resultStr ?? 'PASSED'}',
-                          style: const TextStyle(
-                            fontSize: 13,
-                            fontWeight: FontWeight.bold,
-                            color: Color(0xFF15803D),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  'Deliberation Result: ${resultStr ?? (isWithRevs ? 'APPROVED WITH REVISIONS' : 'PASSED')}',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.bold,
+                                    color: cText,
+                                  ),
+                                ),
+                              ),
+                              if (deadlineStr != null && deadlineStr.isNotEmpty) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(6),
+                                    border: Border.all(color: cBorder),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.schedule_rounded, size: 10, color: cFg),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        'Due: $deadlineStr',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.w700, color: cFg),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
-                          style: const TextStyle(
-                            fontSize: 11.5,
-                            color: Color(0xFF166534),
-                            fontWeight: FontWeight.w600,
+                          const SizedBox(height: 2),
+                          Text(
+                            'Official Grade: ${finalScore ?? 'Passed'} • $completedDate',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: cSubText,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
-                        ),
-                      ],
+                        ],
+                      ),
                     ),
-                  ),
-                ],
-              ),
-            ),
+                  ],
+                ),
+              );
+            }),
 
             // Rubric Criteria Breakdown (if scores exist)
             if (presScore != null || techScore != null || qnaScore != null) ...[
@@ -1276,7 +1629,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Icon(Icons.event_available_outlined, size: 36, color: Colors.grey.shade400),
                     const SizedBox(height: 10),
                     Text(
-                      'Defense schedule will be posted once assigned by the panel.',
+                      'Defense schedule will be posted once assigned.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 13,
@@ -1286,7 +1639,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'Panelists, room assignment, and schedule will appear here once finalized.',
+                      'Schedule will appear here once finalized.',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 11.5, color: Colors.grey.shade500),
                     ),
@@ -1344,10 +1697,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
           // Adviser Endorsement Row
           Row(
             children: [
-              const Icon(
-                Icons.verified_user_rounded,
+              Icon(
+                isEndorsedOrCleared
+                    ? Icons.verified_user_rounded
+                    : Icons.pending_outlined,
                 size: 16,
-                color: Color(0xFF16A34A),
+                color: isEndorsedOrCleared
+                    ? const Color(0xFF16A34A)
+                    : const Color(0xFFD97706),
               ),
               const SizedBox(width: 8),
               Expanded(
@@ -1366,10 +1723,14 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     Text(
                       isCleared
                           ? 'Milestone Endorsed & Completed ✓'
-                          : 'Approved & Endorsed for Defense ✓',
-                      style: const TextStyle(
+                          : (isStageEndorsed
+                              ? 'Approved & Endorsed for Defense ✓'
+                              : 'Awaiting Adviser Endorsement'),
+                      style: TextStyle(
                         fontSize: 10,
-                        color: Color(0xFF15803D),
+                        color: isEndorsedOrCleared
+                            ? const Color(0xFF15803D)
+                            : const Color(0xFFB45309),
                         fontWeight: FontWeight.w600,
                       ),
                     ),

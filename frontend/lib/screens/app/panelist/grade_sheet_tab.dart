@@ -1,8 +1,11 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'panelist_models.dart';
+import '../../../utils/universal_file_viewer.dart';
 import '../../../config/api_config.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/authenticated_client.dart';
@@ -486,6 +489,8 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
                     )
                   else
                     _scopeWeightUnavailable(),
+                  const SizedBox(height: 16),
+                  _buildDefenseMaterialsCard(team),
                   const SizedBox(height: 16),
                   if (hasPanelRubric && (isIndividual || !isBoth)) ...[
                     const Text(
@@ -1125,6 +1130,247 @@ class _GradeSheetTabState extends ConsumerState<GradeSheetTab> {
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _viewDefenseMaterial(Map<String, dynamic> item) async {
+    final fileUrl = item['file_url']?.toString();
+    final fileName = item['file_name']?.toString() ?? 'Document';
+    if (fileUrl == null || fileUrl.isEmpty) {
+      showErrorToast(context, 'No file URL available for this material');
+      return;
+    }
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(color: DefensysTokens.maroon),
+      ),
+    );
+
+    try {
+      if (kIsWeb) {
+        final bytes = await ref
+            .read(authenticatedHttpClientProvider)
+            .fetchAuthenticatedFile(fileUrl);
+        if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+        if (!mounted) return;
+        await viewFileInDialog(
+          context: context,
+          fileBytes: bytes,
+          fileName: fileName,
+        );
+      } else {
+        if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+        final resolvedUrl = ApiConfig.authenticatedMediaUrl(fileUrl);
+        final uri = Uri.parse(resolvedUrl);
+        if (await canLaunchUrl(uri)) {
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } else {
+          if (mounted) showErrorToast(context, 'Cannot open file: $resolvedUrl');
+        }
+      }
+    } catch (e) {
+      if (mounted && Navigator.canPop(context)) Navigator.pop(context);
+      if (mounted) {
+        try {
+          final uri = Uri.parse(ApiConfig.authenticatedMediaUrl(fileUrl));
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        } catch (_) {
+          if (mounted) {
+            showErrorToast(context, 'Error opening file: $e');
+          }
+        }
+      }
+    }
+  }
+
+  Widget _buildDefenseMaterialsCard(TeamData team) {
+    final materials = team.defenseMaterials;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.grey.shade200),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(
+                  Icons.menu_book_rounded,
+                  size: 16,
+                  color: DefensysTokens.maroon,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Defense Materials for Evaluation',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Color(0xFF1E293B),
+                      ),
+                    ),
+                    Text(
+                      'Pre-defense manuscripts & pitch decks submitted for panel review',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Color(0xFF64748B),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: materials.isEmpty
+                      ? Colors.grey.shade100
+                      : const Color(0xFFEFF6FF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: materials.isEmpty
+                        ? Colors.grey.shade300
+                        : const Color(0xFFBFDBFE),
+                  ),
+                ),
+                child: Text(
+                  materials.isEmpty
+                      ? 'None uploaded'
+                      : '${materials.length} ${materials.length == 1 ? 'file' : 'files'}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: materials.isEmpty
+                        ? Colors.grey.shade600
+                        : const Color(0xFF1D4ED8),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (materials.isEmpty) ...[
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              decoration: BoxDecoration(
+                color: Colors.grey.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.grey.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.info_outline, size: 16, color: Colors.grey),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'No defense manuscripts or pitch decks uploaded yet by this team.',
+                      style: TextStyle(fontSize: 12, color: Colors.black54),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ] else ...[
+            const SizedBox(height: 10),
+            ...materials.map((mat) {
+              final docName = mat['name']?.toString() ?? 'Defense Material';
+              final fileName = mat['file_name']?.toString() ?? 'File';
+              return Container(
+                margin: const EdgeInsets.only(bottom: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.picture_as_pdf,
+                      color: Color(0xFFDC2626),
+                      size: 24,
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            docName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 12.5,
+                              color: Color(0xFF0F172A),
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            fileName,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              color: Color(0xFF64748B),
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    ElevatedButton.icon(
+                      onPressed: () => _viewDefenseMaterial(mat),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: DefensysTokens.maroon,
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                      ),
+                      icon: const Icon(Icons.visibility_outlined, size: 14),
+                      label: const Text(
+                        'View',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
         ],
       ),
     );

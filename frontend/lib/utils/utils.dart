@@ -10,7 +10,7 @@ export 'import/progress_upload.dart';
 // Platform Utils
 export 'platform/clipboard_copy.dart';
 export 'platform/csv_file_io.dart';
-export 'platform/pdf_viewer.dart';
+export 'platform/universal_file_viewer.dart';
 
 // State Utils
 export 'state/unsaved_changes.dart';

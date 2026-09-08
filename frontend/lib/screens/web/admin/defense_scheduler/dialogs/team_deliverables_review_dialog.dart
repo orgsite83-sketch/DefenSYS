@@ -4,7 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
-import 'package:defensys/utils/pdf_viewer.dart';
+import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import '../models/schedule_import_models.dart';
 

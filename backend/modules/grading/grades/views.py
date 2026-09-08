@@ -1,5 +1,6 @@
 from django.db.models import Q
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import serializers as drf_serializers
 from rest_framework import status
 from rest_framework.permissions import BasePermission, IsAuthenticated
@@ -18,6 +19,7 @@ from .serializers import TeamGradeSerializer, TeamGradeUpdateSerializer
 from django.core.exceptions import PermissionDenied, ValidationError as DjangoValidationError
 
 from .services import (
+    _apply_team_result_from_grade,
     active_semester,
     build_group_settings_map,
     group_settings_key,

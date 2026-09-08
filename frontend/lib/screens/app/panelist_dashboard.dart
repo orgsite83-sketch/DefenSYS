@@ -132,6 +132,12 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
               .map((s) => Map<String, dynamic>.from(s))
               .toList();
 
+          final rawDefenseMaterials = team['defense_materials'] as List? ?? [];
+          final defenseMaterials = rawDefenseMaterials
+              .whereType<Map>()
+              .map((d) => Map<String, dynamic>.from(d))
+              .toList();
+
           return TeamData(
             name: (team['name'] ?? 'Team').toString(),
             project: (team['project_title'] ?? 'No project').toString(),
@@ -153,6 +159,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             criteria: [],
             isPosted: isPosted,
             submittedSubmissions: submissions,
+            defenseMaterials: defenseMaterials,
             panelWeight: (weights['panel'] as num?)?.toInt() ?? 0,
             peerWeight: (weights['peer'] as num?)?.toInt() ?? 0,
             adviserWeight: (weights['adviser'] as num?)?.toInt() ?? 0,

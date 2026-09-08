@@ -1,3 +1,4 @@
+from django.db.models import Q
 from rest_framework import serializers
 
 from .models import DefenseStage, StageDeliverable, StageGradingConfig
@@ -16,6 +17,9 @@ class StageDeliverableSerializer(serializers.ModelSerializer):
             'archive_note',
             'archive_file_template',
             'is_restricted',
+            'is_defense_material',
+            'verdict_condition',
+            'file_format',
         ]
 
     def validate_archive_file_template(self, value):
@@ -337,6 +341,9 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 archive_note=deliverable_data.get('archive_note', ''),
                 archive_file_template=tpl,
                 is_restricted=bool(deliverable_data.get('is_restricted', False)),
+                is_defense_material=bool(deliverable_data.get('is_defense_material', True)),
+                verdict_condition=deliverable_data.get('verdict_condition', StageDeliverable.VERDICT_CONDITION_ALL_PASS),
+                file_format=deliverable_data.get('file_format', StageDeliverable.FORMAT_ANY),
             )
 
 

@@ -5,7 +5,7 @@ import '../../../../services/authenticated_client.dart';
 import '../../../../services/student_teams_provider.dart';
 import '../../../../services/team_detail_provider.dart';
 import '../../../../services/auth_provider.dart';
-import '../../../../utils/pdf_viewer.dart';
+import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/widgets.dart';
 import '../widgets/defensys_admin_shell.dart';

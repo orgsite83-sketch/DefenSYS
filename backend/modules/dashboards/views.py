@@ -1236,22 +1236,25 @@ class StudentDashboardView(APIView):
         )
         academic_record = _latest_academic_record(user)
         team_payload = _team_payload(team) if team else None
-        # Query active schedule first, fallback to most recent schedule (completed/done/archived)
-        schedule = (
-            DefenseSchedule.objects.select_related('team', 'defense_stage')
-            .filter(team=team, status=DefenseSchedule.STATUS_SCHEDULED)
-            .order_by('scheduled_date', 'start_time')
-            .first()
-            if team
-            else None
-        )
-        if schedule is None and team:
+        # Query active schedule scoped to team's current defense stage, fallback to most recent schedule of current stage
+        curr_stage = (team.current_defense_stage or team.ready_for_stage or '').strip() if team else ''
+        schedule = None
+        if team and curr_stage:
             schedule = (
                 DefenseSchedule.objects.select_related('team', 'defense_stage')
-                .filter(team=team)
-                .order_by('-scheduled_date', '-start_time', '-id')
+                .filter(team=team, status=DefenseSchedule.STATUS_SCHEDULED)
+                .filter(Q(defense_stage__label=curr_stage) | Q(event_name=curr_stage))
+                .order_by('scheduled_date', 'start_time')
                 .first()
             )
+            if schedule is None:
+                schedule = (
+                    DefenseSchedule.objects.select_related('team', 'defense_stage')
+                    .filter(team=team)
+                    .filter(Q(defense_stage__label=curr_stage) | Q(event_name=curr_stage))
+                    .order_by('-scheduled_date', '-start_time', '-id')
+                    .first()
+                )
 
         # Deliverable submissions and files for student dashboard
         deliverables_payload = []
@@ -1287,25 +1290,30 @@ class StudentDashboardView(APIView):
             except Exception:
                 deliverables_payload = []
 
-        # Unified grade resolution
+        # Unified grade resolution scoped strictly to current stage
         canonical_grade = None
         if team:
             if team.is_capstone:
                 from grading.grades.services import canonical_capstone_grade_for_team, resolve_canonical_capstone_grade
-                canonical_grade = canonical_capstone_grade_for_team(team, team.semester)
+                canonical_grade = canonical_capstone_grade_for_team(
+                    team, team.semester, stage_label=team.current_defense_stage
+                )
                 if canonical_grade is not None:
                     canonical_grade = resolve_canonical_capstone_grade(canonical_grade)
             else:
-                if schedule is not None:
+                if curr_stage:
+                    canonical_grade = TeamGrade.objects.filter(
+                        team=team,
+                        semester=team.semester,
+                        scope=TeamGrade.SCOPE_PIT,
+                        stage_label=curr_stage,
+                    ).order_by('-updated_at', '-id').first()
+                elif schedule is not None:
                     canonical_grade = TeamGrade.objects.filter(
                         team=team,
                         semester=schedule.semester,
                         scope=TeamGrade.SCOPE_PIT,
                         stage_label=schedule.stage_label,
-                    ).order_by('-updated_at', '-id').first()
-                if canonical_grade is None:
-                    canonical_grade = TeamGrade.objects.filter(
-                        team=team, scope=TeamGrade.SCOPE_PIT
                     ).order_by('-updated_at', '-id').first()
 
         grade = canonical_grade if (canonical_grade and canonical_grade.status == TeamGrade.STATUS_PUBLISHED) else None
@@ -1373,7 +1381,7 @@ class StudentDashboardView(APIView):
                 stage_options = list(
                     configs_qs.order_by('event_name').values_list('event_name', flat=True)
                 )
-            stages_payload = [stage_payload(team, stage) for stage in stage_options]
+            stages_payload = [stage_payload(team, stage, evaluator=user) for stage in stage_options]
 
         return Response({
             'student': _user_payload(user, active_sem),
@@ -1399,8 +1407,8 @@ class StudentDashboardView(APIView):
             'peerEvalComplete': peer_eval_complete,
             'myPeerEvalComplete': my_peer_eval_complete,
             'adviserGradingEnabled': adviser_grading_on,
-            'peerCriteria': peer_criteria_payload(team),
-            'myPeerSubmissions': peer_submissions_for_evaluator(team, user),
+            'peerCriteria': peer_criteria_payload(team, stage_label=curr_stage),
+            'myPeerSubmissions': peer_submissions_for_evaluator(team, user, stage_label=curr_stage),
             'myPeerGrade': None,
             'team_name': team_payload['name'] if team_payload else None,
             'project_title': team_payload['projectTitle'] if team_payload else None,

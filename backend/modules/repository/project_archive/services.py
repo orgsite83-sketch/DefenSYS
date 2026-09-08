@@ -82,9 +82,18 @@ def _default_capstone_course_for_year(year_level):
     return CAPSTONE_COURSE_BY_YEAR.get(year_level, 'CAP301')
 
 
+VALID_ARCHIVE_EXTENSIONS = (
+    'pdf', 'mp4', 'mov', 'webm', 'mkv', 'avi',
+    'png', 'jpg', 'jpeg', 'webp', 'svg', 'gif',
+    'zip', 'rar', '7z', 'tar', 'gz',
+    'docx', 'doc', 'pptx', 'ppt', 'xlsx', 'xls', 'csv',
+    'mp3', 'wav', 'aac', 'ogg',
+)
+VALID_EXTENSIONS_PATTERN = r'(pdf|mp4|mov|webm|mkv|avi|png|jpg|jpeg|webp|svg|gif|zip|rar|7z|docx|pptx|xlsx|csv|mp3|wav)'
+
 CAPSTONE_FILENAME_RE = re.compile(
     r'^(?P<prefix>3rdYear|4thYear)\.(?P<course>[A-Za-z0-9]+)\.'
-    r'(?P<project>[A-Za-z0-9_-]+)\.(?P<semester>1stSemester|2ndSemester|Summer)\.pdf$',
+    rf'(?P<project>[A-Za-z0-9_-]+)\.(?P<semester>1stSemester|2ndSemester|Summer)\.(?P<ext>{VALID_EXTENSIONS_PATTERN})$',
     re.IGNORECASE,
 )
 
@@ -431,7 +440,7 @@ def _semester_key_from_label(semester_label):
 
 def resolve_archive_file_template(
     template, team, stage_label, semester_label='1st Semester',
-    deliverable_label='',
+    deliverable_label='', file_extension='',
 ):
     """Resolve a vault filename template by substituting variables.
 
@@ -474,7 +483,20 @@ def resolve_archive_file_template(
     resolved = resolved.replace('{deliverable}', _deliverable_slug(deliverable_label))
     resolved = resolved.replace('{semester}', semester_key)
 
-    # Ensure it ends with .pdf
+    # If the template already ends with a known extension, preserve it
+    if any(resolved.lower().endswith(f'.{ext}') for ext in VALID_ARCHIVE_EXTENSIONS):
+        return resolved
+
+    # If an explicit file_extension was provided, use it
+    if file_extension:
+        ext = file_extension.strip().lower()
+        if not ext.startswith('.'):
+            ext = f'.{ext}'
+        if ext[1:] in VALID_ARCHIVE_EXTENSIONS:
+            resolved += ext
+            return resolved
+
+    # Otherwise default to .pdf
     if not resolved.lower().endswith('.pdf'):
         resolved += '.pdf'
 
@@ -630,24 +652,29 @@ def validate_capstone_file_name(file_name):
             'course_code': match.group('course').upper(),
             'project_slug': match.group('project'),
             'semester_label': PIT_SEMESTER_LABELS[semester],
+            'extension': match.group('ext').lower(),
         }
     
-    # Fallback to project-name-only format
-    if clean_name.lower().endswith('.pdf'):
-        project_slug = clean_name[:-4]
-        if project_slug and re.match(r'^[A-Za-z0-9_-]+$', project_slug):
-            active_sem = get_active_semester()
-            semester_label = active_sem.label if active_sem else '1st Semester'
-            return {
-                'prefix': CAPSTONE_YEAR_PREFIX,
-                'year_level': CAPSTONE_YEAR_LEVEL,
-                'course_code': CAPSTONE_DEFAULT_COURSE,
-                'project_slug': project_slug,
-                'semester_label': semester_label,
-            }
+    # Fallback to project-name-only format with any valid deliverable extension
+    dot_idx = clean_name.rfind('.')
+    if dot_idx != -1:
+        ext = clean_name[dot_idx + 1:].lower()
+        if ext in VALID_ARCHIVE_EXTENSIONS:
+            project_slug = clean_name[:dot_idx]
+            if project_slug and re.match(r'^[A-Za-z0-9_-]+$', project_slug):
+                active_sem = get_active_semester()
+                semester_label = active_sem.label if active_sem else '1st Semester'
+                return {
+                    'prefix': CAPSTONE_YEAR_PREFIX,
+                    'year_level': CAPSTONE_YEAR_LEVEL,
+                    'course_code': CAPSTONE_DEFAULT_COURSE,
+                    'project_slug': project_slug,
+                    'semester_label': semester_label,
+                    'extension': ext,
+                }
             
     raise ValidationError(
-        'Use format: ProjectTitle.pdf, 3rdYear.CAP301.ProjectTitle.1stSemester.pdf, or 4thYear.CAP401.ProjectTitle.1stSemester.pdf'
+        'Use format: ProjectTitle.pdf (or .mp4, .png, etc.), 3rdYear.CAP301.ProjectTitle.1stSemester.pdf, etc.'
     )
 
 

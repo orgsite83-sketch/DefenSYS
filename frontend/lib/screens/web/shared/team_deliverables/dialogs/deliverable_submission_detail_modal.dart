@@ -9,6 +9,7 @@ import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
 import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/progress_upload.dart';
+import 'package:defensys/utils/universal_file_viewer.dart';
 
 String formatUploadFailureMessage(int statusCode, String responseBody) {
   try {
@@ -61,6 +62,10 @@ Future<void> showUploadDialog({
   double uploadProgress = 0.0;
   String? uploadError;
 
+  final rawFormat = item['file_format'] ?? item['fileFormat'];
+  final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
+  final suggestedName = item['suggested_file_name']?.toString() ?? '';
+
   await showDialog<bool>(
     context: context,
     barrierDismissible: false, // Prevent dismissal during upload
@@ -73,18 +78,71 @@ Future<void> showUploadDialog({
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(item['label']?.toString() ?? ''),
+              Text(
+                item['label']?.toString() ?? '',
+                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+              ),
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: formatInfo.color.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(color: formatInfo.color.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(formatInfo.icon, size: 15, color: formatInfo.color),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Accepted: ${formatInfo.description}',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: formatInfo.color,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (suggestedName.isNotEmpty && item['type'] == 'post') ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: Colors.amber.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.label_important_outline, size: 15, color: Colors.amber),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Expected name: $suggestedName',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w600,
+                            color: Color(0xFF92400E),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
               const SizedBox(height: 14),
               if (!isUploading)
                 OutlinedButton.icon(
                   onPressed: () async {
                     FilePickerResult? result = await FilePicker.platform.pickFiles(
                       type: FileType.custom,
-                      allowedExtensions: const [
-                        'pdf', 'png', 'jpg', 'jpeg', 'webp', 'gif',
-                        'mp4', 'mov', 'avi', 'mkv', 'zip', 'rar', '7z',
-                        'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv'
-                      ],
+                      allowedExtensions: formatInfo.extensions,
                       withData: true, // Load file bytes
                     );
 
@@ -239,6 +297,18 @@ Future<void> showUploadDialog({
           FilledButton.icon(
             onPressed: (selectedFileName != null && !isUploading)
                 ? () async {
+                    final ext = selectedFileName!.contains('.')
+                        ? selectedFileName!.split('.').last.toLowerCase()
+                        : '';
+                    if (formatInfo.extensions.isNotEmpty &&
+                        !formatInfo.extensions.contains(ext)) {
+                      setState(() {
+                        uploadError =
+                            "Invalid file format (.$ext). Please upload a file matching: ${formatInfo.description}";
+                      });
+                      return;
+                    }
+
                     final suggestedName =
                         item['suggested_file_name']?.toString() ?? '';
                     if (item['type'] == 'post' && suggestedName.isNotEmpty) {

@@ -16,7 +16,7 @@ import '../../../widgets/book_cover_widget.dart';
 import '../../../services/auth_provider.dart';
 import '../../../services/dashboard_provider.dart';
 import '../../../toasts/feedback_toast.dart';
-import '../../../utils/pdf_viewer.dart';
+import '../../../utils/universal_file_viewer.dart';
 
 // ── Data models ───────────────────────────────────────────────────────────────
 

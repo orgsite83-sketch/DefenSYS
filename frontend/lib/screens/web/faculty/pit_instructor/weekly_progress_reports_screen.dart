@@ -7,7 +7,7 @@ import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import 'package:intl/intl.dart';
 import '../../../../services/authenticated_client.dart';
-import '../../../../utils/pdf_viewer.dart';
+import '../../../../utils/universal_file_viewer.dart';
 import '../../../../toasts/feedback_toast.dart';
 
 class WeeklyProgressReportsScreen extends ConsumerStatefulWidget {

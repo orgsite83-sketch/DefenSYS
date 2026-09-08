@@ -110,6 +110,7 @@ class StudentTaskBadgeHelper {
   /// Checks if a deliverable item is pending required action (missing or needs revision).
   static bool isDeliverablePending(Map<String, dynamic> item) {
     if (item['required'] != true) return false;
+    if (item['is_waived'] == true) return false;
     final uploaded = item['uploaded'] == true;
     final submission = item['submission'] as Map<String, dynamic>? ??
         (item['submission'] is Map ? Map<String, dynamic>.from(item['submission'] as Map) : null);
@@ -138,20 +139,39 @@ class StudentTaskBadgeHelper {
 
   /// Checks if there are pending required post-defense deliverables (only when unlocked).
   static bool hasPendingPostDeliverables(Map<String, dynamic>? stage) {
-    if (stage == null) return false;
-    final isUnlocked = stage['vault_unlocked'] == true || stage['archive_unlocked'] == true;
-    if (!isUnlocked) return false;
+    return pendingPostDeliverablesCount(stage) > 0;
+  }
+
+  /// Counts pending required post-defense deliverables for a stage.
+  static int pendingPostDeliverablesCount(Map<String, dynamic>? stage) {
+    if (stage == null) return 0;
+    final isUnlocked = stage['vault_unlocked'] == true ||
+        stage['archive_unlocked'] == true ||
+        stage['post_unlocked'] == true;
+    if (!isUnlocked) return 0;
 
     final deliverables = stage['deliverables'] as List?;
-    if (deliverables == null || deliverables.isEmpty) return false;
+    if (deliverables == null || deliverables.isEmpty) return 0;
 
-    return deliverables.any((d) {
+    return deliverables.where((d) {
       if (d is! Map) return false;
       final map = Map<String, dynamic>.from(d);
       final itemType = map['type']?.toString();
       if (itemType != 'post' && itemType != 'vault') return false;
       return isDeliverablePending(map);
-    });
+    }).length;
+  }
+
+  /// Returns the first stage from stagesList that has pending required post deliverables.
+  static Map<String, dynamic>? firstStageWithPendingPostDeliverables(
+    List<Map<String, dynamic>> stagesList,
+  ) {
+    for (final stage in stagesList) {
+      if (hasPendingPostDeliverables(stage)) {
+        return stage;
+      }
+    }
+    return null;
   }
 
   /// Checks if peer evaluations are enabled and there are pending evaluations for teammates.

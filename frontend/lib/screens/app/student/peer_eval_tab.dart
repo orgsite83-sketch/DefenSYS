@@ -20,6 +20,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
   final Future<void> Function()? onRefresh;
   final bool isEmbedded;
   final bool hideHistory;
+  final String? stage;
 
   const PeerEvalTab({
     super.key,
@@ -35,6 +36,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
     this.peerWeight = 20,
     this.isEmbedded = false,
     this.hideHistory = false,
+    this.stage,
   });
 
   @override
@@ -563,6 +565,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       breakdown: breakdown,
       total: total,
       max: max,
+      stage: widget.stage,
     );
 
     widget.onPeerSubmitted?.call();

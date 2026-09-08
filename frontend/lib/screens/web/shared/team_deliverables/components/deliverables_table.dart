@@ -5,7 +5,7 @@ import 'package:defensys/services/adviser_grading_provider.dart';
 import 'package:defensys/services/authenticated_client.dart';
 import 'package:defensys/services/capstone_deliverables_provider.dart';
 import 'package:defensys/theme/app_theme.dart';
-import 'package:defensys/utils/pdf_viewer.dart';
+import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/widgets/confirm_dialog.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/screens/web/faculty/weekly_progress_reports_screen.dart';
@@ -76,6 +76,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
 
   // Scoring controllers & rubrics state
   final Map<String, Map<String, TextEditingController>> _teamCriteriaScoreCtrls = {};
+  final Map<String, Map<dynamic, Map<String, TextEditingController>>> _teamStudentCriteriaScoreCtrls = {};
   final Map<String, TextEditingController> _teamManualScoreCtrls = {};
   final Map<String, Map<String, dynamic>?> _teamSelectedRubrics = {};
 
@@ -100,6 +101,13 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     for (final subMap in _teamCriteriaScoreCtrls.values) {
       for (final c in subMap.values) {
         c.dispose();
+      }
+    }
+    for (final perStudentMap in _teamStudentCriteriaScoreCtrls.values) {
+      for (final subMap in perStudentMap.values) {
+        for (final c in subMap.values) {
+          c.dispose();
+        }
       }
     }
     super.dispose();
@@ -197,13 +205,21 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         lowerName.endsWith('.jpg') ||
         lowerName.endsWith('.jpeg') ||
         lowerName.endsWith('.webp') ||
-        lowerName.endsWith('.gif')) {
+        lowerName.endsWith('.gif') ||
+        lowerName.endsWith('.svg')) {
       return Icons.image_outlined;
     } else if (lowerName.endsWith('.mp4') ||
         lowerName.endsWith('.mov') ||
         lowerName.endsWith('.avi') ||
-        lowerName.endsWith('.mkv')) {
+        lowerName.endsWith('.mkv') ||
+        lowerName.endsWith('.webm')) {
       return Icons.video_library_outlined;
+    } else if (lowerName.endsWith('.mp3') ||
+        lowerName.endsWith('.wav') ||
+        lowerName.endsWith('.aac') ||
+        lowerName.endsWith('.ogg') ||
+        lowerName.endsWith('.m4a')) {
+      return Icons.audiotrack_outlined;
     } else if (lowerName.endsWith('.zip') ||
         lowerName.endsWith('.rar') ||
         lowerName.endsWith('.7z')) {
@@ -218,6 +234,11 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
         lowerName.endsWith('.xlsx') ||
         lowerName.endsWith('.csv')) {
       return Icons.table_chart_outlined;
+    } else if (lowerName.endsWith('.txt') ||
+        lowerName.endsWith('.json') ||
+        lowerName.endsWith('.sql') ||
+        lowerName.endsWith('.md')) {
+      return Icons.code_outlined;
     }
     return Icons.insert_drive_file_outlined;
   }
@@ -225,30 +246,45 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
   Color _getFileIconColor(String fileName) {
     final lowerName = fileName.toLowerCase();
     if (lowerName.endsWith('.pdf')) {
-      return Colors.red.shade700;
+      return const Color(0xFFEF4444);
     } else if (lowerName.endsWith('.png') ||
         lowerName.endsWith('.jpg') ||
         lowerName.endsWith('.jpeg') ||
         lowerName.endsWith('.webp') ||
-        lowerName.endsWith('.gif')) {
-      return Colors.green.shade700;
+        lowerName.endsWith('.gif') ||
+        lowerName.endsWith('.svg')) {
+      return const Color(0xFF06B6D4);
     } else if (lowerName.endsWith('.mp4') ||
         lowerName.endsWith('.mov') ||
         lowerName.endsWith('.avi') ||
-        lowerName.endsWith('.mkv')) {
-      return Colors.indigo.shade700;
+        lowerName.endsWith('.mkv') ||
+        lowerName.endsWith('.webm')) {
+      return const Color(0xFF8B5CF6);
+    } else if (lowerName.endsWith('.mp3') ||
+        lowerName.endsWith('.wav') ||
+        lowerName.endsWith('.aac') ||
+        lowerName.endsWith('.ogg') ||
+        lowerName.endsWith('.m4a')) {
+      return const Color(0xFFF43F5E);
     } else if (lowerName.endsWith('.zip') ||
         lowerName.endsWith('.rar') ||
         lowerName.endsWith('.7z')) {
-      return Colors.amber.shade800;
+      return const Color(0xFF64748B);
     } else if (lowerName.endsWith('.doc') ||
-        lowerName.endsWith('.docx') ||
-        lowerName.endsWith('.ppt') ||
-        lowerName.endsWith('.pptx') ||
-        lowerName.endsWith('.xls') ||
+        lowerName.endsWith('.docx')) {
+      return const Color(0xFF2563EB);
+    } else if (lowerName.endsWith('.ppt') ||
+        lowerName.endsWith('.pptx')) {
+      return const Color(0xFFEA580C);
+    } else if (lowerName.endsWith('.xls') ||
         lowerName.endsWith('.xlsx') ||
         lowerName.endsWith('.csv')) {
-      return Colors.blue.shade700;
+      return const Color(0xFF10B981);
+    } else if (lowerName.endsWith('.txt') ||
+        lowerName.endsWith('.json') ||
+        lowerName.endsWith('.sql') ||
+        lowerName.endsWith('.md')) {
+      return const Color(0xFFF59E0B);
     }
     return Colors.grey.shade600;
   }
@@ -521,18 +557,6 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final fileSize = fileMap['file_size']?.toString() ?? '';
     final fileUrl = fileMap['file_url']?.toString() ?? '';
     
-    final lowerName = fileName.toLowerCase();
-    final isPreviewable = lowerName.endsWith('.pdf') ||
-        lowerName.endsWith('.png') ||
-        lowerName.endsWith('.jpg') ||
-        lowerName.endsWith('.jpeg') ||
-        lowerName.endsWith('.webp') ||
-        lowerName.endsWith('.gif') ||
-        lowerName.endsWith('.mp4') ||
-        lowerName.endsWith('.mov') ||
-        lowerName.endsWith('.avi') ||
-        lowerName.endsWith('.mkv');
-
     return Container(
       padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
@@ -570,10 +594,10 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
           IconButton(
             iconSize: 18,
             visualDensity: VisualDensity.compact,
-            tooltip: isPreviewable ? 'View File' : 'Download File',
-            icon: Icon(
-              isPreviewable ? Icons.visibility_outlined : Icons.download_outlined,
-              color: isPreviewable ? Colors.blue : Colors.green.shade700,
+            tooltip: 'View File',
+            icon: const Icon(
+              Icons.visibility_outlined,
+              color: Colors.blue,
             ),
             onPressed: () => _viewPdf(fileUrl, fileName),
           ),
@@ -2092,6 +2116,7 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
             selectedStage: selectedStage,
             isAdviser: widget.isAdviser,
             teamCriteriaScoreCtrls: _teamCriteriaScoreCtrls,
+            teamStudentCriteriaScoreCtrls: _teamStudentCriteriaScoreCtrls,
             teamManualScoreCtrls: _teamManualScoreCtrls,
             teamSelectedRubrics: _teamSelectedRubrics,
           ),
@@ -2133,7 +2158,15 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final gradingState = ref.watch(adviserGradingProvider);
     final gradeRecord = gradingState.grades.firstWhere(
       (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
-      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
+      orElse: () {
+        if (team['grade'] is Map && team['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
+          return Map<String, dynamic>.from(team['grade'] as Map);
+        }
+        if (selectedStage['grade'] is Map && selectedStage['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
+          return Map<String, dynamic>.from(selectedStage['grade'] as Map);
+        }
+        return <String, dynamic>{};
+      },
     );
     final adviserScore = gradeRecord['adviser_score'];
 
@@ -2516,14 +2549,23 @@ class _DeliverablesTablePaneState extends ConsumerState<DeliverablesTablePane> {
     final teamId = parseAsInt(team['id']);
     final gradingState = ref.watch(adviserGradingProvider);
     final cardSelectedStageLabel = _effectiveSelectedStage(team);
-    final gradeRecord = gradingState.grades.firstWhere(
-      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
-      orElse: () => team['grade'] is Map ? Map<String, dynamic>.from(team['grade'] as Map) : <String, dynamic>{},
-    );
     final stages = _stageList(team);
     final selectedStage = _effectiveSelectedStage(team);
     final stagePayload = _stagePayload(stages, selectedStage);
     final currentStage = team['current_stage']?.toString();
+
+    final gradeRecord = gradingState.grades.firstWhere(
+      (g) => parseAsInt(g['team_id']) == teamId && g['stage_label']?.toString() == cardSelectedStageLabel,
+      orElse: () {
+        if (team['grade'] is Map && team['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
+          return Map<String, dynamic>.from(team['grade'] as Map);
+        }
+        if (stagePayload['grade'] is Map && stagePayload['grade']['stage_label']?.toString() == cardSelectedStageLabel) {
+          return Map<String, dynamic>.from(stagePayload['grade'] as Map);
+        }
+        return <String, dynamic>{};
+      },
+    );
 
     return Container(
       decoration: cardDecoration(),

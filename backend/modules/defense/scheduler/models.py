@@ -425,6 +425,12 @@ class PitEventDeliverable(models.Model):
         default=False,
         help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
+    file_format = models.CharField(
+        max_length=30,
+        default='any',
+        blank=True,
+        help_text='Allowed file format category for this deliverable.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

@@ -1001,6 +1001,58 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               ),
                             ),
                           ],
+                          if (!isPost && d['is_defense_material'] != false) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFEFF6FF),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.visibility_rounded, size: 9.5, color: Color(0xFF1D4ED8)),
+                                  SizedBox(width: 2.5),
+                                  Text(
+                                    'Panel View',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFF1D4ED8),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                          if (isPost && d['verdict_condition'] == 'revisions_only') ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF7ED),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(color: const Color(0xFFFED7AA)),
+                              ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.edit_note_rounded, size: 10, color: Color(0xFFC2410C)),
+                                  SizedBox(width: 2.5),
+                                  Text(
+                                    'Revisions Only',
+                                    style: TextStyle(
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w800,
+                                      color: Color(0xFFC2410C),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
                           if (isRestricted) ...[
                             const SizedBox(width: 6),
                             Container(
@@ -2949,6 +3001,32 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   border: Border.all(color: const Color(0xFFE2E8F0)),
                   borderRadius: BorderRadius.circular(8),
                 ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: (item['file_format']?.toString().isNotEmpty == true)
+                        ? item['file_format'].toString()
+                        : 'any',
+                    isDense: true,
+                    borderRadius: BorderRadius.circular(8),
+                    style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                    items: _deliverableFormatDropdownItems(),
+                    onChanged: (val) {
+                      setDialogState(() {
+                        item['file_format'] = val ?? 'any';
+                      });
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Container(
+                height: 42,
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF8FAFC),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -2993,6 +3071,37 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               ),
             ],
           ),
+          if (!isPost) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Checkbox(
+                  value: item['is_defense_material'] != false,
+                  activeColor: const Color(0xFF2563EB),
+                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  onChanged: (value) {
+                    setDialogState(() {
+                      item['is_defense_material'] = value == true;
+                    });
+                  },
+                ),
+                const SizedBox(width: 4),
+                const Text(
+                  'Defense Material (Visible to Defense Panelists)',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Tooltip(
+                  message: 'When checked, defense panelists evaluate this document during oral grading (e.g. Concept Paper, Chapters 1-3, Pitch Deck). Uncheck for administrative forms (e.g. Adviser Acceptance, Panel Nomination).',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+          ],
           if (isPost) ...[
             const SizedBox(height: 10),
             Row(
@@ -3018,7 +3127,58 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 ),
                 const SizedBox(width: 4),
                 const Tooltip(
-                  message: 'Restricted deliverables are not publicly searchable in the institutional repository.',
+                  message: 'When checked, this file is stored privately for faculty and administrative records only. It will not be published or searchable to other students in the public institutional repository.',
+                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                const Icon(Icons.rule_rounded, size: 15, color: AppColors.maroon),
+                const SizedBox(width: 6),
+                const Text(
+                  'Submission Rule:',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF8FAFC),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(color: const Color(0xFFCBD5E1)),
+                  ),
+                  child: DropdownButtonHideUnderline(
+                    child: DropdownButton<String>(
+                      value: item['verdict_condition']?.toString() == 'revisions_only' ? 'revisions_only' : 'all_pass',
+                      isDense: true,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                      items: const [
+                        DropdownMenuItem(
+                          value: 'all_pass',
+                          child: Text('Required for All Passing Teams'),
+                        ),
+                        DropdownMenuItem(
+                          value: 'revisions_only',
+                          child: Text('Only for Approved with Revisions (Not required if Approved with no revisions)'),
+                        ),
+                      ],
+                      onChanged: (val) {
+                        setDialogState(() {
+                          item['verdict_condition'] = val ?? 'all_pass';
+                        });
+                      },
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                const Tooltip(
+                  message: 'Select "Only for Approved with Revisions" for deliverables like "Signed Matrix of Revision". Teams with an Approved verdict (no revisions) are automatically excused from submitting this file.',
                   child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
                 ),
               ],
@@ -3154,7 +3314,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                         ),
                         const SizedBox(height: 4),
                         SelectableText(
-                          _resolvePreview(item['archive_file_template']?.toString() ?? '', item['label']?.toString() ?? '', stageLabelCtrl.text),
+                          _resolvePreview(
+                            item['archive_file_template']?.toString() ?? '',
+                            item['label']?.toString() ?? '',
+                            stageLabelCtrl.text,
+                            format: item['file_format']?.toString() ?? 'any',
+                          ),
                           style: const TextStyle(
                             fontSize: 11,
                             fontFamily: 'monospace',
@@ -3901,6 +4066,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             'archive_note': '',
                                             'archive_file_template': '',
                                             'is_restricted': false,
+                                             'is_defense_material': true,
+                                             'verdict_condition': 'all_pass',
                                           });
                                         });
                                       },
@@ -3935,6 +4102,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             'archive_note': '',
                                             'archive_file_template': '{project}',
                                             'is_restricted': false,
+                                             'is_defense_material': false,
+                                             'verdict_condition': 'all_pass',
                                           });
                                         });
                                       },
@@ -4190,10 +4359,114 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     });
   }
 
-  String _resolvePreview(String template, String deliverableLabel, String stageLabel) {
+  List<DropdownMenuItem<String>> _deliverableFormatDropdownItems() {
+    return const [
+      DropdownMenuItem(
+        value: 'any',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.all_inclusive, size: 14, color: Colors.blueGrey),
+            SizedBox(width: 6),
+            Text('Any File Type'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'pdf',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.picture_as_pdf_outlined, size: 14, color: Color(0xFFEF4444)),
+            SizedBox(width: 6),
+            Text('PDF Document (.pdf)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'video',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.video_library_outlined, size: 14, color: Color(0xFF8B5CF6)),
+            SizedBox(width: 6),
+            Text('Video (.mp4, .mov)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'image',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.image_outlined, size: 14, color: Color(0xFF06B6D4)),
+            SizedBox(width: 6),
+            Text('Image / Poster (.png, .jpg)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'presentation',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.slideshow_outlined, size: 14, color: Color(0xFFEA580C)),
+            SizedBox(width: 6),
+            Text('Slides (.pptx, .ppt)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'document',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.description_outlined, size: 14, color: Color(0xFF2563EB)),
+            SizedBox(width: 6),
+            Text('Word / Doc (.docx, .doc)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'spreadsheet',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.table_chart_outlined, size: 14, color: Color(0xFF10B981)),
+            SizedBox(width: 6),
+            Text('Spreadsheet (.xlsx, .csv)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'archive',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.folder_zip_outlined, size: 14, color: Color(0xFF64748B)),
+            SizedBox(width: 6),
+            Text('Archive (.zip, .rar)'),
+          ],
+        ),
+      ),
+      DropdownMenuItem(
+        value: 'audio',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.audiotrack_outlined, size: 14, color: Color(0xFFF43F5E)),
+            SizedBox(width: 6),
+            Text('Audio (.mp3, .wav)'),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  String _resolvePreview(String template, String deliverableLabel, String stageLabel, {String format = 'any'}) {
     final cleanTemplate = template.trim();
     final finalTemplate = cleanTemplate.isEmpty 
-        ? '{project}.pdf'
+        ? '{project}'
         : cleanTemplate;
 
     String slugify(String val) {
@@ -4225,8 +4498,38 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         .replaceAll('{deliverable}', deliverable)
         .replaceAll('{semester}', semester);
 
-    if (!resolved.toLowerCase().endsWith('.pdf')) {
-      resolved += '.pdf';
+    String defaultExt;
+    switch (format) {
+      case 'pdf':
+        defaultExt = '.pdf';
+        break;
+      case 'video':
+        defaultExt = '.mp4';
+        break;
+      case 'image':
+        defaultExt = '.png';
+        break;
+      case 'presentation':
+        defaultExt = '.pptx';
+        break;
+      case 'document':
+        defaultExt = '.docx';
+        break;
+      case 'spreadsheet':
+        defaultExt = '.xlsx';
+        break;
+      case 'archive':
+        defaultExt = '.zip';
+        break;
+      case 'audio':
+        defaultExt = '.mp3';
+        break;
+      default:
+        defaultExt = '.pdf';
+    }
+
+    if (!resolved.contains('.')) {
+      resolved += defaultExt;
     }
 
     return resolved;
