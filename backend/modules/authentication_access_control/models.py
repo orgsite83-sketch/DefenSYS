@@ -65,7 +65,7 @@ class SystemAuditLog(models.Model):
 
     CATEGORY_CHOICES = (
         (CATEGORY_ACADEMIC_PERIOD, 'Academic Periods'),
-        (CATEGORY_GRADE_CENTER, 'Grade Center'),
+        (CATEGORY_GRADE_CENTER, 'Evaluation & Grades'),
         (CATEGORY_SCHEDULING, 'Scheduling'),
         (CATEGORY_STUDENT_TEAMS, 'Student Teams'),
         (CATEGORY_REPOSITORY, 'Repository'),

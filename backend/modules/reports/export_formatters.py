@@ -37,20 +37,26 @@ def _find_header_image_base64():
     return None
 
 
-def build_preview_response(title, subtitle, summary_kpis, metadata, columns, rows):
+def build_preview_response(title, subtitle, summary_kpis, metadata, columns, rows, sections=None, generated_by='admin', pdf_base64=None):
     """
-    Builds a JSON payload for the in-app Live Data Viewer.
+    Builds a JSON payload for the in-app Live Data Viewer and Document Sheet preview.
     """
-    return Response({
+    payload = {
         'title': title,
         'subtitle': subtitle,
+        'generated_by': generated_by or 'admin',
         'generated_at': datetime.now().strftime('%Y-%m-%d %I:%M %p'),
         'summary_kpis': summary_kpis,
         'metadata': metadata,
         'columns': columns,
         'rows': rows,
         'total_rows': len(rows),
-    })
+    }
+    if sections is not None:
+        payload['sections'] = sections
+    if pdf_base64 is not None:
+        payload['pdf_base64'] = pdf_base64
+    return Response(payload)
 
 
 def generate_csv_response(columns, rows, filename):
@@ -336,14 +342,25 @@ def generate_doc_response(title, metadata, columns, rows, filename):
     return response
 
 
-def handle_export_or_preview(export_format, title, subtitle, summary_kpis, metadata, columns, rows, filename, pdf_generator_func):
+def handle_export_or_preview(export_format, title, subtitle, summary_kpis, metadata, columns, rows, filename, pdf_generator_func, sections=None, generated_by='admin'):
     """
     Unified dispatcher to handle json/preview, csv, xlsx, doc, and pdf exports.
     """
     fmt = (export_format or 'pdf').lower().strip()
     
     if fmt in ('json', 'preview', 'data'):
-        return build_preview_response(title, subtitle, summary_kpis, metadata, columns, rows)
+        pdf_b64 = None
+        if pdf_generator_func:
+            try:
+                raw_pdf = pdf_generator_func()
+                if raw_pdf:
+                    pdf_b64 = base64.b64encode(raw_pdf).decode('utf-8')
+            except Exception:
+                pass
+        return build_preview_response(
+            title, subtitle, summary_kpis, metadata, columns, rows,
+            sections=sections, generated_by=generated_by, pdf_base64=pdf_b64,
+        )
     elif fmt == 'csv':
         return generate_csv_response(columns, rows, filename)
     elif fmt in ('xlsx', 'excel', 'sheet'):

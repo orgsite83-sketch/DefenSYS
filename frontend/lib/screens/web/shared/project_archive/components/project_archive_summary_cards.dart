@@ -187,9 +187,11 @@ class ProjectArchiveSummaryCards extends StatelessWidget {
           const SizedBox(width: 12),
         ],
         _primaryButton(
-          icon: Icons.file_download_rounded,
-          label: 'Export Archive Records',
-          onTap: state.isSaving ? null : onExportCsv,
+          icon: state.isExporting
+              ? Icons.hourglass_top_rounded
+              : Icons.file_download_rounded,
+          label: state.isExporting ? 'Exporting...' : 'Export Archive Records',
+          onTap: (state.isSaving || state.isExporting) ? null : onExportCsv,
         ),
       ],
     );

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../config/api_config.dart';
@@ -13,19 +14,36 @@ class ReportPreviewData {
   final String title;
   final String subtitle;
   final String generatedAt;
+  final String generatedBy;
   final List<Map<String, dynamic>> summaryKpis;
+  final List<Map<String, dynamic>> metadata;
   final List<Map<String, dynamic>> columns;
   final List<Map<String, dynamic>> rows;
+  final List<Map<String, dynamic>> sections;
   final int totalRows;
+  final String? pdfBase64;
+
+  Uint8List? get pdfBytes {
+    if (pdfBase64 == null || pdfBase64!.isEmpty) return null;
+    try {
+      return base64Decode(pdfBase64!);
+    } catch (_) {
+      return null;
+    }
+  }
 
   const ReportPreviewData({
     required this.title,
     required this.subtitle,
     required this.generatedAt,
+    this.generatedBy = 'admin',
     required this.summaryKpis,
+    this.metadata = const [],
     required this.columns,
     required this.rows,
+    this.sections = const [],
     required this.totalRows,
+    this.pdfBase64,
   });
 
   factory ReportPreviewData.fromJson(Map<String, dynamic> json) {
@@ -33,6 +51,13 @@ class ReportPreviewData {
     if (json['summary_kpis'] is List) {
       for (final item in json['summary_kpis'] as List) {
         if (item is Map) kpis.add(Map<String, dynamic>.from(item));
+      }
+    }
+
+    final meta = <Map<String, dynamic>>[];
+    if (json['metadata'] is List) {
+      for (final item in json['metadata'] as List) {
+        if (item is Map) meta.add(Map<String, dynamic>.from(item));
       }
     }
 
@@ -50,14 +75,25 @@ class ReportPreviewData {
       }
     }
 
+    final sects = <Map<String, dynamic>>[];
+    if (json['sections'] is List) {
+      for (final item in json['sections'] as List) {
+        if (item is Map) sects.add(Map<String, dynamic>.from(item));
+      }
+    }
+
     return ReportPreviewData(
       title: json['title']?.toString() ?? 'Report Preview',
       subtitle: json['subtitle']?.toString() ?? '',
       generatedAt: json['generated_at']?.toString() ?? '',
+      generatedBy: json['generated_by']?.toString() ?? 'admin',
       summaryKpis: kpis,
+      metadata: meta,
       columns: cols,
       rows: rws,
+      sections: sects,
       totalRows: (json['total_rows'] as num?)?.toInt() ?? rws.length,
+      pdfBase64: json['pdf_base64']?.toString(),
     );
   }
 }

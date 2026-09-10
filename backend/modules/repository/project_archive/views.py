@@ -6,7 +6,9 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from repository.archive.models import ArchiveEntry
 from .services import (
+    augment_deliverable_missing_rows,
     filter_entries,
     override_pit_status,
     replace_archive_file,
@@ -155,8 +157,15 @@ class ProjectArchiveExportView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        entries, _scope = scoped_entries(request.user, request=request)
-        filtered = filter_entries(entries, request.query_params)
-        response = HttpResponse(repository_csv(filtered), content_type='text/csv')
-        response['Content-Disposition'] = 'attachment; filename="repository_audit.csv"'
+        entries, scope = scoped_entries(request.user, request=request)
+        query_params = request.query_params.copy()
+        if scope.get('scope') != 'admin' and query_params.get('type') == ArchiveEntry.TYPE_CAPSTONE:
+            query_params['type'] = ArchiveEntry.TYPE_PIT
+        deliverable_id = (query_params.get('deliverable_id') or '').strip()
+        stage_filter = (query_params.get('stage') or '').strip()
+        if deliverable_id and scope.get('scope') == 'admin':
+            entries = augment_deliverable_missing_rows(entries, deliverable_id, stage_filter)
+        filtered = filter_entries(entries, query_params)
+        response = HttpResponse(repository_csv(filtered), content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="project_archive_records.csv"'
         return response

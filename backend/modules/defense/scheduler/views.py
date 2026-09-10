@@ -1284,6 +1284,8 @@ class DefenseScheduleVerdictView(APIView):
             new_values={
                 'schedule_id': schedule.id,
                 'team_id': schedule.team_id,
+                'team_name': getattr(schedule.team, 'name', '') or getattr(team_grade.team, 'name', ''),
+                'stage_label': getattr(team_grade, 'stage_label', ''),
                 'verdict': verdict,
                 'verdict_remarks': verdict_remarks,
                 'revision_deadline': str(parsed_deadline) if parsed_deadline else None,

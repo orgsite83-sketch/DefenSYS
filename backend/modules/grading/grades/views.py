@@ -167,6 +167,10 @@ def grade_center_payload(request, queryset=None, sync_info=None):
 
 def grade_audit_values(grade):
     return {
+        'grade_id': grade.pk,
+        'team_id': grade.team_id,
+        'team_name': getattr(grade.team, 'name', '') or getattr(grade, 'team_name', ''),
+        'stage_label': getattr(grade, 'stage_label', ''),
         'panel_score': str(grade.panel_score) if grade.panel_score is not None else None,
         'panel_score_is_override': grade.panel_score_is_override,
         'adviser_score': str(grade.adviser_score) if grade.adviser_score is not None else None,
@@ -474,6 +478,8 @@ class TeamGradeVerdictView(APIView):
             new_values={
                 'grade_id': grade.id,
                 'team_id': grade.team_id,
+                'team_name': getattr(grade.team, 'name', '') or getattr(grade, 'team_name', ''),
+                'stage_label': getattr(grade, 'stage_label', ''),
                 'verdict': verdict,
                 'verdict_remarks': verdict_remarks,
                 'revision_deadline': str(parsed_deadline) if parsed_deadline else None,

@@ -3,6 +3,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:go_router/go_router.dart';
+
+import '../../../../navigation/admin_route_paths.dart';
 import '../../../../services/system_audit_provider.dart';
 import '../../../../services/auth_provider.dart';
 import '../../../../services/academic_period_provider.dart';
@@ -13,6 +16,7 @@ import '../../../../services/grading/grade_center_provider.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/export/export.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../admin_shell.dart';
 
@@ -266,7 +270,7 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
             ref.read(systemAuditProvider.notifier).setEndDate(val);
             ref.read(systemAuditProvider.notifier).fetch();
           }),
-          onQuickExport: () => _quickExportAuditPDF(state),
+          onExport: (format) => _exportAuditRegister(state, format: format),
         ),
         const SizedBox(height: 14),
 
@@ -275,7 +279,11 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
           builder: (context, constraints) {
             final wide = constraints.maxWidth >= 1100;
             final table = _AuditTrailTable(state: state);
-            final details = _EvidenceDetailsPanel(log: selectedLog);
+            final details = _EvidenceDetailsPanel(
+              log: selectedLog,
+              onExportSlip: () => selectedLog != null ? _exportSingleLogPdf(selectedLog) : null,
+              onNavigateToResource: _navigateToResource,
+            );
 
             if (!wide) {
               return Column(
@@ -297,7 +305,29 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
     );
   }
 
-  Future<void> _quickExportAuditPDF(SystemAuditState auditState) async {
+  void _navigateToResource(String route) {
+    final section = AdminRoutes.sectionForLocation(route);
+    if (section != null) {
+      ref.read(activeAdminSectionProvider.notifier).setSection(section);
+    }
+    context.push(route);
+  }
+
+  Future<void> _exportSingleLogPdf(Map<String, dynamic> log) async {
+    final logId = log['id']?.toString() ?? '';
+    if (logId.isEmpty) return;
+
+    final success = await ref.read(reportsProvider.notifier).downloadReport(
+      endpoint: 'audit-trail/',
+      queryParams: {'log_id': logId},
+      defaultFilename: 'DefenSYS_Audit_Evidence_#$logId.pdf',
+      exportFormat: 'pdf',
+    );
+
+    _showDownloadResultToast(success, 'pdf');
+  }
+
+  Future<void> _exportAuditRegister(SystemAuditState auditState, {String format = 'pdf'}) async {
     final queryParams = <String, String>{
       if (auditState.category.isNotEmpty) 'category': auditState.category,
       if (auditState.reviewStatus.isNotEmpty) 'review_status': auditState.reviewStatus,
@@ -309,13 +339,18 @@ class _AuditComplianceScreenState extends ConsumerState<AuditComplianceScreen> {
       if (auditState.yearLevel.isNotEmpty) 'year_level': auditState.yearLevel,
     };
 
+    final defaultFilename = format == 'csv'
+        ? 'DefenSYS_Audit_Register.csv'
+        : 'DefenSYS_Audit_Register.pdf';
+
     final success = await ref.read(reportsProvider.notifier).downloadReport(
       endpoint: 'audit-trail/',
       queryParams: queryParams,
-      defaultFilename: 'DefenSYS_Audit_Register.pdf',
+      defaultFilename: defaultFilename,
+      exportFormat: format,
     );
 
-    _showDownloadResultToast(success);
+    _showDownloadResultToast(success, format);
   }
 
   Widget _buildReportCenter(BuildContext context) {
@@ -2200,10 +2235,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
 
   bool _includeSignatures = true;
   List<Map<String, String>> _signatories = [];
-  List<String> _availableLabels = ['Prepared by:', 'Noted by:', 'Approved by:'];
 
   void _initSignatories() {
-    _availableLabels = ['Prepared by:', 'Noted by:', 'Approved by:'];
     final user = widget.currentUser;
     String userName = '';
     if (user != null) {
@@ -2254,473 +2287,22 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
   }
 
   void _openSignatoryCustomizerDialog() {
-    showDialog(
+    DefensysSignatoryCustomizerDialog.show(
       context: context,
-      builder: (dialogCtx) {
-        return StatefulBuilder(
-          builder: (context, setModalState) {
-            return Dialog(
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-              insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-              child: Container(
-                width: 680,
-                constraints: const BoxConstraints(maxHeight: 700),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Header
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
-                        border: Border(bottom: BorderSide(color: DefensysTokens.border)),
-                      ),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: DefensysTokens.maroon.withValues(alpha: 0.1),
-                              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                            ),
-                            child: const Icon(Icons.history_edu_rounded, size: 20, color: DefensysTokens.maroon),
-                          ),
-                          const SizedBox(width: 12),
-                          const Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Configure PDF Report Signatories',
-                                  style: TextStyle(
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w800,
-                                    color: DefensysTokens.textDark,
-                                  ),
-                                ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Customize certification statement, signatory count, names, roles, or toggle signatures off.',
-                                  style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-                                ),
-                              ],
-                            ),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.close_rounded, size: 20, color: DefensysTokens.steelGrey),
-                            onPressed: () => Navigator.of(dialogCtx).pop(),
-                          ),
-                        ],
-                      ),
-                    ),
-
-                    // Body
-                    Flexible(
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.all(20),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            // 1. Toggle Switch Card
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: _includeSignatures ? const Color(0xFFFFFBEB) : const Color(0xFFF8FAFC),
-                                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                                border: Border.all(
-                                  color: _includeSignatures ? const Color(0xFFFDE68A) : DefensysTokens.border,
-                                ),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    _includeSignatures ? Icons.verified_outlined : Icons.do_not_disturb_on_outlined,
-                                    color: _includeSignatures ? const Color(0xFFD97706) : DefensysTokens.steelGrey,
-                                    size: 22,
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(
-                                          'Include Signatory & Certification Block',
-                                          style: TextStyle(
-                                            fontSize: 13,
-                                            fontWeight: FontWeight.w700,
-                                            color: _includeSignatures ? const Color(0xFF92400E) : DefensysTokens.textDark,
-                                          ),
-                                        ),
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          _includeSignatures
-                                              ? 'Institutional certification disclaimer and signature lines will be rendered on the PDF.'
-                                              : 'Signatures and certification disclaimer will be completely omitted from the export.',
-                                          style: TextStyle(
-                                            fontSize: 11,
-                                            color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Switch(
-                                    value: _includeSignatures,
-                                    activeColor: DefensysTokens.maroon,
-                                    onChanged: (val) {
-                                      setState(() => _includeSignatures = val);
-                                      setModalState(() {});
-                                    },
-                                  ),
-                                ],
-                              ),
-                            ),
-
-                            if (_includeSignatures) ...[
-                              const SizedBox(height: 18),
-                              Row(
-                                children: [
-                                  const Text(
-                                    'CONFIGURED SIGNATORIES',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w800,
-                                      color: DefensysTokens.steelGrey,
-                                      letterSpacing: 0.5,
-                                    ),
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                                    decoration: BoxDecoration(
-                                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
-                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                                    ),
-                                    child: Text(
-                                      '${_signatories.length} ${_signatories.length == 1 ? "Signer" : "Signers"}',
-                                      style: const TextStyle(
-                                        fontSize: 10,
-                                        fontWeight: FontWeight.w700,
-                                        color: DefensysTokens.maroon,
-                                      ),
-                                    ),
-                                  ),
-                                  const Spacer(),
-                                  TextButton.icon(
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: DefensysTokens.maroon,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    ),
-                                    icon: const Icon(Icons.add_rounded, size: 16),
-                                    label: const Text('Add Signatory', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
-                                    onPressed: () {
-                                      setState(() {
-                                        _signatories.add({
-                                          'label': 'Approved by:',
-                                          'name': '',
-                                          'role': 'Academic Evaluator / Chairperson',
-                                        });
-                                      });
-                                      setModalState(() {});
-                                    },
-                                  ),
-                                  const SizedBox(width: 4),
-                                  TextButton(
-                                    style: TextButton.styleFrom(
-                                      foregroundColor: DefensysTokens.steelGrey,
-                                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                                    ),
-                                    onPressed: () {
-                                      setState(() {
-                                        _initSignatories();
-                                      });
-                                      setModalState(() {});
-                                    },
-                                    child: const Text('Reset Defaults', style: TextStyle(fontSize: 11.5)),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(height: 8),
-
-                              if (_signatories.isEmpty)
-                                Container(
-                                  width: double.infinity,
-                                  padding: const EdgeInsets.all(20),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFF8FAFC),
-                                    borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                                    border: Border.all(color: DefensysTokens.border),
-                                  ),
-                                  child: const Center(
-                                    child: Text(
-                                      'No signatories added. Click "+ Add Signatory" or "Reset Defaults".',
-                                      style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                                    ),
-                                  ),
-                                ),
-                              if (_signatories.isNotEmpty)
-                                for (int idx = 0; idx < _signatories.length; idx++)
-                                  _buildSignatoryEditorRow(idx, setModalState),
-                            ],
-                          ],
-                        ),
-                      ),
-                    ),
-
-                    // Footer
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.vertical(bottom: Radius.circular(18)),
-                        border: Border(top: BorderSide(color: DefensysTokens.border)),
-                      ),
-                      child: Row(
-                        children: [
-                          const Spacer(),
-                          FilledButton(
-                            style: FilledButton.styleFrom(
-                              backgroundColor: DefensysTokens.maroon,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
-                            ),
-                            onPressed: () => Navigator.of(dialogCtx).pop(),
-                            child: const Text('Done & Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
+      currentSignatories: _signatories
+          .map((s) => DefensysSignatory(
+                label: s['label'] ?? 'Prepared by:',
+                name: s['name'] ?? '',
+                role: s['role'] ?? '',
+              ))
+          .toList(),
+      currentIncludeSignatures: _includeSignatures,
+      onApply: (updatedSigners, updatedToggle) {
+        setState(() {
+          _signatories = updatedSigners.map((s) => s.toJson()).toList();
+          _includeSignatures = updatedToggle;
+        });
       },
-    );
-  }
-
-  void _promptAddCustomLabel(int signerIndex, StateSetter setModalState) {
-    final textController = TextEditingController();
-    showDialog(
-      context: context,
-      builder: (promptCtx) {
-        return AlertDialog(
-          backgroundColor: Colors.white,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: const Row(
-            children: [
-              Icon(Icons.label_outline_rounded, color: DefensysTokens.maroon, size: 20),
-              SizedBox(width: 8),
-              Text('Add Custom Signatory Label', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700)),
-            ],
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Enter header label for this signatory (e.g. Verified by:, Attested by:, Dean:)',
-                style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: textController,
-                autofocus: true,
-                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(
-                  hintText: 'e.g. Verified by:',
-                  hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                  contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                    borderSide: const BorderSide(color: DefensysTokens.border),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.of(promptCtx).pop(),
-              child: const Text('Cancel', style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey)),
-            ),
-            FilledButton(
-              style: FilledButton.styleFrom(
-                backgroundColor: DefensysTokens.maroon,
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusSm)),
-              ),
-              onPressed: () {
-                final entered = textController.text.trim();
-                if (entered.isNotEmpty) {
-                  final formatted = entered.endsWith(':') ? entered : '$entered:';
-                  setState(() {
-                    if (!_availableLabels.contains(formatted)) {
-                      _availableLabels.add(formatted);
-                    }
-                    _signatories[signerIndex]['label'] = formatted;
-                  });
-                  setModalState(() {});
-                }
-                Navigator.of(promptCtx).pop();
-              },
-              child: const Text('Add & Apply', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
-            ),
-          ],
-        );
-      },
-    );
-  }
-
-  Widget _buildSignatoryEditorRow(int idx, StateSetter setModalState) {
-    final s = _signatories[idx];
-    final currentLabel = s['label'] ?? 'Prepared by:';
-    if (!_availableLabels.contains(currentLabel)) {
-      _availableLabels.add(currentLabel);
-    }
-
-    final menuItems = <DropdownMenuItem<String>>[
-      ..._availableLabels.map((lbl) => DropdownMenuItem(
-        value: lbl,
-        child: Text(lbl, style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w600)),
-      )),
-      const DropdownMenuItem(
-        value: '__ADD_CUSTOM__',
-        child: Row(
-          children: [
-            Icon(Icons.add_rounded, size: 14, color: DefensysTokens.maroon),
-            SizedBox(width: 4),
-            Text('Custom Label...', style: TextStyle(fontSize: 11.5, color: DefensysTokens.maroon, fontWeight: FontWeight.w700)),
-          ],
-        ),
-      ),
-    ];
-
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: DefensysTokens.border),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x06000000),
-            blurRadius: 3,
-            offset: Offset(0, 1),
-          )
-        ],
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Container(
-            width: 24,
-            height: 24,
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F5F9),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              '#${idx + 1}',
-              style: const TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w800,
-                color: DefensysTokens.steelGrey,
-              ),
-            ),
-          ),
-          const SizedBox(width: 10),
-          // Label Dropdown
-          SizedBox(
-            width: 155,
-            child: DropdownButtonFormField<String>(
-              value: currentLabel,
-              isDense: true,
-              decoration: InputDecoration(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  borderSide: const BorderSide(color: DefensysTokens.border),
-                ),
-              ),
-              style: const TextStyle(fontSize: 11.5, color: DefensysTokens.textDark, fontWeight: FontWeight.w600),
-              items: menuItems,
-              onChanged: (selected) {
-                if (selected == '__ADD_CUSTOM__') {
-                  _promptAddCustomLabel(idx, setModalState);
-                } else if (selected != null) {
-                  setState(() {
-                    _signatories[idx]['label'] = selected;
-                  });
-                  setModalState(() {});
-                }
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Name Field
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              initialValue: s['name'],
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-              decoration: InputDecoration(
-                hintText: 'Signer Name (e.g. Analiza Corpuz)',
-                hintStyle: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  borderSide: const BorderSide(color: DefensysTokens.border),
-                ),
-              ),
-              onChanged: (newVal) {
-                _signatories[idx]['name'] = newVal;
-              },
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Role Field
-          Expanded(
-            flex: 3,
-            child: TextFormField(
-              initialValue: s['role'],
-              style: const TextStyle(fontSize: 11.5),
-              decoration: InputDecoration(
-                hintText: 'Designation / Role (e.g. Project Adviser)',
-                hintStyle: const TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-                contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                  borderSide: const BorderSide(color: DefensysTokens.border),
-                ),
-              ),
-              onChanged: (newVal) {
-                _signatories[idx]['role'] = newVal;
-              },
-            ),
-          ),
-          const SizedBox(width: 6),
-          // Delete Button
-          IconButton(
-            icon: const Icon(Icons.delete_outline_rounded, size: 18, color: Color(0xFFEF4444)),
-            tooltip: 'Remove Signatory',
-            onPressed: () {
-              setState(() {
-                _signatories.removeAt(idx);
-              });
-              setModalState(() {});
-            },
-          ),
-        ],
-      ),
     );
   }
 
@@ -3827,15 +3409,15 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
     );
   }
 
-  /// Right Pane: Live Data Preview Table + KPI Cards
+  /// Right Pane: Live Data Preview Table + KPI Cards (delegated to DefensysLiveDataPreviewPane)
   Widget _buildRightPreviewPane({
     required String endpoint,
     required Map<String, dynamic>? selectedStudentObj,
     required Map<String, dynamic>? selectedTeamObj,
   }) {
-    // Missing selection guard
+    Widget? emptyState;
     if (endpoint == 'individual-grade' && selectedStudentObj == null) {
-      return Center(
+      emptyState = Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
@@ -3864,10 +3446,8 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
           ),
         ),
       );
-    }
-
-    if (endpoint == 'team-grade' && (selectedTeamObj == null || selectedTeamObj.isEmpty)) {
-      return Center(
+    } else if (endpoint == 'team-grade' && (selectedTeamObj == null || selectedTeamObj.isEmpty)) {
+      emptyState = Center(
         child: Padding(
           padding: const EdgeInsets.all(32),
           child: Column(
@@ -3898,522 +3478,34 @@ class _ReportExportConfigDialogState extends State<_ReportExportConfigDialog> {
       );
     }
 
-    if (_isLoadingPreview) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(40),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircularProgressIndicator(color: DefensysTokens.maroon),
-              SizedBox(height: 16),
-              Text(
-                'Compiling live report dataset...',
-                style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600, color: DefensysTokens.textDark),
-              ),
-              SizedBox(height: 4),
-              Text(
-                'Fetching realtime evaluations, defense scores, and audit records.',
-                style: TextStyle(fontSize: 11.5, color: DefensysTokens.steelGrey),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final data = _previewData;
-    if (data == null || data.rows.isEmpty) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(Icons.dataset_linked_outlined, size: 40, color: DefensysTokens.steelGrey),
-              const SizedBox(height: 12),
-              const Text(
-                'No data records found for current filter',
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w700, color: DefensysTokens.textDark),
-              ),
-              const SizedBox(height: 4),
-              const Text(
-                'Try adjusting the semester or filter criteria on the left.',
-                style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 14),
-              OutlinedButton.icon(
-                icon: const Icon(Icons.refresh_rounded, size: 16),
-                label: const Text('Refresh Data'),
-                onPressed: _loadPreview,
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    // Filter rows by in-viewer search
-    final query = _viewerSearchController.text.trim().toLowerCase();
-    final displayRows = data.rows.where((row) {
-      if (query.isEmpty) return true;
-      for (final val in row.values) {
-        if (val != null && val.toString().toLowerCase().contains(query)) {
-          return true;
-        }
-      }
-      return false;
-    }).toList();
-
-    return Column(
-      children: [
-        // KPI Summary Cards
-        if (data.summaryKpis.isNotEmpty)
-          Container(
-            padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
-            decoration: const BoxDecoration(
-              color: Color(0xFFF8FAFC),
-              border: Border(bottom: BorderSide(color: DefensysTokens.border)),
-            ),
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              child: Row(
-                children: data.summaryKpis.map((kpi) {
-                  final label = kpi['label']?.toString() ?? '';
-                  final val = kpi['value']?.toString() ?? '';
-                  final badge = kpi['badge']?.toString();
-
-                  return Container(
-                    margin: const EdgeInsets.only(right: 10),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                      border: Border.all(color: DefensysTokens.border),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          label.toUpperCase(),
-                          style: const TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            color: DefensysTokens.steelGrey,
-                            letterSpacing: 0.5,
-                          ),
-                        ),
-                        const SizedBox(height: 2),
-                        Row(
-                          children: [
-                            Text(
-                              val,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.textDark,
-                              ),
-                            ),
-                            if (badge != null && badge.isNotEmpty) ...[
-                              const SizedBox(width: 6),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                decoration: BoxDecoration(
-                                  color: badge == 'PASSED'
-                                      ? DefensysTokens.successBg
-                                      : DefensysTokens.gold.withValues(alpha: 0.15),
-                                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                                ),
-                                child: Text(
-                                  badge,
-                                  style: TextStyle(
-                                    fontSize: 8.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: badge == 'PASSED' ? DefensysTokens.successText : DefensysTokens.darkGold,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                }).toList(),
-              ),
-            ),
-          ),
-
-        // Live Table Search Bar
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: SizedBox(
-                  height: 34,
-                  child: TextField(
-                    controller: _viewerSearchController,
-                    decoration: InputDecoration(
-                      hintText: 'Search within preview table...',
-                      hintStyle: const TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
-                      prefixIcon: const Icon(Icons.search_rounded, size: 15, color: DefensysTokens.steelGrey),
-                      suffixIcon: _viewerSearchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 13),
-                              onPressed: () => _viewerSearchController.clear(),
-                            )
-                          : null,
-                      filled: true,
-                      fillColor: const Color(0xFFF8FAFC),
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.border),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                        borderSide: const BorderSide(color: DefensysTokens.maroon, width: 1.2),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-                ),
-                child: Text(
-                  '${displayRows.length} of ${data.rows.length} rows',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                icon: const Icon(Icons.refresh_rounded, size: 18, color: DefensysTokens.steelGrey),
-                tooltip: 'Refresh dataset',
-                onPressed: _loadPreview,
-              ),
-            ],
-          ),
-        ),
-
-        const Divider(height: 1, color: Color(0xFFF1F5F9)),
-
-        // Interactive Data Grid
-        Expanded(
-          child: displayRows.isEmpty
-              ? const Center(
-                  child: Padding(
-                    padding: EdgeInsets.all(24),
-                    child: Text(
-                      'No matching records found in table.',
-                      style: TextStyle(fontSize: 12.5, color: DefensysTokens.steelGrey),
-                    ),
-                  ),
-                )
-              : SingleChildScrollView(
-                  scrollDirection: Axis.vertical,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 620),
-                      child: DataTable(
-                        headingRowHeight: 36,
-                        dataRowMinHeight: 32,
-                        dataRowMaxHeight: 44,
-                        headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
-                        horizontalMargin: 14,
-                        columnSpacing: 16,
-                        columns: data.columns.map((col) {
-                          final label = col['label']?.toString() ?? '';
-                          final align = col['align']?.toString() ?? 'left';
-
-                          return DataColumn(
-                            numeric: align == 'center' || align == 'right',
-                            label: Text(
-                              label,
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                color: DefensysTokens.textDark,
-                                letterSpacing: 0.3,
-                              ),
-                            ),
-                          );
-                        }).toList(),
-                        rows: displayRows.asMap().entries.map((entry) {
-                          final idx = entry.key;
-                          final row = entry.value;
-                          final isStripe = idx % 2 == 1;
-
-                          return DataRow(
-                            color: WidgetStateProperty.all(
-                              isStripe ? const Color(0xFFFAFAFA) : Colors.white,
-                            ),
-                            cells: data.columns.map((col) {
-                              final key = col['key']?.toString() ?? '';
-                              final val = row[key]?.toString() ?? '';
-                              final align = col['align']?.toString() ?? 'left';
-
-                              // Check if cell is a result/badge
-                              final isPassed = val == 'PASSED' || val == 'ACTIVE';
-                              final isFailed = val == 'FAILED' || val == 'REVISION';
-                              final isSpecial = isPassed || isFailed;
-
-                              if (isSpecial) {
-                                return DataCell(
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                    decoration: BoxDecoration(
-                                      color: isPassed ? DefensysTokens.successBg : DefensysTokens.dangerBg,
-                                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                                    ),
-                                    child: Text(
-                                      val,
-                                      style: TextStyle(
-                                        fontSize: 9.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: isPassed ? DefensysTokens.successText : DefensysTokens.dangerText,
-                                      ),
-                                    ),
-                                  ),
-                                );
-                              }
-
-                              return DataCell(
-                                Align(
-                                  alignment: align == 'center'
-                                      ? Alignment.center
-                                      : align == 'right'
-                                          ? Alignment.centerRight
-                                          : Alignment.centerLeft,
-                                  child: Text(
-                                    val,
-                                    style: const TextStyle(
-                                      fontSize: 11,
-                                      color: DefensysTokens.textDark,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              );
-                            }).toList(),
-                          );
-                        }).toList(),
-                      ),
-                    ),
-                  ),
-                ),
-        ),
-      ],
+    return DefensysLiveDataPreviewPane(
+      isLoading: _isLoadingPreview,
+      previewData: _previewData,
+      onRefresh: _loadPreview,
+      emptyStateOverride: emptyState,
+      signatories: _signatories
+          .map((s) => DefensysSignatory(
+                label: s['label'] ?? 'Prepared by:',
+                name: s['name'] ?? '',
+                role: s['role'] ?? '',
+              ))
+          .toList(),
+      includeSignatures: _includeSignatures,
     );
   }
 
   /// Modal Bottom Footer Bar with Format Chooser Pills + Action Buttons
   Widget _buildModalFooter() {
-    final formats = [
-      {
-        'id': 'pdf',
-        'label': 'PDF Document',
-        'ext': '.pdf',
-        'icon': Icons.picture_as_pdf_outlined,
-        'color': DefensysTokens.maroon,
-      },
-      {
-        'id': 'xlsx',
-        'label': 'Excel Spreadsheet',
-        'ext': '.xlsx',
-        'icon': Icons.table_view_rounded,
-        'color': const Color(0xFF16A34A),
-      },
-      {
-        'id': 'csv',
-        'label': 'CSV File',
-        'ext': '.csv',
-        'icon': Icons.grid_on_rounded,
-        'color': const Color(0xFF2563EB),
-      },
-      {
-        'id': 'doc',
-        'label': 'Word Document',
-        'ext': '.doc',
-        'icon': Icons.description_outlined,
-        'color': const Color(0xFF0284C7),
-      },
-    ];
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8FAFC),
-        border: Border(top: BorderSide(color: DefensysTokens.border)),
-      ),
-      child: Row(
-        children: [
-          // Format Selector Label
-          const Text(
-            'FILE FORMAT:',
-            style: TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w800,
-              color: DefensysTokens.steelGrey,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(width: 10),
-
-          // Format Selector Pills
-          ...formats.map((fmt) {
-            final id = fmt['id'] as String;
-            final label = fmt['label'] as String;
-            final iconData = fmt['icon'] as IconData;
-            final color = fmt['color'] as Color;
-            final isSelected = _selectedFormat == id;
-
-            return Padding(
-              padding: const EdgeInsets.only(right: 6),
-              child: Material(
-                color: Colors.transparent,
-                child: InkWell(
-                  onTap: () => setState(() => _selectedFormat = id),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  child: AnimatedContainer(
-                    duration: const Duration(milliseconds: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: isSelected ? color.withValues(alpha: 0.08) : Colors.white,
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                      border: Border.all(
-                        color: isSelected ? color : const Color(0xFFCBD5E1),
-                        width: isSelected ? 1.5 : 1,
-                      ),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(
-                          iconData,
-                          size: 14,
-                          color: isSelected ? color : DefensysTokens.steelGrey,
-                        ),
-                        const SizedBox(width: 5),
-                        Text(
-                          label,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-                            color: isSelected ? color : DefensysTokens.textDark,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            );
-          }),
-
-          // Signatures Customizer Trigger Pill
-          Container(
-            height: 20,
-            width: 1,
-            color: const Color(0xFFCBD5E1),
-            margin: const EdgeInsets.symmetric(horizontal: 10),
-          ),
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: _openSignatoryCustomizerDialog,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 120),
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                decoration: BoxDecoration(
-                  color: _includeSignatures ? const Color(0xFFFEF3C7) : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  border: Border.all(
-                    color: _includeSignatures ? const Color(0xFFF59E0B) : const Color(0xFFCBD5E1),
-                    width: 1,
-                  ),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(
-                      _includeSignatures ? Icons.history_edu_rounded : Icons.edit_off_outlined,
-                      size: 14,
-                      color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
-                    ),
-                    const SizedBox(width: 5),
-                    Text(
-                      _includeSignatures ? 'Signatures (${_signatories.length})' : 'Signatures (Off)',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w700,
-                        color: _includeSignatures ? const Color(0xFF92400E) : DefensysTokens.steelGrey,
-                      ),
-                    ),
-                    const SizedBox(width: 4),
-                    Icon(
-                      Icons.tune_rounded,
-                      size: 12,
-                      color: _includeSignatures ? const Color(0xFFB45309) : DefensysTokens.steelGrey,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-
-          const Spacer(),
-
-          // Cancel Button
-          OutlinedButton(
-            style: OutlinedButton.styleFrom(
-              foregroundColor: DefensysTokens.textDark,
-              side: const BorderSide(color: DefensysTokens.border),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
-            ),
-            onPressed: _isDownloading ? null : () => Navigator.of(context).pop(),
-            child: const Text('Cancel', style: TextStyle(fontSize: 12)),
-          ),
-          const SizedBox(width: 8),
-
-          // Download Primary Action
-          FilledButton.icon(
-            style: FilledButton.styleFrom(
-              backgroundColor: DefensysTokens.maroon,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(DefensysTokens.radiusMd)),
-            ),
-            icon: _isDownloading
-                ? const SizedBox(
-                    width: 14,
-                    height: 14,
-                    child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
-                  )
-                : const Icon(Icons.file_download_outlined, size: 16),
-            label: Text(
-              _isDownloading
-                  ? 'Generating ${_selectedFormat.toUpperCase()}...'
-                  : 'Download ${_selectedFormat.toUpperCase()} Export',
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-            ),
-            onPressed: _isDownloading ? null : _handleDownload,
-          ),
-        ],
-      ),
+    return DefensysExportFormatBar(
+      supportedFormats: const ['pdf', 'xlsx', 'csv', 'doc'],
+      selectedFormat: _selectedFormat,
+      onFormatChanged: (fmt) => setState(() => _selectedFormat = fmt),
+      includeSignatures: _includeSignatures,
+      signatoriesCount: _signatories.length,
+      onOpenSignatoryCustomizer: _openSignatoryCustomizerDialog,
+      isDownloading: _isDownloading,
+      onCancel: () => Navigator.of(context).pop(),
+      onDownload: _handleDownload,
     );
   }
 
@@ -4593,11 +3685,11 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
-        border: Border.all(color: DefensysTokens.border),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
             color: Color(0x05000000),
@@ -4614,8 +3706,8 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 28,
-                height: 28,
+                width: 32,
+                height: 32,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
@@ -4624,18 +3716,18 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                       strokeWidth: 3.5,
                       backgroundColor: const Color(0xFFE2E8F0),
                       valueColor: AlwaysStoppedAnimation<Color>(
-                        isReady ? DefensysTokens.success : DefensysTokens.gold,
+                        isReady ? const Color(0xFF059669) : DefensysTokens.maroon,
                       ),
                     ),
                     Icon(
                       Icons.shield_outlined,
-                      color: isReady ? DefensysTokens.successText : DefensysTokens.darkGold,
-                      size: 13,
+                      color: isReady ? const Color(0xFF059669) : DefensysTokens.maroon,
+                      size: 14,
                     ),
                   ],
                 ),
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -4646,24 +3738,27 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                       Text(
                         '$readiness%',
                         style: const TextStyle(
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w800,
-                          color: DefensysTokens.maroon,
+                          color: Color(0xFF0F172A),
                         ),
                       ),
                       const SizedBox(width: 6),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
                         decoration: BoxDecoration(
-                          color: isReady ? DefensysTokens.successBg : DefensysTokens.warningBg,
+                          color: isReady ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
                           borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                          border: Border.all(
+                            color: isReady ? const Color(0xFFA7F3D0) : const Color(0xFFFDE68A),
+                          ),
                         ),
                         child: Text(
                           isReady ? 'Ready' : 'Pending',
                           style: TextStyle(
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
-                            color: isReady ? DefensysTokens.successText : DefensysTokens.warningText,
+                            color: isReady ? const Color(0xFF065F46) : const Color(0xFF92400E),
                           ),
                         ),
                       ),
@@ -4672,9 +3767,9 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                   const Text(
                     'ISO 9001 Readiness',
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: DefensysTokens.steelGrey,
+                      color: Color(0xFF64748B),
                     ),
                   ),
                 ],
@@ -4687,9 +3782,8 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             value: '$needsReview',
             label: 'Open Findings',
             badgeText: needsReview == 0 ? 'Clear' : 'Needs Review',
-            accentColor: DefensysTokens.warningText,
-            badgeBg: DefensysTokens.warningBg,
-            badgeFg: DefensysTokens.warningText,
+            badgeBg: needsReview == 0 ? const Color(0xFFECFDF5) : const Color(0xFFFEF3C7),
+            badgeFg: needsReview == 0 ? const Color(0xFF065F46) : const Color(0xFF92400E),
           );
 
           final verifiedItem = _RibbonStatItem(
@@ -4697,26 +3791,32 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
             value: '$captured',
             label: 'Verified Evidence',
             badgeText: 'Logged',
-            accentColor: DefensysTokens.success,
-            badgeBg: DefensysTokens.successBg,
-            badgeFg: DefensysTokens.successText,
+            badgeBg: const Color(0xFFF1F5F9),
+            badgeFg: const Color(0xFF475569),
           );
 
           final pendingItem = _RibbonStatItem(
             icon: Icons.schedule_outlined,
             value: '$needsReview',
             label: 'Pending Action',
-            badgeText: 'Awaiting',
-            accentColor: DefensysTokens.techBlue,
-            badgeBg: DefensysTokens.infoBg,
-            badgeFg: DefensysTokens.infoText,
+            badgeText: needsReview == 0 ? 'Up to date' : 'Awaiting',
+            badgeBg: const Color(0xFFF1F5F9),
+            badgeFg: const Color(0xFF475569),
           );
 
           final ratioItem = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.inventory_2_outlined, size: 16, color: DefensysTokens.steelGrey),
-              const SizedBox(width: 6),
+              Container(
+                width: 28,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                ),
+                child: const Icon(Icons.inventory_2_outlined, size: 15, color: Color(0xFF475569)),
+              ),
+              const SizedBox(width: 8),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
@@ -4724,17 +3824,17 @@ class _CompactAuditKpiRibbon extends StatelessWidget {
                   Text(
                     '$reviewed / $total',
                     style: const TextStyle(
-                      fontSize: 13,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
-                      color: DefensysTokens.textDark,
+                      color: Color(0xFF0F172A),
                     ),
                   ),
                   const Text(
                     'Reviewed Ratio',
                     style: TextStyle(
-                      fontSize: 10.5,
+                      fontSize: 11,
                       fontWeight: FontWeight.w600,
-                      color: DefensysTokens.steelGrey,
+                      color: Color(0xFF64748B),
                     ),
                   ),
                 ],
@@ -4782,7 +3882,6 @@ class _RibbonStatItem extends StatelessWidget {
   final String value;
   final String label;
   final String badgeText;
-  final Color accentColor;
   final Color badgeBg;
   final Color badgeFg;
 
@@ -4791,7 +3890,6 @@ class _RibbonStatItem extends StatelessWidget {
     required this.value,
     required this.label,
     required this.badgeText,
-    required this.accentColor,
     required this.badgeBg,
     required this.badgeFg,
   });
@@ -4805,10 +3903,10 @@ class _RibbonStatItem extends StatelessWidget {
           width: 28,
           height: 28,
           decoration: BoxDecoration(
-            color: accentColor.withValues(alpha: 0.1),
+            color: const Color(0xFFF1F5F9),
             borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
           ),
-          child: Icon(icon, color: accentColor, size: 15),
+          child: Icon(icon, color: const Color(0xFF475569), size: 15),
         ),
         const SizedBox(width: 8),
         Column(
@@ -4820,10 +3918,10 @@ class _RibbonStatItem extends StatelessWidget {
               children: [
                 Text(
                   value,
-                  style: TextStyle(
-                    fontSize: 13.5,
+                  style: const TextStyle(
+                    fontSize: 14.5,
                     fontWeight: FontWeight.w800,
-                    color: accentColor,
+                    color: Color(0xFF0F172A),
                   ),
                 ),
                 const SizedBox(width: 5),
@@ -4847,9 +3945,9 @@ class _RibbonStatItem extends StatelessWidget {
             Text(
               label,
               style: const TextStyle(
-                fontSize: 10.5,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
-                color: DefensysTokens.steelGrey,
+                color: Color(0xFF64748B),
               ),
             ),
           ],
@@ -4882,7 +3980,7 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
   final ValueChanged<String?> onScopeChanged;
   final VoidCallback onSelectStartDate;
   final VoidCallback onSelectEndDate;
-  final VoidCallback onQuickExport;
+  final void Function(String format) onExport;
 
   const _CompactAuditFilterToolbar({
     required this.state,
@@ -4896,7 +3994,7 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
     required this.onScopeChanged,
     required this.onSelectStartDate,
     required this.onSelectEndDate,
-    required this.onQuickExport,
+    required this.onExport,
   });
 
   int get _activeFilterCount {
@@ -4980,7 +4078,7 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Spacious Top Line: Search Bar + Filter Modal Button + Export PDF
+          // Spacious Top Line: Search Bar + Filter Modal Button + Export Register
           Row(
             children: [
               // Search Bar
@@ -5066,25 +4164,66 @@ class _CompactAuditFilterToolbar extends ConsumerWidget {
               ),
               const SizedBox(width: 8),
 
-              // Quick PDF Export Button
+              // Quick Export Dropdown Menu
               SizedBox(
                 height: 38,
-                child: OutlinedButton.icon(
-                  onPressed: state.isLoading ? null : onQuickExport,
-                  icon: reportsState.isLoading
-                      ? const SizedBox(
-                          width: 14,
-                          height: 14,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.download_rounded, size: 16),
-                  label: const Text('Export PDF', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.w700)),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: DefensysTokens.maroon,
-                    side: const BorderSide(color: DefensysTokens.maroon),
-                    padding: const EdgeInsets.symmetric(horizontal: 14),
-                    shape: RoundedRectangleBorder(
+                child: PopupMenuButton<String>(
+                  tooltip: 'Export Audit Register',
+                  onSelected: onExport,
+                  itemBuilder: (ctx) => [
+                    const PopupMenuItem(
+                      value: 'pdf',
+                      child: Row(
+                        children: [
+                          Icon(Icons.picture_as_pdf_outlined, size: 16, color: DefensysTokens.maroon),
+                          SizedBox(width: 8),
+                          Text('Export Register as PDF', style: TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                    const PopupMenuItem(
+                      value: 'csv',
+                      child: Row(
+                        children: [
+                          Icon(Icons.table_chart_outlined, size: 16, color: Color(0xFF0D9488)),
+                          SizedBox(width: 8),
+                          Text('Export Register as Excel / CSV', style: TextStyle(fontSize: 12.5)),
+                        ],
+                      ),
+                    ),
+                  ],
+                  child: Container(
+                    height: 38,
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                      border: Border.all(color: DefensysTokens.maroon),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (reportsState.isLoading)
+                          const SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroon),
+                          )
+                        else ...[
+                          const Icon(Icons.download_rounded, size: 16, color: DefensysTokens.maroon),
+                          const SizedBox(width: 6),
+                          const Text(
+                            'Export Register',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                              color: DefensysTokens.maroon,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(Icons.arrow_drop_down_rounded, size: 18, color: DefensysTokens.maroon),
+                        ],
+                      ],
                     ),
                   ),
                 ),
@@ -5937,7 +5076,7 @@ class _AuditTrailTable extends ConsumerWidget {
                               ],
                             ),
                           ),
-                          DataCell(_ProcessAreaBadge(category: log['category_label']?.toString() ?? '')),
+                          DataCell(_ProcessAreaBadge(category: log['category_label']?.toString() ?? log['category']?.toString() ?? '')),
                           DataCell(_ActionTag(action: log['action']?.toString() ?? '')),
                           DataCell(
                             Row(
@@ -6077,8 +5216,10 @@ class _ProcessAreaBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     IconData icon = Icons.folder_open_outlined;
     final lower = category.toLowerCase();
-    if (lower.contains('grade')) {
-      icon = Icons.grade_outlined;
+    String display = category.isEmpty ? 'General' : category;
+    if (lower.contains('grade') || lower.contains('eval') || category == 'grade_center') {
+      icon = Icons.star_border_rounded;
+      display = 'Evaluation & Grades';
     } else if (lower.contains('period')) {
       icon = Icons.date_range_outlined;
     } else if (lower.contains('schedul')) {
@@ -6095,7 +5236,7 @@ class _ProcessAreaBadge extends StatelessWidget {
         Icon(icon, size: 14, color: DefensysTokens.steelGrey),
         const SizedBox(width: 6),
         Text(
-          category.isEmpty ? 'General' : category,
+          display,
           style: const TextStyle(
             fontWeight: FontWeight.w600,
             fontSize: 12,
@@ -6114,43 +5255,20 @@ class _ActionTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    Color bg = DefensysTokens.neutralBg;
-    Color fg = DefensysTokens.neutralText;
-    Color border = DefensysTokens.neutralBorder;
-
-    final lower = action.toLowerCase();
-    if (lower.contains('delete') || lower.contains('remove')) {
-      bg = DefensysTokens.dangerBg;
-      fg = DefensysTokens.dangerText;
-      border = DefensysTokens.dangerBorder;
-    } else if (lower.contains('create') || lower.contains('upload') || lower.contains('add')) {
-      bg = DefensysTokens.successBg;
-      fg = DefensysTokens.successText;
-      border = DefensysTokens.successBorder;
-    } else if (lower.contains('publish') || lower.contains('finalize')) {
-      bg = const Color(0xFFF0FDFA);
-      fg = const Color(0xFF0F766E);
-      border = const Color(0xFF99F6E4);
-    } else if (lower.contains('override') || lower.contains('update') || lower.contains('edit')) {
-      bg = DefensysTokens.overriddenBg;
-      fg = DefensysTokens.overriddenText;
-      border = DefensysTokens.overriddenBorder;
-    }
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: bg,
+        color: const Color(0xFFF1F5F9),
         borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-        border: Border.all(color: border),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Text(
         action.isEmpty ? 'action.unknown' : action,
-        style: TextStyle(
+        style: const TextStyle(
           fontFamily: 'monospace',
-          fontSize: 10.5,
-          fontWeight: FontWeight.bold,
-          color: fg,
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: Color(0xFF334155),
         ),
       ),
     );
@@ -6166,33 +5284,52 @@ class _ReviewStatusPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final status = log['review_status']?.toString() ?? '';
     final isReviewed = status == 'reviewed';
+    final isNeedsReview = status == 'needs_review' || status == 'requires_reason';
+
+    final Color bg;
+    final Color fg;
+    final Color border;
+    final IconData icon;
+    final String label;
+
+    if (isReviewed) {
+      bg = const Color(0xFFECFDF5);
+      fg = const Color(0xFF065F46);
+      border = const Color(0xFFA7F3D0);
+      icon = Icons.check_circle_outlined;
+      label = 'Reviewed';
+    } else if (isNeedsReview) {
+      bg = const Color(0xFFFEF3C7);
+      fg = const Color(0xFF92400E);
+      border = const Color(0xFFFDE68A);
+      icon = Icons.pending_outlined;
+      label = 'Needs Review';
+    } else {
+      bg = const Color(0xFFF1F5F9);
+      fg = const Color(0xFF475569);
+      border = const Color(0xFFCBD5E1);
+      icon = Icons.task_alt_outlined;
+      label = 'Captured';
+    }
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
       decoration: BoxDecoration(
-        color: isReviewed ? DefensysTokens.successBg : DefensysTokens.warningBg,
+        color: bg,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-        border: Border.all(
-          color: isReviewed
-              ? DefensysTokens.successBorder
-              : DefensysTokens.warningBorder,
-        ),
+        border: Border.all(color: border),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(
-            isReviewed ? Icons.check_circle_outlined : Icons.pending_outlined,
-            size: 11.5,
-            color: isReviewed ? DefensysTokens.successText : DefensysTokens.warningText,
-          ),
+          Icon(icon, size: 11.5, color: fg),
           const SizedBox(width: 4),
           Text(
-            isReviewed ? 'Reviewed' : 'Needs Review',
+            label,
             style: TextStyle(
               fontSize: 10.5,
               fontWeight: FontWeight.w700,
-              color: isReviewed ? DefensysTokens.successText : DefensysTokens.warningText,
+              color: fg,
             ),
           ),
         ],
@@ -6203,15 +5340,105 @@ class _ReviewStatusPill extends StatelessWidget {
 
 class _EvidenceDetailsPanel extends ConsumerStatefulWidget {
   final Map<String, dynamic>? log;
+  final VoidCallback? onExportSlip;
+  final void Function(String route)? onNavigateToResource;
 
-  const _EvidenceDetailsPanel({required this.log});
+  const _EvidenceDetailsPanel({
+    required this.log,
+    this.onExportSlip,
+    this.onNavigateToResource,
+  });
 
   @override
   ConsumerState<_EvidenceDetailsPanel> createState() => _EvidenceDetailsPanelState();
 }
 
 class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
-  int _inspectorTab = 0; // 0 = Visual Inspection, 1 = Raw JSON Payload
+  void _showDeliverablePreviewDialog(
+    BuildContext context,
+    Map<String, dynamic> log,
+    void Function(String route)? onNavigate,
+  ) {
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+          child: Container(
+            width: 560,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusLg),
+              boxShadow: const [
+                BoxShadow(
+                  color: Color(0x1F000000),
+                  blurRadius: 16,
+                  offset: Offset(0, 8),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // Dialog Header
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 12, 10),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(6),
+                        decoration: BoxDecoration(
+                          color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.picture_as_pdf_outlined,
+                          color: DefensysTokens.maroon,
+                          size: 16,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      const Expanded(
+                        child: Text(
+                          'Deliverable Evidence Preview',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textDark,
+                          ),
+                        ),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded, size: 18),
+                        onPressed: () => Navigator.of(dialogContext).pop(),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Close Preview',
+                      ),
+                    ],
+                  ),
+                ),
+                const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+                // Card Body
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: _ArchiveFileEvidenceCard(
+                    log: log,
+                    onNavigate: (route) {
+                      Navigator.of(dialogContext).pop();
+                      onNavigate?.call(route);
+                    },
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -6221,6 +5448,166 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
     final category = item?['category']?.toString() ?? '';
     final action = item?['action']?.toString() ?? '';
     final targetType = item?['target_type']?.toString() ?? '';
+
+    String displayCategory = item?['category_label']?.toString() ?? category;
+    final lowerCat = displayCategory.toLowerCase();
+    if (lowerCat.contains('grade') || category == 'grade_center' || lowerCat.contains('eval')) {
+      displayCategory = 'Evaluation & Grades';
+    }
+
+    final oldVals = item?['old_values'] is Map ? Map<String, dynamic>.from(item!['old_values']) : <String, dynamic>{};
+    final newVals = item?['new_values'] is Map ? Map<String, dynamic>.from(item!['new_values']) : <String, dynamic>{};
+    int changeCount = 0;
+    for (final k in {...oldVals.keys, ...newVals.keys}) {
+      if (oldVals[k]?.toString() != newVals[k]?.toString()) changeCount++;
+    }
+
+    final bool hasPreview = category == 'repository' ||
+        action.startsWith('repository.') ||
+        action.contains('archive') ||
+        action.contains('file') ||
+        targetType == 'ArchiveEntry' ||
+        targetType == 'VaultEntry';
+
+    int? parseId(dynamic val) {
+      if (val == null) return null;
+      if (val is int) return val;
+      return int.tryParse(val.toString().replaceAll(RegExp(r'[^\d]'), ''));
+    }
+
+    final targetId = parseId(item?['target_id']);
+    final isGradeTarget = targetType == 'TeamGrade' ||
+        targetType == 'Grade' ||
+        targetType == 'GradeItem' ||
+        targetType.contains('Grade');
+    final isTeamTarget = targetType == 'StudentTeam' || targetType.contains('Team');
+    final isStageTarget = targetType == 'DefenseStage' || targetType.contains('Stage');
+    final isRubricTarget = targetType == 'Rubric';
+
+    final gradeId = parseId(newVals['grade_id'] ??
+        oldVals['grade_id'] ??
+        newVals['team_grade_id'] ??
+        oldVals['team_grade_id'] ??
+        (isGradeTarget ? targetId : null));
+
+    final teamId = parseId(newVals['team_id'] ??
+        oldVals['team_id'] ??
+        (isTeamTarget ? targetId : null));
+
+    final stageId = parseId(newVals['stage_id'] ??
+        oldVals['stage_id'] ??
+        (isStageTarget ? targetId : null));
+
+    final rubricId = parseId(newVals['rubric_id'] ??
+        oldVals['rubric_id'] ??
+        (isRubricTarget ? targetId : null));
+
+    VoidCallback? openActualEvidence;
+    String? redirectRoute;
+    String redirectLabel = 'Open Resource ↗';
+    IconData resourceIcon = Icons.tune_rounded;
+    String resourceHeadline = '${item?['target_type'] ?? 'Resource'} #${item?['target_id'] ?? '-'}';
+    String resourceSubhead = action.isNotEmpty ? action : 'System Audit Log';
+
+    if (hasPreview) {
+      openActualEvidence = () => _showDeliverablePreviewDialog(context, item!, widget.onNavigateToResource);
+      redirectLabel = 'Open Deliverable Evidence ↗';
+      resourceIcon = Icons.picture_as_pdf_outlined;
+      resourceHeadline = newVals['file_name']?.toString() ??
+          newVals['title']?.toString() ??
+          oldVals['file_name']?.toString() ??
+          'Manuscript Deliverable #${item?['target_id']}';
+      final fileSize = newVals['file_size']?.toString() ?? 'Official Deliverable';
+      final track = newVals['track']?.toString() ?? newVals['entry_type']?.toString() ?? 'Capstone Archive';
+      resourceSubhead = '$track • $fileSize';
+    } else if (action.contains('grade') ||
+        isGradeTarget ||
+        targetType.contains('Evaluation') ||
+        action.contains('scoring') ||
+        category == 'grade_center') {
+      if (gradeId != null) {
+        redirectRoute = AdminRoutes.gradeDetail(gradeId);
+        redirectLabel = 'Open Grade Evidence ↗';
+      } else if (teamId != null) {
+        redirectRoute = AdminRoutes.teamDetail(teamId);
+        redirectLabel = 'Open Team Record ↗';
+      } else {
+        redirectRoute = AdminRoutes.gradeCenter;
+        redirectLabel = 'Open Evaluation & Grades ↗';
+      }
+      resourceIcon = Icons.school_outlined;
+      final stage = newVals['stage_label']?.toString() ??
+          newVals['event_name']?.toString() ??
+          oldVals['stage_label']?.toString() ??
+          'Defense Evaluation';
+      final grade = newVals['final_grade']?.toString() ??
+          newVals['grade']?.toString() ??
+          oldVals['final_grade']?.toString() ??
+          '-';
+      resourceHeadline = 'Evaluation: $stage';
+      resourceSubhead = 'Official Grade Decision • Verdict: $grade';
+    } else if (category == 'academic_period' ||
+        action.contains('stage') ||
+        isStageTarget ||
+        action == 'grading.official_completion') {
+      if (stageId != null) {
+        redirectRoute = AdminRoutes.defenseStageEdit(stageId);
+        redirectLabel = 'Open Stage Setup ↗';
+      } else {
+        redirectRoute = AdminRoutes.defenseStages;
+        redirectLabel = 'Open Defense Stages Setup ↗';
+      }
+      resourceIcon = Icons.account_tree_outlined;
+      resourceHeadline = newVals['stage_label']?.toString() ??
+          newVals['name']?.toString() ??
+          oldVals['stage_label']?.toString() ??
+          'Academic Stage';
+      resourceSubhead = 'Defense Stage Configuration • Academic Chain Rule';
+    } else if (action.contains('rubric') ||
+        isRubricTarget ||
+        (category == 'grade_center' && action.contains('rubric'))) {
+      if (rubricId != null) {
+        redirectRoute = AdminRoutes.rubricEdit(rubricId);
+        redirectLabel = 'Open Rubric Assessment ↗';
+      } else {
+        redirectRoute = AdminRoutes.rubrics;
+        redirectLabel = 'Open Rubrics ↗';
+      }
+      resourceIcon = Icons.rule_folder_outlined;
+      resourceHeadline = newVals['name']?.toString() ?? oldVals['name']?.toString() ?? 'Rubric #${item?['target_id']}';
+      resourceSubhead = 'Rubric Assessment Criteria & Weighting';
+    } else if (action.contains('team') ||
+        isTeamTarget ||
+        category == 'student_teams') {
+      if (teamId != null) {
+        redirectRoute = AdminRoutes.teamDetail(teamId);
+        redirectLabel = 'Open Team Record ↗';
+      } else {
+        redirectRoute = AdminRoutes.studentTeams;
+        redirectLabel = 'Open Student Teams ↗';
+      }
+      resourceIcon = Icons.groups_outlined;
+      final tName = newVals['name']?.toString() ?? oldVals['name']?.toString() ?? 'Team #${teamId ?? item?['target_id']}';
+      resourceHeadline = 'Student Team: $tName';
+      resourceSubhead = 'Cohort Team Roster & Defense Allocation';
+    } else if (action.contains('schedule') ||
+        category == 'scheduling' ||
+        targetType == 'DefenseSchedule') {
+      redirectRoute = AdminRoutes.defenseScheduler;
+      redirectLabel = 'Open Defense Operations ↗';
+      resourceIcon = Icons.event_outlined;
+      resourceHeadline = 'Defense Session Schedule';
+      resourceSubhead = 'Room Venue & Panel Assignment';
+    } else if (action.contains('guest') ||
+        action.contains('user') ||
+        category == 'guest_access' ||
+        category == 'user_management') {
+      redirectRoute = AdminRoutes.users;
+      redirectLabel = 'Open User Management ↗';
+      resourceIcon = Icons.person_pin_outlined;
+      resourceHeadline = 'User Identity & Access Control';
+      resourceSubhead = 'Account Governance & Role Permissions';
+    }
 
     return Container(
       decoration: BoxDecoration(
@@ -6265,7 +5652,23 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                   ),
                 ),
               ),
-              if (item != null)
+              if (item != null) ...[
+                if (widget.onExportSlip != null)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: OutlinedButton.icon(
+                      onPressed: widget.onExportSlip,
+                      icon: const Icon(Icons.picture_as_pdf_outlined, size: 13, color: DefensysTokens.maroon),
+                      label: const Text('Export Slip (PDF)', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DefensysTokens.maroon,
+                        side: const BorderSide(color: Color(0xFFCBD5E1)),
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  ),
                 InkWell(
                   onTap: () {
                     Clipboard.setData(ClipboardData(text: '${item['id']}'));
@@ -6296,6 +5699,7 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                     ),
                   ),
                 ),
+              ],
             ],
           ),
           const SizedBox(height: 14),
@@ -6328,8 +5732,8 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                           icon: const Icon(Icons.undo_rounded, size: 14),
                           label: const Text('Revert to Needs Review', style: TextStyle(fontSize: 11.5)),
                           style: OutlinedButton.styleFrom(
-                            foregroundColor: DefensysTokens.warningText,
-                            side: const BorderSide(color: DefensysTokens.warningBorder),
+                            foregroundColor: const Color(0xFFB45309),
+                            side: const BorderSide(color: Color(0xFFFDE68A)),
                             padding: const EdgeInsets.symmetric(vertical: 8),
                           ),
                         )
@@ -6345,7 +5749,7 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                           icon: const Icon(Icons.check_circle_rounded, size: 14),
                           label: const Text('Verify & Mark as Reviewed', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700)),
                           style: FilledButton.styleFrom(
-                            backgroundColor: DefensysTokens.successText,
+                            backgroundColor: const Color(0xFF047857),
                             foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 8),
                             elevation: 0,
@@ -6368,9 +5772,9 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
                 children: [
                   _DetailLine('Responsible User', item['actor_name'] ?? 'System'),
                   _DetailLine('Timestamp', _dateTime(item['created_at'])),
-                  _DetailLine('Process Area', item['category_label'] ?? item['category']),
+                  _DetailLine('Process Area', displayCategory),
                   _DetailLine('Action Type', item['action']),
-                  _DetailLine('Target Resource', '${item['target_type'] ?? 'Resource'} #${item['target_id'] ?? '-'}'),
+                  _DetailLine('Target Resource', _formatTargetResource(item)),
                   if (item['reason'] != null && item['reason'].toString().trim().isNotEmpty)
                     _DetailLine('Audit Reason', item['reason']),
                 ],
@@ -6378,458 +5782,426 @@ class _EvidenceDetailsPanelState extends ConsumerState<_EvidenceDetailsPanel> {
             ),
             const SizedBox(height: 14),
 
-            // Rich Domain Evidence Viewers
-            if (category == 'repository' || action.startsWith('repository.') || targetType == 'ArchiveEntry' || targetType == 'VaultEntry')
-              _ArchiveFileEvidenceCard(log: item)
-            else if (action.contains('rubric') || targetType == 'Rubric' || (category == 'grade_center' && action.contains('rubric')))
-              _RubricConfigEvidenceCard(log: item)
-            else if (action.contains('grade') || targetType.contains('Grade') || action.contains('scoring'))
-              _GradeDecisionEvidenceCard(log: item)
-            else if (action.contains('schedule') || category == 'scheduling' || targetType == 'DefenseSchedule')
-              _ScheduleEvidenceCard(log: item)
-            else if (action.contains('guest') || action.contains('user') || category == 'guest_access' || category == 'user_management')
-              _UserAccessEvidenceCard(log: item)
-            else
-              _GenericEvidenceCard(log: item),
-
-            const SizedBox(height: 14),
-
-            // Interactive Tab Bar for Change Diff vs Raw JSON Payload
+            // Contextual Action & Resource Card with Direct Navigation & Optional Preview
             Container(
-              height: 32,
-              padding: const EdgeInsets.all(2),
+              padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+                border: Border.all(color: const Color(0xFFE2E8F0)),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _inspectorTab = 0),
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                      child: Container(
-                        alignment: Alignment.center,
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(7),
                         decoration: BoxDecoration(
-                          color: _inspectorTab == 0 ? Colors.white : Colors.transparent,
+                          color: DefensysTokens.maroon.withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                         ),
-                        child: Text(
-                          'Visual Change Diff',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: _inspectorTab == 0 ? FontWeight.w700 : FontWeight.w500,
-                            color: _inspectorTab == 0 ? DefensysTokens.maroon : DefensysTokens.steelGrey,
-                          ),
+                        child: Icon(resourceIcon, size: 16, color: DefensysTokens.maroon),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              resourceHeadline,
+                              style: const TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.textDark,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              resourceSubhead,
+                              style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
                         ),
                       ),
-                    ),
+                    ],
                   ),
-                  Expanded(
-                    child: InkWell(
-                      onTap: () => setState(() => _inspectorTab = 1),
-                      borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                      child: Container(
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: _inspectorTab == 1 ? Colors.white : Colors.transparent,
-                          borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                        ),
-                        child: Text(
-                          'Raw Audit JSON',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: _inspectorTab == 1 ? FontWeight.w700 : FontWeight.w500,
-                            color: _inspectorTab == 1 ? DefensysTokens.maroon : DefensysTokens.steelGrey,
+                  const SizedBox(height: 10),
+                  const Divider(height: 1, color: Color(0xFFE2E8F0)),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      if (openActualEvidence != null || redirectRoute != null)
+                        FilledButton.icon(
+                          onPressed: () {
+                            if (openActualEvidence != null) {
+                              openActualEvidence();
+                            } else if (redirectRoute != null) {
+                              widget.onNavigateToResource?.call(redirectRoute);
+                            }
+                          },
+                          icon: Icon(
+                            openActualEvidence != null
+                                ? Icons.visibility_outlined
+                                : Icons.open_in_new_rounded,
+                            size: 12,
+                          ),
+                          label: Text(
+                            redirectLabel,
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
+                          ),
+                          style: FilledButton.styleFrom(
+                            backgroundColor: DefensysTokens.maroon,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            minimumSize: Size.zero,
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           ),
                         ),
-                      ),
-                    ),
+                    ],
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 14),
 
-            if (_inspectorTab == 0)
-              _VisualDiffViewer(
-                oldValues: item['old_values'],
-                newValues: item['new_values'],
-              )
-            else
-              _RawJsonInspector(log: item),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
-/// Rich Evidence Card: Archive & Project Repository Files
-class _ArchiveFileEvidenceCard extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _ArchiveFileEvidenceCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
-    final fileName = newVals['file_name']?.toString() ?? 'Document_${log['target_id']}.pdf';
-    final fileSize = newVals['file_size']?.toString() ?? 'Official PDF Document';
-    final track = newVals['track']?.toString() ?? newVals['entry_type']?.toString() ?? 'Repository Entry';
-    final yearLevel = newVals['year_level']?.toString() ?? '';
-    final status = newVals['status']?.toString() ?? 'Approved';
-    final replaced = newVals['replaced_existing'] == true;
-    final teamId = newVals['team_id']?.toString() ?? '';
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFEF2F2), // Soft maroon tint
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFFECACA)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.maroon,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                ),
-                child: const Icon(Icons.picture_as_pdf_rounded, color: Colors.white, size: 20),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      fileName,
-                      style: const TextStyle(
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textDark,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$fileSize • $status',
-                      style: const TextStyle(
-                        fontSize: 11,
-                        color: DefensysTokens.steelGrey,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          const Divider(height: 1, color: Color(0xFFFCA5A5)),
-          const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            alignment: WrapAlignment.spaceBetween,
-            children: [
-              Text(
-                'Scope: ${track.toUpperCase()} ${yearLevel.isNotEmpty ? "($yearLevel)" : ""}',
-                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700, color: DefensysTokens.maroon),
-              ),
-              if (teamId.isNotEmpty)
-                Text(
-                  'Team ID: #$teamId',
-                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
-                ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: replaced ? DefensysTokens.warningBg : DefensysTokens.successBg,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                ),
-                child: Text(
-                  replaced ? 'Version Overwrite' : 'New Upload',
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w700,
-                    color: replaced ? DefensysTokens.warningText : DefensysTokens.successText,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Rich Evidence Card: Rubric & Assessment Configuration
-class _RubricConfigEvidenceCard extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _RubricConfigEvidenceCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
-    final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
-    final name = newVals['name']?.toString() ?? oldVals['name']?.toString() ?? 'Rubric #${log['target_id']}';
-    final scope = newVals['scope']?.toString() ?? oldVals['scope']?.toString() ?? 'Academic Rubric';
-    final evalType = newVals['evaluation_type']?.toString() ?? oldVals['evaluation_type']?.toString() ?? 'Assessment';
-    final semester = newVals['semester']?.toString() ?? oldVals['semester']?.toString() ?? '';
-    final status = newVals['status']?.toString() ?? (log['action'].toString().contains('publish') ? 'Published & Locked' : 'Configured');
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF0FDF4), // Soft emerald tint
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFBBF7D0)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.successText,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                ),
-                child: const Icon(Icons.rule_folder_outlined, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      name,
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textDark,
-                      ),
-                    ),
-                    Text(
-                      '${scope.toUpperCase()} • $evalType Evaluation ${semester.isNotEmpty ? "($semester)" : ""}',
-                      style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  border: Border.all(color: const Color(0xFF86EFAC)),
-                ),
-                child: Text(
-                  status,
-                  style: const TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: DefensysTokens.successText,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          // Weight breakdown bar
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-              border: Border.all(color: const Color(0xFFDCFCE7)),
-            ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceAround,
+            // Audit Modifications & Attribute Changes
+            Row(
               children: [
-                _MiniWeightTag('Panelist Weight', '50%', DefensysTokens.maroon),
-                _MiniWeightTag('Adviser Weight', '30%', DefensysTokens.darkGold),
-                _MiniWeightTag('Peer Review', '20%', DefensysTokens.techBlue),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _MiniWeightTag extends StatelessWidget {
-  final String label;
-  final String value;
-  final Color color;
-
-  const _MiniWeightTag(this.label, this.value, this.color);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(value, style: TextStyle(fontSize: 12, fontWeight: FontWeight.w800, color: color)),
-        Text(label, style: const TextStyle(fontSize: 9.5, color: DefensysTokens.steelGrey)),
-      ],
-    );
-  }
-}
-
-/// Rich Evidence Card: Grade & Result Decisions
-class _GradeDecisionEvidenceCard extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _GradeDecisionEvidenceCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
-    final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
-    final grade = newVals['final_grade']?.toString() ?? newVals['grade']?.toString() ?? oldVals['final_grade']?.toString() ?? '-';
-    final stage = newVals['stage_label']?.toString() ?? newVals['event_name']?.toString() ?? 'Evaluation';
-    final status = newVals['status']?.toString() ?? 'Finalized';
-    final isPassed = !grade.toLowerCase().contains('fail') && !status.toLowerCase().contains('redefense');
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFEFF6FF), // Soft blue tint
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFBFDBFE)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.techBlue,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-                ),
-                child: const Icon(Icons.school_outlined, color: Colors.white, size: 18),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Official Grade Decision: $stage',
-                      style: const TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w800,
-                        color: DefensysTokens.textDark,
-                      ),
-                    ),
-                    Text(
-                      'Target Grade Resource #${log['target_id']}',
-                      style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                    ),
-                  ],
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isPassed ? DefensysTokens.successBg : DefensysTokens.dangerBg,
-                  borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
-                  border: Border.all(color: isPassed ? DefensysTokens.successBorder : DefensysTokens.dangerBorder),
-                ),
-                child: Text(
-                  isPassed ? 'Passed ($grade)' : 'Verdict: $status',
+                const Icon(Icons.compare_arrows_rounded, size: 14, color: DefensysTokens.steelGrey),
+                const SizedBox(width: 6),
+                const Text(
+                  'AUDIT MODIFICATIONS & ATTRIBUTE CHANGES',
                   style: TextStyle(
                     fontSize: 10.5,
                     fontWeight: FontWeight.w800,
-                    color: isPassed ? DefensysTokens.successText : DefensysTokens.dangerText,
+                    color: DefensysTokens.steelGrey,
+                    letterSpacing: 0.5,
                   ),
                 ),
-              ),
-            ],
-          ),
-          if (oldVals.isNotEmpty && oldVals['final_grade'] != null && oldVals['final_grade'] != newVals['final_grade']) ...[
-            const SizedBox(height: 8),
-            Container(
-              padding: const EdgeInsets.all(6),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-              ),
-              child: Row(
-                children: [
-                  const Text('Score Adjustment: ', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey)),
-                  Text('${oldVals['final_grade']}', style: const TextStyle(fontSize: 11, decoration: TextDecoration.lineThrough, color: DefensysTokens.dangerText)),
-                  const Icon(Icons.arrow_forward_rounded, size: 12, color: DefensysTokens.steelGrey),
-                  Text('${newVals['final_grade']}', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: DefensysTokens.successText)),
+                if (changeCount > 0) ...[
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                    decoration: BoxDecoration(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                    ),
+                    child: Text(
+                      '$changeCount modified',
+                      style: const TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: DefensysTokens.maroon,
+                      ),
+                    ),
+                  ),
                 ],
-              ),
+              ],
+            ),
+            const SizedBox(height: 8),
+
+            _SmartDeltaDiffViewer(
+              oldValues: item['old_values'],
+              newValues: item['new_values'],
+              logEntry: item,
             ),
           ],
         ],
       ),
     );
   }
+
+  String _formatTargetResource(Map<String, dynamic> item) {
+    final targetType = item['target_type']?.toString() ?? 'Resource';
+    final targetId = item['target_id']?.toString() ?? '-';
+    if (targetId == '-' || targetId.isEmpty) return targetType;
+
+    final newVals = item['new_values'] is Map ? Map<String, dynamic>.from(item['new_values']) : <String, dynamic>{};
+    final oldVals = item['old_values'] is Map ? Map<String, dynamic>.from(item['old_values']) : <String, dynamic>{};
+
+    String? name = newVals['team_name']?.toString() ??
+        newVals['name']?.toString() ??
+        newVals['stage_label']?.toString() ??
+        newVals['file_name']?.toString() ??
+        oldVals['team_name']?.toString() ??
+        oldVals['name']?.toString() ??
+        oldVals['file_name']?.toString();
+
+    if (name == null || name.isEmpty) {
+      if (targetType == 'StudentTeam') {
+        for (final t in ref.watch(studentTeamsProvider).teams) {
+          if (t['id']?.toString() == targetId) {
+            name = t['name']?.toString();
+            break;
+          }
+        }
+      } else if (targetType == 'TeamGrade') {
+        for (final g in ref.watch(gradeCenterProvider).grades) {
+          if (g['id']?.toString() == targetId) {
+            final tName = g['team_name']?.toString();
+            final sName = g['stage_label']?.toString();
+            name = (tName != null && sName != null) ? '$tName · $sName' : (tName ?? sName);
+            break;
+          }
+        }
+      } else if (targetType == 'DefenseStage') {
+        for (final s in ref.watch(defenseStagesProvider).stages) {
+          if (s['id']?.toString() == targetId) {
+            name = s['name']?.toString() ?? s['label']?.toString();
+            break;
+          }
+        }
+      } else if (targetType == 'AcademicPeriod') {
+        final periodState = ref.watch(academicPeriodProvider);
+        for (final y in periodState.schoolYears) {
+          if (y['id']?.toString() == targetId) {
+            name = y['label']?.toString();
+            break;
+          }
+          final semesters = y['semesters'] is List ? y['semesters'] as List : const [];
+          for (final sem in semesters) {
+            if (sem is Map && sem['id']?.toString() == targetId) {
+              name = '${sem['label'] ?? sem['semester'] ?? 'Semester'} (${y['label'] ?? ''})'.trim();
+              break;
+            }
+          }
+          if (name != null) break;
+        }
+      }
+    }
+
+    if (name != null && name.isNotEmpty) {
+      return '$targetType #$targetId ($name)';
+    }
+    return '$targetType #$targetId';
+  }
 }
 
-/// Rich Evidence Card: Defense Schedules
-class _ScheduleEvidenceCard extends StatelessWidget {
+/// Rich Evidence Card: Archive & Project Repository Files (Live Deliverable Inspector)
+class _ArchiveFileEvidenceCard extends StatelessWidget {
   final Map<String, dynamic> log;
+  final void Function(String route)? onNavigate;
 
-  const _ScheduleEvidenceCard({required this.log});
+  const _ArchiveFileEvidenceCard({required this.log, this.onNavigate});
 
   @override
   Widget build(BuildContext context) {
     final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
-    final stage = newVals['stage_label']?.toString() ?? 'Defense Event';
-    final room = newVals['room']?.toString() ?? newVals['venue']?.toString() ?? 'Designated Room';
-    final status = newVals['status']?.toString() ?? 'Scheduled';
+    final oldVals = log['old_values'] is Map ? Map<String, dynamic>.from(log['old_values']) : <String, dynamic>{};
+    final fileName = newVals['file_name']?.toString() ??
+        newVals['title']?.toString() ??
+        oldVals['file_name']?.toString() ??
+        'Deliverable_Document_${log['target_id']}.pdf';
+    final fileSize = newVals['file_size']?.toString() ?? 'Official PDF Document';
+    final track = newVals['track']?.toString() ?? newVals['entry_type']?.toString() ?? 'Capstone Repository';
+    final yearLevel = newVals['year_level']?.toString() ?? '';
+    final status = newVals['status']?.toString() ?? 'Approved';
+    final teamName = newVals['team_name']?.toString() ?? 'Assigned Research Team';
+    final replaced = newVals['replaced_existing'] == true;
+    final extension = fileName.contains('.') ? fileName.split('.').last.toUpperCase() : 'PDF';
+    final targetId = log['target_id']?.toString() ?? '-';
 
     return Container(
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFFBEB), // Soft gold tint
+        color: Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFFDE68A)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: DefensysTokens.darkGold,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-            ),
-            child: const Icon(Icons.calendar_month_outlined, color: Colors.white, size: 18),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x05000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
           ),
-          const SizedBox(width: 10),
-          Expanded(
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header Bar
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                  ),
+                  child: const Icon(Icons.picture_as_pdf_outlined, color: DefensysTokens.maroon, size: 18),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        fileName,
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.textDark,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '$fileSize • $status',
+                        style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: replaced ? const Color(0xFFFEF3C7) : const Color(0xFFECFDF5),
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                    border: Border.all(
+                      color: replaced ? const Color(0xFFFDE68A) : const Color(0xFFA7F3D0),
+                    ),
+                  ),
+                  child: Text(
+                    replaced ? 'Version Overwrite' : 'New Upload',
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: replaced ? const Color(0xFF92400E) : const Color(0xFF065F46),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Live Institutional Document / Manuscript Sheet Preview
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+              border: Border.all(color: const Color(0xFFE2E8F0)),
+            ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                // Sheet watermark / institutional header
+                Row(
+                  children: [
+                    const Icon(Icons.verified_outlined, size: 13, color: DefensysTokens.maroon),
+                    const SizedBox(width: 5),
+                    Expanded(
+                      child: Text(
+                        'INSTITUTIONAL DELIVERABLE PREVIEW • ARCHIVE #$targetId',
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.maroon,
+                          letterSpacing: 0.5,
+                        ),
+                      ),
+                    ),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE2E8F0),
+                        borderRadius: BorderRadius.circular(3),
+                      ),
+                      child: Text(
+                        extension,
+                        style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: DefensysTokens.textDark),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+
+                // Simulated Document Summary lines
                 Text(
-                  'Defense Schedule • $stage',
+                  fileName.replaceAll('.pdf', '').replaceAll('_', ' '),
                   style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
                     color: DefensysTokens.textDark,
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
-                  'Venue: $room • Status: $status',
-                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
+                  'Project / Team: $teamName • Track: ${track.toUpperCase()} ${yearLevel.isNotEmpty ? "($yearLevel)" : ""}',
+                  style: const TextStyle(fontSize: 10.5, color: DefensysTokens.steelGrey),
+                ),
+                const SizedBox(height: 10),
+
+                // ISO 9001:2015 Clause 7.5 Compliance Card
+                Container(
+                  padding: const EdgeInsets.all(8),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(4),
+                    border: Border.all(color: const Color(0xFFBBF7D0)),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(Icons.shield_outlined, size: 14, color: Color(0xFF166534)),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: const [
+                            Text(
+                              'ISO 9001:2015 Clause 7.5 Verified Document',
+                              style: TextStyle(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                color: Color(0xFF166534),
+                              ),
+                            ),
+                            Text(
+                              'Retained documented information. Authenticity and tamper-evident audit status confirmed.',
+                              style: TextStyle(fontSize: 9.5, color: Color(0xFF15803D)),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+
+          const Divider(height: 1, color: Color(0xFFE2E8F0)),
+
+          // Navigation & Action Footer
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text(
+                  'Scope: ${track.toUpperCase()}',
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: DefensysTokens.steelGrey),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => onNavigate?.call(AdminRoutes.projectArchive),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 12),
+                  label: const Text('Open in Project Archive ↗', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: DefensysTokens.maroon,
+                    side: const BorderSide(color: Color(0xFFCBD5E1)),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
                 ),
               ],
             ),
@@ -6840,146 +6212,41 @@ class _ScheduleEvidenceCard extends StatelessWidget {
   }
 }
 
-/// Rich Evidence Card: User Access & Guest Tokens
-class _UserAccessEvidenceCard extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _UserAccessEvidenceCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    final newVals = log['new_values'] is Map ? Map<String, dynamic>.from(log['new_values']) : <String, dynamic>{};
-    final username = newVals['username']?.toString() ?? newVals['name']?.toString() ?? 'Account #${log['target_id']}';
-    final role = newVals['role']?.toString() ?? 'User Account';
-
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF5F3FF), // Soft purple tint
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: const Color(0xFFDDD6FE)),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: const Color(0xFF7C3AED),
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-            ),
-            child: const Icon(Icons.badge_outlined, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  username,
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textDark,
-                  ),
-                ),
-                Text(
-                  'Assigned Role / Permission: $role',
-                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// Generic Evidence Card
-class _GenericEvidenceCard extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _GenericEvidenceCard({required this.log});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: DefensysTokens.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(7),
-            decoration: BoxDecoration(
-              color: DefensysTokens.steelGrey,
-              borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
-            ),
-            child: const Icon(Icons.verified_outlined, color: Colors.white, size: 18),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  log['category_label']?.toString() ?? 'System Event',
-                  style: const TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                    color: DefensysTokens.textDark,
-                  ),
-                ),
-                Text(
-                  'Action: ${log['action']} on ${log['target_type']} #${log['target_id']}',
-                  style: const TextStyle(fontSize: 11, color: DefensysTokens.steelGrey),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _VisualDiffViewer extends StatelessWidget {
+class _SmartDeltaDiffViewer extends ConsumerStatefulWidget {
   final dynamic oldValues;
   final dynamic newValues;
+  final Map<String, dynamic>? logEntry;
 
-  const _VisualDiffViewer({
+  const _SmartDeltaDiffViewer({
     required this.oldValues,
     required this.newValues,
+    this.logEntry,
   });
 
   @override
-  Widget build(BuildContext context) {
-    final oldMap = _asMap(oldValues);
-    final newMap = _asMap(newValues);
+  ConsumerState<_SmartDeltaDiffViewer> createState() => _SmartDeltaDiffViewerState();
+}
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Old Values Block
-        _DiffBlock(
-          title: 'Previous State (Before)',
-          dataMap: oldMap,
-          isOld: true,
-        ),
-        const SizedBox(height: 8),
+class _ResolvedAttr {
+  final String label;
+  final String rawKey;
+  final String displayValue;
+  final String? idBadge;
+  final bool isEntity;
+  final bool isNullOrEmpty;
 
-        // New Values Block
-        _DiffBlock(
-          title: 'New Applied State (After)',
-          dataMap: newMap,
-          isOld: false,
-        ),
-      ],
-    );
-  }
+  const _ResolvedAttr({
+    required this.label,
+    required this.rawKey,
+    required this.displayValue,
+    this.idBadge,
+    this.isEntity = false,
+    this.isNullOrEmpty = false,
+  });
+}
+
+class _SmartDeltaDiffViewerState extends ConsumerState<_SmartDeltaDiffViewer> {
+  bool _showUnchanged = false;
 
   Map<String, dynamic> _asMap(dynamic val) {
     if (val is Map) {
@@ -6987,175 +6254,710 @@ class _VisualDiffViewer extends StatelessWidget {
     }
     return {};
   }
-}
 
-class _DiffBlock extends StatelessWidget {
-  final String title;
-  final Map<String, dynamic> dataMap;
-  final bool isOld;
+  String _humanizeKey(String key) {
+    return key
+        .replaceAll('_', ' ')
+        .split(' ')
+        .map((word) => word.isNotEmpty ? '${word[0].toUpperCase()}${word.substring(1)}' : '')
+        .join(' ');
+  }
 
-  const _DiffBlock({
-    required this.title,
-    required this.dataMap,
-    required this.isOld,
-  });
+  _ResolvedAttr _resolveAttribute(String key, dynamic value, Map<String, dynamic> currentMap) {
+    final humanKey = _humanizeKey(key);
+    final lowerKey = key.toLowerCase();
+    final log = widget.logEntry;
+    final parentNew = _asMap(log?['new_values']);
+    final parentOld = _asMap(log?['old_values']);
 
-  @override
-  Widget build(BuildContext context) {
-    final bg = isOld ? DefensysTokens.dangerBg : DefensysTokens.successBg;
-    final border = isOld ? DefensysTokens.dangerBorder : DefensysTokens.successBorder;
-    final headerColor = isOld ? DefensysTokens.dangerText : DefensysTokens.successText;
-    final icon = isOld ? Icons.remove_circle_outline : Icons.add_circle_outline;
+    if (value == null) {
+      return _ResolvedAttr(
+        label: humanKey,
+        rawKey: key,
+        displayValue: 'null',
+        isNullOrEmpty: true,
+      );
+    }
 
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
-        border: Border.all(color: border),
-      ),
-      padding: const EdgeInsets.all(10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Icon(icon, size: 13, color: headerColor),
-              const SizedBox(width: 6),
-              Text(
-                title,
-                style: TextStyle(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w800,
-                  color: headerColor,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (dataMap.isEmpty)
-            Text(
-              isOld ? 'No previous record (Initial Creation)' : 'No modified fields payload',
-              style: const TextStyle(
-                fontSize: 11,
-                color: DefensysTokens.steelGrey,
-                fontStyle: FontStyle.italic,
-              ),
-            )
-          else
-            Column(
-              children: dataMap.entries.map((entry) {
-                return Padding(
-                  padding: const EdgeInsets.only(bottom: 3),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 110,
-                        child: Text(
-                          entry.key,
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w700,
-                            color: headerColor,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Expanded(
-                        child: SelectableText(
-                          '${entry.value}',
-                          style: const TextStyle(
-                            fontFamily: 'monospace',
-                            fontSize: 11,
-                            color: DefensysTokens.textDark,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                );
-              }).toList(),
-            ),
-        ],
-      ),
+    final strVal = value.toString().trim();
+    if (strVal.isEmpty) {
+      return _ResolvedAttr(
+        label: humanKey,
+        rawKey: key,
+        displayValue: '—',
+        isNullOrEmpty: true,
+      );
+    }
+
+    // 1. Team ID resolution
+    if (lowerKey == 'team_id' || lowerKey == 'teamid') {
+      String? teamName;
+
+      // Check current map or parent maps first
+      teamName = currentMap['team_name']?.toString() ??
+          currentMap['team']?['name']?.toString() ??
+          parentNew['team_name']?.toString() ??
+          parentOld['team_name']?.toString() ??
+          log?['team_name']?.toString();
+
+      // Look up in studentTeamsProvider
+      if (teamName == null || teamName.isEmpty) {
+        final teams = ref.watch(studentTeamsProvider).teams;
+        for (final t in teams) {
+          if (t['id']?.toString() == strVal) {
+            teamName = t['name']?.toString() ?? t['project_title']?.toString();
+            break;
+          }
+        }
+      }
+
+      // Look up in gradeCenterProvider
+      if (teamName == null || teamName.isEmpty) {
+        final grades = ref.watch(gradeCenterProvider).grades;
+        for (final g in grades) {
+          if (g['team_id']?.toString() == strVal || g['team']?['id']?.toString() == strVal) {
+            teamName = g['team_name']?.toString();
+            break;
+          }
+        }
+      }
+
+      if (teamName != null && teamName.isNotEmpty) {
+        return _ResolvedAttr(
+          label: 'Team',
+          rawKey: key,
+          displayValue: teamName,
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: 'Team',
+        rawKey: key,
+        displayValue: 'Team #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 2. Grade ID resolution
+    if (lowerKey == 'grade_id' || lowerKey == 'gradeid') {
+      String? teamName;
+      String? stageLabel;
+
+      final grades = ref.watch(gradeCenterProvider).grades;
+      for (final g in grades) {
+        if (g['id']?.toString() == strVal) {
+          teamName = g['team_name']?.toString();
+          stageLabel = g['stage_label']?.toString();
+          break;
+        }
+      }
+
+      // If not found in grade center list, check companion fields
+      teamName ??= currentMap['team_name']?.toString() ??
+          parentNew['team_name']?.toString() ??
+          parentOld['team_name']?.toString() ??
+          log?['team_name']?.toString();
+
+      // If team_id is also present in this map, look up team name
+      if ((teamName == null || teamName.isEmpty) && currentMap.containsKey('team_id')) {
+        final tid = currentMap['team_id']?.toString();
+        final teams = ref.watch(studentTeamsProvider).teams;
+        for (final t in teams) {
+          if (t['id']?.toString() == tid) {
+            teamName = t['name']?.toString();
+            break;
+          }
+        }
+      }
+
+      stageLabel ??= currentMap['stage_label']?.toString() ??
+          parentNew['stage_label']?.toString() ??
+          parentOld['stage_label']?.toString();
+
+      if (teamName != null && teamName.isNotEmpty) {
+        final display = (stageLabel != null && stageLabel.isNotEmpty)
+            ? '$teamName · $stageLabel'
+            : teamName;
+        return _ResolvedAttr(
+          label: 'Team Grade',
+          rawKey: key,
+          displayValue: display,
+          idBadge: 'Grade #$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: 'Team Grade',
+        rawKey: key,
+        displayValue: 'Grade #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 3. Defense Schedule ID resolution
+    if (lowerKey == 'schedule_id' || lowerKey == 'scheduleid') {
+      String? teamName;
+      final grades = ref.watch(gradeCenterProvider).grades;
+      for (final g in grades) {
+        if (g['schedule_id']?.toString() == strVal) {
+          teamName = g['team_name']?.toString();
+          break;
+        }
+      }
+      teamName ??= currentMap['team_name']?.toString() ??
+          parentNew['team_name']?.toString() ??
+          log?['team_name']?.toString();
+
+      if (teamName != null && teamName.isNotEmpty) {
+        return _ResolvedAttr(
+          label: 'Defense Schedule',
+          rawKey: key,
+          displayValue: '$teamName · Schedule',
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: 'Defense Schedule',
+        rawKey: key,
+        displayValue: 'Schedule #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 4. Stage ID resolution
+    if (lowerKey == 'stage_id' || lowerKey == 'defense_stage_id') {
+      String? stageName = currentMap['stage_label']?.toString() ??
+          parentNew['stage_label']?.toString() ??
+          parentOld['stage_label']?.toString();
+
+      if (stageName == null || stageName.isEmpty) {
+        final stages = ref.watch(defenseStagesProvider).stages;
+        for (final s in stages) {
+          if (s['id']?.toString() == strVal) {
+            stageName = s['name']?.toString() ?? s['label']?.toString();
+            break;
+          }
+        }
+      }
+
+      if (stageName != null && stageName.isNotEmpty) {
+        return _ResolvedAttr(
+          label: 'Defense Stage',
+          rawKey: key,
+          displayValue: stageName,
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: 'Defense Stage',
+        rawKey: key,
+        displayValue: 'Stage #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 5. Academic Period / Semester ID resolution
+    if (lowerKey == 'academic_period_id' || lowerKey == 'semester_id' || lowerKey == 'period_id') {
+      String? periodName = currentMap['period_name']?.toString() ??
+          currentMap['semester_name']?.toString();
+
+      if (periodName == null || periodName.isEmpty) {
+        final periodState = ref.watch(academicPeriodProvider);
+        for (final y in periodState.schoolYears) {
+          if (y['id']?.toString() == strVal) {
+            periodName = y['label']?.toString() ?? y['year']?.toString();
+            break;
+          }
+          final semesters = y['semesters'] is List ? y['semesters'] as List : const [];
+          for (final sem in semesters) {
+            if (sem is Map && sem['id']?.toString() == strVal) {
+              periodName = '${sem['label'] ?? sem['semester'] ?? 'Semester'} (${y['label'] ?? ''})'.trim();
+              break;
+            }
+          }
+          if (periodName != null) break;
+        }
+      }
+
+      if (periodName != null && periodName.isNotEmpty) {
+        return _ResolvedAttr(
+          label: 'Academic Period',
+          rawKey: key,
+          displayValue: periodName,
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: 'Academic Period',
+        rawKey: key,
+        displayValue: 'Period #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 6. User / Actor / Student / Adviser ID resolution
+    if (lowerKey == 'user_id' || lowerKey == 'actor_id' || lowerKey == 'student_id' || lowerKey == 'adviser_id') {
+      final name = currentMap['actor_name']?.toString() ??
+          currentMap['student_name']?.toString() ??
+          currentMap['adviser_name']?.toString() ??
+          log?['actor_name']?.toString();
+
+      if (name != null && name.isNotEmpty && name != 'System') {
+        return _ResolvedAttr(
+          label: humanKey,
+          rawKey: key,
+          displayValue: name,
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+
+      return _ResolvedAttr(
+        label: humanKey,
+        rawKey: key,
+        displayValue: '#$strVal',
+        idBadge: null,
+        isEntity: true,
+      );
+    }
+
+    // 7. Assessment Rubric ID resolution
+    if (lowerKey == 'rubric_id') {
+      final rubricName = currentMap['rubric_name']?.toString() ??
+          currentMap['name']?.toString();
+      if (rubricName != null && rubricName.isNotEmpty) {
+        return _ResolvedAttr(
+          label: 'Assessment Rubric',
+          rawKey: key,
+          displayValue: rubricName,
+          idBadge: '#$strVal',
+          isEntity: true,
+        );
+      }
+      return _ResolvedAttr(
+        label: 'Assessment Rubric',
+        rawKey: key,
+        displayValue: 'Rubric #$strVal',
+        idBadge: '#$strVal',
+        isEntity: true,
+      );
+    }
+
+    // 8. General foreign key / id fields
+    if (lowerKey.endsWith('_id') || lowerKey.endsWith('id')) {
+      return _ResolvedAttr(
+        label: humanKey,
+        rawKey: key,
+        displayValue: '#$strVal',
+        idBadge: null,
+        isEntity: true,
+      );
+    }
+
+    // 9. Standard non-ID fields
+    return _ResolvedAttr(
+      label: humanKey,
+      rawKey: key,
+      displayValue: strVal,
+      isNullOrEmpty: false,
     );
   }
-}
-
-class _RawJsonInspector extends StatelessWidget {
-  final Map<String, dynamic> log;
-
-  const _RawJsonInspector({required this.log});
 
   @override
   Widget build(BuildContext context) {
-    final encoder = const JsonEncoder.withIndent('  ');
-    final formattedJson = encoder.convert(log);
+    final oldMap = _asMap(widget.oldValues);
+    final newMap = _asMap(widget.newValues);
+
+    if (oldMap.isEmpty && newMap.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+          border: Border.all(color: const Color(0xFFE2E8F0)),
+        ),
+        child: const Center(
+          child: Text(
+            'No attribute modifications recorded for this entry.',
+            style: TextStyle(fontSize: 12, color: DefensysTokens.steelGrey),
+          ),
+        ),
+      );
+    }
+
+    final isCreation = oldMap.isEmpty && newMap.isNotEmpty;
+    final allKeys = {...oldMap.keys, ...newMap.keys}.toList()..sort();
+
+    final modifiedKeys = <String>[];
+    final unchangedKeys = <String>[];
+
+    for (final key in allKeys) {
+      final hasOld = oldMap.containsKey(key);
+      final hasNew = newMap.containsKey(key);
+      final oldVal = oldMap[key];
+      final newVal = newMap[key];
+
+      if (!hasOld || !hasNew || oldVal?.toString() != newVal?.toString()) {
+        modifiedKeys.add(key);
+      } else {
+        unchangedKeys.add(key);
+      }
+    }
 
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A), // Dark slate terminal
+        color: Colors.white,
         borderRadius: BorderRadius.circular(DefensysTokens.radiusMd),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Row(
-                children: [
-                  Icon(Icons.code_rounded, size: 14, color: Color(0xFF94A3B8)),
-                  SizedBox(width: 6),
-                  Text(
-                    'Audit Event Payload (JSON)',
-                    style: TextStyle(
-                      fontSize: 10.5,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFF94A3B8),
+          // Delta Header Strip
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(DefensysTokens.radiusMd)),
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Row(
+              children: [
+                const Icon(Icons.compare_arrows_rounded, size: 15, color: DefensysTokens.steelGrey),
+                const SizedBox(width: 6),
+                Text(
+                  isCreation
+                      ? 'Initial State Snapshot (${newMap.length} attributes)'
+                      : '${modifiedKeys.length} Modified ${modifiedKeys.length == 1 ? "Attribute" : "Attributes"}',
+                  style: const TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textDark,
+                  ),
+                ),
+                const Spacer(),
+                if (unchangedKeys.isNotEmpty)
+                  InkWell(
+                    onTap: () => setState(() => _showUnchanged = !_showUnchanged),
+                    borderRadius: BorderRadius.circular(DefensysTokens.radiusPill),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _showUnchanged
+                                ? 'Hide ${unchangedKeys.length} unchanged'
+                                : '${unchangedKeys.length} unchanged',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: DefensysTokens.steelGrey,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            _showUnchanged ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 14,
+                            color: DefensysTokens.steelGrey,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ],
+              ],
+            ),
+          ),
+
+          // Modified Items List
+          if (isCreation)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                children: newMap.entries.map((entry) {
+                  final attr = _resolveAttribute(entry.key, entry.value, newMap);
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 6),
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        SizedBox(
+                          width: 140,
+                          child: Text(
+                            attr.label,
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: DefensysTokens.steelGrey,
+                            ),
+                          ),
+                        ),
+                        Expanded(
+                          child: Wrap(
+                            crossAxisAlignment: WrapCrossAlignment.center,
+                            spacing: 6,
+                            runSpacing: 2,
+                            children: [
+                              SelectableText(
+                                attr.displayValue,
+                                style: TextStyle(
+                                  fontFamily: attr.isEntity ? null : 'monospace',
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: attr.isNullOrEmpty
+                                      ? DefensysTokens.steelGrey
+                                      : DefensysTokens.textDark,
+                                  fontStyle: attr.isNullOrEmpty ? FontStyle.italic : null,
+                                ),
+                              ),
+                              if (attr.idBadge != null)
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(3),
+                                    border: Border.all(color: const Color(0xFFE2E8F0)),
+                                  ),
+                                  child: Text(
+                                    attr.idBadge!,
+                                    style: const TextStyle(
+                                      fontFamily: 'monospace',
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.w700,
+                                      color: DefensysTokens.steelGrey,
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }).toList(),
               ),
-              InkWell(
-                onTap: () {
-                  Clipboard.setData(ClipboardData(text: formattedJson));
-                  showSuccessToast(context, 'Raw JSON payload copied to clipboard');
-                },
-                child: const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.copy_rounded, size: 12, color: Color(0xFF38BDF8)),
-                      SizedBox(width: 4),
-                      Text(
-                        'Copy JSON',
+            )
+          else ...[
+            if (modifiedKeys.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(12),
+                child: Text(
+                  'No field value deltas detected between snapshots.',
+                  style: TextStyle(fontSize: 11, color: DefensysTokens.steelGrey, fontStyle: FontStyle.italic),
+                ),
+              )
+            else
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  children: modifiedKeys.map((key) {
+                    final oldVal = oldMap[key];
+                    final newVal = newMap[key];
+                    final oldAttr = _resolveAttribute(key, oldVal, oldMap);
+                    final newAttr = _resolveAttribute(key, newVal, newMap);
+
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 6),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          SizedBox(
+                            width: 130,
+                            child: Text(
+                              newAttr.label,
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w700,
+                                color: DefensysTokens.textDark,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF1F5F9),
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
+                                    child: Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 4,
+                                      children: [
+                                        SelectableText(
+                                          oldVal == null ? '(none)' : oldAttr.displayValue,
+                                          style: TextStyle(
+                                            fontFamily: oldAttr.isEntity ? null : 'monospace',
+                                            fontSize: 11,
+                                            color: oldVal == null ? DefensysTokens.steelGrey : const Color(0xFF64748B),
+                                            decoration: oldVal == null ? null : TextDecoration.lineThrough,
+                                          ),
+                                        ),
+                                        if (oldAttr.idBadge != null)
+                                          Text(
+                                            '(${oldAttr.idBadge})',
+                                            style: const TextStyle(
+                                              fontFamily: 'monospace',
+                                              fontSize: 9,
+                                              color: DefensysTokens.steelGrey,
+                                              decoration: TextDecoration.lineThrough,
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                                const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 6),
+                                  child: Icon(Icons.arrow_forward_rounded, size: 13, color: DefensysTokens.steelGrey),
+                                ),
+                                Expanded(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFECFDF5),
+                                      borderRadius: BorderRadius.circular(4),
+                                      border: Border.all(color: const Color(0xFFA7F3D0)),
+                                    ),
+                                    child: Wrap(
+                                      crossAxisAlignment: WrapCrossAlignment.center,
+                                      spacing: 4,
+                                      children: [
+                                        SelectableText(
+                                          newVal == null ? '(removed)' : newAttr.displayValue,
+                                          style: TextStyle(
+                                            fontFamily: newAttr.isEntity ? null : 'monospace',
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.w700,
+                                            color: newVal == null ? const Color(0xFF991B1B) : const Color(0xFF065F46),
+                                          ),
+                                        ),
+                                        if (newAttr.idBadge != null)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                                            decoration: BoxDecoration(
+                                              color: const Color(0xFFD1FAE5),
+                                              borderRadius: BorderRadius.circular(3),
+                                            ),
+                                            child: Text(
+                                              newAttr.idBadge!,
+                                              style: const TextStyle(
+                                                fontFamily: 'monospace',
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.w700,
+                                                color: Color(0xFF065F46),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ),
+
+            // Collapsible Unchanged Properties
+            if (_showUnchanged && unchangedKeys.isNotEmpty) ...[
+              const Divider(height: 1, color: Color(0xFFE2E8F0)),
+              Padding(
+                padding: const EdgeInsets.all(10),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Padding(
+                      padding: EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        'UNCHANGED PROPERTIES',
                         style: TextStyle(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.bold,
-                          color: Color(0xFF38BDF8),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w800,
+                          color: DefensysTokens.steelGrey,
+                          letterSpacing: 0.5,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    ...unchangedKeys.map((key) {
+                      final attr = _resolveAttribute(key, newMap[key], newMap);
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Row(
+                          children: [
+                            SizedBox(
+                              width: 140,
+                              child: Text(
+                                attr.label,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: DefensysTokens.steelGrey,
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: Wrap(
+                                crossAxisAlignment: WrapCrossAlignment.center,
+                                spacing: 6,
+                                children: [
+                                  SelectableText(
+                                    attr.displayValue,
+                                    style: TextStyle(
+                                      fontFamily: attr.isEntity ? null : 'monospace',
+                                      fontSize: 10.5,
+                                      color: const Color(0xFF475569),
+                                    ),
+                                  ),
+                                  if (attr.idBadge != null)
+                                    Text(
+                                      attr.idBadge!,
+                                      style: const TextStyle(
+                                        fontFamily: 'monospace',
+                                        fontSize: 9,
+                                        color: DefensysTokens.steelGrey,
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  ],
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 8),
-          SelectableText(
-            formattedJson,
-            style: const TextStyle(
-              fontFamily: 'monospace',
-              fontSize: 10.5,
-              color: Color(0xFFF1F5F9),
-              height: 1.4,
-            ),
-          ),
+          ],
         ],
       ),
     );
@@ -7254,7 +7056,7 @@ class _FormSectionLabel extends StatelessWidget {
 
 const _categoryOptions = [
   {'value': 'academic_period', 'label': 'Academic Periods'},
-  {'value': 'grade_center', 'label': 'Grade & Rubrics'},
+  {'value': 'grade_center', 'label': 'Evaluation & Grades'},
   {'value': 'scheduling', 'label': 'Defense Schedules'},
   {'value': 'repository', 'label': 'Archive & Vault'},
   {'value': 'guest_access', 'label': 'Guest Access'},

@@ -44,6 +44,7 @@ dependencies:
   intl: ^0.20.2
   url_launcher: ^6.3.1
   syncfusion_flutter_pdfviewer: ^33.2.5
+  syncfusion_flutter_core: ^33.2.5
   syncfusion_flutter_charts: ^33.2.5
   go_router: ^17.2.3
   connectivity_plus: ^7.1.1
@@ -108,6 +109,9 @@ flutter:
     - assets/login_hero_5.png
     - assets/login_hero_6.png
     - assets/login_hero_7.png
+    - assets/ustp_header_banner.png
+    - assets/ustp_sidebar.png
+    - assets/ustp_footer_badge.png
 
   fonts:
     - family: Poppins

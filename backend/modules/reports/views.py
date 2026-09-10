@@ -919,8 +919,12 @@ class AuditTrailReportView(APIView):
         end_date = parse_date(request.query_params.get('end_date', '').strip())
         track = request.query_params.get('track', '').strip().lower()
         year_level = request.query_params.get('year_level', '').strip()
+        log_id = request.query_params.get('log_id', '').strip()
 
         filters_desc = {}
+        if log_id:
+            queryset = queryset.filter(id=log_id)
+            filters_desc['Audit Entry ID'] = f"#{log_id}"
         if category:
             queryset = queryset.filter(category=category)
             filters_desc['Category'] = category
@@ -1014,13 +1018,18 @@ class AuditTrailReportView(APIView):
                 'reason': log.reason or "No details provided",
             })
 
-        filename = f"DefenSYS_Audit_Register_{datetime.now().strftime('%Y-%m-%d')}"
+        if log_id and len(logs) == 1:
+            title = f"Audit Evidence Certificate — Entry #{log_id}"
+            filename = f"DefenSYS_Audit_Evidence_#{log_id}_{datetime.now().strftime('%Y-%m-%d')}"
+        else:
+            title = "Institutional Audit & Compliance Register"
+            filename = f"DefenSYS_Audit_Register_{datetime.now().strftime('%Y-%m-%d')}"
 
         include_signatures, signatories = _parse_signature_params(request)
 
         return handle_export_or_preview(
             export_format=export_format,
-            title="Institutional Audit & Compliance Register",
+            title=title,
             subtitle=f"Log extract generated on {datetime.now().strftime('%Y-%m-%d %I:%M %p')}",
             summary_kpis=summary_kpis,
             metadata=metadata,

@@ -1752,17 +1752,36 @@ def repository_approved_count():
 def repository_csv(entries):
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['Type', 'File Name', 'Team', 'Year Level', 'Academic Year', 'Stage/Course', 'Status', 'Uploaded By', 'Uploaded At'])
+    writer.writerow([
+        'Type',
+        'File Name',
+        'Team',
+        'Year Level',
+        'Academic Year',
+        'Semester',
+        'Stage',
+        'Status',
+        'Uploaded By',
+        'Uploaded At',
+    ])
     for entry in entries:
+        file_name = entry.get('file_name') or entry.get('deliverable_label') or ''
+        entry_type = 'Capstone' if entry.get('type') == ArchiveEntry.TYPE_CAPSTONE else 'PIT'
+        uploaded_at = entry.get('uploaded_at')
+        if hasattr(uploaded_at, 'strftime'):
+            uploaded_at_str = uploaded_at.strftime('%Y-%m-%d %H:%M:%S')
+        else:
+            uploaded_at_str = str(uploaded_at or '')
         writer.writerow([
-            'Capstone' if entry['type'] == ArchiveEntry.TYPE_CAPSTONE else 'PIT',
-            entry['file_name'],
+            entry_type,
+            file_name,
             entry.get('team_name') or '',
             entry.get('year_level') or '',
             entry.get('academic_year') or '',
+            entry.get('semester') or '',
             entry.get('stage') or '',
             entry.get('status') or '',
             entry.get('uploaded_by') or '',
-            entry.get('uploaded_at') or '',
+            uploaded_at_str,
         ])
     return output.getvalue()

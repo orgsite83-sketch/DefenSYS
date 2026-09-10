@@ -19,6 +19,7 @@ typedef RepositoryAuditNotifier = ProjectArchiveNotifier;
 class ProjectArchiveState {
   final bool isLoading;
   final bool isSaving;
+  final bool isExporting;
   final List<Map<String, dynamic>> entries;
   final Map<String, dynamic> counts;
   final Map<String, dynamic> options;
@@ -46,6 +47,7 @@ class ProjectArchiveState {
   const ProjectArchiveState({
     this.isLoading = false,
     this.isSaving = false,
+    this.isExporting = false,
     this.entries = const [],
     this.counts = const {},
     this.options = const {},
@@ -74,6 +76,7 @@ class ProjectArchiveState {
   ProjectArchiveState copyWith({
     bool? isLoading,
     bool? isSaving,
+    bool? isExporting,
     List<Map<String, dynamic>>? entries,
     Map<String, dynamic>? counts,
     Map<String, dynamic>? options,
@@ -104,6 +107,7 @@ class ProjectArchiveState {
     return ProjectArchiveState(
       isLoading: isLoading ?? this.isLoading,
       isSaving: isSaving ?? this.isSaving,
+      isExporting: isExporting ?? this.isExporting,
       entries: entries ?? this.entries,
       counts: counts ?? this.counts,
       options: options ?? this.options,
@@ -414,7 +418,7 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
 
   Future<String?> exportCsv() async {
     state = state.copyWith(
-      isSaving: true,
+      isExporting: true,
       clearError: true,
       clearMessage: true,
     );
@@ -434,22 +438,20 @@ class ProjectArchiveNotifier extends Notifier<ProjectArchiveState> {
           submissionKind: state.submissionKind,
           viewMode: state.viewMode,
         ),
-        
       );
       if (response.statusCode == 200) {
         state = state.copyWith(
-          isSaving: false,
-          message: 'CSV export generated.',
+          isExporting: false,
           clearError: true,
         );
         return response.body;
       }
       state = state.copyWith(
-        isSaving: false,
+        isExporting: false,
         error: _errorFromResponse(response),
       );
     } catch (e) {
-      state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+      state = state.copyWith(isExporting: false, error: 'Connection error: $e');
     }
     return null;
   }

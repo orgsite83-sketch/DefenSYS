@@ -743,13 +743,12 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
       ),
       child: Row(
         children: [
-          _tableHeaderCell('File Name', flex: compactColumns ? 3.5 : 2.8),
+          _tableHeaderCell('File Name', flex: compactColumns ? 3.5 : 3.2),
           if (!compactColumns) ...[
-            _tableHeaderCell('Year Level', flex: 0.8),
-            _tableHeaderCell('Academic Year', flex: 0.9),
-            _tableHeaderCell('Course', flex: 0.65),
+            _tableHeaderCell('Year Level', flex: 0.85),
+            _tableHeaderCell('Academic Year', flex: 1.0),
           ],
-          _tableHeaderCell('Semester', flex: compactColumns ? 1.1 : 0.85),
+          _tableHeaderCell('Semester', flex: compactColumns ? 1.1 : 0.95),
           _tableHeaderCell('Status', flex: 1.0),
           _tableHeaderCell('Uploaded', flex: 0.85),
           _tableHeaderCell('Actions', flex: 1.1, alignment: Alignment.centerRight),
@@ -898,25 +897,21 @@ class _ProjectArchiveTableState extends ConsumerState<ProjectArchiveTable> {
                 ),
               ],
             ),
-            flex: compactColumns ? 3.5 : 2.8,
+            flex: compactColumns ? 3.5 : 3.2,
           ),
           if (!compactColumns) ...[
             _tableCell(
               _yearBadge(entry['year_level']?.toString() ?? ''),
-              flex: 0.8,
+              flex: 0.85,
             ),
             _tableCell(
               _bodyText(entry['academic_year']?.toString() ?? ''),
-              flex: 0.9,
-            ),
-            _tableCell(
-              _bodyText(entry['course']?.toString() ?? ''),
-              flex: 0.65,
+              flex: 1.0,
             ),
           ],
           _tableCell(
             _bodyText(entry['semester']?.toString() ?? ''),
-            flex: compactColumns ? 1.1 : 0.85,
+            flex: compactColumns ? 1.1 : 0.95,
           ),
           _tableCell(
             _statusBadge(entry['status']?.toString() ?? ''),

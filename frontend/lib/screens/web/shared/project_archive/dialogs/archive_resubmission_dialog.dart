@@ -5,6 +5,7 @@ import 'package:defensys/theme/defensys_tokens.dart';
 import 'package:defensys/utils/universal_file_viewer.dart';
 import 'package:defensys/toasts/feedback_toast.dart';
 import 'package:defensys/widgets/tactile_button.dart';
+import 'package:defensys/utils/csv_file_io.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -641,25 +642,28 @@ class ArchiveResubmissionDialog {
     required WidgetRef ref,
   }) async {
     final csv = await ref.read(repositoryAuditProvider.notifier).exportCsv();
-    if (!context.mounted || csv == null) {
+    if (!context.mounted) return;
+    if (csv == null || csv.trim().isEmpty) {
+      final error = ref.read(repositoryAuditProvider).error ?? 'Failed to export archive records.';
+      showErrorToast(context, error);
       return;
     }
-    await showDialog<void>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Project Archive CSV'),
-        content: SizedBox(
-          width: 720,
-          child: SingleChildScrollView(child: SelectableText(csv)),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
-            child: const Text('Close'),
-          ),
-        ],
-      ),
-    );
+    try {
+      final now = DateTime.now();
+      final dateStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+      final fileName = 'project_archive_records_$dateStr.csv';
+      await downloadTextFile(
+        filename: fileName,
+        content: csv,
+      );
+      if (context.mounted) {
+        showSuccessToast(context, 'Archive records exported to $fileName');
+      }
+    } catch (e) {
+      if (context.mounted) {
+        showErrorToast(context, 'Failed to save export file: $e');
+      }
+    }
   }
 }
 

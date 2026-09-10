@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../services/academic/curriculum_analytics_provider.dart';
+import '../../../../services/auth/auth_provider.dart';
 import '../../../../theme/app_theme.dart';
+import '../../../../widgets/export/export.dart';
 import 'widgets/curriculum_academic_highlights.dart';
 import 'widgets/curriculum_circular_kpis.dart';
 import 'widgets/curriculum_projects_donut.dart';
@@ -179,9 +181,9 @@ class _CurriculumAnalyticsScreenState
           children: [
             if (years.isNotEmpty) _academicYearDropdown(years, selectedYear),
             _secondaryButton(
-              icon: Icons.picture_as_pdf_rounded,
-              label: state.isDownloadingPdf ? 'Exporting...' : 'Export PDF',
-              onTap: state.isDownloadingPdf ? null : _downloadPdfReport,
+              icon: Icons.file_download_outlined,
+              label: 'Export Proposal',
+              onTap: _openExportModal,
             ),
             _primaryButton(
               icon: Icons.auto_awesome_rounded,
@@ -816,9 +818,9 @@ class _CurriculumAnalyticsScreenState
             ],
           ),
           _secondaryButton(
-            icon: Icons.download_rounded,
-            label: 'Download Curriculum Proposal PDF',
-            onTap: _downloadPdfReport,
+            icon: Icons.file_download_outlined,
+            label: 'Export Curriculum Decision Support Proposal',
+            onTap: _openExportModal,
           ),
         ],
       ),
@@ -838,10 +840,71 @@ class _CurriculumAnalyticsScreenState
     );
   }
 
-  Future<void> _downloadPdfReport() async {
-    await ref
-        .read(curriculumAnalyticsProvider.notifier)
-        .downloadProposalPdf(scope: _selectedScope);
+  Future<void> _openExportModal() async {
+    final state = ref.read(curriculumAnalyticsProvider);
+    final user = ref.read(authProvider).user;
+    String userName = '';
+    if (user != null) {
+      final fn = (user['first_name'] ?? '').toString().trim();
+      final ln = (user['last_name'] ?? '').toString().trim();
+      if (fn.isNotEmpty || ln.isNotEmpty) {
+        userName = '$fn $ln'.trim();
+      } else {
+        userName = (user['username'] ?? '').toString().trim();
+      }
+    }
+    if (userName.isEmpty) userName = 'admin';
+
+    final selectedYear = state.selectedAcademicYear.isNotEmpty ? state.selectedAcademicYear : '2024-2025';
+    final trackSuffix = _selectedScope != 'all' ? ' (${_scopeDisplayName(_selectedScope)})' : '';
+
+    final config = DefensysExportConfig(
+      title: 'Curriculum Analytics & Decision Support Proposal',
+      subtitle: 'Evidence-Based Academic Improvement Report · AY $selectedYear$trackSuffix',
+      tag: 'DECISION SUPPORT',
+      icon: Icons.auto_awesome_rounded,
+      defaultFilename: 'Curriculum_Proposal_AY_${selectedYear}_${_selectedScope.toUpperCase()}',
+      supportedFormats: const ['pdf', 'xlsx', 'csv', 'doc'],
+      initialFormat: 'pdf',
+      initialSignatories: [
+        DefensysSignatory(
+          label: 'Prepared by:',
+          name: userName,
+          role: 'Curriculum Analytics Lead / Evaluator',
+        ),
+        const DefensysSignatory(
+          label: 'Noted by:',
+          name: 'Academic Department Secretary',
+          role: 'Department Curriculum Committee Secretary',
+        ),
+        const DefensysSignatory(
+          label: 'Approved by:',
+          name: 'IT Program Chairperson / College Dean',
+          role: 'Chairperson, Department of Information Technology',
+        ),
+      ],
+      initialIncludeSignatures: true,
+      onFetchPreview: (params) async {
+        return await ref.read(curriculumAnalyticsProvider.notifier).fetchProposalPreview(
+              scope: _selectedScope,
+              queryParams: params,
+            );
+      },
+      onDownload: (params, format, signatories, includeSignatures) async {
+        return await ref.read(curriculumAnalyticsProvider.notifier).downloadProposalExport(
+              scope: _selectedScope,
+              format: format,
+              signatories: signatories,
+              includeSignatures: includeSignatures,
+              customFilename: params['custom_filename'],
+            );
+      },
+    );
+
+    await showDefensysExportModal(
+      context: context,
+      config: config,
+    );
   }
 
   Future<void> _generateProposalModal() async {
@@ -965,10 +1028,10 @@ class _CurriculumAnalyticsScreenState
             FilledButton(
               onPressed: () {
                 Navigator.of(context).pop();
-                _downloadPdfReport();
+                _openExportModal();
               },
               style: FilledButton.styleFrom(backgroundColor: AppColors.maroon),
-              child: const Text('Download Proposal PDF'),
+              child: const Text('Export Official Proposal'),
             ),
           ],
         );

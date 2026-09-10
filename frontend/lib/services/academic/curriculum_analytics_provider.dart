@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import '../../config/api_config.dart';
 import '../../utils/platform/universal_file_viewer.dart';
 import '../network/authenticated_client.dart';
+import '../admin/reports_provider.dart';
+import '../../widgets/export/defensys_export_models.dart';
 
 final curriculumAnalyticsProvider =
     NotifierProvider<CurriculumAnalyticsNotifier, CurriculumAnalyticsState>(
@@ -172,6 +174,112 @@ class CurriculumAnalyticsNotifier extends Notifier<CurriculumAnalyticsState> {
       );
     } catch (e) {
       state = state.copyWith(isSaving: false, error: 'Connection error: $e');
+    }
+  }
+
+  Future<ReportPreviewData?> fetchProposalPreview({
+    String? academicYear,
+    String? rubricId,
+    String? scope,
+    Map<String, String>? queryParams,
+  }) async {
+    final targetYear = academicYear ?? state.selectedAcademicYear;
+    final targetRubric = rubricId ?? state.selectedRubricId;
+    final targetScope = scope ?? state.selectedScope;
+
+    try {
+      final qParams = <String, String>{
+        'export_format': 'json',
+        if (targetYear.isNotEmpty) 'academic_year': targetYear,
+        if (targetRubric.isNotEmpty && targetRubric != 'all') 'rubric_id': targetRubric,
+        if (targetScope.isNotEmpty && targetScope != 'all' && targetScope != 'All Levels') 'scope': targetScope.toLowerCase(),
+      };
+      if (queryParams != null) {
+        qParams.addAll(queryParams);
+      }
+      final uri = Uri.parse('$baseUrl/proposal/pdf/').replace(
+        queryParameters: qParams,
+      );
+      final response = await _client.get(uri);
+      if (response.statusCode == 200) {
+        final bodyJson = jsonDecode(utf8.decode(response.bodyBytes));
+        if (bodyJson is Map<String, dynamic>) {
+          return ReportPreviewData.fromJson(bodyJson);
+        }
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<bool> downloadProposalExport({
+    String? academicYear,
+    String? rubricId,
+    String? scope,
+    String format = 'pdf',
+    List<DefensysSignatory> signatories = const [],
+    bool includeSignatures = true,
+    String? customFilename,
+  }) async {
+    state = state.copyWith(
+      isDownloadingPdf: true,
+      clearError: true,
+      clearMessage: true,
+    );
+
+    final targetYear = academicYear ?? state.selectedAcademicYear;
+    final targetRubric = rubricId ?? state.selectedRubricId;
+    final targetScope = scope ?? state.selectedScope;
+
+    try {
+      final sigParams = signatories.map((s) => s.toJson()).toList();
+      final uri = Uri.parse('$baseUrl/proposal/pdf/').replace(
+        queryParameters: {
+          'export_format': format,
+          'include_signatures': includeSignatures.toString(),
+          if (sigParams.isNotEmpty) 'signatories': jsonEncode(sigParams),
+          if (targetYear.isNotEmpty) 'academic_year': targetYear,
+          if (targetRubric.isNotEmpty && targetRubric != 'all') 'rubric_id': targetRubric,
+          if (targetScope.isNotEmpty && targetScope != 'all' && targetScope != 'All Levels') 'scope': targetScope.toLowerCase(),
+        },
+      );
+      final response = await _client.get(uri);
+      if (response.statusCode == 200) {
+        final trackSuffix = (targetScope.isNotEmpty && targetScope != 'all' && targetScope != 'All Levels') ? '_${targetScope.toUpperCase()}' : '';
+        final ext = format == 'xlsx' ? '.xlsx' : format == 'csv' ? '.csv' : format == 'doc' ? '.doc' : '.pdf';
+        final mimeType = format == 'xlsx'
+            ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            : format == 'csv'
+                ? 'text/csv;charset=utf-8'
+                : format == 'doc'
+                    ? 'application/msword'
+                    : 'application/pdf';
+
+        final cleanCustom = customFilename?.trim();
+        final baseName = (cleanCustom != null && cleanCustom.isNotEmpty)
+            ? cleanCustom.replaceAll(RegExp(r'\.(pdf|xlsx|csv|doc|docx)$', caseSensitive: false), '')
+            : 'Curriculum_Proposal_AY_${targetYear.isNotEmpty ? targetYear : "Report"}$trackSuffix';
+        final fileName = '$baseName$ext';
+
+        await downloadBytesFile(
+          bytes: response.bodyBytes,
+          fileName: fileName,
+          mimeType: mimeType,
+        );
+        state = state.copyWith(
+          isDownloadingPdf: false,
+          message: 'Curriculum Proposal ${format.toUpperCase()} downloaded successfully.',
+          clearError: true,
+        );
+        return true;
+      }
+      state = state.copyWith(
+        isDownloadingPdf: false,
+        error: _errorFromResponse(response),
+      );
+      return false;
+    } catch (e) {
+      state = state.copyWith(isDownloadingPdf: false, error: 'Download failed: $e');
+      return false;
     }
   }
 

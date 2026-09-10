@@ -1048,5 +1048,21 @@ class RepositoryAuditApiTests(APITestCase):
         )
         self.assertEqual(resub_cap.status_code, 403)
 
+    def test_export_csv_admin(self):
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get('/api/repository/project-archive/export/')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'text/csv; charset=utf-8')
+        content = response.content.decode('utf-8')
+        self.assertIn('Type,File Name,Team,Year Level,Academic Year,Semester,Stage,Status,Uploaded By,Uploaded At', content)
+
+    def test_export_csv_pit_lead_restricted(self):
+        self.client.force_authenticate(user=self.pit_lead)
+        response = self.client.get('/api/repository/project-archive/export/?type=capstone')
+        self.assertEqual(response.status_code, 200)
+        content = response.content.decode('utf-8')
+        # PIT lead should not get capstone records
+        self.assertNotIn('Capstone,', content)
+
 
 

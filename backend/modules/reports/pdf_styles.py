@@ -122,24 +122,35 @@ class NumberedCanvas(canvas.Canvas):
         show_sidebar = getattr(self, '_show_sidebar', getattr(doc, 'show_sidebar', False))
         draw_canvas_header = getattr(self, '_draw_canvas_header', getattr(doc, 'draw_canvas_header', True))
 
-        # 1. Header Banner on Page 1 (Edge-to-Edge Full Bleed)
-        if self._pageNumber == 1 and draw_canvas_header:
+        # 1. Official Header Banner & Left Sidebar on Every Page (Edge-to-Edge Full Bleed)
+        if draw_canvas_header:
             banner_path = _find_asset_path('ustp_header_banner.png') or _find_asset_path('image003.png')
+            banner_h = page_w * (400.0 / 2448.0)
             if banner_path:
-                banner_h = page_w * (400.0 / 2448.0)
                 self.drawImage(banner_path, 0, page_h - banner_h, width=page_w, height=banner_h, mask='auto')
-                
-                # Vision / Mission / Quality Policy Left Sidebar (image004.png)
-                if show_sidebar:
-                    side_path = _find_asset_path('ustp_sidebar.png') or _find_asset_path('image004.png')
-                    if side_path:
-                        sb_w = 1.30 * inch
-                        sb_h = sb_w * (1726.0 / 421.0)
-                        sb_x = 24
-                        sb_y = page_h - banner_h - sb_h - 10
-                        self.drawImage(side_path, sb_x, sb_y, width=sb_w, height=sb_h, mask='auto')
+            else:
+                top_y = page_h - 30
+                self.setFont("Times-Bold", 8)
+                self.setFillColor(colors.black)
+                self.drawString(28, top_y, "UNIVERSITY OF SCIENCE AND TECHNOLOGY OF SOUTHERN PHILIPPINES")
+                self.setFont("Times-Roman", 8)
+                self.setFillColor(colors.HexColor('#374151'))
+                self.drawRightString(page_w - 28, top_y, "Department of Information Technology — Oroquieta Campus")
+                self.setStrokeColor(BORDER_GREY)
+                self.setLineWidth(0.5)
+                self.line(28, top_y - 7, page_w - 28, top_y - 7)
+
+            # Vision / Mission / Quality Policy Left Sidebar (image004.png) on every page
+            if show_sidebar:
+                side_path = _find_asset_path('ustp_sidebar.png') or _find_asset_path('image004.png')
+                if side_path:
+                    sb_w = 1.30 * inch
+                    sb_h = sb_w * (1726.0 / 421.0)
+                    sb_x = 24
+                    sb_y = page_h - banner_h - sb_h - 10
+                    self.drawImage(side_path, sb_x, sb_y, width=sb_w, height=sb_h, mask='auto')
         elif self._pageNumber > 1:
-            # Running Header on Page 2+
+            # Fallback running header on Page 2+ if canvas header banner is explicitly disabled
             top_y = page_h - 30
             self.setFont("Times-Bold", 8)
             self.setFillColor(colors.black)
