@@ -69,3 +69,7 @@ scratch.txt
 
 # --- Test & sample data ---
 sample_file/
+
+# --- Documentation & directives archives ---
+docs/
+directives/
