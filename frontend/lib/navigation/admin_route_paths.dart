@@ -206,7 +206,6 @@ abstract final class FacultyRoutes {
       'defense_board' => defenseBoard,
       'grade_center' => gradeCenter,
       'rubrics' => rubrics,
-      'rubric_engine' => rubrics,
       'project_archive' => projectArchive,
       'repository_audit' => projectArchive,
       'audit_compliance' => auditCompliance,

@@ -85,7 +85,7 @@ class Rubric(models.Model):
 
     class Meta:
         app_label = 'grading'
-        db_table = 'rubric_engine_rubric'
+        db_table = 'rubrics'
         ordering = ['-updated_at', 'name']
         indexes = [
             models.Index(fields=['scope', 'status'], name='rubric_engi_scope_11d033_idx'),
@@ -158,7 +158,7 @@ class RubricCriterion(models.Model):
 
     class Meta:
         app_label = 'grading'
-        db_table = 'rubric_engine_rubriccriterion'
+        db_table = 'rubric_criteria'
         ordering = ['display_order', 'id']
 
     def clean(self):

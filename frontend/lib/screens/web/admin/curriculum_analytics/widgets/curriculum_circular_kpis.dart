@@ -2,7 +2,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../../../../../theme/app_theme.dart';
 
-/// Renders the 3 prominent circular KPI metric rings inspired by post-match stats.
+/// Renders the 3 prominent circular KPI metric rings inspired by executive dashboards.
 class CurriculumCircularKpis extends StatelessWidget {
   final Map<String, dynamic> kpiSummary;
   final Map<String, dynamic> defenseFunnel;
@@ -18,71 +18,121 @@ class CurriculumCircularKpis extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 1. Overall Pass Rate
-    final passRateRaw = defenseFunnel['overall_pass_rate'] ?? defenseFunnel['pass_rate'];
-    final double? passRate = passRateRaw != null ? (double.tryParse(passRateRaw.toString()) ?? 0.0) : null;
+    final passRateRaw =
+        defenseFunnel['overall_pass_rate'] ?? defenseFunnel['pass_rate'];
+    final double? passRate = passRateRaw != null
+        ? (double.tryParse(passRateRaw.toString()) ?? 0.0)
+        : null;
 
     // 2. Competency Proficiency Index (CPI)
     final cpiRaw = kpiSummary['competency_index'];
-    final double? cpi = cpiRaw != null ? (double.tryParse(cpiRaw.toString()) ?? 0.0) : null;
+    final double? cpi =
+        cpiRaw != null ? (double.tryParse(cpiRaw.toString()) ?? 0.0) : null;
 
     // 3. Evaluated Teams / Hearings
-    final totalEvalsRaw = kpiSummary['active_cohort_projects'] ?? kpiSummary['total_projects'];
-    final int totalEvals = totalEvalsRaw != null ? (int.tryParse(totalEvalsRaw.toString()) ?? 0) : 0;
-    final int stagesCount = int.tryParse(kpiSummary['stages_count']?.toString() ?? '0') ?? 0;
+    final totalEvalsRaw =
+        kpiSummary['active_cohort_projects'] ?? kpiSummary['total_projects'];
+    final int totalEvals = totalEvalsRaw != null
+        ? (int.tryParse(totalEvalsRaw.toString()) ?? 0)
+        : 0;
+    final int stagesCount =
+        int.tryParse(kpiSummary['stages_count']?.toString() ?? '0') ?? 0;
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final isMobile = constraints.maxWidth < 700;
+        final isMobile = constraints.maxWidth < 720;
+
+        // Badge 1: Pass Rate
+        final bool isPassEvaluated = passRate != null && hasEvaluations;
+        final bool isPassing = isPassEvaluated && passRate >= 75.0;
 
         final badge1 = _CircularKpiBadge(
           title: 'DEFENSE PASS RATE',
-          mainValue: passRate != null && hasEvaluations ? '${passRate.toStringAsFixed(1)}%' : 'Pending',
-          subtext: hasEvaluations ? 'Target: ≥ 75.0%' : 'Awaiting defense hearings',
-          progress: passRate != null && hasEvaluations ? (passRate / 100.0).clamp(0.0, 1.0) : 0.0,
-          ringColor: (passRate != null && passRate >= 75.0)
-              ? const Color(0xFF10B981) // Emerald
-              : const Color(0xFFF59E0B), // Amber
-          statusLabel: passRate != null && hasEvaluations
-              ? (passRate >= 75.0 ? 'Benchmark Met' : 'Remediation Alert')
+          mainValue: isPassEvaluated
+              ? '${passRate.toStringAsFixed(1)}%'
+              : 'Pending',
+          subtext: hasEvaluations
+              ? 'Target benchmark: ≥ 75.0%'
+              : 'Awaiting defense hearings',
+          progress: isPassEvaluated
+              ? (passRate / 100.0).clamp(0.0, 1.0)
+              : 0.0,
+          ringColor: isPassEvaluated
+              ? (isPassing
+                  ? const Color(0xFF059669) // Forest Emerald
+                  : const Color(0xFFDC2626)) // Crimson
+              : const Color(0xFFD97706), // Amber
+          icon: isPassEvaluated
+              ? (isPassing
+                  ? Icons.check_circle_outline_rounded
+                  : Icons.warning_amber_rounded)
+              : Icons.schedule_rounded,
+          statusLabel: isPassEvaluated
+              ? (isPassing ? 'Benchmark Met' : 'Remediation Alert')
               : 'Unscheduled',
-          statusColor: passRate != null && hasEvaluations
-              ? (passRate >= 75.0 ? const Color(0xFF047857) : const Color(0xFFB45309))
+          statusColor: isPassEvaluated
+              ? (isPassing
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFDC2626))
               : const Color(0xFF64748B),
-          statusBg: passRate != null && hasEvaluations
-              ? (passRate >= 75.0 ? const Color(0xFFECFDF5) : const Color(0xFFFFFBEB))
+          statusBg: isPassEvaluated
+              ? (isPassing
+                  ? const Color(0xFFECFDF5)
+                  : const Color(0xFFFEF2F2))
               : const Color(0xFFF1F5F9),
         );
+
+        // Badge 2: CPI
+        final bool hasCpi =
+            cpi != null && hasEvaluations && cpi > 0;
+        final bool cpiPassed = hasCpi && cpi >= 75.0;
 
         final badge2 = _CircularKpiBadge(
           title: 'COMPETENCY INDEX (CPI)',
-          mainValue: cpi != null && hasEvaluations && cpi > 0 ? cpi.toStringAsFixed(1) : 'No Grades',
-          subtext: hasEvaluations && cpi != null && cpi > 0
+          mainValue: hasCpi ? cpi.toStringAsFixed(1) : 'No Grades',
+          subtext: hasCpi
               ? 'Average student rubric score'
               : 'Awaiting rubric scoring',
-          progress: cpi != null && hasEvaluations && cpi > 0 ? (cpi / 100.0).clamp(0.0, 1.0) : 0.0,
-          ringColor: (cpi != null && cpi >= 75.0)
-              ? const Color(0xFF0EA5E9) // Sky blue
-              : const Color(0xFFEF4444), // Crimson
-          statusLabel: cpi != null && hasEvaluations && cpi > 0
-              ? (cpi >= 80.0 ? 'High Proficiency' : (cpi >= 75.0 ? 'Passing' : 'Needs Focus (<75)'))
-              : 'Pending',
-          statusColor: cpi != null && hasEvaluations && cpi > 0
-              ? (cpi >= 75.0 ? const Color(0xFF0369A1) : const Color(0xFFB91C1C))
+          progress: hasCpi ? (cpi / 100.0).clamp(0.0, 1.0) : 0.0,
+          ringColor: hasCpi
+              ? (cpiPassed
+                  ? const Color(0xFF059669) // Emerald
+                  : const Color(0xFFDC2626)) // Crimson
               : const Color(0xFF64748B),
-          statusBg: cpi != null && hasEvaluations && cpi > 0
-              ? (cpi >= 75.0 ? const Color(0xFFE0F2FE) : const Color(0xFFFEF2F2))
+          icon: Icons.school_outlined,
+          statusLabel: hasCpi
+              ? (cpi >= 80.0
+                  ? 'High Proficiency'
+                  : (cpi >= 75.0 ? 'Passing' : 'Needs Focus (<75)'))
+              : 'Pending',
+          statusColor: hasCpi
+              ? (cpiPassed
+                  ? const Color(0xFF059669)
+                  : const Color(0xFFDC2626))
+              : const Color(0xFF64748B),
+          statusBg: hasCpi
+              ? (cpiPassed
+                  ? const Color(0xFFECFDF5)
+                  : const Color(0xFFFEF2F2))
               : const Color(0xFFF1F5F9),
         );
 
+        // Badge 3: Cohort Hearings
         final badge3 = _CircularKpiBadge(
           title: 'COHORT HEARINGS',
           mainValue: totalEvals > 0 ? '$totalEvals Evals' : '0 Evals',
-          subtext: stagesCount > 0 ? 'Across $stagesCount defense stages' : 'Deliverables uploaded',
+          subtext: stagesCount > 0
+              ? 'Across $stagesCount defense stages'
+              : 'Deliverables uploaded',
           progress: totalEvals > 0 ? 1.0 : 0.0,
           ringColor: AppColors.maroon,
+          icon: Icons.groups_outlined,
           statusLabel: totalEvals > 0 ? 'Active Cohort' : 'No Submissions',
-          statusColor: totalEvals > 0 ? AppColors.maroon : const Color(0xFF64748B),
-          statusBg: totalEvals > 0 ? const Color(0xFFFEE2E2) : const Color(0xFFF1F5F9),
+          statusColor:
+              totalEvals > 0 ? AppColors.maroon : const Color(0xFF64748B),
+          statusBg: totalEvals > 0
+              ? AppColors.maroon.withValues(alpha: 0.08)
+              : const Color(0xFFF1F5F9),
         );
 
         if (isMobile) {
@@ -117,6 +167,7 @@ class _CircularKpiBadge extends StatelessWidget {
   final String subtext;
   final double progress;
   final Color ringColor;
+  final IconData icon;
   final String statusLabel;
   final Color statusColor;
   final Color statusBg;
@@ -127,6 +178,7 @@ class _CircularKpiBadge extends StatelessWidget {
     required this.subtext,
     required this.progress,
     required this.ringColor,
+    required this.icon,
     required this.statusLabel,
     required this.statusColor,
     required this.statusBg,
@@ -142,7 +194,7 @@ class _CircularKpiBadge extends StatelessWidget {
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x05000000),
+            color: Color(0x04000000),
             blurRadius: 6,
             offset: Offset(0, 2),
           ),
@@ -153,8 +205,8 @@ class _CircularKpiBadge extends StatelessWidget {
         children: [
           // Circular Progress Ring
           SizedBox(
-            width: 72,
-            height: 72,
+            width: 68,
+            height: 68,
             child: CustomPaint(
               painter: _CircularRingPainter(
                 progress: progress,
@@ -163,16 +215,16 @@ class _CircularKpiBadge extends StatelessWidget {
               ),
               child: Center(
                 child: Container(
-                  width: 52,
-                  height: 52,
+                  width: 48,
+                  height: 48,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: ringColor.withValues(alpha: 0.08),
                   ),
                   child: Icon(
-                    _iconForTitle(title),
+                    icon,
                     color: ringColor,
-                    size: 22,
+                    size: 20,
                   ),
                 ),
               ),
@@ -189,7 +241,7 @@ class _CircularKpiBadge extends StatelessWidget {
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: FontWeight.w700,
                     letterSpacing: 0.5,
                     color: Color(0xFF64748B),
@@ -199,9 +251,10 @@ class _CircularKpiBadge extends StatelessWidget {
                 Text(
                   mainValue,
                   style: const TextStyle(
-                    fontSize: 20,
+                    fontSize: 19,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF0F172A),
+                    fontFeatures: [FontFeature.tabularFigures()],
                     height: 1.15,
                   ),
                 ),
@@ -209,15 +262,16 @@ class _CircularKpiBadge extends StatelessWidget {
                 Row(
                   children: [
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
                         color: statusBg,
-                        borderRadius: BorderRadius.circular(6),
+                        borderRadius: BorderRadius.circular(5),
                       ),
                       child: Text(
                         statusLabel,
                         style: TextStyle(
-                          fontSize: 10,
+                          fontSize: 9.5,
                           fontWeight: FontWeight.w700,
                           color: statusColor,
                         ),
@@ -244,12 +298,6 @@ class _CircularKpiBadge extends StatelessWidget {
       ),
     );
   }
-
-  IconData _iconForTitle(String title) {
-    if (title.contains('PASS')) return Icons.verified_rounded;
-    if (title.contains('INDEX') || title.contains('CPI')) return Icons.school_rounded;
-    return Icons.groups_rounded;
-  }
 }
 
 class _CircularRingPainter extends CustomPainter {
@@ -266,7 +314,7 @@ class _CircularRingPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final center = Offset(size.width / 2, size.height / 2);
-    const strokeWidth = 6.0;
+    const strokeWidth = 5.0;
     final radius = (size.width - strokeWidth) / 2;
 
     // Background track

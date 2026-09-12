@@ -65,6 +65,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     is_officially_complete = serializers.SerializerMethodField()
     is_locked = serializers.SerializerMethodField()
     lock_reason = serializers.SerializerMethodField()
+    endorsed_teams_count = serializers.SerializerMethodField()
     rubric_name = serializers.SerializerMethodField()
     rubric_info = serializers.SerializerMethodField()
     rubrics_count = serializers.SerializerMethodField()
@@ -90,6 +91,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_officially_complete',
             'is_locked',
             'lock_reason',
+            'endorsed_teams_count',
             'created_at',
             'updated_at',
         ]
@@ -106,6 +108,7 @@ class DefenseStageSerializer(serializers.ModelSerializer):
             'is_officially_complete',
             'is_locked',
             'lock_reason',
+            'endorsed_teams_count',
         ]
 
     def _get_stage_grading_config(self, obj):
@@ -212,6 +215,20 @@ class DefenseStageSerializer(serializers.ModelSerializer):
     def get_lock_reason(self, obj):
         _, reason = check_stage_locked(obj, self.context.get('semester'))
         return reason
+
+    def get_endorsed_teams_count(self, obj):
+        from student_teams.models import TeamStageProgress, StudentTeam
+        semester = self.context.get('semester')
+        if not semester:
+            from academic_period_management.models import Semester
+            semester = Semester.objects.filter(is_active=True).first()
+        qs = TeamStageProgress.objects.filter(defense_stage=obj, status=TeamStageProgress.STATUS_READY)
+        if semester:
+            qs = qs.filter(semester=semester)
+        count = qs.count()
+        if count == 0 and semester:
+            count = StudentTeam.objects.filter(semester=semester, ready_for_stage=obj.label).count()
+        return count
 
     def get_previous_stage_id(self, obj):
         previous = self._previous_stage(obj)
@@ -341,7 +358,7 @@ class DefenseStageWriteSerializer(serializers.ModelSerializer):
                 archive_note=deliverable_data.get('archive_note', ''),
                 archive_file_template=tpl,
                 is_restricted=bool(deliverable_data.get('is_restricted', False)),
-                is_defense_material=bool(deliverable_data.get('is_defense_material', True)),
+                is_defense_material=bool(deliverable_data.get('is_defense_material', False)),
                 verdict_condition=deliverable_data.get('verdict_condition', StageDeliverable.VERDICT_CONDITION_ALL_PASS),
                 file_format=deliverable_data.get('file_format', StageDeliverable.FORMAT_ANY),
             )

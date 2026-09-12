@@ -52,7 +52,7 @@ class StageDeliverable(models.Model):
         help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
     is_defense_material = models.BooleanField(
-        default=True,
+        default=False,
         help_text='If true, this pre-defense deliverable is visible to defense panelists during oral grading.',
     )
     VERDICT_CONDITION_ALL_PASS = 'all_pass'

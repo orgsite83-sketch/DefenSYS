@@ -303,6 +303,15 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   Widget _stageMilestoneCard(CapstoneStageRow row) {
     final order = row.displayOrder > 0 ? row.displayOrder : 1;
     final isComplete = row.isOfficiallyComplete;
+    final groupGrades = gradesForGroup(state, 'capstone', row.label);
+    final redefenseTeams = groupGrades
+        .where((g) => g['verdict']?.toString() == 'for_redefense')
+        .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
+        .toList();
+    final redefenseNotice = redefenseTeams.isNotEmpty
+        ? '\n\n⚠️ WARNING: ${redefenseTeams.length} team${redefenseTeams.length == 1 ? '' : 's'} (${redefenseTeams.take(3).join(', ')}${redefenseTeams.length > 3 ? '...' : ''}) currently ${redefenseTeams.length == 1 ? 'has' : 'have'} a "For Re-defense" verdict and ${redefenseTeams.length == 1 ? 'has' : 'have'} not passed.\n\nMarking this stage complete will finalize this milestone. These teams will officially FAIL this stage and will NOT advance to the next stage.'
+        : '';
+
     final hasTeams = row.teamCount > 0;
     final teamNotice = hasTeams
         ? '\n\n${row.teamCount} team${row.teamCount == 1 ? '' : 's'} will be affected.'
@@ -505,7 +514,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                                 context,
                                 title: 'Mark ${row.label} Complete?',
                                 message:
-                                    'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice\n\nAre you sure you want to mark ${row.label} officially complete?',
+                                    'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice$redefenseNotice\n\nAre you sure you want to mark ${row.label} officially complete?',
                                 confirmLabel: 'Mark Complete',
                                 cancelLabel: 'Cancel',
                                 destructive: false,

@@ -13,6 +13,7 @@ import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/pipeline_position_selector.dart';
+import 'widgets/endorsed_stage_resolution_dialog.dart';
 import '../widgets/defensys_admin_shell.dart';
 import '../admin_shell.dart';
 
@@ -1001,7 +1002,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                               ),
                             ),
                           ],
-                          if (!isPost && d['is_defense_material'] != false) ...[
+                          if (!isPost && d['is_defense_material'] == true) ...[
                             const SizedBox(width: 6),
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
@@ -2277,7 +2278,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         children: [
           _buildDialogTabItem(
             index: 0,
-            label: '1. Identity & Flow',
+            label: '1. Stage Details',
             icon: Icons.account_tree_rounded,
             isSelected: activeTab == 0,
             onTap: () => onTabSelected(0),
@@ -2438,15 +2439,15 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   Icon(
                     isValid ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
                     size: 15,
-                    color: isValid ? AppColors.success : AppColors.danger,
+                    color: isValid ? const Color(0xFF059669) : AppColors.danger,
                   ),
                   const SizedBox(width: 6),
                   Text(
                     isValid ? 'Balanced Allocation (100%)' : 'Allocation Error: Must Total 100%',
                     style: TextStyle(
                       fontSize: 12.5,
-                      fontWeight: FontWeight.w800,
-                      color: isValid ? AppColors.success : AppColors.danger,
+                      fontWeight: FontWeight.w700,
+                      color: isValid ? const Color(0xFF059669) : AppColors.danger,
                     ),
                   ),
                 ],
@@ -2454,9 +2455,9 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
               Text(
                 'Total: $total%',
                 style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                  color: isValid ? AppColors.success : AppColors.danger,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w800,
+                  color: isValid ? const Color(0xFF059669) : AppColors.danger,
                 ),
               ),
             ],
@@ -2574,33 +2575,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   color: AppColors.textPrimary,
                 ),
               ),
-              const Spacer(),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                decoration: BoxDecoration(
-                  color: isPresentationOnly
-                      ? const Color(0xFFEFF6FF)
-                      : const Color(0xFFF1F5F9),
-                  borderRadius: BorderRadius.circular(6),
-                  border: Border.all(
-                    color: isPresentationOnly
-                        ? const Color(0xFFBFDBFE)
-                        : const Color(0xFFE2E8F0),
-                  ),
-                ),
-                child: Text(
-                  isPresentationOnly
-                      ? 'Mode: Presentation / Demo Only'
-                      : 'Mode: Document-Gated',
-                  style: TextStyle(
-                    fontSize: 10.5,
-                    fontWeight: FontWeight.w700,
-                    color: isPresentationOnly
-                        ? const Color(0xFF1D4ED8)
-                        : AppColors.textSecondary,
-                  ),
-                ),
-              ),
             ],
           ),
           const SizedBox(height: 10),
@@ -2610,7 +2584,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 child: _submissionModeCard(
                   title: 'Document Submissions Required',
                   description:
-                      'Standard defense milestone. Students must submit required pre/post documents.',
+                      'Standard defense milestone. Requires student files for endorsement and archiving.',
                   icon: Icons.description_rounded,
                   selected: !isPresentationOnly,
                   onTap: () => onChanged(false),
@@ -2621,7 +2595,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 child: _submissionModeCard(
                   title: 'Presentation / Demo Only',
                   description:
-                      'No upload requirements. For Expos, Demo Days, Pitches, or Oral-only evaluations.',
+                      'Oral defense, pitch, or expo only — no student file uploads required.',
                   icon: Icons.co_present_rounded,
                   selected: isPresentationOnly,
                   onTap: () => onChanged(true),
@@ -2892,29 +2866,45 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: items.isEmpty
-                ? Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8FAFC),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFFE2E8F0)),
-                    ),
-                    child: Center(
-                      child: Text(
-                        emptyPlaceholderText,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          color: AppColors.textSecondary,
-                          fontSize: 12,
-                          fontStyle: FontStyle.italic,
-                        ),
+                ? InkWell(
+                    onTap: onAdd,
+                    borderRadius: BorderRadius.circular(8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            isPost ? Icons.inventory_2_outlined : Icons.folder_open_rounded,
+                            size: 16,
+                            color: const Color(0xFF94A3B8),
+                          ),
+                          const SizedBox(width: 8),
+                          Flexible(
+                            child: Text(
+                              emptyPlaceholderText,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Color(0xFF64748B),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   )
                 : Column(
-                    children: items.map((item) {
+                    children: items.asMap().entries.map((entry) {
                       return _buildDeliverableItemCard(
-                        item: item,
+                        index: entry.key + 1,
+                        item: entry.value,
                         isPost: isPost,
                         allDeliverables: allDeliverables,
                         setDialogState: setDialogState,
@@ -2929,6 +2919,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
   }
 
   Widget _buildDeliverableItemCard({
+    required int index,
     required Map<String, dynamic> item,
     required bool isPost,
     required List<Map<String, dynamic>> allDeliverables,
@@ -2953,9 +2944,14 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       item['archive_file_template'] = '{project}';
     }
 
+    final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
+    final isArchiveExpanded = item['_isArchiveExpanded'] == true;
+    final currentFormat = (item['file_format']?.toString().isNotEmpty == true)
+        ? item['file_format'].toString()
+        : 'any';
+
     return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(12),
+      margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
@@ -2971,369 +2967,510 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              Expanded(
-                child: TextFormField(
-                  controller: labelController,
-                  decoration: _dialogInputDecoration(
-                    labelText: isPost ? 'Post-Defense Deliverable Name' : 'Pre-Defense Deliverable Name',
-                    hintText: isPost
-                        ? 'e.g. Final Manuscript PDF, Source Code Archive'
-                        : 'e.g. Concept Paper Draft, Similarity Report',
-                  ),
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
-                  onChanged: (value) {
-                    item['label'] = value.trim();
-                    if (isPost) {
-                      setDialogState(() {});
-                    }
-                  },
-                ),
+          // 1. Distinct Item Header
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: const BoxDecoration(
+              color: Color(0xFFF8FAFC),
+              borderRadius: BorderRadius.only(
+                topLeft: Radius.circular(9),
+                topRight: Radius.circular(9),
               ),
-              const SizedBox(width: 10),
-              Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: (item['file_format']?.toString().isNotEmpty == true)
-                        ? item['file_format'].toString()
-                        : 'any',
-                    isDense: true,
-                    borderRadius: BorderRadius.circular(8),
-                    style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
-                    items: _deliverableFormatDropdownItems(),
-                    onChanged: (val) {
-                      setDialogState(() {
-                        item['file_format'] = val ?? 'any';
-                      });
-                    },
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Container(
-                height: 42,
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Checkbox(
-                      value: item['required'] == true,
-                      activeColor: isPost ? AppColors.maroon : const Color(0xFF2563EB),
-                      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      onChanged: (value) {
-                        setDialogState(() {
-                          item['required'] = value == true;
-                        });
-                      },
+              border: Border(bottom: BorderSide(color: Color(0xFFE2E8F0))),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
+                  decoration: BoxDecoration(
+                    color: accentColor.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(6),
+                    border: Border.all(
+                      color: accentColor.withValues(alpha: 0.25),
                     ),
-                    const SizedBox(width: 2),
-                    const Text(
-                      'Required',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
+                  ),
+                  child: Text(
+                    '#$index',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      color: accentColor,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    labelController.text.trim().isNotEmpty
+                        ? 'Deliverable #$index • ${labelController.text.trim()}'
+                        : 'Deliverable #$index',
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.textPrimary,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  onPressed: () {
+                    setDialogState(() {
+                      allDeliverables.remove(item);
+                      (item['_labelController'] as TextEditingController?)?.dispose();
+                      (item['_templateController'] as TextEditingController?)?.dispose();
+                    });
+                  },
+                  icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 18),
+                  tooltip: 'Remove Deliverable #$index',
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  style: IconButton.styleFrom(
+                    hoverColor: AppColors.danger.withValues(alpha: 0.08),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // 2. Card Content Body
+          Padding(
+            padding: const EdgeInsets.all(12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // Primary Row: Name Input + Format Dropdown + Required Checkbox
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: labelController,
+                        decoration: _dialogInputDecoration(
+                          labelText: isPost ? 'Post-Defense Deliverable Name *' : 'Pre-Defense Deliverable Name *',
+                          hintText: isPost
+                              ? 'e.g. Final Manuscript PDF, Source Code Archive'
+                              : 'e.g. Concept Paper Draft, Similarity Report',
+                        ),
+                        style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+                        onChanged: (value) {
+                          item['label'] = value.trim();
+                          setDialogState(() {});
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: DropdownButtonHideUnderline(
+                        child: DropdownButton<String>(
+                          value: currentFormat,
+                          isDense: true,
+                          borderRadius: BorderRadius.circular(8),
+                          style: const TextStyle(fontSize: 12, color: AppColors.textPrimary, fontWeight: FontWeight.w600),
+                          items: _deliverableFormatDropdownItems(),
+                          onChanged: (val) {
+                            setDialogState(() {
+                              item['file_format'] = val ?? 'any';
+                            });
+                          },
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      height: 42,
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8FAFC),
+                        border: Border.all(color: const Color(0xFFE2E8F0)),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Checkbox(
+                            value: item['required'] == true,
+                            activeColor: accentColor,
+                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            onChanged: (value) {
+                              setDialogState(() {
+                                item['required'] = value == true;
+                              });
+                            },
+                          ),
+                          const SizedBox(width: 2),
+                          const Text(
+                            'Required',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.textPrimary,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
-              ),
-              const SizedBox(width: 6),
-              IconButton(
-                onPressed: () {
-                  setDialogState(() {
-                    allDeliverables.remove(item);
-                    (item['_labelController'] as TextEditingController?)?.dispose();
-                    (item['_templateController'] as TextEditingController?)?.dispose();
-                  });
-                },
-                icon: const Icon(Icons.delete_outline_rounded, color: AppColors.danger, size: 18),
-                tooltip: 'Remove Deliverable',
-                style: IconButton.styleFrom(
-                  hoverColor: AppColors.danger.withValues(alpha: 0.08),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  padding: const EdgeInsets.all(8),
-                ),
-              ),
-            ],
-          ),
-          if (!isPost) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Checkbox(
-                  value: item['is_defense_material'] != false,
-                  activeColor: const Color(0xFF2563EB),
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      item['is_defense_material'] = value == true;
-                    });
-                  },
-                ),
-                const SizedBox(width: 4),
-                const Text(
-                  'Defense Material (Visible to Defense Panelists)',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+
+                if (!isPost) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: item['is_defense_material'] == true,
+                        activeColor: const Color(0xFF2563EB),
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (value) {
+                          setDialogState(() {
+                            item['is_defense_material'] = value == true;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Defense Material (Evaluated by Defense Panelists)',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Evaluated by defense panelists (uncheck for administrative forms).',
+                        constraints: BoxConstraints(maxWidth: 240),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 4),
-                const Tooltip(
-                  message: 'When checked, defense panelists evaluate this document during oral grading (e.g. Concept Paper, Chapters 1-3, Pitch Deck). Uncheck for administrative forms (e.g. Adviser Acceptance, Panel Nomination).',
-                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-          ],
-          if (isPost) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Checkbox(
-                  value: item['is_restricted'] == true,
-                  activeColor: AppColors.maroon,
-                  materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  onChanged: (value) {
-                    setDialogState(() {
-                      item['is_restricted'] = value == true;
-                    });
-                  },
-                ),
-                const SizedBox(width: 4),
-                const Text(
-                  'Restricted / Private in Institutional Archive',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
+                ],
+
+                if (isPost) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: item['is_restricted'] == true,
+                        activeColor: AppColors.maroon,
+                        materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        onChanged: (value) {
+                          setDialogState(() {
+                            item['is_restricted'] = value == true;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 4),
+                      const Text(
+                        'Restricted / Private in Institutional Archive',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      const Tooltip(
+                        message: 'Private for faculty and admin records only; hidden from students.',
+                        constraints: BoxConstraints(maxWidth: 240),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                      ),
+                      const Spacer(),
+                      const Icon(Icons.rule_rounded, size: 15, color: AppColors.maroon),
+                      const SizedBox(width: 6),
+                      const Text(
+                        'Submission Rule:',
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(color: const Color(0xFFCBD5E1)),
+                        ),
+                        child: DropdownButtonHideUnderline(
+                          child: DropdownButton<String>(
+                            value: item['verdict_condition']?.toString() == 'revisions_only' ? 'revisions_only' : 'all_pass',
+                            isDense: true,
+                            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
+                            items: const [
+                              DropdownMenuItem(
+                                value: 'all_pass',
+                                child: Text('Required for All Passing Teams'),
+                              ),
+                              DropdownMenuItem(
+                                value: 'revisions_only',
+                                child: Text('Only for Approved with Revisions'),
+                              ),
+                            ],
+                            onChanged: (val) {
+                              setDialogState(() {
+                                item['verdict_condition'] = val ?? 'all_pass';
+                              });
+                            },
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Tooltip(
+                        message:
+                            '• All Passing: Required for all teams that pass the defense (e.g., Final Manuscript).\n'
+                            '• Revisions Only: Only required if the team passed with revisions (e.g., Revision Matrix).',
+                        padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        textStyle: TextStyle(fontSize: 12, color: Colors.white, height: 1.35),
+                        constraints: BoxConstraints(maxWidth: 320),
+                        child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
+                      ),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 4),
-                const Tooltip(
-                  message: 'When checked, this file is stored privately for faculty and administrative records only. It will not be published or searchable to other students in the public institutional repository.',
-                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.rule_rounded, size: 15, color: AppColors.maroon),
-                const SizedBox(width: 6),
-                const Text(
-                  'Submission Rule:',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF8FAFC),
+
+                  const SizedBox(height: 10),
+
+                  // Progressive Disclosure Drawer for Archive Naming
+                  InkWell(
+                    onTap: () {
+                      setDialogState(() {
+                        item['_isArchiveExpanded'] = !isArchiveExpanded;
+                      });
+                    },
                     borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: const Color(0xFFCBD5E1)),
-                  ),
-                  child: DropdownButtonHideUnderline(
-                    child: DropdownButton<String>(
-                      value: item['verdict_condition']?.toString() == 'revisions_only' ? 'revisions_only' : 'all_pass',
-                      isDense: true,
-                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: AppColors.textPrimary),
-                      items: const [
-                        DropdownMenuItem(
-                          value: 'all_pass',
-                          child: Text('Required for All Passing Teams'),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: isArchiveExpanded ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFC),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: isArchiveExpanded ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0),
                         ),
-                        DropdownMenuItem(
-                          value: 'revisions_only',
-                          child: Text('Only for Approved with Revisions (Not required if Approved with no revisions)'),
-                        ),
-                      ],
-                      onChanged: (val) {
-                        setDialogState(() {
-                          item['verdict_condition'] = val ?? 'all_pass';
-                        });
-                      },
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            Icons.tune_rounded,
+                            size: 14,
+                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Archive Naming & File Pattern',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                              color: isArchiveExpanded ? AppColors.maroon : AppColors.textPrimary,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(4),
+                              border: Border.all(color: const Color(0xFFCBD5E1)),
+                            ),
+                            child: Text(
+                              templateController.text.trim().isNotEmpty
+                                  ? templateController.text.trim()
+                                  : '{project}',
+                              style: const TextStyle(
+                                fontSize: 10.5,
+                                fontFamily: 'monospace',
+                                color: Color(0xFF475569),
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const Spacer(),
+                          Text(
+                            isArchiveExpanded ? 'Hide' : 'Configure',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          Icon(
+                            isArchiveExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
+                            size: 16,
+                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 6),
-                const Tooltip(
-                  message: 'Select "Only for Approved with Revisions" for deliverables like "Signed Matrix of Revision". Teams with an Approved verdict (no revisions) are automatically excused from submitting this file.',
-                  child: Icon(Icons.help_outline_rounded, size: 14, color: AppColors.textSecondary),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Expanded(
-                  flex: 3,
-                  child: Builder(builder: (context) {
-                    final currentTemplate = templateController.text.trim();
-                    final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
-                    final varCount = varMatches.length;
-                    final isOverLimit = varCount > 3;
 
-                    return Column(
+                  if (isArchiveExpanded) ...[
+                    const SizedBox(height: 10),
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        TextFormField(
-                          controller: templateController,
-                          decoration: _dialogInputDecoration(
-                            labelText: 'Archive Naming Template',
-                            hintText: 'e.g. {project}',
-                            helperText: isOverLimit
-                                ? null
-                                : 'Default is {project}. Max 3 variables allowed for phone file names.',
-                            errorText: isOverLimit
-                                ? 'Exceeds limit of 3 variables ($varCount/3). Shorten for phone file name limit.'
-                                : null,
-                            suffixIcon: Padding(
-                              padding: const EdgeInsets.only(right: 6),
-                              child: Center(
-                                widthFactor: 1.0,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: isOverLimit
-                                        ? AppColors.danger.withValues(alpha: 0.1)
-                                        : AppColors.maroon.withValues(alpha: 0.08),
-                                    borderRadius: BorderRadius.circular(6),
-                                    border: Border.all(
-                                      color: isOverLimit
-                                          ? AppColors.danger.withValues(alpha: 0.3)
-                                          : AppColors.maroon.withValues(alpha: 0.2),
+                        Expanded(
+                          flex: 3,
+                          child: Builder(builder: (context) {
+                            final currentTemplate = templateController.text.trim();
+                            final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
+                            final varCount = varMatches.length;
+                            final isOverLimit = varCount > 3;
+
+                            return Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                TextFormField(
+                                  controller: templateController,
+                                  decoration: _dialogInputDecoration(
+                                    labelText: 'Archive Naming Template',
+                                    hintText: 'e.g. {project}',
+                                    helperText: isOverLimit
+                                        ? null
+                                        : 'Default is {project}. Max 3 variables allowed for phone file names.',
+                                    errorText: isOverLimit
+                                        ? 'Exceeds limit of 3 variables ($varCount/3). Shorten for phone file name limit.'
+                                        : null,
+                                    suffixIcon: Padding(
+                                      padding: const EdgeInsets.only(right: 6),
+                                      child: Center(
+                                        widthFactor: 1.0,
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                          decoration: BoxDecoration(
+                                            color: isOverLimit
+                                                ? AppColors.danger.withValues(alpha: 0.1)
+                                                : AppColors.maroon.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(6),
+                                            border: Border.all(
+                                              color: isOverLimit
+                                                  ? AppColors.danger.withValues(alpha: 0.3)
+                                                  : AppColors.maroon.withValues(alpha: 0.2),
+                                            ),
+                                          ),
+                                          child: Text(
+                                            '$varCount/3 tags',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                              color: isOverLimit ? AppColors.danger : AppColors.maroon,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                   ),
-                                  child: Text(
-                                    '$varCount/3 tags',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: isOverLimit ? AppColors.danger : AppColors.maroon,
+                                  style: const TextStyle(fontSize: 12),
+                                  onChanged: (value) {
+                                    setDialogState(() {
+                                      item['archive_file_template'] = value.trim();
+                                    });
+                                  },
+                                ),
+                                const SizedBox(height: 5),
+                                Wrap(
+                                  spacing: 4,
+                                  runSpacing: 4,
+                                  children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
+                                      .map((varName) {
+                                        final isReached = varCount >= 3;
+                                        return ActionChip(
+                                          label: Text(
+                                            varName,
+                                            style: const TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w700,
+                                            ),
+                                          ),
+                                          labelStyle: TextStyle(
+                                            color: isReached ? Colors.grey.shade600 : AppColors.maroon,
+                                          ),
+                                          backgroundColor: isReached
+                                              ? Colors.grey.shade100
+                                              : AppColors.maroon.withValues(alpha: 0.05),
+                                          side: BorderSide(
+                                            color: isReached
+                                                ? Colors.grey.shade300
+                                                : AppColors.maroon.withValues(alpha: 0.15),
+                                          ),
+                                          padding: EdgeInsets.zero,
+                                          visualDensity: VisualDensity.compact,
+                                          tooltip: isReached
+                                              ? 'Maximum 3 variables limit reached'
+                                              : 'Insert $varName',
+                                          onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
+                                        );
+                                      })
+                                      .toList(),
+                                ),
+                              ],
+                            );
+                          }),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          flex: 2,
+                          child: Container(
+                            padding: const EdgeInsets.all(8),
+                            decoration: BoxDecoration(
+                              color: AppColors.maroon.withValues(alpha: 0.03),
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.12)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: const [
+                                    Icon(Icons.remove_red_eye_outlined, size: 12, color: AppColors.maroon),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Filename Preview',
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w800,
+                                        color: AppColors.maroon,
+                                      ),
                                     ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                SelectableText(
+                                  _resolvePreview(
+                                    item['archive_file_template']?.toString() ?? '',
+                                    item['label']?.toString() ?? '',
+                                    stageLabelCtrl.text,
+                                    format: item['file_format']?.toString() ?? 'any',
+                                  ),
+                                  style: const TextStyle(
+                                    fontSize: 11,
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.maroon,
                                   ),
                                 ),
-                              ),
+                              ],
                             ),
-                          ),
-                          style: const TextStyle(fontSize: 12),
-                          onChanged: (value) {
-                            setDialogState(() {
-                              item['archive_file_template'] = value.trim();
-                            });
-                          },
-                        ),
-                        const SizedBox(height: 5),
-                        Wrap(
-                          spacing: 4,
-                          runSpacing: 4,
-                          children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
-                              .map((varName) {
-                                final isReached = varCount >= 3;
-                                return ActionChip(
-                                  label: Text(
-                                    varName,
-                                    style: const TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                    ),
-                                  ),
-                                  labelStyle: TextStyle(
-                                    color: isReached ? Colors.grey.shade600 : AppColors.maroon,
-                                  ),
-                                  backgroundColor: isReached
-                                      ? Colors.grey.shade100
-                                      : AppColors.maroon.withValues(alpha: 0.05),
-                                  side: BorderSide(
-                                    color: isReached
-                                        ? Colors.grey.shade300
-                                        : AppColors.maroon.withValues(alpha: 0.15),
-                                  ),
-                                  padding: EdgeInsets.zero,
-                                  visualDensity: VisualDensity.compact,
-                                  tooltip: isReached
-                                      ? 'Maximum 3 variables limit reached'
-                                      : 'Insert $varName',
-                                  onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
-                                );
-                              })
-                              .toList(),
-                        ),
-                      ],
-                    );
-                  }),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  flex: 2,
-                  child: Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: AppColors.maroon.withValues(alpha: 0.03),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: AppColors.maroon.withValues(alpha: 0.12)),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: const [
-                            Icon(Icons.remove_red_eye_outlined, size: 12, color: AppColors.maroon),
-                            SizedBox(width: 4),
-                            Text(
-                              'Filename Preview',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w800,
-                                color: AppColors.maroon,
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 4),
-                        SelectableText(
-                          _resolvePreview(
-                            item['archive_file_template']?.toString() ?? '',
-                            item['label']?.toString() ?? '',
-                            stageLabelCtrl.text,
-                            format: item['file_format']?.toString() ?? 'any',
-                          ),
-                          style: const TextStyle(
-                            fontSize: 11,
-                            fontFamily: 'monospace',
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.maroon,
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ),
+                  ],
+                ],
               ],
             ),
-          ],
+          ),
         ],
       ),
     );
@@ -3540,8 +3677,8 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                 clipBehavior: Clip.antiAlias,
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
-                    maxWidth: 780,
-                    maxHeight: MediaQuery.of(dialogContext).size.height * 0.88,
+                    maxWidth: 960,
+                    maxHeight: MediaQuery.of(dialogContext).size.height * 0.90,
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
@@ -3749,21 +3886,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             Container(
                                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                               decoration: BoxDecoration(
-                                                color: const Color(0xFFEFF6FF),
+                                                color: const Color(0xFFF1F5F9),
                                                 borderRadius: BorderRadius.circular(6),
-                                                border: Border.all(color: const Color(0xFFBFDBFE)),
+                                                border: Border.all(color: const Color(0xFFE2E8F0)),
                                               ),
                                               child: Row(
                                                 mainAxisSize: MainAxisSize.min,
                                                 children: [
-                                                  const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF1D4ED8)),
+                                                  const Icon(Icons.calendar_today_rounded, size: 11, color: Color(0xFF475569)),
                                                   const SizedBox(width: 4),
                                                   Text(
                                                     activeSemesterName,
                                                     style: const TextStyle(
                                                       fontSize: 11.5,
                                                       fontWeight: FontWeight.w700,
-                                                      color: Color(0xFF1D4ED8),
+                                                      color: Color(0xFF475569),
                                                     ),
                                                   ),
                                                 ],
@@ -3895,32 +4032,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                               ],
                                             ),
                                             const SizedBox(height: 6),
-                                            Container(
-                                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                                              decoration: BoxDecoration(
-                                                color: const Color(0xFFF0F9FF),
-                                                borderRadius: BorderRadius.circular(8),
-                                                border: Border.all(color: const Color(0xFFBAE6FD)),
-                                              ),
-                                              child: const Row(
-                                                children: [
-                                                  Icon(Icons.info_outline, size: 15, color: Color(0xFF0284C7)),
-                                                  SizedBox(width: 8),
-                                                  Expanded(
-                                                    child: Text(
-                                                      'Assign published Capstone rubrics to evaluate each role. You can leave as "None" and attach later before scheduling defenses.',
-                                                      style: TextStyle(
-                                                        fontSize: 11.5,
-                                                        color: Color(0xFF0369A1),
-                                                        fontWeight: FontWeight.w500,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                ],
-                                              ),
+                                            const Text(
+                                              'Assign published Capstone rubrics to evaluate each role (optional; can attach later before defense scheduling).',
+                                              style: TextStyle(fontSize: 12.5, color: AppColors.textSecondary),
                                             ),
                                             if (hasNoRubricsAtAll) ...[
-                                              const SizedBox(height: 10),
+                                              const SizedBox(height: 12),
                                               Container(
                                                 padding: const EdgeInsets.all(10),
                                                 decoration: BoxDecoration(
@@ -3970,7 +4087,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                               initialValue: panelRubricId,
                                               decoration: _dialogInputDecoration(
                                                 labelText: 'Panel Rubric',
-                                                helperText: panelOpts.isEmpty ? 'No published panel rubrics found for this semester' : null,
                                                 prefixIcon: const Icon(Icons.gavel_rounded, size: 16, color: AppColors.maroon),
                                               ),
                                               items: buildRubricDropdownItems('panel'),
@@ -3981,7 +4097,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                               initialValue: adviserRubricId,
                                               decoration: _dialogInputDecoration(
                                                 labelText: 'Adviser Rubric',
-                                                helperText: adviserOpts.isEmpty ? 'No published adviser rubrics found for this semester' : null,
                                                 prefixIcon: const Icon(Icons.school_rounded, size: 16, color: Color(0xFFD97706)),
                                               ),
                                               items: buildRubricDropdownItems('adviser'),
@@ -3992,7 +4107,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                               initialValue: peerRubricId,
                                               decoration: _dialogInputDecoration(
                                                 labelText: 'Peer Rubric',
-                                                helperText: peerOpts.isEmpty ? 'No published peer rubrics found for this semester' : null,
                                                 prefixIcon: const Icon(Icons.people_outline_rounded, size: 16, color: Color(0xFF0D9488)),
                                               ),
                                               items: buildRubricDropdownItems('peer'),
@@ -4019,36 +4133,10 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                   if (isPresentationOnly)
                                     _buildPresentationOnlyInfoBanner()
                                   else ...[
-                                    if (deliverables.isEmpty)
-                                      Container(
-                                        padding: const EdgeInsets.all(12),
-                                        margin: const EdgeInsets.only(bottom: 14),
-                                        decoration: BoxDecoration(
-                                          color: const Color(0xFFFFFBEB),
-                                          borderRadius: BorderRadius.circular(8),
-                                          border: Border.all(color: const Color(0xFFFDE68A)),
-                                        ),
-                                        child: const Row(
-                                          children: [
-                                            Icon(Icons.info_outline_rounded, size: 18, color: Color(0xFFB45309)),
-                                            SizedBox(width: 10),
-                                            Expanded(
-                                              child: Text(
-                                                'Document Submissions Mode is active. Click "+ Add Pre-Defense" below to configure required student files, or switch to "Presentation / Demo Only" above if this stage does not require file uploads.',
-                                                style: TextStyle(
-                                                  fontSize: 12,
-                                                  color: Color(0xFF92400E),
-                                                  height: 1.3,
-                                                ),
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
                                     // Pre-Defense Gatekeepers
                                     _buildDeliverableSection(
                                       title: 'Pre-Defense Gatekeepers',
-                                      subtitle: 'Required student submissions before an adviser can endorse and defense can be scheduled.',
+                                      subtitle: 'Submissions required before adviser endorsement and defense scheduling.',
                                       icon: Icons.folder_open_rounded,
                                       accentColor: const Color(0xFF2563EB),
                                       bgHeaderColor: const Color(0xFFEFF6FF),
@@ -4066,12 +4154,12 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             'archive_note': '',
                                             'archive_file_template': '',
                                             'is_restricted': false,
-                                             'is_defense_material': true,
+                                             'is_defense_material': false,
                                              'verdict_condition': 'all_pass',
                                           });
                                         });
                                       },
-                                      emptyPlaceholderText: 'No pre-defense gatekeepers configured. Click "+ Add Pre-Defense" to require items (e.g. Proposal Manuscript Draft, Similarity Report).',
+                                      emptyPlaceholderText: 'No pre-defense gatekeepers configured yet. (e.g. Proposal Manuscript Draft, Similarity Report)',
                                       items: preDeliverables,
                                       isPost: false,
                                       allDeliverables: deliverables,
@@ -4084,7 +4172,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                     // Post-Defense Requirements & Archive
                                     _buildDeliverableSection(
                                       title: 'Post-Defense Requirements & Archive',
-                                      subtitle: 'Required deliverables for final stage clearance and repository archiving after defense is completed.',
+                                      subtitle: 'Deliverables required for milestone clearance and repository archiving.',
                                       icon: Icons.inventory_2_rounded,
                                       accentColor: AppColors.maroon,
                                       bgHeaderColor: const Color(0xFFFFF1F2),
@@ -4107,7 +4195,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                           });
                                         });
                                       },
-                                      emptyPlaceholderText: 'No post-defense deliverables configured. Click "+ Add Post-Defense" to add final items (e.g. Final Manuscript PDF, Source Code Zip, Demo Video).',
+                                      emptyPlaceholderText: 'No post-defense deliverables configured yet. (e.g. Final Manuscript PDF, Source Code Zip, Demo Video)',
                                       items: postDeliverables,
                                       isPost: true,
                                       allDeliverables: deliverables,
@@ -4259,6 +4347,21 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       return;
     }
 
+    final endorsedCount = stage != null ? (_asInt(stage['endorsed_teams_count']) ?? 0) : 0;
+    String? endorsedAction;
+
+    if (editing && currentOrder != null && currentOrder != selectedPosition && endorsedCount > 0) {
+      endorsedAction = await showEndorsedStageResolutionDialog(
+        context: context,
+        stageLabel: label.text.trim().isEmpty ? (stage['label']?.toString() ?? 'Stage') : label.text.trim(),
+        endorsedCount: endorsedCount,
+        targetPosition: selectedPosition,
+      );
+      if (!mounted || endorsedAction == null) {
+        return;
+      }
+    }
+
     final payload = {
       'label': label.text.trim(),
       'code': codeCtrl.text.trim(),
@@ -4267,6 +4370,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
       'is_active': isActive,
       'is_presentation_only': isPresentationOnly,
       'deliverables': isPresentationOnly ? [] : deliverables,
+      if (endorsedAction != null) 'endorsed_teams_action': endorsedAction,
     };
 
     if (editing) {
@@ -4555,66 +4659,82 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
 
     final targetStageName = allStages[targetIndex]['label']?.toString() ?? 'the adjacent stage';
     final movingUp = delta < 0;
+    final endorsedCount = _asInt(movingStage['endorsed_teams_count']) ?? 0;
+    String? endorsedAction;
 
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: Row(
-          children: [
-            Icon(
-              movingUp ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
-              color: AppColors.maroon,
-              size: 22,
+    if (endorsedCount > 0) {
+      endorsedAction = await showEndorsedStageResolutionDialog(
+        context: context,
+        stageLabel: stageLabel,
+        endorsedCount: endorsedCount,
+        targetPosition: targetIndex + 1,
+      );
+      if (!mounted || endorsedAction == null) return;
+    } else {
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: Row(
+            children: [
+              Icon(
+                movingUp ? Icons.arrow_upward_rounded : Icons.arrow_downward_rounded,
+                color: AppColors.maroon,
+                size: 22,
+              ),
+              const SizedBox(width: 8),
+              Text(movingUp ? 'Move Stage Earlier?' : 'Move Stage Later?'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                movingUp
+                    ? 'Move "$stageLabel" before "$targetStageName" (Position ${targetIndex + 1})?'
+                    : 'Move "$stageLabel" after "$targetStageName" (Position ${targetIndex + 1})?',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 14,
+                  color: AppColors.textPrimary,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'This will automatically adjust sequence progression and milestone prerequisites across the pipeline.',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  color: AppColors.textSecondary,
+                  height: 1.35,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext, false),
+              child: const Text('Cancel'),
             ),
-            const SizedBox(width: 8),
-            Text(movingUp ? 'Move Stage Earlier?' : 'Move Stage Later?'),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.maroon,
+                foregroundColor: Colors.white,
+              ),
+              onPressed: () => Navigator.pop(dialogContext, true),
+              child: Text(movingUp ? 'Move Earlier' : 'Move Later'),
+            ),
           ],
         ),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              movingUp
-                  ? 'Move "$stageLabel" before "$targetStageName" (Position ${targetIndex + 1})?'
-                  : 'Move "$stageLabel" after "$targetStageName" (Position ${targetIndex + 1})?',
-              style: const TextStyle(
-                fontWeight: FontWeight.w600,
-                fontSize: 14,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 10),
-            const Text(
-              'This will automatically adjust sequence progression and milestone prerequisites across the pipeline.',
-              style: TextStyle(
-                fontSize: 12.5,
-                color: AppColors.textSecondary,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(dialogContext, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.maroon,
-              foregroundColor: Colors.white,
-            ),
-            onPressed: () => Navigator.pop(dialogContext, true),
-            child: Text(movingUp ? 'Move Earlier' : 'Move Later'),
-          ),
-        ],
-      ),
+      );
+
+      if (!mounted || confirmed != true) return;
+    }
+
+    await ref.read(defenseStagesProvider.notifier).moveStage(
+      stageId,
+      delta,
+      endorsedTeamsAction: endorsedAction,
     );
-
-    if (!mounted || confirmed != true) return;
-
-    await ref.read(defenseStagesProvider.notifier).moveStage(stageId, delta);
   }
 
   Future<void> _confirmDelete(int stageId, String label) async {

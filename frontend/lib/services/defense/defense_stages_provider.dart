@@ -234,7 +234,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
-  Future<bool> reorderStages(List<int> orderedStageIds) async {
+  Future<bool> reorderStages(
+    List<int> orderedStageIds, {
+    String? endorsedTeamsAction,
+    int? resetStageId,
+  }) async {
     state = state.copyWith(
       isSaving: true,
       clearError: true,
@@ -242,9 +246,17 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     );
 
     try {
+      final body = <String, dynamic>{'stage_ids': orderedStageIds};
+      if (endorsedTeamsAction != null) {
+        body['endorsed_teams_action'] = endorsedTeamsAction;
+      }
+      if (resetStageId != null) {
+        body['reset_stage_id'] = resetStageId;
+      }
+
       final response = await _client.post(
         Uri.parse('$baseUrl/reorder/'),
-        body: jsonEncode({'stage_ids': orderedStageIds}),
+        body: jsonEncode(body),
       );
 
       if (response.statusCode == 200) {
@@ -265,7 +277,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
     }
   }
 
-  Future<bool> moveStage(int stageId, int delta) async {
+  Future<bool> moveStage(
+    int stageId,
+    int delta, {
+    String? endorsedTeamsAction,
+  }) async {
     final list = List<Map<String, dynamic>>.from(state.stages);
     final currentIndex = list.indexWhere((s) => _asInt(s['id']) == stageId);
     if (currentIndex == -1) return false;
@@ -281,7 +297,11 @@ class DefenseStagesNotifier extends Notifier<DefenseStagesState> {
         .whereType<int>()
         .toList();
 
-    return reorderStages(orderedIds);
+    return reorderStages(
+      orderedIds,
+      endorsedTeamsAction: endorsedTeamsAction,
+      resetStageId: endorsedTeamsAction == 'reset' ? stageId : null,
+    );
   }
 
   Future<bool> deleteStage(int stageId) async {

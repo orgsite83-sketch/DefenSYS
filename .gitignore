@@ -66,3 +66,6 @@ Desktop.ini
 
 # --- Optional: local notes ---
 scratch.txt
+
+# --- Test & sample data ---
+sample_file/

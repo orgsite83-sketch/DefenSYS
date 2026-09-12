@@ -425,6 +425,10 @@ class PitEventDeliverable(models.Model):
         default=False,
         help_text='If checked, this post-defense deliverable will be hidden from the public Project Repository.',
     )
+    is_defense_material = models.BooleanField(
+        default=False,
+        help_text='If true, this pre-defense deliverable is visible to defense panelists during oral grading.',
+    )
     file_format = models.CharField(
         max_length=30,
         default='any',

@@ -195,7 +195,7 @@ class PitEventConfigLookupView(APIView):
                 'panel_weight': 80,
                 'peer_weight': 20,
                 'is_officially_complete': False,
-                'peer_grading_enabled': False,
+                'peer_grading_enabled': True,
                 'archive_file_template': '',
                 'deliverables': [],
             }
@@ -324,6 +324,13 @@ class PitEventConfigLookupView(APIView):
                     status=status.HTTP_400_BAD_REQUEST,
                 )
 
+        peer_grading_enabled = request.data.get('peer_grading_enabled')
+        if peer_grading_enabled is not None:
+            if isinstance(peer_grading_enabled, str):
+                peer_grading_enabled = peer_grading_enabled.strip().lower() in ('true', '1', 'yes')
+            else:
+                peer_grading_enabled = bool(peer_grading_enabled)
+
         try:
             config = upsert_pit_event_config(
                 semester=semester,
@@ -335,6 +342,7 @@ class PitEventConfigLookupView(APIView):
                 peer_weight=peer_weight,
                 archive_file_template=archive_file_template,
                 deliverables=deliverables,
+                peer_grading_enabled=peer_grading_enabled,
             )
             return Response({'config': pit_event_config_payload(config)}, status=status.HTTP_200_OK)
         except ValidationError as e:
@@ -863,7 +871,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
     stage_info = stage_payload(team, schedule.stage_label)
     defense_materials = [
         item for item in stage_info.get('pre', [])
-        if item.get('is_defense_material', True) and item.get('uploaded')
+        if item.get('is_defense_material', False) and item.get('uploaded')
     ]
 
     return {

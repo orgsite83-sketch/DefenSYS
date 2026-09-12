@@ -76,16 +76,6 @@ def check_pit_event_locked(config, semester=None):
     if grades_exist:
         return True, 'This PIT event has recorded evaluation grades.'
 
-    # 3. Deliverable Submissions
-    from repository.deliverables.models import DeliverableSubmission
-    deliv_ids = list(config.deliverables.values_list('deliverable_id', flat=True))
-    if deliv_ids:
-        if DeliverableSubmission.objects.filter(
-            stage_label__iexact=config.event_name,
-            deliverable_id__in=deliv_ids,
-        ).exists():
-            return True, 'This PIT event has student deliverable submissions.'
-
     return False, None
 
 
@@ -100,6 +90,7 @@ def upsert_pit_event_config(
     peer_weight=20,
     archive_file_template=None,
     deliverables=None,
+    peer_grading_enabled=None,
 ):
     from django.db.models import Q
     from grading.grades.models import TeamGrade
@@ -157,7 +148,7 @@ def upsert_pit_event_config(
 
             if deliverables is not None:
                 existing_delivs = list(existing_config.deliverables.all().values(
-                    'id', 'label', 'deliverable_type', 'required'
+                    'id', 'label', 'deliverable_type', 'required', 'is_defense_material'
                 ))
                 if len(deliverables) != len(existing_delivs):
                     raise ValidationError(f"Cannot add or remove deliverables: {lock_reason}")
@@ -172,6 +163,7 @@ def upsert_pit_event_config(
                         existing_d['label'] != d.get('label', '').strip()
                         or existing_d['deliverable_type'] != d.get('deliverable_type', 'pre').strip()
                         or existing_d['required'] != bool(d.get('required', True))
+                        or existing_d.get('is_defense_material', False) != bool(d.get('is_defense_material', False))
                     ):
                         raise ValidationError(f"Cannot modify deliverable checklist: {lock_reason}")
 
@@ -186,6 +178,16 @@ def upsert_pit_event_config(
     if archive_file_template is not None:
         defaults['archive_file_template'] = archive_file_template.strip()
 
+    if peer_weight == 0 or peer_rubric is None:
+        defaults['peer_grading_enabled'] = False
+    elif peer_grading_enabled is not None:
+        if existing_config and existing_config.is_officially_complete and peer_grading_enabled:
+            raise ValidationError({'peer_grading_enabled': 'Peer grading cannot be enabled while the event is officially complete.'})
+        defaults['peer_grading_enabled'] = bool(peer_grading_enabled)
+    elif not existing_config:
+        # Smart default on creation: open peer grading if a peer rubric is set and peer_weight > 0
+        defaults['peer_grading_enabled'] = bool(peer_weight > 0 and peer_rubric is not None)
+
     with transaction.atomic():
         config, _created = PitEventGradingConfig.objects.update_or_create(
             semester=semester,
@@ -193,21 +195,43 @@ def upsert_pit_event_config(
             defaults=defaults,
         )
         if deliverables is not None:
-            # Reconcile deliverables instead of blind delete and recreate
-            keep_ids = []
-            for d in deliverables:
-                d_id = d.get('id')
-                if d_id:
-                    try:
-                        keep_ids.append(int(d_id))
-                    except (ValueError, TypeError):
-                        pass
-            
-            # Delete those that are not kept
-            config.deliverables.exclude(id__in=keep_ids).delete()
-            
+            # Reconcile deliverables by primary key ID or deliverable_id
+            existing_by_id = {d.id: d for d in config.deliverables.all()}
+            existing_by_deliv_id = {d.deliverable_id: d for d in config.deliverables.all() if d.deliverable_id}
+
+            matched_pks = set()
+            paired_deliverables = []
             for index, d in enumerate(deliverables, start=1):
                 d_id = d.get('id')
+                provided_deliv_id = (d.get('deliverable_id') or '').strip()
+
+                target = None
+                if d_id:
+                    try:
+                        target = existing_by_id.get(int(d_id))
+                    except (ValueError, TypeError):
+                        pass
+                if not target and provided_deliv_id:
+                    target = existing_by_deliv_id.get(provided_deliv_id)
+
+                if target:
+                    matched_pks.add(target.id)
+                paired_deliverables.append((target, d, index, provided_deliv_id))
+
+            # Delete deliverables that were actually removed from the checklist
+            to_delete = config.deliverables.exclude(id__in=matched_pks)
+            from repository.deliverables.models import DeliverableSubmission
+            for td in to_delete:
+                if td.deliverable_id and DeliverableSubmission.objects.filter(
+                    stage_label__iexact=config.event_name,
+                    deliverable_id=td.deliverable_id,
+                ).exists():
+                    raise ValidationError(
+                        f"Cannot delete deliverable '{td.label}' because student submissions already exist for it."
+                    )
+            to_delete.delete()
+
+            for target, d, index, provided_deliv_id in paired_deliverables:
                 label = d.get('label', '').strip()
                 deliv_type = d.get('deliverable_type', 'pre').strip()
                 required = bool(d.get('required', True))
@@ -215,28 +239,25 @@ def upsert_pit_event_config(
                 archive_note = d.get('archive_note', '').strip()
                 archive_file_template = d.get('archive_file_template', '').strip()
                 is_restricted = bool(d.get('is_restricted', False))
-                
-                # Check client-provided deliverable_id (usually empty/generated)
-                provided_deliv_id = d.get('deliverable_id', '').strip()
-                
-                if d_id:
-                    # Update existing
-                    deliv = config.deliverables.filter(id=d_id).first()
-                    if deliv:
-                        deliv.label = label
-                        deliv.deliverable_type = deliv_type
-                        deliv.required = required
-                        deliv.display_order = display_order
-                        deliv.archive_note = archive_note
-                        deliv.archive_file_template = archive_file_template
-                        deliv.is_restricted = is_restricted
-                        
-                        # Use provided ID if non-empty, otherwise fallback to database ID string
-                        if provided_deliv_id:
-                            deliv.deliverable_id = provided_deliv_id
-                        elif not deliv.deliverable_id or deliv.deliverable_id.startswith('d_') or deliv.deliverable_id.startswith('deliv_'):
-                            deliv.deliverable_id = str(deliv.id)
-                        deliv.save()
+                is_defense_material = bool(d.get('is_defense_material', False))
+                file_format = (d.get('file_format') or 'any').strip()
+
+                if target:
+                    # Update existing in-place
+                    target.label = label
+                    target.deliverable_type = deliv_type
+                    target.required = required
+                    target.display_order = display_order
+                    target.archive_note = archive_note
+                    target.archive_file_template = archive_file_template
+                    target.is_restricted = is_restricted
+                    target.is_defense_material = is_defense_material
+                    target.file_format = file_format
+                    if provided_deliv_id:
+                        target.deliverable_id = provided_deliv_id
+                    elif not target.deliverable_id or target.deliverable_id.startswith('d_') or target.deliverable_id.startswith('deliv_'):
+                        target.deliverable_id = str(target.id)
+                    target.save()
                 else:
                     # Create new
                     deliv = PitEventDeliverable.objects.create(
@@ -249,8 +270,9 @@ def upsert_pit_event_config(
                         archive_note=archive_note,
                         archive_file_template=archive_file_template,
                         is_restricted=is_restricted,
+                        is_defense_material=is_defense_material,
+                        file_format=file_format,
                     )
-                    # If deliverable_id is empty, use the stringified database primary key ID
                     if not deliv.deliverable_id:
                         deliv.deliverable_id = str(deliv.id)
                         deliv.save()
@@ -272,6 +294,8 @@ def pit_event_config_payload(config):
             'archive_note': d.archive_note,
             'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
+            'is_defense_material': getattr(d, 'is_defense_material', False),
+            'file_format': getattr(d, 'file_format', 'any') or 'any',
         }
         for d in config.deliverables.all().order_by('display_order', 'deliverable_id')
     ]

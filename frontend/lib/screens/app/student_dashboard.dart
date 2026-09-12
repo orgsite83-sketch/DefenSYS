@@ -153,7 +153,12 @@ class _StudentDashboardState extends ConsumerState<StudentDashboard> {
       TeamTab(
         studentData: dataToPass,
         onRefresh: _refreshDashboardAndNotifications,
-        onSelectTab: (int index) => setState(() => _selectedIndex = index),
+        onSelectTab: (int index, {int? subTabIndex}) {
+          if (subTabIndex != null) {
+            _eventsSubTabNotifier.value = subTabIndex;
+          }
+          setState(() => _selectedIndex = index);
+        },
       ),
       StudentEventsTab(
         isCapstone: isCapstone,

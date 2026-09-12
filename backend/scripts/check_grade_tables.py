@@ -10,8 +10,8 @@ django.setup()
 from django.db import connection
 
 EXPECTED = [
-    'rubric_engine_rubric',
-    'rubric_engine_rubriccriterion',
+    'rubrics',
+    'rubric_criteria',
     'grade_center_teamgrade',
     'grade_center_studentpeergrade',
     'grade_center_gradebreakdown',

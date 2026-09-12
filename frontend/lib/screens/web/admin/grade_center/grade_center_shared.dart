@@ -2563,10 +2563,15 @@ Widget officialCompleteMilestoneButton({
   required ValueChanged<bool> onChanged,
   String stageLabel = 'Stage',
   int teamCount = 0,
+  int redefenseCount = 0,
+  List<String> redefenseTeams = const [],
 }) {
   final hasTeams = teamCount > 0;
   final teamNotice = hasTeams
       ? '\n\n$teamCount team${teamCount == 1 ? '' : 's'} will be affected.'
+      : '';
+  final redefenseNotice = redefenseCount > 0
+      ? '\n\n⚠️ WARNING: $redefenseCount team${redefenseCount == 1 ? '' : 's'}${redefenseTeams.isNotEmpty ? ' (${redefenseTeams.take(3).join(', ')}${redefenseTeams.length > 3 ? '...' : ''})' : ''} currently ${redefenseCount == 1 ? 'has' : 'have'} a "For Re-defense" verdict and ${redefenseCount == 1 ? 'has' : 'have'} not passed.\n\nMarking this stage complete will finalize this milestone. These teams will officially FAIL this stage and will NOT advance to the next stage.'
       : '';
 
   if (isComplete) {
@@ -2692,7 +2697,7 @@ Widget officialCompleteMilestoneButton({
                   context,
                   title: 'Mark $stageLabel Complete?',
                   message:
-                      'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice\n\nAre you sure you want to mark $stageLabel officially complete?',
+                      'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice$redefenseNotice\n\nAre you sure you want to mark $stageLabel officially complete?',
                   confirmLabel: 'Mark Complete',
                   cancelLabel: 'Cancel',
                   destructive: false,
@@ -3031,6 +3036,7 @@ Future<void> showIncompletePeerTeamsDialog(
 Widget capstoneTermStatusBadgeRow(
   GradeCenterState state, {
   bool showPeerEvaluation = false,
+  BuildContext? context,
 }) {
   final adviserOn = capstoneTermAdviserGradingEnabled(state);
   return Wrap(
@@ -3051,12 +3057,21 @@ Widget capstoneTermStatusBadgeRow(
         capstoneTermStatusChip(
           label: 'Peer evaluation',
           enabled: capstoneTermPeerEvalEnabled(state),
+          helpTooltip: 'Click for Peer Evaluation Workflow Guide',
+          onHelpTap: context != null
+              ? () => showPeerGradingHelpDialog(context, isPit: false)
+              : null,
         ),
     ],
   );
 }
 
-Widget capstoneTermStatusChip({required String label, required bool enabled}) {
+Widget capstoneTermStatusChip({
+  required String label,
+  required bool enabled,
+  VoidCallback? onHelpTap,
+  String? helpTooltip,
+}) {
   final bg = enabled ? const Color(0xFFF0FDF4) : const Color(0xFFF8FAFC);
   final border = enabled ? const Color(0xFFBBF7D0) : const Color(0xFFE2E8F0);
   final fg = enabled ? const Color(0xFF15803D) : const Color(0xFF64748B);
@@ -3079,15 +3094,33 @@ Widget capstoneTermStatusChip({required String label, required bool enabled}) {
             shape: BoxShape.circle,
           ),
         ),
-        const SizedBox(width: 5),
+        const SizedBox(width: 6),
         Text(
-          '$label ${enabled ? 'ON' : 'OFF'}',
+          label,
           style: TextStyle(
             color: fg,
-            fontSize: 10.5,
+            fontSize: 11.5,
             fontWeight: FontWeight.w600,
           ),
         ),
+        if (onHelpTap != null || helpTooltip != null) ...[
+          const SizedBox(width: 4),
+          Tooltip(
+            message: helpTooltip ?? 'Click for workflow details',
+            child: InkWell(
+              onTap: onHelpTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(1.0),
+                child: Icon(
+                  Icons.help_outline_rounded,
+                  size: 13,
+                  color: fg.withValues(alpha: 0.8),
+                ),
+              ),
+            ),
+          ),
+        ],
       ],
     ),
   );
@@ -3132,26 +3165,38 @@ Widget gradeGroupStageControlsSection({
         crossAxisAlignment: WrapCrossAlignment.center,
         children: [
           Builder(
-            builder: (context) => officialCompleteMilestoneButton(
-              context: context,
-              isComplete: isOfficiallyComplete,
-              enabled: !state.isSaving &&
-                  officialCompleteToggleEnabled &&
-                  (!closeBlocked || isOfficiallyComplete),
-              stageLabel: scope == 'pit' ? 'Event' : 'Stage',
-              teamCount: grades.length,
-              onChanged: onOfficiallyCompleteChanged,
-            ),
+            builder: (context) {
+              final redefenseTeams = grades
+                  .where((g) => g['verdict']?.toString() == 'for_redefense')
+                  .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
+                  .toList();
+              return officialCompleteMilestoneButton(
+                context: context,
+                isComplete: isOfficiallyComplete,
+                enabled: !state.isSaving &&
+                    officialCompleteToggleEnabled &&
+                    (!closeBlocked || isOfficiallyComplete),
+                stageLabel: scope == 'pit' ? 'Event' : 'Stage',
+                teamCount: grades.length,
+                redefenseCount: redefenseTeams.length,
+                redefenseTeams: redefenseTeams,
+                onChanged: onOfficiallyCompleteChanged,
+              );
+            },
           ),
           if (isPit)
-            groupToggleRow(
-              label: 'Peer grading open',
-              value: peerGradingEnabled,
-              enabled: pitPeerStageToggleEnabled(
-                state: state,
-                isOfficiallyComplete: isOfficiallyComplete,
+            Builder(
+              builder: (ctx) => groupToggleRow(
+                label: 'Peer grading open',
+                value: peerGradingEnabled,
+                enabled: pitPeerStageToggleEnabled(
+                  state: state,
+                  isOfficiallyComplete: isOfficiallyComplete,
+                ),
+                onChanged: onPeerGradingChanged,
+                helpTooltip: 'Click for Peer Evaluation Workflow Guide',
+                onHelpTap: () => showPeerGradingHelpDialog(ctx, isPit: true),
               ),
-              onChanged: onPeerGradingChanged,
             ),
           if (isOfficiallyComplete && isPit)
             Container(
@@ -3170,9 +3215,12 @@ Widget gradeGroupStageControlsSection({
               ),
             ),
           if (scope == 'capstone')
-            capstoneTermStatusBadgeRow(
-              state,
-              showPeerEvaluation: showCapstonePeerTermBadge,
+            Builder(
+              builder: (ctx) => capstoneTermStatusBadgeRow(
+                state,
+                showPeerEvaluation: showCapstonePeerTermBadge,
+                context: ctx,
+              ),
             ),
         ],
       ),
@@ -3197,6 +3245,8 @@ Widget groupToggleRow({
   required bool value,
   required bool enabled,
   required ValueChanged<bool> onChanged,
+  VoidCallback? onHelpTap,
+  String? helpTooltip,
 }) {
   return Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
@@ -3219,6 +3269,24 @@ Widget groupToggleRow({
             fontWeight: FontWeight.w600,
           ),
         ),
+        if (onHelpTap != null || helpTooltip != null) ...[
+          const SizedBox(width: 4),
+          Tooltip(
+            message: helpTooltip ?? 'Click for workflow details',
+            child: InkWell(
+              onTap: onHelpTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Padding(
+                padding: const EdgeInsets.all(1.0),
+                child: Icon(
+                  Icons.help_outline_rounded,
+                  size: 13.5,
+                  color: enabled ? const Color(0xFF667085) : const Color(0xFF98A2B3),
+                ),
+              ),
+            ),
+          ),
+        ],
         const SizedBox(width: 6),
         SizedBox(
           height: 20,
@@ -3234,6 +3302,217 @@ Widget groupToggleRow({
               inactiveTrackColor: const Color(0xFFF2F4F7),
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
+  showDialog(
+    context: context,
+    builder: (dialogCtx) => Dialog(
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 4,
+      backgroundColor: Colors.white,
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 580),
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: isPit
+                          ? const Color(0xFFFEF3C7)
+                          : const Color(0xFFEFF6FF),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: Icon(
+                      Icons.help_outline_rounded,
+                      color: isPit
+                          ? const Color(0xFFB45309)
+                          : const Color(0xFF1D4ED8),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          isPit
+                              ? 'PIT Peer Evaluation Guide'
+                              : 'Capstone Peer Evaluation Guide',
+                          style: const TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w800,
+                            color: DefensysTokens.textPrimary,
+                            fontFamily: DefensysTokens.fontFamily,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          isPit
+                              ? 'How peer grading operates across PIT exhibitions and events'
+                              : 'How student peer evaluation operates for Capstone stages',
+                          style: const TextStyle(
+                            fontSize: 12.5,
+                            color: Color(0xFF64748B),
+                            fontFamily: DefensysTokens.fontFamily,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: () => Navigator.of(dialogCtx).pop(),
+                    icon: const Icon(Icons.close_rounded, size: 20, color: Color(0xFF94A3B8)),
+                    tooltip: 'Close',
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              _buildHelpStepCard(
+                stepNum: '1',
+                title: 'Enabled Automatically',
+                description: isPit
+                    ? 'Peer grading is enabled by default whenever an event has a Peer Rubric and peer weight > 0%. Leads can also toggle it in PIT Events Setup or here in Grade Center.'
+                    : 'Peer evaluation is enabled for the academic term by default. No manual per-stage gatekeeping is needed.',
+                icon: Icons.check_circle_outline_rounded,
+                color: const Color(0xFF059669),
+                bgColor: const Color(0xFFECFDF5),
+              ),
+              const SizedBox(height: 10),
+              _buildHelpStepCard(
+                stepNum: '2',
+                title: 'Student Access',
+                description:
+                    'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. They evaluate each teammate on individual contribution.',
+                icon: Icons.people_outline_rounded,
+                color: const Color(0xFF2563EB),
+                bgColor: const Color(0xFFEFF6FF),
+              ),
+              const SizedBox(height: 10),
+              _buildHelpStepCard(
+                stepNum: '3',
+                title: 'Post-Defense "Awaiting Peers" Prompt',
+                description:
+                    'When panelists submit their scores, DefenSYS automatically marks the team as "Awaiting Peers", showing a red "Due Soon" alert on student dashboards to prompt any remaining submissions.',
+                icon: Icons.notifications_active_outlined,
+                color: const Color(0xFFD97706),
+                bgColor: const Color(0xFFFFFBEB),
+              ),
+              const SizedBox(height: 10),
+              _buildHelpStepCard(
+                stepNum: '4',
+                title: 'Grade Finalization & Safe Lock',
+                description:
+                    'Once all peer scores are in, the composite grade calculates automatically. Marking the event officially complete locks peer grading and readies teams for project archive.',
+                icon: Icons.lock_outline_rounded,
+                color: DefensysUi.primaryMaroon,
+                bgColor: const Color(0xFFFEF2F2),
+              ),
+              const SizedBox(height: 20),
+              Align(
+                alignment: Alignment.centerRight,
+                child: FilledButton(
+                  onPressed: () => Navigator.of(dialogCtx).pop(),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: DefensysUi.primaryMaroon,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
+                  ),
+                  child: const Text(
+                    'Got it',
+                    style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ),
+  );
+}
+
+Widget _buildHelpStepCard({
+  required String stepNum,
+  required String title,
+  required String description,
+  required IconData icon,
+  required Color color,
+  required Color bgColor,
+}) {
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+    decoration: BoxDecoration(
+      color: bgColor,
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: color.withValues(alpha: 0.25), width: 1),
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          width: 24,
+          height: 24,
+          decoration: BoxDecoration(
+            color: color,
+            shape: BoxShape.circle,
+          ),
+          child: Center(
+            child: Text(
+              stepNum,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(icon, size: 14, color: color),
+                  const SizedBox(width: 5),
+                  Text(
+                    title,
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: color,
+                      fontFamily: DefensysTokens.fontFamily,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 3),
+              Text(
+                description,
+                style: const TextStyle(
+                  fontSize: 12,
+                  height: 1.4,
+                  color: Color(0xFF334155),
+                  fontFamily: DefensysTokens.fontFamily,
+                ),
+              ),
+            ],
           ),
         ),
       ],

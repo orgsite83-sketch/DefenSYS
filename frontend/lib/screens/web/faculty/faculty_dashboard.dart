@@ -228,14 +228,13 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
           'repository_audit',
           'audit_compliance',
           'rubrics',
-          'rubric_engine',
           'uploader',
         }.contains(section);
       case FacultyWorkspace.pitLead:
         return const {
           'dashboard',
           'pit_events',
-          'rubric_engine',
+          'rubrics',
           'cohort',
           'pit_student_import',
           'pit_instructors',
@@ -729,7 +728,7 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
               isWide,
               () => _goToSection('rubrics'),
             ),
-            isActive: _activeSection == 'rubrics' || _activeSection == 'rubric_engine',
+            isActive: _activeSection == 'rubrics',
           ),
           _buildSectionHeader('Archives & Audit'),
           _buildSidebarItem(
@@ -1146,10 +1145,9 @@ class _FacultyDashboardState extends ConsumerState<FacultyDashboard> {
       case 'grade_center':
         return Container(color: Colors.white, child: const GradeCenterScreen());
       case 'rubrics':
-      case 'rubric_engine':
         return Container(
           color: Colors.white,
-          child: RubricEngineScreen(key: ValueKey('rubric_engine_$_navigationEpoch')),
+          child: RubricEngineScreen(key: ValueKey('rubrics_$_navigationEpoch')),
         );
       case 'dashboard':
       default:

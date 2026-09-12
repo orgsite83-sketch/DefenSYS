@@ -495,50 +495,163 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final requiredItems = pre.where((item) => item['required'] == true).toList();
     final total = requiredItems.length;
     final done = requiredItems.where((item) => item['uploaded'] == true || item['submission'] != null).length;
-    final pct = total > 0 ? (done / total).clamp(0.0, 1.0) : (pre.isEmpty ? 0.0 : 1.0);
-    final color = done == total && total > 0 ? DefensysTokens.success : DefensysTokens.gold;
+    final isAllDone = total > 0 && done == total;
 
     return Container(
+      width: double.infinity,
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFC),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFF1F5F9)),
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text(
-                'Required Pre-Defense Check',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: DefensysTokens.textPrimary,
+              Container(
+                width: 38,
+                height: 38,
+                decoration: BoxDecoration(
+                  color: isAllDone
+                      ? const Color(0xFFDCFCE7)
+                      : DefensysTokens.maroon.withValues(alpha: 0.08),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  isAllDone
+                      ? Icons.verified_rounded
+                      : Icons.pending_actions_rounded,
+                  size: 20,
+                  color: isAllDone
+                      ? const Color(0xFF15803D)
+                      : DefensysTokens.maroon,
                 ),
               ),
-              Text(
-                total > 0 ? '$done / $total Complete' : (pre.isEmpty ? 'Not Configured' : 'Complete'),
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.bold,
-                  color: color,
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Pre-Defense Clearance Status',
+                      style: TextStyle(
+                        fontSize: 13.5,
+                        fontWeight: FontWeight.bold,
+                        color: DefensysTokens.textPrimary,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      total == 0
+                          ? 'No pre-defense requirements configured'
+                          : (isAllDone
+                              ? 'All $total required milestones submitted & ready'
+                              : '$done of $total milestones submitted'),
+                      style: const TextStyle(
+                        fontSize: 11,
+                        color: DefensysTokens.textSecondary,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: isAllDone
+                      ? const Color(0xFFDCFCE7)
+                      : const Color(0xFFFEF3C7),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: isAllDone
+                        ? const Color(0xFF86EFAC)
+                        : const Color(0xFFFDE68A),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 6,
+                      height: 6,
+                      decoration: BoxDecoration(
+                        color: isAllDone
+                            ? const Color(0xFF15803D)
+                            : const Color(0xFFD97706),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isAllDone ? 'Clear for Defense' : '$done/$total Submitted',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w800,
+                        color: isAllDone
+                            ? const Color(0xFF15803D)
+                            : const Color(0xFFB45309),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(4),
-            child: LinearProgressIndicator(
-              value: pct,
-              minHeight: 6,
-              backgroundColor: const Color(0xFFE2E8F0),
-              valueColor: AlwaysStoppedAnimation<Color>(color),
+          if (total > 0) ...[
+            const SizedBox(height: 14),
+            // Segmented Milestone Track (Physical visual progression)
+            Row(
+              children: List.generate(total, (i) {
+                final item = requiredItems[i];
+                final isSubmitted = item['uploaded'] == true || item['submission'] != null;
+                final sub = Map<String, dynamic>.from(item['submission'] as Map? ?? const {});
+                final isItemAccepted = sub['status']?.toString() == 'accepted';
+
+                final segmentColor = isItemAccepted
+                    ? const Color(0xFF16A34A)
+                    : (isSubmitted ? const Color(0xFF0284C7) : const Color(0xFFE2E8F0));
+
+                return Expanded(
+                  child: Padding(
+                    padding: EdgeInsets.only(right: i < total - 1 ? 6.0 : 0.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          height: 5,
+                          decoration: BoxDecoration(
+                            color: segmentColor,
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          item['label']?.toString() ?? 'Requirement ${i + 1}',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            fontWeight: isSubmitted ? FontWeight.w700 : FontWeight.w500,
+                            color: isSubmitted ? const Color(0xFF334155) : const Color(0xFF94A3B8),
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
             ),
-          ),
+          ],
         ],
       ),
     );
@@ -765,332 +878,572 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
     final fileLocked = !isDefenseMaterialAttempt2 && !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
     final isWPR = item['id'] == 'WPR';
-    final suggestedFile = item['suggested_file_name']?.toString() ?? '';
     final feedback = replacementUnlockedByAdmin ? '' : rawFeedback;
     final rawFormat = item['file_format'] ?? item['fileFormat'];
     final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
 
-    return Card(
+    final statusColor = isAccepted
+        ? const Color(0xFF16A34A)
+        : (isRejected
+            ? const Color(0xFFDC2626)
+            : (uploaded ? const Color(0xFFD97706) : const Color(0xFFCBD5E1)));
+
+    return Container(
       margin: const EdgeInsets.only(bottom: 10),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      elevation: 2,
-      child: Padding(
-        padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 6,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Left Accent Status Strip (clean indicator instead of boxy square)
+              Container(
+                width: 4.5,
+                color: statusColor,
+              ),
+              // Main Card Body
+              Expanded(
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _showDeliverableDetailsSheet(team, stageLabel, item, endorsed, stageGrade),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Top Section: Emblem + Title & Format Badge + Status Pills
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              // 38x38px icon-only emblem (No vertical text inside -> 0% chance of overflow!)
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: formatInfo.color.withValues(alpha: 0.1),
+                                  borderRadius: BorderRadius.circular(8),
+                                  border: Border.all(color: formatInfo.color.withValues(alpha: 0.2)),
+                                ),
+                                child: Center(
+                                  child: Icon(formatInfo.icon, size: 20, color: formatInfo.color),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      item['label']?.toString() ?? '',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        fontSize: 13.5,
+                                        color: DefensysTokens.textPrimary,
+                                      ),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 3),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: formatInfo.color.withValues(alpha: 0.08),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            formatInfo.label,
+                                            style: TextStyle(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w800,
+                                              color: formatInfo.color,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Expanded(
+                                          child: Text(
+                                            uploaded
+                                                ? (isWPR
+                                                    ? 'Adviser compiled reports'
+                                                    : (submission['file_name'] ?? 'Submitted document'))
+                                                : (isWaived
+                                                    ? 'Approved with no revisions'
+                                                    : 'Awaiting submission'),
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: uploaded ? const Color(0xFF475569) : const Color(0xFF94A3B8),
+                                              fontWeight: uploaded ? FontWeight.w500 : FontWeight.normal,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.end,
+                                children: [
+                                  if (isWaived) ...[
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFDCFCE7),
+                                        borderRadius: BorderRadius.circular(6),
+                                      ),
+                                      child: const Text(
+                                        'Approved',
+                                        style: TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF15803D)),
+                                      ),
+                                    ),
+                                  ] else if (uploaded) ...[
+                                    if (isAccepted)
+                                      const StatusBadge.success(label: 'Accepted')
+                                    else if (isRejected)
+                                      const StatusBadge.revision(label: 'Needs Revision')
+                                    else
+                                      const StatusBadge.warning(label: 'Awaiting Review'),
+                                  ] else ...[
+                                    const StatusBadge.warning(label: 'Awaiting Upload'),
+                                  ],
+                                  if (item['required'] == true && !isWaived) ...[
+                                    const SizedBox(height: 3),
+                                    StatusBadge.danger(
+                                      label: verdictCondition == 'revisions_only' ? 'Required (Revisions)' : 'Required',
+                                      showDot: false,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ],
+                          ),
+                          // Revision Remarks Banner (if rejected)
+                          if (uploaded && isRejected && feedback.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Container(
+                              width: double.infinity,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFEF2F2),
+                                borderRadius: BorderRadius.circular(6),
+                                border: Border.all(color: const Color(0xFFFECACA)),
+                              ),
+                              child: Text(
+                                'Remarks: $feedback',
+                                style: const TextStyle(fontSize: 11, color: Color(0xFF991B1B), fontWeight: FontWeight.w500),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                          // Bottom Actions Row (Compact, proportional buttons)
+                          const SizedBox(height: 10),
+                          const Divider(height: 1, color: Color(0xFFF1F5F9)),
+                          const SizedBox(height: 6),
+                          Row(
+                            children: [
+                              // Details tap trigger
+                              InkWell(
+                                onTap: () => _showDeliverableDetailsSheet(team, stageLabel, item, endorsed, stageGrade),
+                                borderRadius: BorderRadius.circular(4),
+                                child: const Padding(
+                                  padding: EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(Icons.info_outline_rounded, size: 13, color: Color(0xFF64748B)),
+                                      SizedBox(width: 4),
+                                      Text(
+                                        'Details',
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.w600,
+                                          color: Color(0xFF64748B),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              const Spacer(),
+                              if (uploaded && !isWPR) ...[
+                                OutlinedButton.icon(
+                                  onPressed: () {
+                                    final fileUrl = (submission['file_url'] ?? '').toString();
+                                    final fileName = (submission['file_name'] ?? item['label'] ?? 'file').toString();
+                                    _viewFile(fileUrl, fileName);
+                                  },
+                                  icon: const Icon(Icons.visibility_outlined, size: 13),
+                                  label: const Text('View', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                  style: OutlinedButton.styleFrom(
+                                    foregroundColor: DefensysTokens.maroon,
+                                    side: BorderSide(color: DefensysTokens.maroon.withValues(alpha: 0.35)),
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    visualDensity: VisualDensity.compact,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                              ],
+                              if (isWPR) ...[
+                                ElevatedButton.icon(
+                                  onPressed: () => _showWPRDialog(team, stageLabel),
+                                  icon: const Icon(Icons.assignment_outlined, size: 13),
+                                  label: const Text('Weekly Reports', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: DefensysTokens.maroon,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    visualDensity: VisualDensity.compact,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                ),
+                              ] else if (isWaived) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFF1F5F9),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Text('Not Required', style: TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
+                                ),
+                              ] else if (isDefenseMaterialAttempt2) ...[
+                                ElevatedButton.icon(
+                                  onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
+                                  icon: const Icon(Icons.replay_rounded, size: 13),
+                                  label: const Text('Attempt #2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: const Color(0xFFDC2626),
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    visualDensity: VisualDensity.compact,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                ),
+                              ] else if (!fileLocked) ...[
+                                ElevatedButton.icon(
+                                  onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
+                                  icon: Icon(uploaded ? Icons.swap_horiz_rounded : Icons.upload_file_rounded, size: 13),
+                                  label: Text(uploaded ? 'Replace' : 'Upload', style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: uploaded ? const Color(0xFF0284C7) : DefensysTokens.maroon,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                    visualDensity: VisualDensity.compact,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+                                  ),
+                                ),
+                              ],
+                              const SizedBox(width: 4),
+                              // More options button (...)
+                              IconButton(
+                                icon: const Icon(Icons.more_horiz_rounded, size: 18, color: Color(0xFF64748B)),
+                                tooltip: 'File Details & Actions',
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                onPressed: () => _showDeliverableDetailsSheet(team, stageLabel, item, endorsed, stageGrade),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showDeliverableDetailsSheet(
+    Map<String, dynamic> team,
+    String stageLabel,
+    Map<String, dynamic> item,
+    bool endorsed,
+    Map<String, dynamic>? stageGrade,
+  ) {
+    final submission = Map<String, dynamic>.from(item['submission'] as Map? ?? const {});
+    final uploaded = item['uploaded'] == true;
+    final fileName = (submission['file_name'] ?? item['label'] ?? 'Document').toString();
+    final fileUrl = (submission['file_url'] ?? '').toString();
+    final uploadedBy = (submission['uploaded_by_name'] ?? 'Team Member').toString();
+    final uploadedAt = (submission['uploaded_at'] ?? submission['date'] ?? '').toString();
+    final rawFormat = item['file_format'] ?? item['fileFormat'];
+    final formatInfo = DeliverableFormatInfo.fromFormat(rawFormat?.toString());
+    final status = submission['status']?.toString();
+    final isAccepted = status == 'accepted';
+    final isRejected = status == 'rejected' || status == 'Needs Revision';
+    final rawFeedback = (submission['feedback'] ?? item['feedback'])?.toString() ?? '';
+    final isWPR = item['id'] == 'WPR';
+    final isWaived = item['is_waived'] == true;
+    final stageVerdict = stageGrade?['verdict']?.toString();
+    final isForRedefense = stageVerdict == 'for_redefense';
+    final replacementUnlockedByAdmin = rawFeedback.contains('Unlocked for file replacement');
+    final isDefenseMaterialAttempt2 = isForRedefense && item['type'] == 'pre' && item['is_defense_material'] == true;
+    final fileLocked = !isDefenseMaterialAttempt2 && !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (modalCtx) => Container(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Top Section: Info & Badges
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Icon(
-                  uploaded ? Icons.check_circle : Icons.radio_button_unchecked,
-                  color: uploaded ? Colors.green : Colors.grey,
-                  size: 20,
+            // Drag handle
+            Center(
+              child: Container(
+                width: 36,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCBD5E1),
+                  borderRadius: BorderRadius.circular(2),
                 ),
-                const SizedBox(width: 10),
+              ),
+            ),
+            const SizedBox(height: 16),
+
+            // Header with format icon
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: formatInfo.color.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: formatInfo.color.withValues(alpha: 0.25)),
+                  ),
+                  child: Icon(formatInfo.icon, size: 22, color: formatInfo.color),
+                ),
+                const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Wrap(
-                        crossAxisAlignment: WrapCrossAlignment.center,
-                        spacing: 6,
-                        runSpacing: 4,
+                      Text(
+                        item['label']?.toString() ?? 'Deliverable',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: DefensysTokens.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 3),
+                      Row(
                         children: [
-                          Text(
-                            item['label']?.toString() ?? '',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: formatInfo.color.withValues(alpha: 0.08),
+                              color: formatInfo.color.withValues(alpha: 0.1),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: formatInfo.color.withValues(alpha: 0.25)),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(formatInfo.icon, size: 11, color: formatInfo.color),
-                                const SizedBox(width: 3),
-                                Text(
-                                  formatInfo.label,
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: formatInfo.color,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      if (uploaded)
-                        Text(
-                          isWPR
-                              ? 'All weekly reports approved - Compiled by Adviser'
-                              : '${submission['file_name'] ?? ''} - ${submission['uploaded_by_name'] ?? ''}',
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
-                        )
-                      else if (isWaived)
-                        Text(
-                          'Not Required: Team received an Approved verdict with no revisions ordered.',
-                          style: TextStyle(color: Colors.green.shade700, fontSize: 12, fontWeight: FontWeight.w600),
-                        )
-                      else if ((item['archive_note'] ?? item['vault_note'])?.toString().isNotEmpty ?? false)
-                        Text(
-                          (item['archive_note'] ?? item['vault_note']).toString(),
-                          style: const TextStyle(color: Colors.grey, fontSize: 12),
-                        )
-                      else if (isWPR)
-                        const Text(
-                          'Adviser will compile weekly reports once approved.',
-                          style: TextStyle(color: Colors.grey, fontSize: 12, fontStyle: FontStyle.italic),
-                        ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                // Badges Column
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    if (isWaived) ...[
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFDCFCE7),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: const Color(0xFF86EFAC)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.check_circle_outline_rounded, size: 11, color: Color(0xFF15803D)),
-                            SizedBox(width: 3),
-                            Text(
-                              'Not Required (Approved)',
+                            child: Text(
+                              formatInfo.label,
                               style: TextStyle(
                                 fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF15803D),
+                                fontWeight: FontWeight.bold,
+                                color: formatInfo.color,
                               ),
                             ),
-                          ],
-                        ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (uploaded)
+                            Text(
+                              isAccepted ? 'Status: Accepted' : (isRejected ? 'Needs Revision' : 'Awaiting Review'),
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: isAccepted ? const Color(0xFF15803D) : (isRejected ? const Color(0xFFDC2626) : const Color(0xFFD97706)),
+                              ),
+                            )
+                          else
+                            const Text(
+                              'Status: Awaiting Upload',
+                              style: TextStyle(fontSize: 11, color: Color(0xFF64748B)),
+                            ),
+                        ],
                       ),
-                    ] else if (uploaded) ...[
-                      if (isAccepted)
-                        const StatusBadge.success(label: 'Accepted')
-                      else if (isRejected)
-                        const StatusBadge.revision(label: 'Needs Revision')
-                      else
-                        const StatusBadge.warning(label: 'Awaiting Review'),
-                    ] else ...[
-                      const StatusBadge.warning(label: 'Awaiting Upload'),
                     ],
-                    const SizedBox(height: 4),
-                    if (item['required'] == true && !isWaived)
-                      StatusBadge.danger(
-                        label: verdictCondition == 'revisions_only' ? 'Required (Revisions)' : 'Required',
-                        showDot: false,
-                      ),
-                  ],
+                  ),
                 ),
               ],
             ),
-            if (uploaded && isRejected && feedback.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Remarks:',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.red),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      feedback,
-                      style: TextStyle(fontSize: 12, color: Colors.red.shade900),
-                    ),
-                  ],
+            const SizedBox(height: 16),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            const SizedBox(height: 14),
+
+            // Complete Untruncated File Name Section
+            if (uploaded && !isWPR) ...[
+              const Text(
+                'SUBMITTED FILE NAME',
+                style: TextStyle(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: Color(0xFF64748B),
+                  letterSpacing: 0.5,
                 ),
               ),
-            ],
-            if (replacementUnlockedByAdmin) ...[
-              const SizedBox(height: 10),
+              const SizedBox(height: 6),
               Container(
                 width: double.infinity,
-                padding: const EdgeInsets.all(10),
+                padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
+                  color: const Color(0xFFF8FAFC),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.blue.shade200),
+                  border: Border.all(color: const Color(0xFFE2E8F0)),
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.info_outline, size: 14, color: Colors.blue.shade700),
-                    const SizedBox(width: 6),
-                    Expanded(
-                      child: Text(
-                        'Admin enabled file replacement for this deliverable.',
-                        style: TextStyle(fontSize: 11.5, color: Colors.blue.shade900, fontWeight: FontWeight.w600),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (uploaded && isAccepted && feedback.isNotEmpty) ...[
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.green.shade200),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text(
-                      'Remarks:',
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      feedback,
-                      style: TextStyle(fontSize: 12, color: Colors.green.shade900),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            if (suggestedFile.isNotEmpty && !uploaded) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: DefensysTokens.gold.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: DefensysTokens.gold.withValues(alpha: 0.3)),
-                ),
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Icon(Icons.info_outline, color: DefensysTokens.gold, size: 16),
+                    const Icon(Icons.insert_drive_file_outlined, size: 16, color: DefensysTokens.textSecondary),
                     const SizedBox(width: 8),
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Naming template (${formatInfo.label} must match):',
-                            style: const TextStyle(color: DefensysTokens.gold, fontSize: 11, fontWeight: FontWeight.bold),
-                          ),
-                          const SizedBox(height: 4),
-                          SelectableText(
-                            suggestedFile,
-                            style: const TextStyle(fontFamily: 'monospace', fontWeight: FontWeight.w700, fontSize: 11),
-                          ),
-                        ],
+                      child: SelectableText(
+                        fileName,
+                        style: const TextStyle(
+                          fontFamily: 'monospace',
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          color: DefensysTokens.textPrimary,
+                        ),
                       ),
                     ),
                   ],
                 ),
               ),
+              const SizedBox(height: 10),
+
+              // Metadata: Uploaded By & Time
+              Row(
+                children: [
+                  const Icon(Icons.person_outline_rounded, size: 14, color: Color(0xFF64748B)),
+                  const SizedBox(width: 4),
+                  Text(
+                    'Uploaded by: $uploadedBy',
+                    style: const TextStyle(fontSize: 11.5, color: Color(0xFF475569)),
+                  ),
+                  if (uploadedAt.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    Text('• $uploadedAt', style: const TextStyle(fontSize: 11.5, color: Color(0xFF94A3B8))),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 14),
             ],
-            // Bottom Actions Section
-            const SizedBox(height: 12),
+
+            // Remarks / Feedback (if available)
+            if (rawFeedback.isNotEmpty) ...[
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: isRejected ? const Color(0xFFFEF2F2) : const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: isRejected ? const Color(0xFFFECACA) : const Color(0xFFBBF7D0)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isRejected ? 'Panel Revision Remarks:' : 'Panel Feedback:',
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                        color: isRejected ? const Color(0xFFDC2626) : const Color(0xFF15803D),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      rawFeedback,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: isRejected ? const Color(0xFF7F1D1D) : const Color(0xFF14532D),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 16),
+            ],
+
+            // Action Buttons Row inside modal
             Row(
-              mainAxisAlignment: MainAxisAlignment.end,
               children: [
                 if (uploaded && !isWPR) ...[
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      final fileUrl = (submission['file_url'] ?? '').toString();
-                      final fileName = (submission['file_name'] ?? item['label'] ?? 'file').toString();
-                      _viewFile(fileUrl, fileName);
-                    },
-                    icon: const Icon(Icons.visibility_outlined, size: 15),
-                    label: const Text('View', style: TextStyle(fontSize: 11)),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: DefensysTokens.maroon,
-                      side: BorderSide(color: DefensysTokens.maroon.withValues(alpha: 0.5)),
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(modalCtx);
+                        _viewFile(fileUrl, fileName);
+                      },
+                      icon: const Icon(Icons.visibility_outlined, size: 16),
+                      label: const Text('View Document', style: TextStyle(fontWeight: FontWeight.bold)),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: DefensysTokens.maroon,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                     ),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 10),
                 ],
-                if (uploaded && !isWPR && !fileLocked) ...[
+                if (uploaded && !fileLocked && !isWPR) ...[
                   IconButton(
-                    tooltip: 'Remove',
-                    onPressed: () => _removeFile(team, stageLabel, item),
-                    icon: const Icon(Icons.delete_outline, color: Colors.red),
+                    onPressed: () {
+                      Navigator.pop(modalCtx);
+                      _removeFile(team, stageLabel, item);
+                    },
+                    icon: const Icon(Icons.delete_outline_rounded, color: Color(0xFFEF4444)),
+                    tooltip: 'Remove Submission',
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 6),
                 ],
-                if (isWPR)
-                  ElevatedButton.icon(
-                    onPressed: () => _showWPRDialog(team, stageLabel),
-                    icon: const Icon(Icons.assignment, size: 16),
-                    label: const Text('Manage Weekly Reports', style: TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  )
-                else if (isWaived)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF1F5F9),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: const Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.done_all_rounded, size: 14, color: Color(0xFF64748B)),
-                        SizedBox(width: 4),
-                        Text('Not Required', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Color(0xFF64748B))),
-                      ],
-                    ),
-                  )
-                else if (isDefenseMaterialAttempt2)
-                  ElevatedButton.icon(
-                    onPressed: () => _promptUploadOrReplace(team, stageLabel, item),
-                    icon: const Icon(Icons.replay_rounded, size: 15),
-                    label: const Text('Re-upload for Attempt #2', style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFFDC2626),
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    ),
-                  )
-                else
-                  ElevatedButton.icon(
-                    onPressed: fileLocked ? null : () => _promptUploadOrReplace(team, stageLabel, item),
-                    icon: Icon(uploaded ? Icons.swap_horiz : Icons.upload_file, size: 16),
-                    label: Text(uploaded ? 'Replace' : 'Upload', style: const TextStyle(fontSize: 11)),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: uploaded ? Colors.blue.shade600 : DefensysTokens.maroon,
-                      foregroundColor: Colors.white,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                if (!fileLocked && !isWaived && !isWPR) ...[
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(modalCtx);
+                        _promptUploadOrReplace(team, stageLabel, item);
+                      },
+                      icon: Icon(uploaded ? Icons.swap_horiz_rounded : Icons.upload_file_rounded, size: 16),
+                      label: Text(uploaded ? 'Replace File' : 'Upload File', style: const TextStyle(fontWeight: FontWeight.bold)),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: DefensysTokens.maroon,
+                        side: const BorderSide(color: DefensysTokens.maroon),
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
                     ),
                   ),
+                ],
               ],
             ),
           ],

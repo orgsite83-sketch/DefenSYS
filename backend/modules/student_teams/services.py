@@ -208,19 +208,7 @@ def mark_stage_result(grade, user=None):
     if is_passed:
         progress.status = TeamStageProgress.STATUS_PASSED
         team_status = StudentTeam.STATUS_APPROVED
-        from defense.stages.models import DefenseStage
-        active_stages = list(DefenseStage.objects.filter(is_active=True).order_by('display_order', 'id'))
-        curr_idx = -1
-        for i, stg in enumerate(active_stages):
-            if stg.id == grade.defense_stage_id:
-                curr_idx = i
-                break
-        if curr_idx != -1 and curr_idx + 1 < len(active_stages):
-            next_stage = active_stages[curr_idx + 1]
-            grade.team.current_defense_stage = next_stage.label
-        else:
-            grade.team.current_defense_stage = grade.defense_stage.label
-
+        grade.team.current_defense_stage = grade.defense_stage.label
         team_update_fields = ['current_defense_stage', 'updated_at']
         if grade.team.ready_for_stage == grade.defense_stage.label:
             grade.team.ready_for_stage = None

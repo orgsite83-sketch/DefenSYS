@@ -201,6 +201,21 @@ class DefenseStageDetailView(APIView):
                 for index, s in enumerate(other_stages, start=1):
                     DefenseStage.objects.filter(pk=s.pk).update(display_order=index)
                 stage.refresh_from_db()
+
+                # If admin requested to reset endorsements for this moved stage
+                if request.data.get('endorsed_teams_action') == 'reset':
+                    from student_teams.models import TeamStageProgress, StudentTeam
+                    from student_teams.services import mark_stage_locked
+                    from academic_period_management.models import Semester
+
+                    semester = Semester.objects.filter(is_active=True).first()
+                    qs = TeamStageProgress.objects.filter(defense_stage=stage, status=TeamStageProgress.STATUS_READY)
+                    if semester:
+                        qs = qs.filter(semester=semester)
+                    for p in qs:
+                        mark_stage_locked(p.team, stage, user=request.user)
+                    if semester:
+                        StudentTeam.objects.filter(semester=semester, ready_for_stage=stage.label).update(ready_for_stage=None)
             else:
                 normalize_stage_orders()
                 stage.refresh_from_db()
@@ -293,6 +308,26 @@ class DefenseStageReorderView(APIView):
                 if sid not in stage_ids:
                     DefenseStage.objects.filter(pk=sid).update(display_order=assigned_order)
                     assigned_order += 1
+
+            reset_stage_id = request.data.get('reset_stage_id') or (request.data.get('stage_id') if request.data.get('endorsed_teams_action') == 'reset' else None)
+            if reset_stage_id:
+                try:
+                    r_stage = existing_stages.get(int(reset_stage_id))
+                    if r_stage:
+                        from student_teams.models import TeamStageProgress, StudentTeam
+                        from student_teams.services import mark_stage_locked
+                        from academic_period_management.models import Semester
+
+                        semester = Semester.objects.filter(is_active=True).first()
+                        qs = TeamStageProgress.objects.filter(defense_stage=r_stage, status=TeamStageProgress.STATUS_READY)
+                        if semester:
+                            qs = qs.filter(semester=semester)
+                        for p in qs:
+                            mark_stage_locked(p.team, r_stage, user=request.user)
+                        if semester:
+                            StudentTeam.objects.filter(semester=semester, ready_for_stage=r_stage.label).update(ready_for_stage=None)
+                except (ValueError, TypeError):
+                    pass
 
         return Response(stage_list_payload(), status=status.HTTP_200_OK)
 

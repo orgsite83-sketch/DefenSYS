@@ -65,7 +65,7 @@ def get_deliverable_definitions(stage_label):
                 'archive_note': d.archive_note,
                 'archive_file_template': d.archive_file_template,
                 'is_restricted': d.is_restricted,
-                'is_defense_material': getattr(d, 'is_defense_material', True),
+                'is_defense_material': getattr(d, 'is_defense_material', False),
                 'verdict_condition': getattr(d, 'verdict_condition', 'all_pass'),
                 'file_format': getattr(d, 'file_format', 'any') or 'any',
             }
@@ -100,7 +100,7 @@ def get_deliverable_definitions_for_team(team, stage_label):
             'archive_note': d.archive_note,
             'archive_file_template': d.archive_file_template,
             'is_restricted': d.is_restricted,
-            'is_defense_material': True,
+            'is_defense_material': getattr(d, 'is_defense_material', False),
             'verdict_condition': 'all_pass',
             'file_format': getattr(d, 'file_format', 'any') or 'any',
         }
@@ -862,7 +862,7 @@ def stage_payload(team, stage_label, evaluator=None):
         submission = submitted.get(item['id'])
         is_vault = item['type'] == DeliverableSubmission.TYPE_POST
         verdict_cond = item.get('verdict_condition', 'all_pass')
-        is_defense_material = item.get('is_defense_material', True)
+        is_defense_material = item.get('is_defense_material', False)
 
         is_waived = False
         if is_vault and verdict_cond == 'revisions_only':
@@ -958,6 +958,12 @@ def stage_payload(team, stage_label, evaluator=None):
         else []
     )
     stage_peer_complete = bool(stage_grade and is_team_peer_eval_complete(stage_grade))
+    from grading.grades.services import peer_grading_allowed_for_grade
+    stage_peer_allowed = bool(
+        stage_grade
+        and stage_grade.status not in TeamGrade.LOCKED_STATUSES
+        and peer_grading_allowed_for_grade(stage_grade)
+    )
 
     return {
         'stage_label': stage_label,
@@ -998,6 +1004,7 @@ def stage_payload(team, stage_label, evaluator=None):
         'peer_criteria': stage_peer_criteria,
         'my_peer_submissions': stage_peer_submissions,
         'peer_eval_complete': stage_peer_complete,
+        'peer_eval_allowed': stage_peer_allowed,
     }
 
 

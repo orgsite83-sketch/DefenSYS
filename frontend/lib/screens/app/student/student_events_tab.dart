@@ -289,29 +289,48 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                     );
                   },
                 ),
-                _buildCapstoneStagesStepper(
-                  stageOptions: stageOptions,
-                  activeStageName: activeStageName,
-                  selectedStageName: selectedStage,
-                  stagesList: stagesList,
-                  grades: grades,
-                  isCapstone: isCapstone,
-                  onStageSelected: (stage) {
-                    setState(() {
-                      _selectedStageForView = stage;
-                      _calculateRemainingTime();
-                    });
-                    ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
-                          scope: isCapstone ? 'capstone' : 'pit',
-                          yearLevel: isCapstone ? null : _studentYearLevel,
-                          selectedStage: stage,
-                        );
-                  },
-                ),
+                if (isCapstone)
+                  _buildCapstoneStagesStepper(
+                    stageOptions: stageOptions,
+                    activeStageName: activeStageName,
+                    selectedStageName: selectedStage,
+                    stagesList: stagesList,
+                    grades: grades,
+                    isCapstone: isCapstone,
+                    onStageSelected: (stage) {
+                      setState(() {
+                        _selectedStageForView = stage;
+                        _calculateRemainingTime();
+                      });
+                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                            scope: 'capstone',
+                            selectedStage: stage,
+                          );
+                    },
+                  )
+                else
+                  _buildPitEventHeader(
+                    selectedStageName: selectedStage,
+                    stageOptions: stageOptions,
+                    scheduleData: scheduleData,
+                    team: team,
+                    grades: grades,
+                    onStageSelected: (stage) {
+                      setState(() {
+                        _selectedStageForView = stage;
+                        _calculateRemainingTime();
+                      });
+                      ref.read(capstoneDeliverablesProvider.notifier).fetchDeliverables(
+                            scope: 'pit',
+                            yearLevel: _studentYearLevel,
+                            selectedStage: stage,
+                          );
+                    },
+                  ),
                 const SizedBox(height: 12),
 
-                // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages)
-                if (!isSelectedStageActive && activeStageName.isNotEmpty) ...[
+                // Contextual Notice Banner (Archive for past stages, Upcoming info for future stages - Capstone only)
+                if (isCapstone && !isSelectedStageActive && activeStageName.isNotEmpty) ...[
                   Builder(
                     builder: (context) {
                       final isPastStage = selectedStageIndex != -1 &&
@@ -577,8 +596,13 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                                   ? (widget.studentData?['peerCriteria'] as List? ?? [])
                                   : []))
                           .cast<Map<String, dynamic>>();
-                      final stagePeerEvalAllowed = isSelectedStageActive && peerEvalAllowed;
-                      final stageHideHistory = !isSelectedStageActive && stageMySubmissions.isEmpty;
+                      final stagePeerEvalAllowed = stageInfo['peer_eval_allowed'] == true ||
+                          (isSelectedStageActive && peerEvalAllowed) ||
+                          (stageInfo['grade']?['status'] == 'awaiting_peers' && peerEvalAllowed);
+                      final stageHideHistory = !isSelectedStageActive &&
+                          stageMySubmissions.isEmpty &&
+                          stageInfo['peer_eval_allowed'] != true &&
+                          stageInfo['grade']?['status'] != 'awaiting_peers';
 
                       return PeerEvalTab(
                         isCapstone: isCapstone,
@@ -805,6 +829,208 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  // ─── PIT MILESTONE EVENT HEADER ───────────────────────────────────────────
+
+  Widget _buildPitEventHeader({
+    required String selectedStageName,
+    required List<String> stageOptions,
+    required Map<String, dynamic>? scheduleData,
+    required Map<String, dynamic>? team,
+    required Map<String, dynamic>? grades,
+    required ValueChanged<String> onStageSelected,
+  }) {
+    final eventTitle = selectedStageName.isNotEmpty ? selectedStageName : 'PIT Milestone Event';
+    final dateStr = (scheduleData?['date'] ?? scheduleData?['scheduled_date'] ?? scheduleData?['defense_date'])?.toString() ?? '';
+    final timeStr = (scheduleData?['time'] ?? scheduleData?['time_slot'] ?? scheduleData?['start_time'])?.toString() ?? '';
+    final roomStr = (scheduleData?['room'] ?? scheduleData?['venue'] ?? scheduleData?['room_name'])?.toString() ?? '';
+    final chairStr = (scheduleData?['panel_chair'] ?? scheduleData?['chair'] ?? scheduleData?['panel_chair_name'])?.toString() ?? '';
+
+    final hasSchedule = dateStr.isNotEmpty;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.event_available_rounded,
+                  size: 20,
+                  color: DefensysTokens.maroon,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      eventTitle,
+                      style: const TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                        color: DefensysTokens.textPrimary,
+                      ),
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 3),
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.calendar_today_outlined,
+                          size: 11.5,
+                          color: DefensysTokens.textSecondary,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            hasSchedule
+                                ? '$dateStr${timeStr.isNotEmpty ? ' • $timeStr' : ''}${roomStr.isNotEmpty ? ' • $roomStr' : ''}'
+                                : 'Schedule to be announced',
+                            style: const TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w500,
+                              color: DefensysTokens.textSecondary,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+                ),
+                child: const Text(
+                  'PIT Event',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.w800,
+                    color: DefensysTokens.maroon,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          if (chairStr.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8FAFC),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: const Color(0xFFF1F5F9)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.person_outline_rounded, size: 13, color: DefensysTokens.textSecondary),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Panel Chair: $chairStr',
+                      style: const TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: DefensysTokens.textPrimary,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE2E8F0),
+                      borderRadius: BorderRadius.circular(4),
+                    ),
+                    child: const Text(
+                      '80% Panel • 20% Peer',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF475569),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          if (stageOptions.length > 1) ...[
+            const SizedBox(height: 10),
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 30,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: stageOptions.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                itemBuilder: (context, idx) {
+                  final opt = stageOptions[idx];
+                  final isSel = opt.trim().toLowerCase() == selectedStageName.trim().toLowerCase();
+                  return InkWell(
+                    onTap: () => onStageSelected(opt),
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: isSel ? DefensysTokens.maroon : const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: isSel ? DefensysTokens.maroon : const Color(0xFFCBD5E1),
+                        ),
+                      ),
+                      child: Text(
+                        opt,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: isSel ? FontWeight.bold : FontWeight.w500,
+                          color: isSel ? Colors.white : DefensysTokens.textSecondary,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ],
       ),
     );

@@ -1928,11 +1928,18 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
     from .peer_eval import is_team_peer_eval_complete
 
     peer_complete = sum(1 for grade in grades if is_team_peer_eval_complete(grade))
+    redefense_teams = [
+        {'team_id': grade.team_id, 'team_name': grade.team.name}
+        for grade in grades
+        if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE
+    ]
     return {
         'grading_ready_team_count': ready,
         'grading_total_team_count': total,
         'peer_complete_team_count': peer_complete,
         'peer_total_team_count': total,
+        'redefense_team_count': len(redefense_teams),
+        'redefense_teams': redefense_teams,
     }
 
 
@@ -2146,10 +2153,28 @@ class StageCompletionService:
                             break
                     if curr_idx != -1 and curr_idx + 1 < len(active_stages):
                         next_stage = active_stages[curr_idx + 1]
-                        StudentTeam.objects.filter(
+                        stage_grades = TeamGrade.objects.filter(
                             semester=semester,
-                            current_defense_stage=config.defense_stage.label
-                        ).update(current_defense_stage=next_stage.label)
+                            defense_stage=config.defense_stage,
+                        )
+                        passing_team_ids = [
+                            g.team_id
+                            for g in stage_grades
+                            if (
+                                g.verdict in TeamGrade.PASSING_VERDICTS
+                                or (
+                                    not g.verdict
+                                    and g.final_grade is not None
+                                    and g.final_grade >= PASS_GRADE_THRESHOLD
+                                )
+                            )
+                        ]
+                        if passing_team_ids:
+                            StudentTeam.objects.filter(
+                                id__in=passing_team_ids,
+                                semester=semester,
+                                current_defense_stage=config.defense_stage.label,
+                            ).update(current_defense_stage=next_stage.label)
 
                 settings_payload = _capstone_group_settings(semester, label, defense_stage=config.defense_stage)
                 settings_payload['auto_finalize'] = auto_result

@@ -414,10 +414,20 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
         : 5.0;
     final avg = scores.isEmpty ? 0.0 : scores.values.fold(0.0, (s, v) => s + v) / scores.length;
 
-    return Card(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      elevation: 3,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: Column(
@@ -431,14 +441,23 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
                     children: [
                       CircleAvatar(
                         backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.1),
-                        child: Text(name.isNotEmpty ? name[0].toUpperCase() : '?',
-                            style: const TextStyle(color: DefensysTokens.maroon, fontWeight: FontWeight.bold)),
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: DefensysTokens.maroon,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
                       ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: Text(
                           name,
-                          style: const TextStyle(fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
+                            color: DefensysTokens.textPrimary,
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -456,52 +475,50 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             if (isPosted)
               Container(
                 margin: const EdgeInsets.only(top: 10),
-                padding: const EdgeInsets.all(8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.red.shade50,
+                  color: const Color(0xFFF1F5F9),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.red.shade200),
+                  border: Border.all(color: const Color(0xFFCBD5E1)),
                 ),
-                child: const Row(children: [
-                  Icon(Icons.lock, size: 14, color: Colors.red),
-                  SizedBox(width: 6),
-                  Expanded(child: Text('Peer evaluation submitted and permanently locked.',
-                      style: TextStyle(fontSize: 12, color: Colors.red))),
-                ]),
+                child: const Row(
+                  children: [
+                    Icon(Icons.lock_rounded, size: 14, color: Color(0xFF475569)),
+                    SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'Peer evaluation submitted and locked.',
+                        style: TextStyle(
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF334155),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            const Divider(height: 20),
+            const Divider(height: 20, color: Color(0xFFF1F5F9)),
             ...criteria.map((c) {
               final cMax = effectiveCriteria.firstWhere(
                 (x) => (x['name'] as String?) == c,
-                orElse: () => <String, Object>{'maxScore': 5}
+                orElse: () => <String, Object>{'maxScore': 5},
               )['maxScore'] as num? ?? 5;
-              return _starRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted);
+              return _criterionRatingRow(teammateId, c, scores[c] ?? 0, cMax.toDouble(), isPosted);
             }),
-            const Divider(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Average', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
-                Row(children: [
-                  ...List.generate(maxScore.toInt(), (i) => Icon(
-                    i < avg.round() ? Icons.star : Icons.star_border,
-                    color: Colors.amber, size: 18,
-                  )),
-                  const SizedBox(width: 6),
-                  Text(avg.toStringAsFixed(1), style: const TextStyle(fontWeight: FontWeight.bold)),
-                ]),
-              ],
-            ),
-            const SizedBox(height: 12),
+            const Divider(height: 20, color: Color(0xFFF1F5F9)),
+            _evaluationSummaryRow(avg, maxScore),
+            const SizedBox(height: 14),
             if (!isPosted)
               SizedBox(
                 width: double.infinity,
                 child: ElevatedButton.icon(
-                  icon: const Icon(Icons.lock, size: 16),
-                  label: const Text('Submit & Lock'),
+                  icon: const Icon(Icons.lock_outline_rounded, size: 15),
+                  label: const Text('Submit & Lock Evaluation', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.red.shade700,
+                    backgroundColor: DefensysTokens.maroon,
                     foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   ),
                   onPressed: () => _confirmPost(teammateId, name, scores),
@@ -575,25 +592,209 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     }
   }
 
-  Widget _starRow(String teammateId, String criterion, double value, double maxScore, bool locked) {
+  Widget _criterionRatingRow(
+    String teammateId,
+    String criterion,
+    double value,
+    double maxScore,
+    bool locked,
+  ) {
+    final isRated = value > 0;
+    final intMax = maxScore.toInt();
+    final isPillScale = intMax <= 10;
+
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Expanded(child: Text(criterion, style: const TextStyle(fontSize: 13))),
+          // Row 1: Criterion Title & Score Badge
           Row(
-            children: List.generate(maxScore.toInt(), (i) => GestureDetector(
-              onTap: locked ? null : () => setState(() => _scores[teammateId]![criterion] = (i + 1).toDouble()),
-              child: Icon(
-                i < value ? Icons.star : Icons.star_border,
-                color: locked ? Colors.grey.shade400 : Colors.amber,
-                size: 22,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Text(
+                  criterion,
+                  style: const TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w700,
+                    color: DefensysTokens.textPrimary,
+                  ),
+                ),
               ),
-            )),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                decoration: BoxDecoration(
+                  color: isRated
+                      ? DefensysTokens.maroon.withValues(alpha: 0.08)
+                      : const Color(0xFFF1F5F9),
+                  borderRadius: BorderRadius.circular(6),
+                  border: Border.all(
+                    color: isRated
+                        ? DefensysTokens.maroon.withValues(alpha: 0.25)
+                        : const Color(0xFFCBD5E1),
+                  ),
+                ),
+                child: Text(
+                  isRated ? 'Score: ${value.toInt()} / $intMax' : 'Unrated',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: isRated ? DefensysTokens.maroon : const Color(0xFF64748B),
+                  ),
+                ),
+              ),
+            ],
           ),
+          const SizedBox(height: 8),
+
+          // Row 2: Adaptive Rating Control
+          if (isPillScale) ...[
+            // 1-10 Segmented Pills (horizontal scroll to ensure comfortable touch targets)
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: List.generate(intMax, (i) {
+                  final scoreVal = i + 1;
+                  final isSelected = value.toInt() == scoreVal;
+
+                  return Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: InkWell(
+                      onTap: locked
+                          ? null
+                          : () => setState(() => _scores[teammateId]![criterion] = scoreVal.toDouble()),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        width: 32,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: isSelected
+                              ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroon)
+                              : (locked ? const Color(0xFFF8FAFC) : Colors.white),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(
+                            color: isSelected
+                                ? (locked ? const Color(0xFF64748B) : DefensysTokens.maroon)
+                                : (locked ? const Color(0xFFE2E8F0) : const Color(0xFFCBD5E1)),
+                            width: isSelected ? 1.5 : 1.0,
+                          ),
+                        ),
+                        child: Center(
+                          child: Text(
+                            '$scoreVal',
+                            style: TextStyle(
+                              fontSize: 12.5,
+                              fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
+                              color: isSelected
+                                  ? Colors.white
+                                  : (locked ? const Color(0xFF94A3B8) : const Color(0xFF334155)),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+          ] else ...[
+            // Tactile Slider + Steppers for scales > 10
+            Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.remove_circle_outline, size: 20),
+                  color: DefensysTokens.maroon,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: (locked || value <= 1)
+                      ? null
+                      : () => setState(() => _scores[teammateId]![criterion] = (value - 1).clamp(1.0, maxScore)),
+                ),
+                Expanded(
+                  child: SliderTheme(
+                    data: SliderTheme.of(context).copyWith(
+                      activeTrackColor: DefensysTokens.maroon,
+                      thumbColor: DefensysTokens.maroon,
+                      overlayColor: DefensysTokens.maroon.withValues(alpha: 0.15),
+                      inactiveTrackColor: const Color(0xFFE2E8F0),
+                      trackHeight: 4,
+                      thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 8),
+                    ),
+                    child: Slider(
+                      value: value > 0 ? value : 1.0,
+                      min: 1.0,
+                      max: maxScore,
+                      divisions: (intMax - 1) > 0 ? (intMax - 1) : 1,
+                      onChanged: locked
+                          ? null
+                          : (v) => setState(() => _scores[teammateId]![criterion] = v.roundToDouble()),
+                    ),
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 20),
+                  color: DefensysTokens.maroon,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                  onPressed: (locked || value >= maxScore)
+                      ? null
+                      : () => setState(() => _scores[teammateId]![criterion] = (value + 1).clamp(1.0, maxScore)),
+                ),
+              ],
+            ),
+          ],
         ],
       ),
+    );
+  }
+
+  Widget _evaluationSummaryRow(double avg, double maxScore) {
+    final pct = maxScore > 0 ? (avg / maxScore).clamp(0.0, 1.0) : 0.0;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Text(
+              'Evaluation Average',
+              style: TextStyle(
+                fontWeight: FontWeight.w700,
+                fontSize: 13,
+                color: DefensysTokens.textPrimary,
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+              decoration: BoxDecoration(
+                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: DefensysTokens.maroon.withValues(alpha: 0.2)),
+              ),
+              child: Text(
+                'Average: ${avg.toStringAsFixed(1)} / ${maxScore.toStringAsFixed(0)}',
+                style: const TextStyle(
+                  fontWeight: FontWeight.w800,
+                  fontSize: 12,
+                  color: DefensysTokens.maroon,
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(3),
+          child: LinearProgressIndicator(
+            value: pct,
+            minHeight: 6,
+            backgroundColor: const Color(0xFFE2E8F0),
+            valueColor: const AlwaysStoppedAnimation<Color>(DefensysTokens.maroon),
+          ),
+        ),
+      ],
     );
   }
 

@@ -1,8 +1,9 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:syncfusion_flutter_charts/charts.dart';
 import '../../../../../theme/app_theme.dart';
 
-/// Data point representing a criterion on the Radar Chart.
+/// Data point representing a criterion on the Competency Benchmark Chart.
 class RadarCriterionPoint {
   final String name;
   final double? panelScore;
@@ -61,17 +62,63 @@ class RadarCriterionPoint {
   }
 }
 
-/// Interactive Multi-Layered Radar Chart displaying dynamic rubric criteria
-/// with toggleable layers for Panelists, Advisers, Peers, and the 75% Target benchmark.
+class _StageClusterData {
+  final String stageName;
+  final double? panelScore;
+  final double? adviserScore;
+  final double? peerScore;
+  final double? avgScore;
+
+  _StageClusterData({
+    required this.stageName,
+    this.panelScore,
+    this.adviserScore,
+    this.peerScore,
+    this.avgScore,
+  });
+}
+
+class _SingleCriterionData {
+  final String criterionName;
+  final double score;
+  final String roleName;
+  final Color roleColor;
+
+  _SingleCriterionData({
+    required this.criterionName,
+    required this.score,
+    required this.roleName,
+    required this.roleColor,
+  });
+}
+
+/// View modes: Clustered Columns vs. Ranked Horizontal Bars
+enum CurriculumViewMode {
+  clusteredColumns,
+  rankedBars,
+}
+
+/// Interactive Multi-Role Clustered Column Chart with Embedded Stage Dropdown
+/// and Two-Level Intelligence:
+/// - Overall Mode: Macro Stage Comparison (Panelist vs Adviser vs Peer per stage)
+/// - Single Stage Mode: Micro All Criteria Presentation (Color-coded by role)
 class CurriculumRadarChart extends StatefulWidget {
   final List<RadarCriterionPoint> criteria;
   final String stageTitle;
+  final String selectedStageId;
+  final List<Map<String, dynamic>> availableStages;
+  final ValueChanged<String> onStageChanged;
+  final List<Map<String, dynamic>> stageOverview;
   final bool isLoading;
 
   const CurriculumRadarChart({
     super.key,
     required this.criteria,
     required this.stageTitle,
+    required this.selectedStageId,
+    required this.availableStages,
+    required this.onStageChanged,
+    required this.stageOverview,
     this.isLoading = false,
   });
 
@@ -80,174 +127,487 @@ class CurriculumRadarChart extends StatefulWidget {
 }
 
 class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
+  CurriculumViewMode _viewMode = CurriculumViewMode.clusteredColumns;
+
+  // Multi-select role toggles (no Combined!)
   bool _showPanel = true;
   bool _showAdviser = true;
   bool _showPeer = true;
-  bool _showCombined = true;
   bool _showBenchmark = true;
+
+  late TooltipBehavior _tooltipBehavior;
+
+  @override
+  void initState() {
+    super.initState();
+    _tooltipBehavior = TooltipBehavior(
+      enable: true,
+      canShowMarker: false,
+      header: '',
+      format: 'series.name: point.y%',
+    );
+  }
+
+  bool get _isOverall => widget.selectedStageId == 'all';
+  bool get _allSelected => _showPanel && _showAdviser && _showPeer;
+
+  void _toggleAllRoles() {
+    setState(() {
+      if (_allSelected) {
+        // Keep active
+      } else {
+        _showPanel = true;
+        _showAdviser = true;
+        _showPeer = true;
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
     if (widget.isLoading) {
       return Container(
-        height: 380,
+        height: 420,
         alignment: Alignment.center,
         child: const CircularProgressIndicator(color: AppColors.maroon),
       );
     }
 
-    // Filter criteria that have at least a valid name
-    final validCriteria = widget.criteria.where((c) => c.name.trim().isNotEmpty).toList();
-
-    if (validCriteria.isEmpty) {
-      return Container(
-        height: 380,
-        padding: const EdgeInsets.all(24),
-        alignment: Alignment.center,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Container(
-              width: 54,
-              height: 54,
-              decoration: BoxDecoration(
-                color: const Color(0xFFF1F5F9),
-                shape: BoxShape.circle,
-                border: Border.all(color: const Color(0xFFE2E8F0)),
-              ),
-              child: const Icon(Icons.radar_rounded, size: 28, color: Color(0xFF94A3B8)),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'No Rubric Criteria Available for ${widget.stageTitle}',
-              style: const TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF334155),
-              ),
-            ),
-            const SizedBox(height: 4),
-            const Text(
-              'Evaluations or rubric criteria for this stage will render as a dynamic radar polygon.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12.5, color: Color(0xFF64748B)),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        // Layer Toggle Chips (Approach A)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
-          child: Wrap(
-            spacing: 8,
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 6,
+            offset: Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          // 1. Top Header: Title & Icon on Left, View Mode + Stage Dropdown on Right
+          Wrap(
+            spacing: 10,
             runSpacing: 8,
-            alignment: WrapAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
-              _buildToggleChip(
-                label: 'Combined',
-                color: AppColors.maroon,
-                isSelected: _showCombined,
-                onTap: () => setState(() => _showCombined = !_showCombined),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 32,
+                    height: 32,
+                    decoration: BoxDecoration(
+                      color: AppColors.maroon.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Icon(
+                      Icons.bar_chart_rounded,
+                      color: AppColors.maroon,
+                      size: 18,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        _isOverall
+                            ? 'Cohort Stages Benchmark'
+                            : '${widget.stageTitle}: Competencies',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                      Text(
+                        _isOverall
+                            ? 'Multi-role evaluation consensus across defense stages'
+                            : 'All individual rubric criteria benchmarked at 75%',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Color(0xFF64748B),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-              _buildToggleChip(
-                label: 'Panelist',
-                color: const Color(0xFF0EA5E9), // Sky blue
-                isSelected: _showPanel,
-                onTap: () => setState(() => _showPanel = !_showPanel),
+
+              // Right-Side Controls: Mode Switcher & Stage Dropdown (Option 1)
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Mode Switcher (Columns vs Ranked)
+                  Container(
+                    padding: const EdgeInsets.all(2.5),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF1F5F9),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        _modeButton(
+                          mode: CurriculumViewMode.clusteredColumns,
+                          label: 'Columns',
+                          icon: Icons.bar_chart_rounded,
+                        ),
+                        _modeButton(
+                          mode: CurriculumViewMode.rankedBars,
+                          label: 'Ranked',
+                          icon: Icons.view_agenda_outlined,
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Option 1: Stage Dropdown
+                  _buildStageDropdown(),
+                ],
               ),
-              _buildToggleChip(
-                label: 'Adviser',
-                color: const Color(0xFF10B981), // Emerald green
-                isSelected: _showAdviser,
-                onTap: () => setState(() => _showAdviser = !_showAdviser),
-              ),
-              _buildToggleChip(
-                label: 'Peer',
-                color: const Color(0xFF8B5CF6), // Violet purple
-                isSelected: _showPeer,
-                onTap: () => setState(() => _showPeer = !_showPeer),
+            ],
+          ),
+          const SizedBox(height: 14),
+
+          // 2. Sub-Header: Multi-Select Role Toggles & 75% Benchmark (Combined is GONE!)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  _buildAllRolesChip(),
+                  _buildRoleToggleChip(
+                    label: 'Panelist',
+                    icon: Icons.gavel_rounded,
+                    color: const Color(0xFF0284C7),
+                    isSelected: _showPanel,
+                    onTap: () {
+                      setState(() {
+                        _showPanel = !_showPanel;
+                        if (!_showPanel && !_showAdviser && !_showPeer) {
+                          _showPanel = true;
+                        }
+                      });
+                    },
+                  ),
+                  _buildRoleToggleChip(
+                    label: 'Adviser',
+                    icon: Icons.school_outlined,
+                    color: const Color(0xFF059669),
+                    isSelected: _showAdviser,
+                    onTap: () {
+                      setState(() {
+                        _showAdviser = !_showAdviser;
+                        if (!_showPanel && !_showAdviser && !_showPeer) {
+                          _showAdviser = true;
+                        }
+                      });
+                    },
+                  ),
+                  _buildRoleToggleChip(
+                    label: 'Peer',
+                    icon: Icons.group_outlined,
+                    color: const Color(0xFF7C3AED),
+                    isSelected: _showPeer,
+                    onTap: () {
+                      setState(() {
+                        _showPeer = !_showPeer;
+                        if (!_showPanel && !_showAdviser && !_showPeer) {
+                          _showPeer = true;
+                        }
+                      });
+                    },
+                  ),
+                ],
               ),
               _buildBenchmarkChip(),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
+          const SizedBox(height: 12),
 
-        // Radar Canvas
-        LayoutBuilder(
-          builder: (context, constraints) {
-            final double chartHeight = constraints.maxWidth < 450 ? 320 : 380;
-            return SizedBox(
-              height: chartHeight,
-              child: CustomPaint(
-                painter: _RadarPolygonPainter(
-                  criteria: validCriteria,
-                  showPanel: _showPanel,
-                  showAdviser: _showAdviser,
-                  showPeer: _showPeer,
-                  showCombined: _showCombined,
-                  showBenchmark: _showBenchmark,
-                ),
-                child: const SizedBox.expand(),
+          // 3. Main Chart Canvas
+          if (_viewMode == CurriculumViewMode.clusteredColumns)
+            _isOverall ? _buildOverallStageChart() : _buildSingleStageCriteriaChart()
+          else
+            _buildRankedBarsView(),
+
+          const SizedBox(height: 8),
+          // Institutional Passing Threshold Caption
+          const Center(
+            child: Text(
+              'Evaluations are benchmarked against the 75.0% institutional passing threshold.',
+              style: TextStyle(
+                fontSize: 11,
+                color: Color(0xFF64748B),
+                fontWeight: FontWeight.w500,
               ),
-            );
-          },
-        ),
-
-        const SizedBox(height: 8),
-        // Helper Caption
-        const Center(
-          child: Text(
-            'Polygons illustrate multi-axial cohort competency vs the 75% target passing line.',
-            style: TextStyle(fontSize: 11, color: Color(0xFF64748B), fontStyle: FontStyle.italic),
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 
-  Widget _buildToggleChip({
+  Widget _buildStageDropdown() {
+    final stages = widget.availableStages;
+
+    final items = <DropdownMenuItem<String>>[
+      const DropdownMenuItem(
+        value: 'all',
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.public_rounded, size: 14, color: AppColors.maroon),
+            SizedBox(width: 6),
+            Text('Overall (All Stages)'),
+          ],
+        ),
+      ),
+    ];
+    final seenValues = <String>{'all'};
+
+    for (final stg in stages) {
+      final stageId = stg['id']?.toString() ??
+          (stg['stage_id']?.toString() ?? '');
+      final stageName = stg['stage_name']?.toString() ??
+          (stg['label']?.toString() ?? 'Stage');
+      final code = stg['code']?.toString() ?? '';
+
+      final val = stageId.isNotEmpty ? stageId : stageName;
+      if (seenValues.contains(val)) continue;
+      seenValues.add(val);
+
+      IconData icon = Icons.assignment_outlined;
+      Color iconColor = const Color(0xFF0284C7);
+      if (stageName.toLowerCase().contains('concept') ||
+          code.toUpperCase() == 'CP') {
+        icon = Icons.lightbulb_outline_rounded;
+        iconColor = const Color(0xFFD97706);
+      } else if (stageName.toLowerCase().contains('colloquium') ||
+          code.toUpperCase() == 'COL') {
+        icon = Icons.terminal_rounded;
+        iconColor = const Color(0xFF0284C7);
+      } else if (stageName.toLowerCase().contains('final') ||
+          stageName.toLowerCase().contains('presentation') ||
+          code.toUpperCase() == 'PP') {
+        icon = Icons.school_outlined;
+        iconColor = const Color(0xFF059669);
+      }
+
+      items.add(
+        DropdownMenuItem(
+          value: val,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 14, color: iconColor),
+              const SizedBox(width: 6),
+              Text(stageName),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Safely match value to available items
+    String dropdownValue = 'all';
+    if (seenValues.contains(widget.selectedStageId)) {
+      dropdownValue = widget.selectedStageId;
+    } else {
+      for (final stg in stages) {
+        final stageId = stg['id']?.toString() ?? (stg['stage_id']?.toString() ?? '');
+        final stageName = stg['stage_name']?.toString() ?? (stg['label']?.toString() ?? '');
+        if (stageName.toLowerCase() == widget.selectedStageId.toLowerCase() ||
+            stageId == widget.selectedStageId) {
+          final val = stageId.isNotEmpty ? stageId : stageName;
+          if (seenValues.contains(val)) {
+            dropdownValue = val;
+            break;
+          }
+        }
+      }
+    }
+
+    return Container(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFCBD5E1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x04000000),
+            blurRadius: 4,
+            offset: Offset(0, 1),
+          ),
+        ],
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String>(
+          value: dropdownValue,
+          icon: const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 16,
+            color: Color(0xFF475569),
+          ),
+          style: const TextStyle(
+            color: Color(0xFF0F172A),
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+          ),
+          items: items,
+          onChanged: (val) {
+            if (val != null) {
+              widget.onStageChanged(val);
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _modeButton({
+    required CurriculumViewMode mode,
     required String label,
+    required IconData icon,
+  }) {
+    final isSelected = _viewMode == mode;
+    return InkWell(
+      onTap: () => setState(() => _viewMode = mode),
+      borderRadius: BorderRadius.circular(6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: isSelected ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(6),
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.05),
+                    blurRadius: 3,
+                    offset: const Offset(0, 1),
+                  ),
+                ]
+              : null,
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? AppColors.maroon : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11.5,
+                fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                color: isSelected ? AppColors.maroon : const Color(0xFF475569),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAllRolesChip() {
+    return InkWell(
+      onTap: _toggleAllRoles,
+      borderRadius: BorderRadius.circular(6),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+        decoration: BoxDecoration(
+          color: _allSelected
+              ? AppColors.maroon.withValues(alpha: 0.10)
+              : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(6),
+          border: Border.all(
+            color: _allSelected
+                ? AppColors.maroon.withValues(alpha: 0.4)
+                : const Color(0xFFE2E8F0),
+            width: 1.0,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.layers_outlined,
+              size: 13,
+              color: _allSelected ? AppColors.maroon : const Color(0xFF64748B),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              'All Roles',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: _allSelected ? FontWeight.w700 : FontWeight.w500,
+                color: _allSelected ? AppColors.maroon : const Color(0xFF475569),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildRoleToggleChip({
+    required String label,
+    required IconData icon,
     required Color color,
     required bool isSelected,
     required VoidCallback onTap,
   }) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(6),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
         decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.12) : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(20),
+          color: isSelected ? color.withValues(alpha: 0.10) : const Color(0xFFF8FAFC),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: isSelected ? color : const Color(0xFFCBD5E1),
-            width: isSelected ? 1.5 : 1.0,
+            color: isSelected ? color.withValues(alpha: 0.4) : const Color(0xFFE2E8F0),
+            width: 1.0,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 9,
-              height: 9,
+              width: 7,
+              height: 7,
               decoration: BoxDecoration(
                 color: isSelected ? color : const Color(0xFF94A3B8),
                 shape: BoxShape.circle,
               ),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               label,
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
                 color: isSelected ? color : const Color(0xFF475569),
               ),
@@ -261,35 +621,37 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
   Widget _buildBenchmarkChip() {
     return InkWell(
       onTap: () => setState(() => _showBenchmark = !_showBenchmark),
-      borderRadius: BorderRadius.circular(20),
+      borderRadius: BorderRadius.circular(6),
       child: AnimatedContainer(
-        duration: const Duration(milliseconds: 180),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        duration: const Duration(milliseconds: 140),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: _showBenchmark
-              ? const Color(0xFFEF4444).withValues(alpha: 0.08)
+              ? const Color(0xFFDC2626).withValues(alpha: 0.08)
               : const Color(0xFFF1F5F9),
-          borderRadius: BorderRadius.circular(20),
+          borderRadius: BorderRadius.circular(6),
           border: Border.all(
-            color: _showBenchmark ? const Color(0xFFEF4444) : const Color(0xFFCBD5E1),
-            width: _showBenchmark ? 1.5 : 1.0,
+            color: _showBenchmark
+                ? const Color(0xFFDC2626).withValues(alpha: 0.5)
+                : const Color(0xFFCBD5E1),
+            width: 1.0,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              width: 12,
+              width: 10,
               height: 2,
-              color: _showBenchmark ? const Color(0xFFEF4444) : const Color(0xFF94A3B8),
+              color: _showBenchmark ? const Color(0xFFDC2626) : const Color(0xFF94A3B8),
             ),
-            const SizedBox(width: 6),
+            const SizedBox(width: 5),
             Text(
               '75% Benchmark',
               style: TextStyle(
-                fontSize: 11.5,
+                fontSize: 11,
                 fontWeight: _showBenchmark ? FontWeight.w700 : FontWeight.w500,
-                color: _showBenchmark ? const Color(0xFFDC2626) : const Color(0xFF475569),
+                color: _showBenchmark ? const Color(0xFFDC2626) : const Color(0xFF64748B),
               ),
             ),
           ],
@@ -297,273 +659,494 @@ class _CurriculumRadarChartState extends State<CurriculumRadarChart> {
       ),
     );
   }
-}
 
-/// CustomPainter rendering the dynamic concentric polygons and the multi-layer overlay
-class _RadarPolygonPainter extends CustomPainter {
-  final List<RadarCriterionPoint> criteria;
-  final bool showPanel;
-  final bool showAdviser;
-  final bool showPeer;
-  final bool showCombined;
-  final bool showBenchmark;
+  // ---------------------------------------------------------------------------
+  // LEVEL 1: OVERALL VIEW - Clustered by Defense Stages
+  // ---------------------------------------------------------------------------
 
-  _RadarPolygonPainter({
-    required this.criteria,
-    required this.showPanel,
-    required this.showAdviser,
-    required this.showPeer,
-    required this.showCombined,
-    required this.showBenchmark,
-  });
+  Widget _buildOverallStageChart() {
+    final stages = widget.stageOverview;
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (criteria.isEmpty) return;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    // Allow padding for text labels around the radar
-    final maxRadius = math.min(size.width / 2 - 58, size.height / 2 - 28);
-    if (maxRadius <= 10) return;
-
-    final int n = criteria.length;
-    final double angleStep = (2 * math.pi) / n;
-    const double startAngle = -math.pi / 2; // Start from top 12 o'clock
-
-    // 1. Draw Concentric Grid Polygons (25%, 50%, 75%, 100%)
-    final gridPaint = Paint()
-      ..color = const Color(0xFFE2E8F0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    final axisLinePaint = Paint()
-      ..color = const Color(0xFFE2E8F0)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    final gridSteps = [0.25, 0.50, 0.75, 1.0];
-    for (final step in gridSteps) {
-      final ringPath = Path();
-      final currentRadius = maxRadius * step;
-      for (int i = 0; i < n; i++) {
-        final angle = startAngle + i * angleStep;
-        final point = Offset(
-          center.dx + currentRadius * math.cos(angle),
-          center.dy + currentRadius * math.sin(angle),
-        );
-        if (i == 0) {
-          ringPath.moveTo(point.dx, point.dy);
-        } else {
-          ringPath.lineTo(point.dx, point.dy);
-        }
-      }
-      ringPath.close();
-      canvas.drawPath(ringPath, gridPaint);
+    double? parseScore(dynamic val) {
+      if (val == null) return null;
+      if (val is num) return val.toDouble();
+      return double.tryParse(val.toString());
     }
 
-    // 2. Draw Spokes / Axis Lines
-    for (int i = 0; i < n; i++) {
-      final angle = startAngle + i * angleStep;
-      final outerPoint = Offset(
-        center.dx + maxRadius * math.cos(angle),
-        center.dy + maxRadius * math.sin(angle),
+    final clusterData = stages.map((stg) {
+      final name = stg['stage_name']?.toString() ??
+          (stg['label']?.toString() ?? 'Stage');
+      final evalBreakdown = stg['evaluator_breakdown'] as Map<String, dynamic>?;
+
+      final panelVal = evalBreakdown != null && evalBreakdown['panel'] != null
+          ? parseScore(evalBreakdown['panel']['score'])
+          : null;
+      final adviserVal = evalBreakdown != null && evalBreakdown['adviser'] != null
+          ? parseScore(evalBreakdown['adviser']['score'])
+          : null;
+      final peerVal = evalBreakdown != null && evalBreakdown['peer'] != null
+          ? parseScore(evalBreakdown['peer']['score'])
+          : null;
+      final avgVal = parseScore(stg['average_score']);
+
+      return _StageClusterData(
+        stageName: name,
+        panelScore: panelVal,
+        adviserScore: adviserVal,
+        peerScore: peerVal,
+        avgScore: avgVal,
       );
-      canvas.drawLine(center, outerPoint, axisLinePaint);
-    }
+    }).toList();
 
-    // 3. Draw 75% Benchmark Target Polygon (Red / Crimson dashed ring)
-    if (showBenchmark) {
-      final benchmarkRadius = maxRadius * 0.75;
-      final benchmarkPath = Path();
-      for (int i = 0; i < n; i++) {
-        final angle = startAngle + i * angleStep;
-        final point = Offset(
-          center.dx + benchmarkRadius * math.cos(angle),
-          center.dy + benchmarkRadius * math.sin(angle),
-        );
-        if (i == 0) {
-          benchmarkPath.moveTo(point.dx, point.dy);
-        } else {
-          benchmarkPath.lineTo(point.dx, point.dy);
-        }
-      }
-      benchmarkPath.close();
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minContentWidth =
+            math.max(constraints.maxWidth, clusterData.length * 120.0);
 
-      final benchmarkPaint = Paint()
-        ..color = const Color(0xFFEF4444).withValues(alpha: 0.85)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.8;
-
-      canvas.drawPath(benchmarkPath, benchmarkPaint);
-    }
-
-    // Helper to draw a filled/stroked layer polygon
-    void drawLayer({
-      required List<double?> scores,
-      required Color color,
-      required double fillAlpha,
-      required double strokeWidth,
-    }) {
-      final layerPath = Path();
-      final points = <Offset>[];
-      bool hasAnyScore = false;
-
-      for (int i = 0; i < n; i++) {
-        final score = scores[i] ?? 0.0;
-        if (scores[i] != null && scores[i]! > 0) hasAnyScore = true;
-        // Clamp score between 0 and 100
-        final normalized = (score / 100.0).clamp(0.0, 1.0);
-        final r = maxRadius * normalized;
-        final angle = startAngle + i * angleStep;
-        final pt = Offset(
-          center.dx + r * math.cos(angle),
-          center.dy + r * math.sin(angle),
-        );
-        points.add(pt);
-        if (i == 0) {
-          layerPath.moveTo(pt.dx, pt.dy);
-        } else {
-          layerPath.lineTo(pt.dx, pt.dy);
-        }
-      }
-      layerPath.close();
-
-      if (!hasAnyScore) return;
-
-      // Fill
-      final fillPaint = Paint()
-        ..color = color.withValues(alpha: fillAlpha)
-        ..style = PaintingStyle.fill;
-      canvas.drawPath(layerPath, fillPaint);
-
-      // Stroke
-      final strokePaint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth;
-      canvas.drawPath(layerPath, strokePaint);
-
-      // Vertices dots
-      final dotFillPaint = Paint()..color = Colors.white;
-      final dotStrokePaint = Paint()
-        ..color = color
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 2.0;
-
-      for (int i = 0; i < n; i++) {
-        if (scores[i] != null && scores[i]! > 0) {
-          canvas.drawCircle(points[i], 3.5, dotFillPaint);
-          canvas.drawCircle(points[i], 3.5, dotStrokePaint);
-        }
-      }
-    }
-
-    // 4. Overlaid Polygons (Panelist, Adviser, Peer, Combined)
-    if (showPeer) {
-      drawLayer(
-        scores: criteria.map((c) => c.peerScore).toList(),
-        color: const Color(0xFF8B5CF6), // Purple
-        fillAlpha: 0.18,
-        strokeWidth: 2.0,
-      );
-    }
-
-    if (showAdviser) {
-      drawLayer(
-        scores: criteria.map((c) => c.adviserScore).toList(),
-        color: const Color(0xFF10B981), // Emerald
-        fillAlpha: 0.22,
-        strokeWidth: 2.0,
-      );
-    }
-
-    if (showPanel) {
-      drawLayer(
-        scores: criteria.map((c) => c.panelScore).toList(),
-        color: const Color(0xFF0EA5E9), // Sky Blue
-        fillAlpha: 0.25,
-        strokeWidth: 2.2,
-      );
-    }
-
-    if (showCombined) {
-      drawLayer(
-        scores: criteria.map((c) => c.combinedScore).toList(),
-        color: AppColors.maroon, // DefenSYS Maroon
-        fillAlpha: 0.20,
-        strokeWidth: 2.4,
-      );
-    }
-
-    // 5. Draw Axis Labels around perimeter
-    final textPainter = TextPainter(textDirection: TextDirection.ltr);
-    for (int i = 0; i < n; i++) {
-      final angle = startAngle + i * angleStep;
-      final labelDist = maxRadius + 18;
-      final labelX = center.dx + labelDist * math.cos(angle);
-      final labelY = center.dy + labelDist * math.sin(angle);
-
-      final crit = criteria[i];
-      final rawScore = crit.combinedScore;
-      final scoreStr = rawScore != null ? '${rawScore.toStringAsFixed(0)}%' : 'N/A';
-
-      // Truncate long criteria names
-      String shortName = crit.name;
-      if (shortName.length > 20) {
-        shortName = '${shortName.substring(0, 18)}...';
-      }
-
-      final labelSpan = TextSpan(
-        children: [
-          TextSpan(
-            text: '$shortName\n',
-            style: const TextStyle(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: Color(0xFF334155),
-              height: 1.15,
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          padding: const EdgeInsets.only(top: 10, right: 12, bottom: 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: minContentWidth,
+              height: 380,
+              child: SfCartesianChart(
+                tooltipBehavior: _tooltipBehavior,
+                margin: const EdgeInsets.fromLTRB(10, 10, 16, 10),
+                primaryXAxis: const CategoryAxis(
+                  labelStyle: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0F172A),
+                  ),
+                  majorGridLines: MajorGridLines(width: 0),
+                  axisLine: AxisLine(color: Color(0xFFCBD5E1), width: 1.0),
+                ),
+                primaryYAxis: NumericAxis(
+                  minimum: 0,
+                  maximum: 100,
+                  interval: 25,
+                  labelFormat: '{value}%',
+                  labelStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
+                  majorGridLines: const MajorGridLines(
+                    color: Color(0xFFF1F5F9),
+                    width: 1.0,
+                  ),
+                  plotBands: <PlotBand>[
+                    if (_showBenchmark)
+                      PlotBand(
+                        start: 75,
+                        end: 75,
+                        borderColor: const Color(0xFFDC2626),
+                        borderWidth: 1.8,
+                        dashArray: const <double>[4, 4],
+                        text: '75.0% Passing Target',
+                        textStyle: const TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        verticalTextAlignment: TextAnchor.start,
+                        horizontalTextAlignment: TextAnchor.end,
+                      ),
+                  ],
+                ),
+                series: <CartesianSeries<_StageClusterData, String>>[
+                  if (_showPanel)
+                    ColumnSeries<_StageClusterData, String>(
+                      name: 'Panelist',
+                      dataSource: clusterData,
+                      xValueMapper: (_StageClusterData d, _) => d.stageName,
+                      yValueMapper: (_StageClusterData d, _) => d.panelScore ?? 0,
+                      color: const Color(0xFF0284C7),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      spacing: 0.12,
+                      width: 0.65,
+                    ),
+                  if (_showAdviser)
+                    ColumnSeries<_StageClusterData, String>(
+                      name: 'Adviser',
+                      dataSource: clusterData,
+                      xValueMapper: (_StageClusterData d, _) => d.stageName,
+                      yValueMapper: (_StageClusterData d, _) => d.adviserScore ?? 0,
+                      color: const Color(0xFF059669),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      spacing: 0.12,
+                      width: 0.65,
+                    ),
+                  if (_showPeer)
+                    ColumnSeries<_StageClusterData, String>(
+                      name: 'Peer',
+                      dataSource: clusterData,
+                      xValueMapper: (_StageClusterData d, _) => d.stageName,
+                      yValueMapper: (_StageClusterData d, _) => d.peerScore ?? 0,
+                      color: const Color(0xFF7C3AED),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                      spacing: 0.12,
+                      width: 0.65,
+                    ),
+                ],
+              ),
             ),
           ),
-          TextSpan(
-            text: scoreStr,
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: FontWeight.w800,
-              color: rawScore != null
-                  ? (rawScore >= 75 ? const Color(0xFF059669) : const Color(0xFFDC2626))
-                  : const Color(0xFF94A3B8),
-            ),
-          ),
-        ],
-      );
-
-      textPainter.text = labelSpan;
-      textPainter.layout(maxWidth: 100);
-
-      // Center the label box around the target offset
-      double offsetX = labelX - textPainter.width / 2;
-      double offsetY = labelY - textPainter.height / 2;
-
-      // Nudge slightly based on angle quadrant for visual balance
-      if (math.cos(angle).abs() > 0.3) {
-        if (math.cos(angle) > 0) {
-          offsetX += 4;
-        } else {
-          offsetX -= 4;
-        }
-      }
-
-      textPainter.paint(canvas, Offset(offsetX, offsetY));
-    }
+        );
+      },
+    );
   }
 
-  @override
-  bool shouldRepaint(covariant _RadarPolygonPainter oldDelegate) {
-    return oldDelegate.criteria != criteria ||
-        oldDelegate.showPanel != showPanel ||
-        oldDelegate.showAdviser != showAdviser ||
-        oldDelegate.showPeer != showPeer ||
-        oldDelegate.showCombined != showCombined ||
-        oldDelegate.showBenchmark != showBenchmark;
+  // ---------------------------------------------------------------------------
+  // LEVEL 2: SINGLE STAGE VIEW - All Criteria Presented
+  // ---------------------------------------------------------------------------
+
+  Widget _buildSingleStageCriteriaChart() {
+    final validCriteria = widget.criteria.where((c) => c.name.trim().isNotEmpty).toList();
+
+    // Map each criterion to its responsible role and filter by active role toggles
+    final List<_SingleCriterionData> criteriaData = [];
+
+    for (final c in validCriteria) {
+      final cleanedName = c.name.replaceAll('Visuals & Aida', 'Presentation & Visual Aids');
+
+      if (c.panelScore != null && c.panelScore! > 0) {
+        if (_showPanel) {
+          criteriaData.add(_SingleCriterionData(
+            criterionName: cleanedName,
+            score: c.panelScore!,
+            roleName: 'Panelist',
+            roleColor: const Color(0xFF0284C7),
+          ));
+        }
+      } else if (c.adviserScore != null && c.adviserScore! > 0) {
+        if (_showAdviser) {
+          criteriaData.add(_SingleCriterionData(
+            criterionName: cleanedName,
+            score: c.adviserScore!,
+            roleName: 'Adviser',
+            roleColor: const Color(0xFF059669),
+          ));
+        }
+      } else if (c.peerScore != null && c.peerScore! > 0) {
+        if (_showPeer) {
+          criteriaData.add(_SingleCriterionData(
+            criterionName: cleanedName,
+            score: c.peerScore!,
+            roleName: 'Peer',
+            roleColor: const Color(0xFF7C3AED),
+          ));
+        }
+      } else if (c.combinedScore != null && c.combinedScore! > 0) {
+        criteriaData.add(_SingleCriterionData(
+          criterionName: cleanedName,
+          score: c.combinedScore!,
+          roleName: 'Evaluated',
+          roleColor: AppColors.maroon,
+        ));
+      }
+    }
+
+    if (criteriaData.isEmpty) {
+      return Container(
+        height: 380,
+        alignment: Alignment.center,
+        child: const Text(
+          'No criteria match the active evaluator role filters.',
+          style: TextStyle(fontSize: 13, color: Color(0xFF64748B)),
+        ),
+      );
+    }
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double minContentWidth =
+            math.max(constraints.maxWidth, criteriaData.length * 75.0);
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFE2E8F0)),
+          ),
+          padding: const EdgeInsets.only(top: 10, right: 12, bottom: 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SizedBox(
+              width: minContentWidth,
+              height: 380,
+              child: SfCartesianChart(
+                tooltipBehavior: TooltipBehavior(
+                  enable: true,
+                  canShowMarker: false,
+                  header: '',
+                  format: 'point.x\npoint.y%',
+                ),
+                margin: const EdgeInsets.fromLTRB(10, 10, 16, 10),
+                primaryXAxis: const CategoryAxis(
+                  labelRotation: -25,
+                  labelIntersectAction: AxisLabelIntersectAction.none,
+                  labelStyle: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF334155),
+                  ),
+                  majorGridLines: MajorGridLines(width: 0),
+                  axisLine: AxisLine(color: Color(0xFFCBD5E1), width: 1.0),
+                ),
+                primaryYAxis: NumericAxis(
+                  minimum: 0,
+                  maximum: 100,
+                  interval: 25,
+                  labelFormat: '{value}%',
+                  labelStyle: const TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    color: Color(0xFF64748B),
+                  ),
+                  majorGridLines: const MajorGridLines(
+                    color: Color(0xFFF1F5F9),
+                    width: 1.0,
+                  ),
+                  plotBands: <PlotBand>[
+                    if (_showBenchmark)
+                      PlotBand(
+                        start: 75,
+                        end: 75,
+                        borderColor: const Color(0xFFDC2626),
+                        borderWidth: 1.8,
+                        dashArray: const <double>[4, 4],
+                        text: '75.0% Target',
+                        textStyle: const TextStyle(
+                          color: Color(0xFFDC2626),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                        verticalTextAlignment: TextAnchor.start,
+                        horizontalTextAlignment: TextAnchor.end,
+                      ),
+                  ],
+                ),
+                series: <CartesianSeries<_SingleCriterionData, String>>[
+                  ColumnSeries<_SingleCriterionData, String>(
+                    name: 'Criterion Score',
+                    dataSource: criteriaData,
+                    xValueMapper: (_SingleCriterionData d, _) => d.criterionName,
+                    yValueMapper: (_SingleCriterionData d, _) => d.score,
+                    pointColorMapper: (_SingleCriterionData d, _) => d.roleColor,
+                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+                    width: 0.55,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ---------------------------------------------------------------------------
+  // RANKED BREAKDOWN VIEW
+  // ---------------------------------------------------------------------------
+
+  Widget _buildRankedBarsView() {
+    final validCriteria = widget.criteria.where((c) => c.name.trim().isNotEmpty).toList();
+
+    // Filter by active roles
+    final filtered = validCriteria.where((c) {
+      if (!_showPanel && c.panelScore != null && c.panelScore! > 0) return false;
+      if (!_showAdviser && c.adviserScore != null && c.adviserScore! > 0) return false;
+      if (!_showPeer && c.peerScore != null && c.peerScore! > 0) return false;
+      return true;
+    }).toList();
+
+    final sorted = List<RadarCriterionPoint>.from(filtered)
+      ..sort((a, b) {
+        final scoreA = a.combinedScore ?? 0;
+        final scoreB = b.combinedScore ?? 0;
+        return scoreA.compareTo(scoreB);
+      });
+
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 380),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE2E8F0)),
+      ),
+      child: ListView.separated(
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        itemCount: sorted.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, color: Color(0xFFF1F5F9)),
+        itemBuilder: (context, index) {
+          final item = sorted[index];
+          final score = item.combinedScore ?? 0;
+          final isPassing = score >= item.benchmark;
+          final delta = score - item.benchmark;
+          final deltaText = delta >= 0
+              ? '+${delta.toStringAsFixed(1)}%'
+              : '${delta.toStringAsFixed(1)}%';
+
+          final cleanedName =
+              item.name.replaceAll('Visuals & Aida', 'Presentation & Visual Aids');
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        cleanedName,
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 7, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: isPassing
+                            ? const Color(0xFFECFDF5)
+                            : const Color(0xFFFEF2F2),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        deltaText,
+                        style: TextStyle(
+                          fontSize: 10.5,
+                          fontWeight: FontWeight.w700,
+                          color: isPassing
+                              ? const Color(0xFF059669)
+                              : const Color(0xFFDC2626),
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      '${score.toStringAsFixed(1)}%',
+                      style: TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                        color: isPassing
+                            ? const Color(0xFF0F172A)
+                            : const Color(0xFFDC2626),
+                        fontFeatures: const [FontFeature.tabularFigures()],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+
+                // Horizontal Bar with 75% target line
+                Stack(
+                  children: [
+                    Container(
+                      height: 8,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF1F5F9),
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                    FractionallySizedBox(
+                      widthFactor: (score / 100.0).clamp(0.0, 1.0),
+                      child: Container(
+                        height: 8,
+                        decoration: BoxDecoration(
+                          color: isPassing
+                              ? const Color(0xFF059669)
+                              : const Color(0xFFEF4444),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      child: Align(
+                        alignment: const Alignment(-0.5, 0),
+                        child: Container(
+                          width: 2,
+                          height: 8,
+                          color: const Color(0xFFDC2626).withValues(alpha: 0.8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 5),
+
+                // Evaluator Sub-Stats
+                Row(
+                  children: [
+                    if (item.panelScore != null)
+                      _miniEvalScore('Panelist', item.panelScore!, const Color(0xFF0284C7)),
+                    if (item.adviserScore != null) ...[
+                      const SizedBox(width: 10),
+                      _miniEvalScore('Adviser', item.adviserScore!, const Color(0xFF059669)),
+                    ],
+                    if (item.peerScore != null) ...[
+                      const SizedBox(width: 10),
+                      _miniEvalScore('Peer', item.peerScore!, const Color(0xFF7C3AED)),
+                    ],
+                    const Spacer(),
+                    Text(
+                      isPassing ? 'Target Met' : 'Remediation Alert',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: isPassing
+                            ? const Color(0xFF059669)
+                            : const Color(0xFFDC2626),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _miniEvalScore(String role, double val, Color dotColor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Container(
+          width: 6,
+          height: 6,
+          decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          '$role: ${val.toStringAsFixed(0)}%',
+          style: const TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w500,
+            color: Color(0xFF64748B),
+            fontFeatures: [FontFeature.tabularFigures()],
+          ),
+        ),
+      ],
+    );
   }
 }

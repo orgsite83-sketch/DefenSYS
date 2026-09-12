@@ -6,8 +6,11 @@ import '../../../../theme/app_theme.dart';
 import '../../../../widgets/export/export.dart';
 import 'widgets/curriculum_academic_highlights.dart';
 import 'widgets/curriculum_circular_kpis.dart';
+import 'widgets/curriculum_cohort_progression_card.dart';
+import 'widgets/curriculum_multi_year_trajectory_card.dart';
 import 'widgets/curriculum_projects_donut.dart';
 import 'widgets/curriculum_radar_chart.dart';
+import 'widgets/curriculum_remediation_tracker_card.dart';
 import 'widgets/curriculum_rubric_matrix_dialog.dart';
 
 class CurriculumAnalyticsScreen extends ConsumerStatefulWidget {
@@ -22,7 +25,6 @@ class _CurriculumAnalyticsScreenState
     extends ConsumerState<CurriculumAnalyticsScreen> {
   String _selectedScope = 'capstone'; // 'capstone', 'pit', 'all'
   String _selectedStageFilter = 'all'; // 'all' or stage_id / label
-  String _selectedEvaluatorRole = 'all'; // 'all', 'panel', 'adviser', 'peer'
 
   @override
   void initState() {
@@ -69,6 +71,22 @@ class _CurriculumAnalyticsScreenState
               ),
             )
           else ...[
+            // =================================================================
+            // SECTION 0: ANNUAL COHORT & INSTITUTIONAL PROGRESSION (Unified)
+            // =================================================================
+            if (_selectedScope == 'all') ...[
+              _sectionHeader(
+                icon: Icons.auto_graph_rounded,
+                title: 'Annual Cohort & Institutional Progression',
+                subtitle:
+                    'Multi-year competency trajectory, 4-year cohort progression funnel, and CQI remediation tracking',
+              ),
+              const SizedBox(height: 14),
+
+              _buildProgressionOverviewSection(state),
+              const SizedBox(height: 32),
+            ],
+
             // =================================================================
             // SECTION 1: STUDENT COMPETENCY & DEFENSE OUTCOMES
             // =================================================================
@@ -281,21 +299,24 @@ class _CurriculumAnalyticsScreenState
     final scopes = [
       {
         'key': 'capstone',
-        'label': '🎯 Capstone Track',
+        'label': 'Capstone Track',
         'sublabel': '4th Year Defense Stages',
+        'icon': Icons.school_outlined,
         'color': AppColors.maroon,
       },
       {
         'key': 'pit',
-        'label': '🔬 PIT Track',
+        'label': 'PIT Track',
         'sublabel': '1st–3rd Year Events',
-        'color': const Color(0xFF0EA5E9),
+        'icon': Icons.science_outlined,
+        'color': const Color(0xFF0284C7),
       },
       {
         'key': 'all',
-        'label': '🌐 Unified Overview',
+        'label': 'Unified Overview',
         'sublabel': 'Cross-Cohort Impact',
-        'color': const Color(0xFF6366F1),
+        'icon': Icons.hub_outlined,
+        'color': const Color(0xFF475569),
       },
     ];
 
@@ -307,7 +328,7 @@ class _CurriculumAnalyticsScreenState
         border: Border.all(color: const Color(0xFFE2E8F0)),
         boxShadow: const [
           BoxShadow(
-            color: Color(0x06000000),
+            color: Color(0x04000000),
             blurRadius: 6,
             offset: Offset(0, 2),
           ),
@@ -320,6 +341,7 @@ class _CurriculumAnalyticsScreenState
             children: scopes.map((s) {
               final isSelected = _selectedScope == s['key'];
               final color = s['color'] as Color;
+              final icon = s['icon'] as IconData;
 
               return Expanded(
                 child: InkWell(
@@ -331,26 +353,42 @@ class _CurriculumAnalyticsScreenState
                         const EdgeInsets.symmetric(vertical: 9, horizontal: 8),
                     decoration: BoxDecoration(
                       color: isSelected
-                          ? color.withValues(alpha: 0.09)
+                          ? color.withValues(alpha: 0.08)
                           : Colors.transparent,
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(
                         color: isSelected ? color : Colors.transparent,
-                        width: 1.5,
+                        width: 1.2,
                       ),
                     ),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Text(
-                          s['label'] as String,
-                          style: TextStyle(
-                            color: isSelected ? color : const Color(0xFF475569),
-                            fontSize: 13,
-                            fontWeight: isSelected
-                                ? FontWeight.w800
-                                : FontWeight.w600,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              icon,
+                              size: 15,
+                              color: isSelected
+                                  ? color
+                                  : const Color(0xFF64748B),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              s['label'] as String,
+                              style: TextStyle(
+                                color: isSelected
+                                    ? color
+                                    : const Color(0xFF334155),
+                                fontSize: 13,
+                                fontWeight: isSelected
+                                    ? FontWeight.w800
+                                    : FontWeight.w600,
+                              ),
+                            ),
+                          ],
                         ),
                         if (!isNarrow) ...[
                           const SizedBox(height: 2),
@@ -453,324 +491,92 @@ class _CurriculumAnalyticsScreenState
         .map((c) => RadarCriterionPoint.fromMap(c))
         .toList();
 
-    return Container(
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x05000000),
-            blurRadius: 6,
-            offset: Offset(0, 2),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final isWide = constraints.maxWidth > 920;
+
+        final highlightsCard = CurriculumAcademicHighlights(
+          criteria: radarCriteria,
+          kpiSummary: kpiSummary,
+          defenseFunnel: defenseFunnel,
+          prescriptions: prescriptions,
+          onOpenMatrixDialog: () => _openRubricMatrixDialog(
+            filteredCompetencies.isNotEmpty
+                ? filteredCompetencies
+                : allCompetencies,
+            activeStageName,
           ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // 1. Stage Pills Selector
-          _buildStagePillSwitcher(
-            availableStages.isNotEmpty ? availableStages : stageOverview,
-          ),
-          const SizedBox(height: 16),
-          const Divider(height: 1, color: Color(0xFFE2E8F0)),
-          const SizedBox(height: 18),
+        );
 
-          // 2. Responsive Cockpit: Academic Highlights (Left) + Radar Chart (Right)
-          LayoutBuilder(
-            builder: (context, constraints) {
-              final isWide = constraints.maxWidth > 920;
+        final radarCard = CurriculumRadarChart(
+          criteria: radarCriteria,
+          stageTitle: activeStageName,
+          selectedStageId: _selectedStageFilter,
+          availableStages:
+              availableStages.isNotEmpty ? availableStages : stageOverview,
+          onStageChanged: (newStage) {
+            setState(() {
+              _selectedStageFilter = newStage;
+            });
+          },
+          stageOverview: stageOverview,
+        );
 
-              final highlightsCard = CurriculumAcademicHighlights(
-                criteria: radarCriteria,
-                kpiSummary: kpiSummary,
-                defenseFunnel: defenseFunnel,
-                prescriptions: prescriptions,
-                onOpenMatrixDialog: () => _openRubricMatrixDialog(
-                  filteredCompetencies.isNotEmpty
-                      ? filteredCompetencies
-                      : allCompetencies,
-                  activeStageName,
-                ),
-              );
-
-              final displayRadarCriteria = _selectedEvaluatorRole == 'all'
-                  ? radarCriteria
-                  : radarCriteria.where((c) {
-                      if (_selectedEvaluatorRole == 'panel') return c.panelScore != null && c.panelScore! > 0;
-                      if (_selectedEvaluatorRole == 'adviser') return c.adviserScore != null && c.adviserScore! > 0;
-                      if (_selectedEvaluatorRole == 'peer') return c.peerScore != null && c.peerScore! > 0;
-                      return true;
-                    }).toList();
-
-              final radarCard = Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFF8FAFC),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFE2E8F0)),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              width: 30,
-                              height: 30,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF0EA5E9).withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: const Icon(Icons.radar_rounded,
-                                  color: Color(0xFF0EA5E9), size: 18),
-                            ),
-                            const SizedBox(width: 10),
-                            Text(
-                              '$activeStageName: Competency Map',
-                              style: const TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w800,
-                                color: Color(0xFF0F172A),
-                              ),
-                            ),
-                          ],
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFEFF6FF),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${displayRadarCriteria.length} Criteria Axes',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w700,
-                              color: Color(0xFF1D4ED8),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    // Evaluator Role Filter Pills
-                    Wrap(
-                      spacing: 6,
-                      runSpacing: 6,
-                      children: [
-                        _rolePill(
-                          id: 'all',
-                          label: '🌟 All Roles (${radarCriteria.length})',
-                          color: AppColors.maroon,
-                        ),
-                        _rolePill(
-                          id: 'panel',
-                          label: '🛡️ Panelist (${radarCriteria.where((c) => c.panelScore != null && c.panelScore! > 0).length})',
-                          color: const Color(0xFF0EA5E9),
-                        ),
-                        _rolePill(
-                          id: 'adviser',
-                          label: '👔 Adviser (${radarCriteria.where((c) => c.adviserScore != null && c.adviserScore! > 0).length})',
-                          color: const Color(0xFF10B981),
-                        ),
-                        _rolePill(
-                          id: 'peer',
-                          label: '👥 Peer (${radarCriteria.where((c) => c.peerScore != null && c.peerScore! > 0).length})',
-                          color: const Color(0xFF8B5CF6),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    CurriculumRadarChart(
-                      criteria: displayRadarCriteria,
-                      stageTitle: activeStageName,
-                    ),
-                  ],
-                ),
-              );
-
-              if (isWide) {
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 4, child: highlightsCard),
-                    const SizedBox(width: 18),
-                    Expanded(flex: 6, child: radarCard),
-                  ],
-                );
-              } else {
-                return Column(
-                  children: [
-                    highlightsCard,
-                    const SizedBox(height: 18),
-                    radarCard,
-                  ],
-                );
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStagePillSwitcher(List<Map<String, dynamic>> stages) {
-    return Container(
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF1F5F9),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFFE2E8F0)),
-      ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: [
-            _stagePillItem(
-              id: 'all',
-              label: '🌐 Overall (All Stages)',
-              isSelected: _selectedStageFilter == 'all',
-              accentColor: AppColors.maroon,
-            ),
-            const SizedBox(width: 4),
-            ...stages.map((stg) {
-              final stageId = stg['id']?.toString() ??
-                  (stg['stage_id']?.toString() ?? '');
-              final stageName = stg['stage_name']?.toString() ??
-                  (stg['label']?.toString() ?? 'Stage');
-              final code = stg['code']?.toString() ?? '';
-
-              String iconPrefix = '📝 ';
-              Color color = const Color(0xFF0EA5E9);
-              if (stageName.toLowerCase().contains('concept') ||
-                  code.toUpperCase() == 'CP') {
-                iconPrefix = '📝 ';
-                color = const Color(0xFFF59E0B);
-              } else if (stageName.toLowerCase().contains('colloquium') ||
-                  code.toUpperCase() == 'COL') {
-                iconPrefix = '💻 ';
-                color = const Color(0xFF0EA5E9);
-              } else if (stageName.toLowerCase().contains('final') ||
-                  stageName.toLowerCase().contains('presentation') ||
-                  code.toUpperCase() == 'PP') {
-                iconPrefix = '🎓 ';
-                color = const Color(0xFF10B981);
-              }
-
-              final isSelected = _selectedStageFilter == stageId ||
-                  _selectedStageFilter == stageName ||
-                  _selectedStageFilter.toLowerCase() ==
-                      stageName.toLowerCase();
-
-              return Padding(
-                padding: const EdgeInsets.only(right: 4),
-                child: _stagePillItem(
-                  id: stageId.isNotEmpty ? stageId : stageName,
-                  label: '$iconPrefix$stageName',
-                  isSelected: isSelected,
-                  accentColor: color,
-                ),
-              );
-            }),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _stagePillItem({
-    required String id,
-    required String label,
-    required bool isSelected,
-    required Color accentColor,
-  }) {
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedStageFilter = id;
-        });
+        if (isWide) {
+          return Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(flex: 4, child: highlightsCard),
+              const SizedBox(width: 18),
+              Expanded(flex: 6, child: radarCard),
+            ],
+          );
+        } else {
+          return Column(
+            children: [
+              highlightsCard,
+              const SizedBox(height: 18),
+              radarCard,
+            ],
+          );
+        }
       },
-      borderRadius: BorderRadius.circular(7),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 6),
-        decoration: BoxDecoration(
-          color: isSelected ? Colors.white : Colors.transparent,
-          borderRadius: BorderRadius.circular(7),
-          border: Border.all(
-            color: isSelected ? accentColor : Colors.transparent,
-            width: 1.2,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
-        ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 12,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected ? accentColor : const Color(0xFF475569),
-          ),
-        ),
-      ),
     );
   }
 
-  Widget _rolePill({
-    required String id,
-    required String label,
-    required Color color,
-  }) {
-    final isSelected = _selectedEvaluatorRole == id;
-    return InkWell(
-      onTap: () {
-        setState(() {
-          _selectedEvaluatorRole = id;
-        });
-      },
-      borderRadius: BorderRadius.circular(20),
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 140),
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: isSelected ? color.withValues(alpha: 0.12) : Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: isSelected ? color : const Color(0xFFCBD5E1),
-            width: isSelected ? 1.5 : 1.0,
-          ),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: color.withValues(alpha: 0.10),
-                    blurRadius: 4,
-                    offset: const Offset(0, 1),
-                  ),
-                ]
-              : null,
+  // ---------------------------------------------------------------------------
+  // SECTION 0: ANNUAL COHORT & INSTITUTIONAL PROGRESSION
+  // ---------------------------------------------------------------------------
+
+  Widget _buildProgressionOverviewSection(CurriculumAnalyticsState state) {
+    final longitudinal = _mapList(state.data['longitudinal_5year']);
+    final cohortProgression = _mapList(state.data['cohort_progression']);
+    final remediationTracker = _mapList(state.data['remediation_tracker']);
+    final activeYear = state.selectedAcademicYear.isNotEmpty
+        ? state.selectedAcademicYear
+        : '2024-2025';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // 1. Multi-Year Trajectory
+        CurriculumMultiYearTrajectoryCard(
+          longitudinalSeries: longitudinal,
+          activeAcademicYear: activeYear,
         ),
-        child: Text(
-          label,
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: isSelected ? FontWeight.w800 : FontWeight.w600,
-            color: isSelected ? color : const Color(0xFF475569),
-          ),
+        const SizedBox(height: 18),
+
+        // 2. 4-Year Cohort Funnel
+        CurriculumCohortProgressionCard(
+          cohortProgression: cohortProgression,
         ),
-      ),
+        const SizedBox(height: 18),
+
+        // 3. CQI Remediation Tracker
+        CurriculumRemediationTrackerCard(
+          remediationTracker: remediationTracker,
+        ),
+      ],
     );
   }
 

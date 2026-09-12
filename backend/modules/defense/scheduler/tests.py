@@ -1558,6 +1558,55 @@ class PitEventGradingConfigTests(APITestCase):
         self.assertEqual(response.data['config']['panel_weight'], 80)
         self.assertEqual(response.data['config']['archive_file_template'], 'updated-template-{project}')
 
+    def test_pit_event_peer_grading_smart_default_and_toggle(self):
+        # 1. Creation without explicit peer_grading_enabled defaults to True when rubric and weight > 0
+        payload = {
+            'event_name': 'Smart Default PIT Expo',
+            'semester_id': self.semester.id,
+            'panel_rubric_id': self.panel_rubric.id,
+            'peer_rubric_id': self.peer_rubric.id,
+            'panel_weight': 80,
+            'peer_weight': 20,
+        }
+        res = self.client.post('/api/defense/schedules/pit-event-config/', payload, format='json')
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data['config']['peer_grading_enabled'])
+        config = PitEventGradingConfig.objects.get(event_name='Smart Default PIT Expo', semester=self.semester)
+        self.assertTrue(config.peer_grading_enabled)
+
+        # 2. Explicitly setting peer_grading_enabled to False
+        payload['peer_grading_enabled'] = False
+        res2 = self.client.post('/api/defense/schedules/pit-event-config/', payload, format='json')
+        self.assertEqual(res2.status_code, 200)
+        self.assertFalse(res2.data['config']['peer_grading_enabled'])
+        config.refresh_from_db()
+        self.assertFalse(config.peer_grading_enabled)
+
+        # 3. Explicitly setting peer_grading_enabled to True
+        payload['peer_grading_enabled'] = True
+        res3 = self.client.post('/api/defense/schedules/pit-event-config/', payload, format='json')
+        self.assertEqual(res3.status_code, 200)
+        self.assertTrue(res3.data['config']['peer_grading_enabled'])
+        config.refresh_from_db()
+        self.assertTrue(config.peer_grading_enabled)
+
+        # 4. Setting peer_weight = 0 automatically disables peer_grading_enabled
+        payload['panel_weight'] = 100
+        payload['peer_weight'] = 0
+        res4 = self.client.post('/api/defense/schedules/pit-event-config/', payload, format='json')
+        self.assertEqual(res4.status_code, 200)
+        self.assertFalse(res4.data['config']['peer_grading_enabled'])
+        config.refresh_from_db()
+        self.assertFalse(config.peer_grading_enabled)
+
+        # 5. GET template defaults peer_grading_enabled to True
+        res5 = self.client.get(
+            '/api/defense/schedules/pit-event-config/',
+            {'event_name': 'Brand New Unconfigured Event', 'semester_id': self.semester.id}
+        )
+        self.assertEqual(res5.status_code, 200)
+        self.assertTrue(res5.data['config']['peer_grading_enabled'])
+
     def test_pit_lead_can_only_access_their_own_year_level_event_configs(self):
         # Create a 1st Year PIT configuration and a 2nd Year PIT configuration
         config_1st = PitEventGradingConfig.objects.create(
@@ -2269,6 +2318,102 @@ class PitEventGradingConfigTests(APITestCase):
 
         self.assertEqual(response.status_code, 400)
         self.assertIn('not permitted for your PIT year level', response.data.get('detail', ''))
+
+    def test_pit_event_deliverable_defense_material_default_and_config(self):
+        from .models import PitEventDeliverable
+        from defense.stages.models import StageDeliverable
+        from repository.deliverables.services import get_deliverable_definitions_for_team
+
+        # 1. Check default value on StageDeliverable
+        stage_deliv = StageDeliverable(deliverable_id='D1', label='Proposal Draft')
+        self.assertFalse(stage_deliv.is_defense_material)
+
+        # 2. Check default value on PitEventDeliverable
+        pit_deliv = PitEventDeliverable(deliverable_id='D1', label='Pitch Deck')
+        self.assertFalse(pit_deliv.is_defense_material)
+
+        # 3. Test saving PIT event config with deliverables having is_defense_material
+        config_payload = {
+            'event_name': '1st Year Concept Pitch',
+            'semester_id': self.semester.id,
+            'panel_weight': 80,
+            'peer_weight': 20,
+            'deliverables': [
+                {
+                    'deliverable_id': 'D1',
+                    'label': 'Pitch Deck Presentation',
+                    'deliverable_type': 'pre',
+                    'required': True,
+                    'is_defense_material': True,
+                },
+                {
+                    'deliverable_id': 'D2',
+                    'label': 'Administrative Form',
+                    'deliverable_type': 'pre',
+                    'required': True,
+                    'is_defense_material': False,
+                },
+            ]
+        }
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.post('/api/defense/schedules/pit-event-config/', config_payload, format='json')
+        self.assertEqual(response.status_code, 200)
+
+        # 4. Verify get_pit_event_config and payload
+        res_config = response.data.get('config', {})
+        delivs = res_config.get('deliverables', [])
+        self.assertEqual(len(delivs), 2)
+        d1 = next(d for d in delivs if d['deliverable_id'] == 'D1')
+        d2 = next(d for d in delivs if d['deliverable_id'] == 'D2')
+        self.assertTrue(d1['is_defense_material'])
+        self.assertFalse(d2['is_defense_material'])
+
+        # 5. Verify get_deliverable_definitions_for_team for PIT team
+        definitions = get_deliverable_definitions_for_team(self.team, '1st Year Concept Pitch')
+        def1 = next(d for d in definitions if d['id'] == 'D1')
+        def2 = next(d for d in definitions if d['id'] == 'D2')
+        self.assertTrue(def1['is_defense_material'])
+        self.assertFalse(def2['is_defense_material'])
+
+        # 6. Verify stage_payload rows
+        from repository.deliverables.services import stage_payload
+        from repository.deliverables.models import DeliverableSubmission
+
+        sp = stage_payload(self.team, '1st Year Concept Pitch')
+        pre_rows = sp.get('pre', [])
+        row_d1 = next(r for r in pre_rows if r['id'] == 'D1')
+        row_d2 = next(r for r in pre_rows if r['id'] == 'D2')
+        self.assertTrue(row_d1['is_defense_material'])
+        self.assertFalse(row_d2['is_defense_material'])
+
+        # 7. Create submissions for both D1 and D2, and verify defense_materials only includes D1
+        DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='1st Year Concept Pitch',
+            deliverable_id='D1',
+            label='Pitch Deck',
+            deliverable_type='pre',
+            file_name='d1.pdf',
+            status='pending',
+        )
+        DeliverableSubmission.objects.create(
+            team=self.team,
+            stage_label='1st Year Concept Pitch',
+            deliverable_id='D2',
+            label='Administrative Form',
+            deliverable_type='pre',
+            file_name='d2.pdf',
+            status='pending',
+        )
+        sp_updated = stage_payload(self.team, '1st Year Concept Pitch')
+        materials = [
+            item for item in sp_updated.get('pre', [])
+            if item.get('is_defense_material', False) and item.get('uploaded')
+        ]
+        self.assertEqual(len(materials), 1)
+        self.assertEqual(materials[0]['id'], 'D1')
+
+
 
 
 
