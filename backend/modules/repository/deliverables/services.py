@@ -415,8 +415,17 @@ def archive_unlocked(team, stage_label, deliverable_type='post'):
         team=team,
         semester=team.semester,
     ).order_by('-updated_at', '-id').first()
-    if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
-        return False
+    if stage_grade:
+        if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+            return False
+        if getattr(stage_grade, 'result', '') == 'failed':
+            return False
+        if stage_grade.status == TeamGrade.STATUS_PUBLISHED and stage_grade.final_grade is not None and stage_grade.final_grade < 75.0:
+            return False
+
+    # Oral/panel defense is completed once panel scores are recorded
+    if stage_grade and stage_grade.panel_score is not None:
+        return True
 
     if is_stage_defense_done(team, stage_label):
         return True
@@ -565,7 +574,20 @@ def compute_stage_status_detail(team, stage_label, configured, archive_required_
             Q(semester=sem) if sem else Q()
         ).exists()
 
-    if is_officially_complete or progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule:
+    from grading.grades.models import TeamGrade
+    stage_grade = TeamGrade.objects.filter(
+        Q(defense_stage__label=stage_label) | Q(stage_label=stage_label),
+        team=team,
+        semester=team.semester,
+    ).order_by('-updated_at', '-id').first()
+    has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
+
+    if (
+        is_officially_complete
+        or progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING]
+        or has_done_schedule
+        or has_panel_scored
+    ):
         if archive_required_complete or is_officially_complete:
             return 'passed'
         else:
@@ -628,10 +650,22 @@ def is_stage_defense_done(team, stage_label):
         team=team,
         semester=team.semester,
     ).order_by('-updated_at', '-id').first()
-    if stage_grade and getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
-        return False
+    if stage_grade:
+        if getattr(stage_grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE:
+            return False
+        if getattr(stage_grade, 'result', '') == 'failed':
+            return False
+        if stage_grade.status == TeamGrade.STATUS_PUBLISHED and stage_grade.final_grade is not None and stage_grade.final_grade < 75.0:
+            return False
 
-    return progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING] or has_done_schedule or is_officially_complete
+    has_panel_scored = bool(stage_grade and stage_grade.panel_score is not None)
+
+    return (
+        progress_status in [TeamStageProgress.STATUS_PASSED, TeamStageProgress.STATUS_GRADING]
+        or has_done_schedule
+        or has_panel_scored
+        or is_officially_complete
+    )
 
 
 def is_stage_unlocked_by_admin(team, stage_label, deliverable_type=None):
@@ -764,7 +798,7 @@ def stage_payload(team, stage_label, evaluator=None):
     unlocked = archive_unlocked(team, stage_label)
     rows = []
 
-    from repository.project_archive.services import resolve_archive_file_template
+    from repository.project_archive.services import resolve_archive_file_template, _deliverable_slug
     from academic_period_management.models import Semester
     from student_teams.services import get_stage_progress
     from defense.stages.models import StageGradingConfig
@@ -862,6 +896,7 @@ def stage_payload(team, stage_label, evaluator=None):
             'is_officially_complete': is_stage_officially_complete,
         }
 
+    used_vault_names = set()
     for item in definitions:
         submission = submitted.get(item['id'])
         is_vault = item['type'] == DeliverableSubmission.TYPE_POST
@@ -884,6 +919,14 @@ def stage_payload(team, stage_label, evaluator=None):
                 semester_label,
                 deliverable_label=item['label'],
             )
+            if suggested in used_vault_names:
+                import os
+                base, ext = os.path.splitext(suggested)
+                slug = _deliverable_slug(item['label']) or item['id']
+                suggested = f"{base}_{slug}{ext or '.pdf'}"
+                if suggested in used_vault_names:
+                    suggested = f"{base}_{item['id']}{ext or '.pdf'}"
+            used_vault_names.add(suggested)
 
         rows.append({
             'id': item['id'],
@@ -1054,7 +1097,7 @@ def submission_payload(submission):
     }
 
 
-def team_payload(team, selected_stage=None):
+def team_payload(team, selected_stage=None, evaluator=None):
     if team.is_capstone:
         configured_stage_labels = list(STAGE_OPTIONS)
     else:
@@ -1074,12 +1117,12 @@ def team_payload(team, selected_stage=None):
             .values_list('event_name', flat=True)
         )
     selected = selected_stage or current_stage_for_team(team)
-    stages = [stage_payload(team, stage) for stage in configured_stage_labels]
+    stages = [stage_payload(team, stage, evaluator=evaluator) for stage in configured_stage_labels]
     if configured_stage_labels and selected not in configured_stage_labels:
         selected = configured_stage_labels[0]
     selected_payload = next(
         (item for item in stages if item['stage_label'] == selected),
-        stage_payload(team, selected) if selected else stage_payload(team, ''),
+        stage_payload(team, selected, evaluator=evaluator) if selected else stage_payload(team, '', evaluator=evaluator),
     )
 
     # Fetch team members list
@@ -1215,7 +1258,7 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
         if not archive_unlocked(team, stage_label):
             raise PermissionError('Post-Defense submissions are locked until this defense is done.')
         
-        # Check naming convention
+        # Resolve suggested archive name for metadata reference
         from repository.project_archive.services import resolve_archive_file_template
         from academic_period_management.models import Semester
         semester_label = team.semester.label if team.semester_id else Semester.FIRST
@@ -1226,12 +1269,6 @@ def upsert_submission(team, stage_label, deliverable_id, file_name, file_size, u
             semester_label,
             deliverable_label=definition['label'],
         )
-        if suggested:
-            import os
-            suggested_base, _ = os.path.splitext(suggested.lower())
-            uploaded_name = file_name.strip().lower()
-            if not uploaded_name.startswith(suggested_base):
-                raise ValidationError({'file_name': f"Filename must start with the naming convention prefix. Expected prefix: '{suggested_base}'"})
 
     # Ensure DeliverableSubmission container exists
     submission, created = DeliverableSubmission.objects.get_or_create(

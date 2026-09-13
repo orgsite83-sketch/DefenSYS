@@ -20,12 +20,17 @@ Future<void> downloadBytesFile({
   final blob = html.Blob([bytes], mimeType);
   final url = html.Url.createObjectUrlFromBlob(blob);
   final anchor = html.AnchorElement(href: url)
-    ..download = fileName
+    ..setAttribute('download', fileName)
     ..style.display = 'none';
   html.document.body?.append(anchor);
   anchor.click();
   anchor.remove();
-  html.Url.revokeObjectUrl(url);
+  // Delay revoking the object URL so the browser has sufficient time to stream/save the blob
+  Future.delayed(const Duration(seconds: 30), () {
+    try {
+      html.Url.revokeObjectUrl(url);
+    } catch (_) {}
+  });
 }
 
 /// Universal file viewer dialog supporting PDFs, Videos, Audio, Images,

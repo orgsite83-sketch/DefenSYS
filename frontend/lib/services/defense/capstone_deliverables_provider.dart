@@ -188,26 +188,37 @@ class StudentTaskBadgeHelper {
         .toList();
     if (members.isEmpty) return false;
 
-    final mySubmissions = (studentData['myPeerSubmissions'] as List? ?? [])
+    var mySubmissions = (studentData['myPeerSubmissions'] as List? ?? [])
         .cast<Map<String, dynamic>>();
+    if (mySubmissions.isEmpty) {
+      final stages = (studentData['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final s in stages) {
+        final stageSubs = (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        if (stageSubs.isNotEmpty) {
+          mySubmissions = stageSubs;
+          break;
+        }
+      }
+    }
 
     final evaluatedKeys = <String>{};
     for (final sub in mySubmissions) {
       final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
       if (id != null && id.isNotEmpty) {
         evaluatedKeys.add(id);
-      } else {
-        final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
-        if (name != null && name.isNotEmpty) {
-          evaluatedKeys.add(name);
-        }
+      }
+      final name = (sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
+      if (name.isNotEmpty) {
+        evaluatedKeys.add(name);
       }
     }
 
     return members.any((m) {
       final mId = m['id']?.toString() ?? '';
-      final mName = m['name']?.toString() ?? '';
-      return !evaluatedKeys.contains(mId) && !evaluatedKeys.contains(mName);
+      final mName = (m['name']?.toString() ?? '').trim().toLowerCase();
+      final isEvaluated = (mId.isNotEmpty && evaluatedKeys.contains(mId)) ||
+          (mName.isNotEmpty && evaluatedKeys.contains(mName));
+      return !isEvaluated;
     });
   }
 

@@ -460,8 +460,16 @@ def resolve_archive_file_template(
 
     if not template:
         if is_pit:
-            return suggested_pit_file_name(team, team.year_level, semester_label, stage_label)
-        return suggested_capstone_file_name(team, stage_label, semester_label)
+            base_name = suggested_pit_file_name(team, team.year_level, semester_label, stage_label)
+        else:
+            base_name = suggested_capstone_file_name(team, stage_label, semester_label)
+        if deliverable_label and not any(k in deliverable_label.lower() for k in ('concept paper', 'manuscript', 'final paper', 'camera-ready')):
+            import os
+            base, ext = os.path.splitext(base_name)
+            slug = _deliverable_slug(deliverable_label)
+            if slug:
+                return f"{base}_{slug}{ext or '.pdf'}"
+        return base_name
 
     project = _project_slug(team.project_title if team else 'ProjectTitle')
     semester_key = _semester_key_from_label(semester_label)

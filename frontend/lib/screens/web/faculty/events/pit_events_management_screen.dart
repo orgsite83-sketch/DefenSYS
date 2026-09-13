@@ -6,6 +6,7 @@ import '../../../../services/defense_scheduler_provider.dart';
 import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../widgets/widgets.dart';
+import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../services/dashboard_provider.dart';
 import '../../../../utils/unsaved_changes.dart';
@@ -1682,6 +1683,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
   }
 
   void _addDeliverable({required String type}) {
+    final existingPostCount = _deliverables.where((d) => d['deliverable_type'] == 'post').length;
+    final defaultTemplate = type == 'post'
+        ? (existingPostCount == 0 ? '{project}' : '{project}_{deliverable}')
+        : '';
     final newMap = <String, dynamic>{
       'deliverable_id': 'D${_deliverables.length + 1}',
       'label': '',
@@ -1689,13 +1694,13 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
       'required': true,
       'display_order': _deliverables.length + 1,
       'archive_note': '',
-      'archive_file_template': type == 'post' ? '{project}' : '',
+      'archive_file_template': defaultTemplate,
       'is_restricted': false,
       'is_defense_material': false,
       'file_format': 'any',
     };
     newMap['_labelController'] = TextEditingController(text: '');
-    newMap['_templateController'] = TextEditingController(text: type == 'post' ? '{project}' : '');
+    newMap['_templateController'] = TextEditingController(text: defaultTemplate);
     setState(() {
       _deliverables.add(newMap);
     });
@@ -1711,92 +1716,6 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
     _markDirty();
   }
 
-  void _insertVariable(
-    Map<String, dynamic> item,
-    TextEditingController controller,
-    String variable,
-  ) {
-    final text = controller.text;
-    final selection = controller.selection;
-
-    int varCount = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(text).length;
-    if (selection.isValid && !selection.isCollapsed) {
-      final selectedText = text.substring(selection.start, selection.end);
-      final replacedVars = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(selectedText).length;
-      varCount -= replacedVars;
-    }
-
-    if (varCount >= 4) {
-      showValidationToast(context, 'Maximum 4 variables recommended for file naming.');
-      return;
-    }
-
-    String newText;
-    int newCursorPosition;
-
-    if (selection.isValid && !selection.isCollapsed) {
-      final start = selection.start;
-      final end = selection.end;
-      newText = text.replaceRange(start, end, variable);
-      newCursorPosition = start + variable.length;
-    } else {
-      final insertPos = (selection.isValid && selection.isCollapsed)
-          ? selection.start
-          : text.length;
-      final before = text.substring(0, insertPos);
-      final after = text.substring(insertPos);
-
-      String inserted = variable;
-      if (before.trim().isNotEmpty && !before.trim().endsWith('.')) {
-        inserted = '.$variable';
-      }
-      if (after.trim().isNotEmpty && !after.trim().startsWith('.')) {
-        inserted = '$inserted.';
-      }
-
-      newText = before + inserted + after;
-      newCursorPosition = before.length + inserted.length;
-    }
-
-    setState(() {
-      controller.text = newText;
-      controller.selection = TextSelection.collapsed(offset: newCursorPosition);
-      item['archive_file_template'] = newText;
-    });
-    _markDirty();
-  }
-
-  String _resolveFilenamePreview(String template, String label, String pitYear) {
-    var result = template.trim();
-    if (result.isEmpty) {
-      result = '{project}';
-    }
-    final cleanedYear = pitYear.replaceAll(' ', '');
-    String courseCode = 'PIT201';
-    if (pitYear == '1st Year') {
-      courseCode = 'PIT101';
-    } else if (pitYear == '2nd Year') {
-      courseCode = 'PIT201';
-    } else if (pitYear == '3rd Year') {
-      courseCode = 'PIT301';
-    } else if (pitYear == '4th Year') {
-      courseCode = 'PIT401';
-    }
-
-    result = result.replaceAll('{year}', cleanedYear);
-    result = result.replaceAll('{course}', courseCode);
-    result = result.replaceAll('{project}', 'IoTMonitor');
-    result = result.replaceAll('{event}', '${cleanedYear}PITExpo');
-    result = result.replaceAll('{semester}', '1stSemester');
-
-    final slug = label.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-    result = result.replaceAll('{deliverable}', slug.isNotEmpty ? slug : 'ProposalPDF');
-
-    if (!result.toLowerCase().endsWith('.pdf')) {
-      result += '.pdf';
-    }
-    return result;
-  }
 
   Future<void> _save() async {
     final eventName = _eventNameController.text.trim();
@@ -2441,11 +2360,10 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
         (item['_templateController'] = TextEditingController(
-          text: item['archive_file_template']?.toString() ?? (isPost ? '{project}' : ''),
+          text: item['archive_file_template']?.toString() ?? '',
         ));
 
     final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
-    final isArchiveExpanded = item['_isArchiveExpanded'] == true;
     final currentFormat = (item['file_format']?.toString().isNotEmpty == true)
         ? item['file_format'].toString()
         : 'any';
@@ -2699,240 +2617,23 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                     ],
                   ),
                   const SizedBox(height: 10),
-                  // Progressive Disclosure Drawer for Archive Naming
-                  InkWell(
-                    onTap: () {
-                      setState(() {
-                        item['_isArchiveExpanded'] = !isArchiveExpanded;
-                      });
+                  // Smart Enterprise Repository Archiving Panel
+                  RepositoryArchiveNamingPanel(
+                    templateController: templateController,
+                    deliverableLabel: labelController.text,
+                    fileFormat: currentFormat,
+                    isLocked: isLocked,
+                    isPit: true,
+                    pitYear: pitYear,
+                    stageOrEventLabel: _eventNameController.text,
+                    siblingDeliverables: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
+                    currentIndex: _deliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
+                    onChanged: () {
+                      item['archive_file_template'] = templateController.text.trim();
+                      setState(() {});
+                      _markDirty();
                     },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isArchiveExpanded ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: isArchiveExpanded ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.tune_rounded,
-                            size: 14,
-                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Archive Naming & File Pattern',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: isArchiveExpanded ? AppColors.maroon : AppColors.textPrimary,
-                              fontFamily: DefensysTokens.fontFamily,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
-                            ),
-                            child: Text(
-                              templateController.text.trim().isNotEmpty
-                                  ? templateController.text.trim()
-                                  : '{project}',
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontFamily: 'monospace',
-                                color: Color(0xFF475569),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            isArchiveExpanded ? 'Hide' : 'Configure',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                              fontFamily: DefensysTokens.fontFamily,
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            isArchiveExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                            size: 16,
-                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-
-                  if (isArchiveExpanded) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Builder(builder: (context) {
-                            final currentTemplate = templateController.text.trim();
-                            final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
-                            final varCount = varMatches.length;
-                            final isOverLimit = varCount > 3;
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextFormField(
-                                  controller: templateController,
-                                  readOnly: isLocked,
-                                  decoration: _dialogInputDecoration(
-                                    labelText: 'Archive Naming Template',
-                                    hintText: 'e.g. {project}',
-                                    helperText: isOverLimit
-                                        ? null
-                                        : 'Default is {project}. Max 3 variables allowed for phone file names.',
-                                    errorText: isOverLimit
-                                        ? 'Exceeds limit of 3 variables ($varCount/3). Shorten for phone file name limit.'
-                                        : null,
-                                    suffixIcon: Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: Center(
-                                        widthFactor: 1.0,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: isOverLimit
-                                                ? AppColors.danger.withValues(alpha: 0.1)
-                                                : AppColors.maroon.withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: isOverLimit
-                                                  ? AppColors.danger.withValues(alpha: 0.3)
-                                                  : AppColors.maroon.withValues(alpha: 0.2),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '$varCount/3 tags',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              color: isOverLimit ? AppColors.danger : AppColors.maroon,
-                                              fontFamily: DefensysTokens.fontFamily,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  style: const TextStyle(fontSize: 12, fontFamily: DefensysTokens.fontFamily),
-                                  onChanged: (val) {
-                                    item['archive_file_template'] = val.trim();
-                                    setState(() {});
-                                    _markDirty();
-                                  },
-                                ),
-                                const SizedBox(height: 5),
-                                Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: ['{year}', '{course}', '{project}', '{event}', '{semester}', '{deliverable}']
-                                      .map((varName) {
-                                        final isReached = varCount >= 3;
-                                        return ActionChip(
-                                          label: Text(
-                                            varName,
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              fontFamily: DefensysTokens.fontFamily,
-                                            ),
-                                          ),
-                                          labelStyle: TextStyle(
-                                            color: isLocked
-                                                ? Colors.grey
-                                                : (isReached ? Colors.grey.shade600 : AppColors.maroon),
-                                          ),
-                                          backgroundColor: isReached
-                                              ? Colors.grey.shade100
-                                              : AppColors.maroon.withValues(alpha: 0.05),
-                                          side: BorderSide(
-                                            color: isReached
-                                                ? Colors.grey.shade300
-                                                : AppColors.maroon.withValues(alpha: 0.15),
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          visualDensity: VisualDensity.compact,
-                                          tooltip: isReached
-                                              ? 'Maximum 3 variables limit reached'
-                                              : 'Insert $varName',
-                                          onPressed: (isLocked || isReached)
-                                              ? null
-                                              : () => _insertVariable(item, templateController, varName),
-                                        );
-                                      })
-                                      .toList(),
-                                ),
-                              ],
-                            );
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 2,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.03),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.12)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Row(
-                                  children: [
-                                    Icon(Icons.remove_red_eye_outlined, size: 12, color: AppColors.maroon),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Filename Preview',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.maroon,
-                                        fontFamily: DefensysTokens.fontFamily,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                SelectableText(
-                                  _resolveFilenamePreview(
-                                    templateController.text,
-                                    labelController.text,
-                                    pitYear,
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ],
             ),
@@ -3073,11 +2774,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
             ),
             child: Row(
               children: [
-                const Icon(Icons.school_outlined, size: 16, color: Color(0xFF6366F1)),
+                const Icon(Icons.info_outline_rounded, size: 16, color: Color(0xFF4F46E5)),
                 const SizedBox(width: 8),
                 const Expanded(
                   child: Text(
-                    'Following the Capstone flow, students are actively prompted with "Awaiting Peers" once the panel defense finishes.',
+                    'Post-deliverables unlock once presentation finishes. Teams transition to "Awaiting Peers" until teammate evaluations are complete.',
                     style: TextStyle(
                       fontSize: 11.5,
                       color: Color(0xFF475569),
@@ -3090,11 +2791,11 @@ class _EventConfigEditDialogState extends ConsumerState<_EventConfigEditDialog> 
                 OutlinedButton.icon(
                   onPressed: () => showPeerGradingHelpDialog(context, isPit: true),
                   icon: const Icon(Icons.help_outline_rounded, size: 13),
-                  label: const Text('Help Toolkit'),
+                  label: const Text('Evaluation Guide'),
                   style: OutlinedButton.styleFrom(
-                    foregroundColor: const Color(0xFF6366F1),
+                    foregroundColor: const Color(0xFF4F46E5),
                     side: const BorderSide(color: Color(0xFFC7D2FE)),
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(6),
                     ),

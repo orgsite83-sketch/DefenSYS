@@ -2711,13 +2711,21 @@ Widget officialCompleteMilestoneButton({
   int teamCount = 0,
   int redefenseCount = 0,
   List<String> redefenseTeams = const [],
+  int failingCount = 0,
+  List<String> failingTeams = const [],
+  bool isPit = false,
 }) {
+  final targetName = isPit ? 'event' : 'stage';
+  final targetTitle = isPit ? 'Event' : 'Stage';
   final hasTeams = teamCount > 0;
   final teamNotice = hasTeams
       ? '\n\n$teamCount team${teamCount == 1 ? '' : 's'} will be affected.'
       : '';
-  final redefenseNotice = redefenseCount > 0
+  final redefenseNotice = !isPit && redefenseCount > 0
       ? '\n\n⚠️ WARNING: $redefenseCount team${redefenseCount == 1 ? '' : 's'}${redefenseTeams.isNotEmpty ? ' (${redefenseTeams.take(3).join(', ')}${redefenseTeams.length > 3 ? '...' : ''})' : ''} currently ${redefenseCount == 1 ? 'has' : 'have'} a "For Re-defense" verdict and ${redefenseCount == 1 ? 'has' : 'have'} not passed.\n\nMarking this stage complete will finalize this milestone. These teams will officially FAIL this stage and will NOT advance to the next stage.'
+      : '';
+  final failingNotice = failingCount > 0
+      ? '\n\n⚠️ NOTICE: $failingCount team${failingCount == 1 ? '' : 's'}${failingTeams.isNotEmpty ? ' (${failingTeams.take(3).join(', ')}${failingTeams.length > 3 ? '...' : ''})' : ''} currently ${failingCount == 1 ? 'has' : 'have'} a failing grade (< 75.0%).\n\nMarking this $targetName complete will finalize this milestone. Failing teams will NOT be eligible for the ${isPit ? 'PIT ' : ''}Project Archive.'
       : '';
 
   if (isComplete) {
@@ -2770,8 +2778,8 @@ Widget officialCompleteMilestoneButton({
                       context,
                       title: 'Reopen $stageLabel?',
                       message:
-                          'Reopening this defense stage will allow faculty to edit grades again and unlock defense stage settings.$teamNotice\n\nAre you sure you want to reopen $stageLabel?',
-                      confirmLabel: 'Reopen Stage',
+                          'Reopening this $targetName will allow faculty to edit grades again and unlock $targetName settings.$teamNotice\n\nAre you sure you want to reopen $stageLabel?',
+                      confirmLabel: 'Reopen $targetTitle',
                       cancelLabel: 'Cancel',
                       destructive: false,
                       icon: Icons.lock_open_rounded,
@@ -2831,7 +2839,7 @@ Widget officialCompleteMilestoneButton({
 
   return Tooltip(
     message: enabled
-        ? 'Mark this stage officially complete and lock grades'
+        ? 'Mark this $targetName officially complete and lock grades'
         : 'Complete all required evaluations before marking officially complete',
     child: Material(
       color: Colors.transparent,
@@ -2843,7 +2851,7 @@ Widget officialCompleteMilestoneButton({
                   context,
                   title: 'Mark $stageLabel Complete?',
                   message:
-                      'Marking this stage officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for project archiving.$teamNotice$redefenseNotice\n\nAre you sure you want to mark $stageLabel officially complete?',
+                      'Marking this $targetName officially complete will lock faculty and panel grades, finalize student scores, and make passed teams eligible for ${isPit ? 'the PIT ' : ''}project archiving.$teamNotice$redefenseNotice$failingNotice\n\nAre you sure you want to mark $stageLabel officially complete?',
                   confirmLabel: 'Mark Complete',
                   cancelLabel: 'Cancel',
                   destructive: false,
@@ -3346,16 +3354,28 @@ Widget gradeGroupStageControlsSection({
                   .where((g) => g['verdict']?.toString() == 'for_redefense')
                   .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
                   .toList();
+              final failingTeams = grades
+                  .where((g) {
+                    final res = g['result']?.toString();
+                    if (res == 'failed') return true;
+                    final fg = asDouble(g['final_grade']);
+                    return fg != null && fg < 75.0 && g['verdict']?.toString() != 'for_redefense';
+                  })
+                  .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
+                  .toList();
               return officialCompleteMilestoneButton(
                 context: context,
                 isComplete: isOfficiallyComplete,
                 enabled: !state.isSaving &&
                     officialCompleteToggleEnabled &&
                     (!closeBlocked || isOfficiallyComplete),
-                stageLabel: scope == 'pit' ? 'Event' : 'Stage',
+                stageLabel: isPit ? 'Event' : 'Stage',
                 teamCount: grades.length,
                 redefenseCount: redefenseTeams.length,
                 redefenseTeams: redefenseTeams,
+                failingCount: failingTeams.length,
+                failingTeams: failingTeams,
+                isPit: isPit,
                 onChanged: onOfficiallyCompleteChanged,
               );
             },
@@ -3490,11 +3510,15 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
     context: context,
     builder: (dialogCtx) => Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      elevation: 4,
+      elevation: 6,
       backgroundColor: Colors.white,
+      clipBehavior: Clip.antiAlias,
       child: ConstrainedBox(
-        constraints: const BoxConstraints(maxWidth: 580),
-        child: Padding(
+        constraints: BoxConstraints(
+          maxWidth: 600,
+          maxHeight: MediaQuery.sizeOf(dialogCtx).height * 0.90,
+        ),
+        child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -3503,8 +3527,8 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
               Row(
                 children: [
                   Container(
-                    width: 40,
-                    height: 40,
+                    width: 42,
+                    height: 42,
                     decoration: BoxDecoration(
                       color: isPit
                           ? const Color(0xFFFEF3C7)
@@ -3559,20 +3583,21 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
               const SizedBox(height: 20),
               _buildHelpStepCard(
                 stepNum: '1',
-                title: 'Enabled Automatically',
+                title: isPit ? 'Configured Per Event' : 'Configured Term-Wide',
                 description: isPit
-                    ? 'Peer grading is enabled by default whenever an event has a Peer Rubric and peer weight > 0%. Leads can also toggle it in PIT Events Setup or here in Grade Center.'
-                    : 'Peer evaluation is enabled for the academic term by default. No manual per-stage gatekeeping is needed.',
-                icon: Icons.check_circle_outline_rounded,
+                    ? 'Peer grading is enabled whenever an event has a Peer Rubric and peer weight > 0%. Leads can also toggle it in PIT Events Setup or here in Grade Center.'
+                    : 'Configured globally in Academic Periods. When enabled, all Capstone teams in the active term have access to peer evaluations without per-stage manual gates.',
+                icon: Icons.tune_rounded,
                 color: const Color(0xFF059669),
                 bgColor: const Color(0xFFECFDF5),
               ),
               const SizedBox(height: 10),
               _buildHelpStepCard(
                 stepNum: '2',
-                title: 'Student Access',
-                description:
-                    'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. They evaluate each teammate on individual contribution.',
+                title: 'Student Access & Criteria',
+                description: isPit
+                    ? 'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. They evaluate each teammate on teamwork and contributions.'
+                    : 'Students access their team roster and criteria in the Peer Eval tab once defense schedules are confirmed. Each member scores teammates on individual contribution.',
                 icon: Icons.people_outline_rounded,
                 color: const Color(0xFF2563EB),
                 bgColor: const Color(0xFFEFF6FF),
@@ -3580,9 +3605,10 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
               const SizedBox(height: 10),
               _buildHelpStepCard(
                 stepNum: '3',
-                title: 'Post-Defense "Awaiting Peers" Prompt',
-                description:
-                    'When panelists submit their scores, DefenSYS automatically marks the team as "Awaiting Peers", showing a red "Due Soon" alert on student dashboards to prompt any remaining submissions.',
+                title: 'Post-Defense "Awaiting Peers" Alert',
+                description: isPit
+                    ? 'When panelists submit their scores, post-deliverables unlock immediately and teams with pending peer reviews transition to "Awaiting Peers" with dashboard alerts until teammate ratings finish.'
+                    : 'When panelists submit scores, teams transition to "Awaiting Peers", showing a red "Due Soon" alert on student dashboards to prompt any remaining evaluations before grades finalize.',
                 icon: Icons.notifications_active_outlined,
                 color: const Color(0xFFD97706),
                 bgColor: const Color(0xFFFFFBEB),
@@ -3590,9 +3616,10 @@ void showPeerGradingHelpDialog(BuildContext context, {required bool isPit}) {
               const SizedBox(height: 10),
               _buildHelpStepCard(
                 stepNum: '4',
-                title: 'Grade Finalization & Safe Lock',
-                description:
-                    'Once all peer scores are in, the composite grade calculates automatically. Marking the event officially complete locks peer grading and readies teams for project archive.',
+                title: isPit ? 'Grade Calculation & Event Archival' : 'Grade Finalization & Safe Lock',
+                description: isPit
+                    ? 'Once all peer scores are in, composite grades calculate automatically based on panel and peer weights. Marking the event officially complete locks peer grading and readies teams for project archive.'
+                    : 'Once panel, adviser, and peer scores are in, composite grades calculate automatically. Marking the stage officially complete locks grading and advances passing teams to the next stage.',
                 icon: Icons.lock_outline_rounded,
                 color: DefensysUi.primaryMaroon,
                 bgColor: const Color(0xFFFEF2F2),

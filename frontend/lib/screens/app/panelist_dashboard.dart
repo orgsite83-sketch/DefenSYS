@@ -143,6 +143,15 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             project: (team['project_title'] ?? 'No project').toString(),
             defenseDate:
                 '${team['defense_stage'] ?? 'No stage'} - ${team['scheduled_date'] ?? ''} ${team['start_time'] ?? ''}',
+            stageName: (team['defense_stage'] ?? '').toString(),
+            eventName: (team['event_name'] ?? '').toString(),
+            startTime: (team['start_time'] ?? '').toString(),
+            room: (team['room'] ?? '').toString(),
+            leaderName: (team['leader_name'] ?? '').toString(),
+            adviserName: (team['adviser_name'] ?? '').toString(),
+            instructorName: (team['instructor_name'] ?? '').toString(),
+            section: (team['section'] ?? '').toString(),
+            level: (team['year_level'] ?? team['level'] ?? '').toString(),
             isCapstone: isCapstone,
             scope: scope,
             teamId: (team['id'] ?? 0).toString(),
@@ -154,6 +163,9 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
                 .map((m) => TeamMember(
                       id: (m['id'] ?? '').toString(),
                       name: (m['name'] ?? m['username'] ?? 'Member').toString(),
+                      isLeader: m['is_leader'] == true ||
+                          (team['leader_id'] != null &&
+                              (m['id'] ?? '').toString() == team['leader_id'].toString()),
                     ))
                 .toList(),
             criteria: [],
@@ -261,10 +273,7 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
             automaticallyImplyLeading: false,
             backgroundColor: DefensysTokens.maroon,
             foregroundColor: Colors.white,
-            title: Text(
-              context.l10n.panelistDashboardTitle,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
+            title: _buildAppBarTitle(),
             actions: [
               IconButton(
                 icon: const Icon(Icons.account_circle_outlined),
@@ -321,6 +330,50 @@ class _PanelistDashboardState extends ConsumerState<PanelistDashboard> {
         ),
       ),
     );
+  }
+
+  Widget _buildAppBarTitle() {
+    switch (_selectedIndex) {
+      case 0:
+        return const Text(
+          'Assigned Defenses',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+        );
+      case 1:
+        final currentTeam = _teams.isNotEmpty && _selectedTeamIndex < _teams.length
+            ? _teams[_selectedTeamIndex]
+            : null;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text(
+              'Defense Grade Sheet',
+              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+            ),
+            if (currentTeam != null)
+              Text(
+                currentTeam.name,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.normal,
+                  color: Colors.white70,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+          ],
+        );
+      case 2:
+        return const Text(
+          'Defense Results',
+          style: TextStyle(fontWeight: FontWeight.bold, fontSize: 19),
+        );
+      default:
+        return const Text(
+          'Panelist Workspace',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        );
+    }
   }
 
   void _showProfileSheet(BuildContext context) {

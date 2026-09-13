@@ -11,6 +11,7 @@ import '../../../../theme/app_theme.dart';
 import '../../../../theme/defensys_tokens.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
+import '../../../../widgets/repository/repository_archive_naming_panel.dart';
 import 'defense_stage_editor_screen.dart';
 import 'widgets/pipeline_position_selector.dart';
 import 'widgets/endorsed_stage_resolution_dialog.dart';
@@ -2926,26 +2927,19 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     required void Function(void Function()) setDialogState,
     required TextEditingController stageLabelCtrl,
   }) {
-    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
-    final existingTpl = item['archive_file_template']?.toString().trim() ?? '';
-    if (isPost && (existingTpl.isEmpty || existingTpl == legacyDefault)) {
-      item['archive_file_template'] = '{project}';
-    }
-
     final labelController = item['_labelController'] as TextEditingController? ??
         (item['_labelController'] = TextEditingController(text: item['label']?.toString() ?? ''));
     final templateController = item['_templateController'] as TextEditingController? ??
         (item['_templateController'] = TextEditingController(
-          text: item['archive_file_template']?.toString() ?? (isPost ? '{project}' : ''),
+          text: item['archive_file_template']?.toString() ?? '',
         ));
 
-    if (isPost && templateController.text.trim() == legacyDefault) {
-      templateController.text = '{project}';
-      item['archive_file_template'] = '{project}';
+    const legacyDefault = '{year}.{course}.{project}.{stage}.{deliverable}.{semester}';
+    if (templateController.text.trim() == legacyDefault) {
+      templateController.text = '';
+      item['archive_file_template'] = '';
     }
-
     final accentColor = isPost ? AppColors.maroon : const Color(0xFF2563EB);
-    final isArchiveExpanded = item['_isArchiveExpanded'] == true;
     final currentFormat = (item['file_format']?.toString().isNotEmpty == true)
         ? item['file_format'].toString()
         : 'any';
@@ -3241,232 +3235,22 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                   ),
 
                   const SizedBox(height: 10),
-
-                  // Progressive Disclosure Drawer for Archive Naming
-                  InkWell(
-                    onTap: () {
+                  // Smart Enterprise Repository Archiving Panel
+                  RepositoryArchiveNamingPanel(
+                    templateController: templateController,
+                    deliverableLabel: labelController.text,
+                    fileFormat: currentFormat,
+                    isLocked: false,
+                    isPit: false,
+                    stageOrEventLabel: stageLabelCtrl.text,
+                    siblingDeliverables: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList(),
+                    currentIndex: allDeliverables.where((d) => d['deliverable_type'] == (isPost ? 'post' : 'pre')).toList().indexOf(item),
+                    onChanged: () {
                       setDialogState(() {
-                        item['_isArchiveExpanded'] = !isArchiveExpanded;
+                        item['archive_file_template'] = templateController.text.trim();
                       });
                     },
-                    borderRadius: BorderRadius.circular(6),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
-                      decoration: BoxDecoration(
-                        color: isArchiveExpanded ? const Color(0xFFFFF1F2) : const Color(0xFFF8FAFC),
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: isArchiveExpanded ? const Color(0xFFFECDD3) : const Color(0xFFE2E8F0),
-                        ),
-                      ),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.tune_rounded,
-                            size: 14,
-                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                          ),
-                          const SizedBox(width: 6),
-                          Text(
-                            'Archive Naming & File Pattern',
-                            style: TextStyle(
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.w700,
-                              color: isArchiveExpanded ? AppColors.maroon : AppColors.textPrimary,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: const Color(0xFFCBD5E1)),
-                            ),
-                            child: Text(
-                              templateController.text.trim().isNotEmpty
-                                  ? templateController.text.trim()
-                                  : '{project}',
-                              style: const TextStyle(
-                                fontSize: 10.5,
-                                fontFamily: 'monospace',
-                                color: Color(0xFF475569),
-                                fontWeight: FontWeight.w600,
-                              ),
-                            ),
-                          ),
-                          const Spacer(),
-                          Text(
-                            isArchiveExpanded ? 'Hide' : 'Configure',
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                            ),
-                          ),
-                          const SizedBox(width: 4),
-                          Icon(
-                            isArchiveExpanded ? Icons.keyboard_arrow_up_rounded : Icons.keyboard_arrow_down_rounded,
-                            size: 16,
-                            color: isArchiveExpanded ? AppColors.maroon : const Color(0xFF64748B),
-                          ),
-                        ],
-                      ),
-                    ),
                   ),
-
-                  if (isArchiveExpanded) ...[
-                    const SizedBox(height: 10),
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          flex: 3,
-                          child: Builder(builder: (context) {
-                            final currentTemplate = templateController.text.trim();
-                            final varMatches = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(currentTemplate);
-                            final varCount = varMatches.length;
-                            final isOverLimit = varCount > 3;
-
-                            return Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                TextFormField(
-                                  controller: templateController,
-                                  decoration: _dialogInputDecoration(
-                                    labelText: 'Archive Naming Template',
-                                    hintText: 'e.g. {project}',
-                                    helperText: isOverLimit
-                                        ? null
-                                        : 'Default is {project}. Max 3 variables allowed for phone file names.',
-                                    errorText: isOverLimit
-                                        ? 'Exceeds limit of 3 variables ($varCount/3). Shorten for phone file name limit.'
-                                        : null,
-                                    suffixIcon: Padding(
-                                      padding: const EdgeInsets.only(right: 6),
-                                      child: Center(
-                                        widthFactor: 1.0,
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                          decoration: BoxDecoration(
-                                            color: isOverLimit
-                                                ? AppColors.danger.withValues(alpha: 0.1)
-                                                : AppColors.maroon.withValues(alpha: 0.08),
-                                            borderRadius: BorderRadius.circular(6),
-                                            border: Border.all(
-                                              color: isOverLimit
-                                                  ? AppColors.danger.withValues(alpha: 0.3)
-                                                  : AppColors.maroon.withValues(alpha: 0.2),
-                                            ),
-                                          ),
-                                          child: Text(
-                                            '$varCount/3 tags',
-                                            style: TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                              color: isOverLimit ? AppColors.danger : AppColors.maroon,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                  style: const TextStyle(fontSize: 12),
-                                  onChanged: (value) {
-                                    setDialogState(() {
-                                      item['archive_file_template'] = value.trim();
-                                    });
-                                  },
-                                ),
-                                const SizedBox(height: 5),
-                                Wrap(
-                                  spacing: 4,
-                                  runSpacing: 4,
-                                  children: ['{year}', '{course}', '{project}', '{stage}', '{deliverable}', '{semester}']
-                                      .map((varName) {
-                                        final isReached = varCount >= 3;
-                                        return ActionChip(
-                                          label: Text(
-                                            varName,
-                                            style: const TextStyle(
-                                              fontSize: 10,
-                                              fontWeight: FontWeight.w700,
-                                            ),
-                                          ),
-                                          labelStyle: TextStyle(
-                                            color: isReached ? Colors.grey.shade600 : AppColors.maroon,
-                                          ),
-                                          backgroundColor: isReached
-                                              ? Colors.grey.shade100
-                                              : AppColors.maroon.withValues(alpha: 0.05),
-                                          side: BorderSide(
-                                            color: isReached
-                                                ? Colors.grey.shade300
-                                                : AppColors.maroon.withValues(alpha: 0.15),
-                                          ),
-                                          padding: EdgeInsets.zero,
-                                          visualDensity: VisualDensity.compact,
-                                          tooltip: isReached
-                                              ? 'Maximum 3 variables limit reached'
-                                              : 'Insert $varName',
-                                          onPressed: () => _insertVariable(item, templateController, varName, setDialogState),
-                                        );
-                                      })
-                                      .toList(),
-                                ),
-                              ],
-                            );
-                          }),
-                        ),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          flex: 2,
-                          child: Container(
-                            padding: const EdgeInsets.all(8),
-                            decoration: BoxDecoration(
-                              color: AppColors.maroon.withValues(alpha: 0.03),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(color: AppColors.maroon.withValues(alpha: 0.12)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Row(
-                                  children: const [
-                                    Icon(Icons.remove_red_eye_outlined, size: 12, color: AppColors.maroon),
-                                    SizedBox(width: 4),
-                                    Text(
-                                      'Filename Preview',
-                                      style: TextStyle(
-                                        fontSize: 10.5,
-                                        fontWeight: FontWeight.w800,
-                                        color: AppColors.maroon,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 4),
-                                SelectableText(
-                                  _resolvePreview(
-                                    item['archive_file_template']?.toString() ?? '',
-                                    item['label']?.toString() ?? '',
-                                    stageLabelCtrl.text,
-                                    format: item['file_format']?.toString() ?? 'any',
-                                  ),
-                                  style: const TextStyle(
-                                    fontSize: 11,
-                                    fontFamily: 'monospace',
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.maroon,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ],
                 ],
               ],
             ),
@@ -4188,7 +3972,7 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
                                             'required': true,
                                             'display_order': deliverables.length + 1,
                                             'archive_note': '',
-                                            'archive_file_template': '{project}',
+                                            'archive_file_template': postDeliverables.isEmpty ? '{project}' : '{project}_{deliverable}',
                                             'is_restricted': false,
                                              'is_defense_material': false,
                                              'verdict_condition': 'all_pass',
@@ -4408,61 +4192,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
     }
   }
 
-  void _insertVariable(
-    Map<String, dynamic> item,
-    TextEditingController controller,
-    String variable,
-    void Function(void Function()) setDialogState,
-  ) {
-    final text = controller.text;
-    final selection = controller.selection;
-
-    int varCount = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(text).length;
-    if (selection.isValid && !selection.isCollapsed) {
-      final selectedText = text.substring(selection.start, selection.end);
-      final replacedVars = RegExp(r'\{[a-zA-Z0-9_]+\}').allMatches(selectedText).length;
-      varCount -= replacedVars;
-    }
-
-    if (varCount >= 3) {
-      showValidationToast(context, 'Maximum 3 variables allowed for mobile phone file name limits.');
-      return;
-    }
-
-    String newText;
-    int newCursorPosition;
-
-    if (selection.isValid && !selection.isCollapsed) {
-      final start = selection.start;
-      final end = selection.end;
-      newText = text.replaceRange(start, end, variable);
-      newCursorPosition = start + variable.length;
-    } else {
-      final insertPos = (selection.isValid && selection.isCollapsed)
-          ? selection.start
-          : text.length;
-      final before = text.substring(0, insertPos);
-      final after = text.substring(insertPos);
-
-      String inserted = variable;
-      if (before.trim().isNotEmpty && !before.trim().endsWith('.')) {
-        inserted = '.$variable';
-      }
-      if (after.trim().isNotEmpty && !after.trim().startsWith('.')) {
-        inserted = '$inserted.';
-      }
-
-      newText = before + inserted + after;
-      newCursorPosition = before.length + inserted.length;
-    }
-
-    setDialogState(() {
-      controller.text = newText;
-      controller.selection = TextSelection.collapsed(offset: newCursorPosition);
-      item['archive_file_template'] = newText;
-    });
-  }
-
   List<DropdownMenuItem<String>> _deliverableFormatDropdownItems() {
     return const [
       DropdownMenuItem(
@@ -4565,78 +4294,6 @@ class _DefenseStagesScreenState extends ConsumerState<DefenseStagesScreen> {
         ),
       ),
     ];
-  }
-
-  String _resolvePreview(String template, String deliverableLabel, String stageLabel, {String format = 'any'}) {
-    final cleanTemplate = template.trim();
-    final finalTemplate = cleanTemplate.isEmpty 
-        ? '{project}'
-        : cleanTemplate;
-
-    String slugify(String val) {
-      return val.replaceAll(RegExp(r'[^A-Za-z0-9]'), '');
-    }
-
-    String deliverableSlug(String val) {
-      if (val.trim().isEmpty) return 'DeliverableLabel';
-      final words = val.trim().split(RegExp(r'\s+'));
-      final capitalized = words.map((w) {
-        if (w.isEmpty) return '';
-        return w[0].toUpperCase() + w.substring(1).toLowerCase();
-      }).join('');
-      return slugify(capitalized);
-    }
-
-    const year = '3rdYear';
-    const course = 'CAP301';
-    const project = 'ProjectTitle';
-    final stage = slugify(stageLabel.trim().isEmpty ? 'StageLabel' : stageLabel.trim());
-    final deliverable = deliverableSlug(deliverableLabel);
-    const semester = '2ndSemester';
-
-    var resolved = finalTemplate
-        .replaceAll('{year}', year)
-        .replaceAll('{course}', course)
-        .replaceAll('{project}', project)
-        .replaceAll('{stage}', stage)
-        .replaceAll('{deliverable}', deliverable)
-        .replaceAll('{semester}', semester);
-
-    String defaultExt;
-    switch (format) {
-      case 'pdf':
-        defaultExt = '.pdf';
-        break;
-      case 'video':
-        defaultExt = '.mp4';
-        break;
-      case 'image':
-        defaultExt = '.png';
-        break;
-      case 'presentation':
-        defaultExt = '.pptx';
-        break;
-      case 'document':
-        defaultExt = '.docx';
-        break;
-      case 'spreadsheet':
-        defaultExt = '.xlsx';
-        break;
-      case 'archive':
-        defaultExt = '.zip';
-        break;
-      case 'audio':
-        defaultExt = '.mp3';
-        break;
-      default:
-        defaultExt = '.pdf';
-    }
-
-    if (!resolved.contains('.')) {
-      resolved += defaultExt;
-    }
-
-    return resolved;
   }
 
   Future<void> _confirmMoveStage({

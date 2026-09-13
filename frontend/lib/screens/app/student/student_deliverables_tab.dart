@@ -1187,35 +1187,93 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                   ),
                 )
               else
-                CustomPaint(
-                  painter: _DashedRectPainter(
-                    color: DefensysTokens.maroon.withValues(alpha: 0.35),
-                    strokeWidth: 1.2,
-                    radius: 8,
+                Container(
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFDF2F4),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: DefensysTokens.maroon.withValues(alpha: 0.25),
+                      width: 1.2,
+                    ),
                   ),
                   child: Material(
-                    color: const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
+                    color: Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
                     child: InkWell(
                       onTap: () => _promptUploadOrReplace(team, stageLabel, item),
-                      borderRadius: BorderRadius.circular(8),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 11),
+                      borderRadius: BorderRadius.circular(10),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                         child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Icon(Icons.cloud_upload_outlined, size: 16, color: DefensysTokens.maroon),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Upload Supporting Document (${formatInfo.label})',
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.w600,
-                                color: DefensysTokens.maroon,
+                          children:
+                            [
+                              Container(
+                                width: 36,
+                                height: 36,
+                                decoration: BoxDecoration(
+                                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: const Icon(
+                                  Icons.cloud_upload_rounded,
+                                  size: 20,
+                                  color: DefensysTokens.maroon,
+                                ),
                               ),
-                            ),
-                          ],
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      "Upload ${(item['label']?.toString().trim().isNotEmpty == true) ? item['label'] : 'Deliverable'}",
+                                      style: const TextStyle(
+                                        fontSize: 12.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: DefensysTokens.maroon,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      'Accepted: ${formatInfo.label} • Max 50 MB',
+                                      style: const TextStyle(
+                                        fontSize: 11,
+                                        color: Color(0xFF64748B),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                                decoration: BoxDecoration(
+                                  color: DefensysTokens.maroon,
+                                  borderRadius: BorderRadius.circular(6),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: DefensysTokens.maroon.withValues(alpha: 0.2),
+                                      blurRadius: 4,
+                                      offset: const Offset(0, 2),
+                                    ),
+                                  ],
+                                ),
+                                child: const Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(Icons.add_rounded, size: 14, color: Colors.white),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Upload',
+                                      style: TextStyle(
+                                        fontSize: 11.5,
+                                        fontWeight: FontWeight.w700,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
                         ),
                       ),
                     ),
@@ -1419,6 +1477,7 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
     final fileLocked = !isDefenseMaterialAttempt2 && !replacementUnlockedByAdmin && !isRejected && ((item['type'] == 'pre' && endorsed) || item['locked'] == true || isAccepted);
 
     final formattedDate = _formatDateString(uploadedAt);
+    final suggestedName = (item['suggested_file_name'] ?? '').toString().trim();
 
     showModalBottomSheet(
       context: context,
@@ -1667,22 +1726,50 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       ),
                     ],
                     const Divider(height: 14, color: Color(0xFFEEF2F6)),
-                    _buildDetailsPropertyRow(
-                      label: 'File Name',
-                      value: fileName,
-                      icon: Icons.insert_drive_file_outlined,
-                      iconColor: const Color(0xFF64748B),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
-                        tooltip: 'Copy file name',
-                        constraints: const BoxConstraints(),
-                        padding: const EdgeInsets.all(2),
-                        onPressed: () {
-                          Clipboard.setData(ClipboardData(text: fileName));
-                          showSuccessToast(context, 'Filename copied to clipboard');
-                        },
+                    if (suggestedName.isNotEmpty && (item['type'] == 'post' || item['type'] == 'vault')) ...[
+                      _buildDetailsPropertyRow(
+                        label: 'File Name',
+                        value: suggestedName,
+                        icon: Icons.insert_drive_file_outlined,
+                        iconColor: DefensysTokens.maroon,
+                        trailing: IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+                          tooltip: 'Copy file name',
+                          constraints: const BoxConstraints(),
+                          padding: const EdgeInsets.all(2),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: suggestedName));
+                            showSuccessToast(context, 'Filename copied to clipboard');
+                          },
+                        ),
                       ),
-                    ),
+                      if (fileName.isNotEmpty && fileName != suggestedName) ...[
+                        const Divider(height: 14, color: Color(0xFFEEF2F6)),
+                        _buildDetailsPropertyRow(
+                          label: 'Uploaded As',
+                          value: fileName,
+                          icon: Icons.history_rounded,
+                          iconColor: const Color(0xFF64748B),
+                        ),
+                      ],
+                    ] else ...[
+                      _buildDetailsPropertyRow(
+                        label: 'File Name',
+                        value: fileName,
+                        icon: Icons.insert_drive_file_outlined,
+                        iconColor: const Color(0xFF64748B),
+                        trailing: IconButton(
+                          icon: const Icon(Icons.copy_rounded, size: 14, color: Color(0xFF64748B)),
+                          tooltip: 'Copy file name',
+                          constraints: const BoxConstraints(),
+                          padding: const EdgeInsets.all(2),
+                          onPressed: () {
+                            Clipboard.setData(ClipboardData(text: fileName));
+                            showSuccessToast(context, 'Filename copied to clipboard');
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -1990,15 +2077,46 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
       barrierDismissible: false,
       builder: (dialogContext) => StatefulBuilder(
         builder: (context, setState) => AlertDialog(
-          title: Text('Upload ${item['id']}'),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          titlePadding: const EdgeInsets.fromLTRB(20, 20, 20, 0),
+          contentPadding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+          actionsPadding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: DefensysTokens.maroon.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: const Icon(Icons.cloud_upload_rounded, size: 20, color: DefensysTokens.maroon),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Upload ${item['id']}",
+                      style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+                    ),
+                    Text(
+                      item['label']?.toString() ?? '',
+                      style: const TextStyle(fontWeight: FontWeight.w500, fontSize: 13, color: Color(0xFF64748B)),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
           content: SizedBox(
-            width: 400,
+            width: 440,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(item['label']?.toString() ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                const SizedBox(height: 8),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                   decoration: BoxDecoration(
@@ -2007,13 +2125,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     border: Border.all(color: formatInfo.color.withValues(alpha: 0.25)),
                   ),
                   child: Row(
-                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Icon(formatInfo.icon, size: 15, color: formatInfo.color),
                       const SizedBox(width: 6),
-                      Flexible(
+                      Expanded(
                         child: Text(
-                          'Accepted: ${formatInfo.description}',
+                          'Accepted: ${formatInfo.description} • Max 50 MB',
                           style: TextStyle(
                             fontSize: 12,
                             fontWeight: FontWeight.w600,
@@ -2024,38 +2141,12 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                     ],
                   ),
                 ),
-                if (suggestedName.isNotEmpty && (item['type'] == 'post' || item['type'] == 'vault')) ...[
-                  const SizedBox(height: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(Icons.label_important_outline, size: 15, color: Colors.amber),
-                        const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            'Expected name: $suggestedName',
-                            style: const TextStyle(
-                              fontSize: 11,
-                              fontFamily: 'monospace',
-                              fontWeight: FontWeight.w600,
-                              color: Color(0xFF92400E),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
                 const SizedBox(height: 14),
-                if (!isUploading)
-                  OutlinedButton.icon(
-                    onPressed: () async {
+
+                // Hero Dropzone (when no file selected)
+                if (selectedFileName == null && !isUploading) ...[
+                  InkWell(
+                    onTap: () async {
                       FilePickerResult? result = await FilePicker.platform.pickFiles(
                         type: FileType.custom,
                         allowedExtensions: formatInfo.extensions,
@@ -2066,99 +2157,292 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                           selectedFileName = result.files.single.name;
                           selectedFileBytes = result.files.single.bytes;
                           final bytes = result.files.single.size;
-                          selectedFileSize = '${(bytes / 1024).toStringAsFixed(2)} KB';
+                          selectedFileSize = '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+                          if (bytes < 1024 * 1024) {
+                            selectedFileSize = '${(bytes / 1024).toStringAsFixed(1)} KB';
+                          }
                           uploadError = null;
                         });
                       }
                     },
-                    icon: const Icon(Icons.attach_file),
-                    label: const Text('Choose File'),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 48),
-                      side: BorderSide(color: DefensysTokens.maroon),
-                      foregroundColor: DefensysTokens.maroon,
+                    borderRadius: BorderRadius.circular(10),
+                    child: CustomPaint(
+                      painter: _DashedRectPainter(
+                        color: const Color(0xFFCBD5E1),
+                        strokeWidth: 1.5,
+                        radius: 10,
+                      ),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8FAFC),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Container(
+                              width: 50,
+                              height: 50,
+                              decoration: BoxDecoration(
+                                color: DefensysTokens.maroon.withValues(alpha: 0.08),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.cloud_upload_rounded,
+                                size: 28,
+                                color: DefensysTokens.maroon,
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            const Text(
+                              'Click to browse or drop your document here',
+                              style: TextStyle(
+                                fontSize: 13.5,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF1E293B),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Select any file with ${formatInfo.label} extension',
+                              style: const TextStyle(
+                                fontSize: 11.5,
+                                color: Color(0xFF64748B),
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ),
-                const SizedBox(height: 16),
+                ],
+
+                // Rich File Preview Card (when file selected)
                 if (selectedFileName != null && !isUploading) ...[
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                      color: const Color(0xFFF0FDF4),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFF86EFAC)),
                     ),
                     child: Row(
                       children: [
-                        const Icon(Icons.check_circle, color: Colors.green, size: 20),
-                        const SizedBox(width: 10),
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                          child: const Icon(Icons.description_rounded, color: Color(0xFF15803D), size: 22),
+                        ),
+                        const SizedBox(width: 12),
                         Expanded(
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
                                 selectedFileName!,
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
-                                maxLines: 2,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 13,
+                                  color: Color(0xFF0F172A),
+                                ),
+                                maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
                               ),
                               const SizedBox(height: 2),
-                              Text(selectedFileSize ?? '', style: const TextStyle(color: Colors.grey, fontSize: 11)),
+                              Text(
+                                '${selectedFileSize ?? ""} • Ready to submit',
+                                style: const TextStyle(
+                                  color: Color(0xFF15803D),
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 11.5,
+                                ),
+                              ),
                             ],
                           ),
                         ),
+                        IconButton(
+                          tooltip: 'Change file',
+                          icon: const Icon(Icons.sync_rounded, color: Color(0xFF15803D), size: 20),
+                          onPressed: () async {
+                            FilePickerResult? result = await FilePicker.platform.pickFiles(
+                              type: FileType.custom,
+                              allowedExtensions: formatInfo.extensions,
+                              withData: true,
+                            );
+                            if (result != null && result.files.single.name.isNotEmpty) {
+                              setState(() {
+                                selectedFileName = result.files.single.name;
+                                selectedFileBytes = result.files.single.bytes;
+                                final bytes = result.files.single.size;
+                                selectedFileSize = '${(bytes / (1024 * 1024)).toStringAsFixed(2)} MB';
+                                if (bytes < 1024 * 1024) {
+                                  selectedFileSize = '${(bytes / 1024).toStringAsFixed(1)} KB';
+                                }
+                                uploadError = null;
+                              });
+                            }
+                          },
+                        ),
                       ],
                     ),
                   ),
-                ] else if (!isUploading) ...[
+                ],
+
+                // Recommended File Name Notice (with Copy Button)
+                if (!isUploading && suggestedName.isNotEmpty && (item['type'] == 'post' || item['type'] == 'vault')) ...[
+                  const SizedBox(height: 12),
                   Container(
-                    padding: const EdgeInsets.all(12),
+                    width: double.infinity,
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
                     decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
+                      color: const Color(0xFFF8FAFC),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.grey.shade300),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
                     ),
-                    child: const Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Icon(Icons.info_outline, color: Colors.grey, size: 20),
-                        SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            'No file selected.',
-                            style: TextStyle(color: Colors.grey, fontSize: 12),
+                        Row(
+                          children: [
+                            const Text(
+                              'Recommended File Name:',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF64748B),
+                              ),
+                            ),
+                            const Spacer(),
+                            InkWell(
+                              onTap: () {
+                                Clipboard.setData(ClipboardData(text: suggestedName));
+                                showSuccessToast(context, 'Recommended filename copied');
+                              },
+                              borderRadius: BorderRadius.circular(4),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: const [
+                                    Icon(Icons.copy_rounded, size: 13, color: DefensysTokens.maroon),
+                                    SizedBox(width: 4),
+                                    Text(
+                                      'Copy',
+                                      style: TextStyle(
+                                        fontSize: 11,
+                                        fontWeight: FontWeight.w700,
+                                        color: DefensysTokens.maroon,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(
+                          suggestedName,
+                          style: const TextStyle(
+                            fontSize: 11.5,
+                            fontFamily: 'monospace',
+                            fontWeight: FontWeight.w700,
+                            color: DefensysTokens.maroon,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        const Text(
+                          'You can rename your file to this, or upload directly and DefenSYS will auto-rename it for you.',
+                          style: TextStyle(
+                            fontSize: 10.5,
+                            color: Color(0xFF64748B),
+                            height: 1.25,
                           ),
                         ),
                       ],
                     ),
                   ),
                 ],
+
+                // Upload Progress State
                 if (isUploading) ...[
-                  Row(
-                    children: [
-                      Expanded(
-                        child: ClipRRect(
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF8FAFC),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: const Color(0xFFE2E8F0)),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2, color: DefensysTokens.maroon),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                'Uploading ${selectedFileName ?? "document"}...',
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 12.5),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            Text(
+                              '${(uploadProgress * 100).toStringAsFixed(0)}%',
+                              style: const TextStyle(fontWeight: FontWeight.bold, color: DefensysTokens.maroon, fontSize: 13),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ClipRRect(
                           borderRadius: BorderRadius.circular(999),
                           child: LinearProgressIndicator(
                             value: uploadProgress,
-                            color: Colors.green,
-                            backgroundColor: Colors.green.withValues(alpha: 0.15),
+                            color: DefensysTokens.maroon,
+                            backgroundColor: DefensysTokens.maroon.withValues(alpha: 0.15),
                             minHeight: 8,
                           ),
                         ),
-                      ),
-                      const SizedBox(width: 12),
-                      Text(
-                        '${(uploadProgress * 100).toStringAsFixed(0)}%',
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.green),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 8),
-                  Text('Uploading ${selectedFileName ?? "file"}...', style: const TextStyle(color: Colors.grey, fontSize: 11)),
                 ],
+
                 if (uploadError != null) ...[
                   const SizedBox(height: 12),
-                  Text(uploadError!, style: const TextStyle(color: Colors.red, fontSize: 12)),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFEF2F2),
+                      borderRadius: BorderRadius.circular(6),
+                      border: Border.all(color: const Color(0xFFFECACA)),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.error_outline_rounded, color: Colors.red, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            uploadError!,
+                            style: const TextStyle(color: Colors.red, fontSize: 11.5, fontWeight: FontWeight.w500),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 ],
               ],
             ),
@@ -2166,9 +2450,9 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
           actions: [
             TextButton(
               onPressed: isUploading ? null : () => Navigator.pop(dialogContext),
-              child: const Text('Cancel'),
+              child: const Text('Cancel', style: TextStyle(color: Color(0xFF64748B))),
             ),
-            ElevatedButton(
+            ElevatedButton.icon(
               onPressed: (selectedFileName != null && !isUploading)
                   ? () async {
                       final ext = selectedFileName!.contains('.')
@@ -2183,15 +2467,6 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                         return;
                       }
 
-                      final suggestedName = item['suggested_file_name']?.toString() ?? '';
-                      if ((item['type'] == 'post' || item['type'] == 'vault') && suggestedName.isNotEmpty) {
-                        if (selectedFileName!.trim().toLowerCase() != suggestedName.trim().toLowerCase()) {
-                          setState(() {
-                            uploadError = "File name must match exactly.\nExpected: '$suggestedName'";
-                          });
-                          return;
-                        }
-                      }
                       setState(() {
                         isUploading = true;
                         uploadProgress = 0.0;
@@ -2246,8 +2521,16 @@ class _StudentDeliverablesTabState extends ConsumerState<StudentDeliverablesTab>
                       }
                     }
                   : null,
-              style: ElevatedButton.styleFrom(backgroundColor: DefensysTokens.maroon, foregroundColor: Colors.white),
-              child: const Text('Save Upload'),
+              icon: isUploading
+                  ? const SizedBox.shrink()
+                  : const Icon(Icons.cloud_upload_rounded, size: 16),
+              label: Text(isUploading ? 'Uploading...' : 'Submit Deliverable'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: DefensysTokens.maroon,
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+              ),
             ),
           ],
         ),

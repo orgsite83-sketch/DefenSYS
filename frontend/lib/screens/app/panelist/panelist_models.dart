@@ -3,7 +3,8 @@ import 'package:flutter/material.dart';
 class TeamMember {
   final String id;
   final String name;
-  const TeamMember({required this.id, required this.name});
+  final bool isLeader;
+  const TeamMember({required this.id, required this.name, this.isLeader = false});
 }
 
 class TeamData {
@@ -19,6 +20,16 @@ class TeamData {
   final int peerWeight;
   final int adviserWeight;
   final Map<String, dynamic>? panelRubric;
+  final String stageName;
+  final String eventName;
+  final String startTime;
+  final String room;
+  final String leaderName;
+  final String adviserName;
+  final String instructorName;
+  final String section;
+  final String level;
+
   bool get isLockedByDate {
     if (scheduledDate == null) return false;
     final now = DateTime.now();
@@ -50,6 +61,15 @@ class TeamData {
     required this.memberDetails,
     required this.criteria,
     required this.isPosted,
+    this.stageName = '',
+    this.eventName = '',
+    this.startTime = '',
+    this.room = '',
+    this.leaderName = '',
+    this.adviserName = '',
+    this.instructorName = '',
+    this.section = '',
+    this.level = '',
     this.submittedSubmissions = const [],
     this.defenseMaterials = const [],
     this.panelWeight = 50,
@@ -80,6 +100,73 @@ class TeamData {
 
   String get targetType => panelRubric?['target_type']?.toString() ?? 'team';
   bool get isIndividualTarget => targetType == 'individual';
+
+  String get displayStage {
+    if (stageName.isNotEmpty && stageName != 'No stage') return stageName;
+    if (defenseDate.contains(' - ')) {
+      final part = defenseDate.split(' - ').first.trim();
+      if (part.isNotEmpty && part != 'No stage') return part;
+    }
+    return isCapstone ? 'Capstone Defense' : 'PIT Presentation';
+  }
+
+  String get displaySupervisorLabel => isCapstone ? 'Adviser' : 'Instructor';
+
+  String get displayInstructor => instructorName.isNotEmpty
+      ? instructorName
+      : (adviserName.isNotEmpty ? adviserName : 'No instructor assigned');
+
+  String get displaySupervisor => isCapstone ? displayAdviser : displayInstructor;
+
+  String get displayAdviser => adviserName.isNotEmpty ? adviserName : 'No adviser assigned';
+
+  String get displayLeader {
+    if (leaderName.isNotEmpty) return leaderName;
+    final leader = memberDetails.where((m) => m.isLeader).firstOrNull;
+    if (leader != null) return leader.name;
+    return members.isNotEmpty ? members.first : 'Leader TBD';
+  }
+
+  String get displayEvent {
+    if (eventName.isNotEmpty) return eventName;
+    return isCapstone ? 'Capstone Defense Session' : 'PIT Project Expo';
+  }
+
+  String get displayRoom {
+    if (room.isNotEmpty) return room;
+    return 'Room TBD';
+  }
+
+  String get formattedTime {
+    if (startTime.isNotEmpty) {
+      final parts = startTime.split(':');
+      if (parts.length >= 2) {
+        final hour = int.tryParse(parts[0]);
+        final min = parts[1];
+        if (hour != null) {
+          final isPm = hour >= 12;
+          final h12 = hour % 12 == 0 ? 12 : hour % 12;
+          return '$h12:$min ${isPm ? 'PM' : 'AM'}';
+        }
+      }
+      return startTime;
+    }
+    if (defenseDate.isNotEmpty) {
+      final match = RegExp(r'(\d{1,2}:\d{2})').firstMatch(defenseDate);
+      if (match != null) {
+        final timeStr = match.group(1)!;
+        final parts = timeStr.split(':');
+        final hour = int.tryParse(parts[0]);
+        if (hour != null) {
+          final isPm = hour >= 12;
+          final h12 = hour % 12 == 0 ? 12 : hour % 12;
+          return '$h12:${parts[1]} ${isPm ? 'PM' : 'AM'}';
+        }
+        return timeStr;
+      }
+    }
+    return '--:--';
+  }
 }
 
 class Criterion {

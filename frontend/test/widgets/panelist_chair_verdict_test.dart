@@ -170,5 +170,97 @@ void main() {
       expect(find.text('Issued by Panel Chair: Prof. Daga-ang'), findsOneWidget);
       expect(find.text('Submit chapter 4 manuscript update'), findsOneWidget);
     });
+
+    testWidgets('AssignmentsTab search and triage filters filter teams correctly', (
+      tester,
+    ) async {
+      int? openedIndex;
+
+      final teamA = TeamData(
+        name: 'Team Alpha',
+        project: 'Automated Hydroponics',
+        defenseDate: 'Concept Pitch - 2026-10-20 09:00',
+        stageName: 'Concept Pitch',
+        eventName: 'PIT Expo 2026',
+        startTime: '09:00',
+        room: 'Lab 1',
+        teamId: '101',
+        scope: 'pit',
+        isCapstone: false,
+        members: ['Alice Santos'],
+        memberDetails: [const TeamMember(id: '1', name: 'Alice Santos')],
+        criteria: [],
+        isPosted: false,
+      );
+
+      final teamB = TeamData(
+        name: 'Team Beta',
+        project: 'Solar Forecasting',
+        defenseDate: 'Title Defense - 2026-10-21 13:30',
+        stageName: 'Title Defense',
+        eventName: 'Capstone Defense 2026',
+        startTime: '13:30',
+        room: 'Room 302',
+        teamId: '102',
+        scope: 'capstone',
+        isCapstone: true,
+        members: ['Bob Cruz'],
+        memberDetails: [const TeamMember(id: '2', name: 'Bob Cruz')],
+        criteria: [],
+        isPosted: true,
+      );
+
+      await pumpDefensysWidget(
+        tester,
+        AssignmentsTab(
+          teams: [teamA, teamB],
+          onOpenGradeSheet: (idx) => openedIndex = idx,
+        ),
+      );
+
+      // Verify header and workload counters
+      expect(find.text('My Panel Assignments'), findsOneWidget);
+      expect(find.text('2 defense teams assigned to you'), findsOneWidget);
+      expect(find.text('Needs Grading'), findsWidgets);
+      expect(find.text('Completed'), findsWidgets);
+
+      // Both teams initially visible
+      expect(find.text('Team Alpha'), findsOneWidget);
+      expect(find.text('Team Beta'), findsOneWidget);
+
+      // Filter by "Needs Grading"
+      await tester.tap(find.text('Needs Grading').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Team Alpha'), findsOneWidget);
+      expect(find.text('Team Beta'), findsNothing);
+
+      // Filter by "Completed"
+      await tester.tap(find.text('Completed').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('Team Alpha'), findsNothing);
+      expect(find.text('Team Beta'), findsOneWidget);
+
+      // Reset to "All Teams"
+      await tester.tap(find.text('All Teams'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Team Alpha'), findsOneWidget);
+      expect(find.text('Team Beta'), findsOneWidget);
+
+      // Test search query
+      await tester.enterText(find.byType(TextField), 'hydroponics');
+      await tester.pumpAndSettle();
+
+      expect(find.text('Team Alpha'), findsOneWidget);
+      expect(find.text('Team Beta'), findsNothing);
+
+      // Test "Grade Team" action opens with correct original index 0
+      await tester.tap(find.text('Grade Team'));
+      await tester.pumpAndSettle();
+
+      expect(openedIndex, equals(0));
+    });
   });
 }

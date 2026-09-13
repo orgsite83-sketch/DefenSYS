@@ -107,9 +107,9 @@ def guest_panelist_remark_key(guest_name, guest_code):
 def breakdowns_for_panelist(team_grade, panelist_key):
     return [
         row
-        for row in team_grade.breakdowns.filter(evaluation_type=GradeBreakdown.EVAL_PANEL).order_by(
-            'display_order', 'id'
-        )
+        for row in team_grade.breakdowns.select_related('student').filter(
+            evaluation_type=GradeBreakdown.EVAL_PANEL
+        ).order_by('display_order', 'id')
         if _panelist_key_from_breakdown_remarks(row.remarks) == panelist_key
     ]
 
@@ -177,11 +177,18 @@ def panelist_result_payload(team_grade, panelist_key):
         'max': float(total_max),
         'teamStatus': team_status,
         'level': team.year_level or '',
+        'stage': team_grade.stage_label or '',
+        'scope': team_grade.scope or '',
         'criteria': [
             {
                 'criteriaName': row.criterion_name,
                 'score': float(row.score),
                 'max': float(row.max_score),
+                'student_name': (
+                    f"{row.student.first_name} {row.student.last_name}".strip()
+                    or row.student.username
+                ) if row.student else None,
+                'student_id': row.student_id,
             }
             for row in rows
         ],
@@ -1933,6 +1940,11 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
         for grade in grades
         if getattr(grade, 'verdict', '') == TeamGrade.VERDICT_FOR_REDEFENSE
     ]
+    failing_teams = [
+        {'team_id': grade.team_id, 'team_name': grade.team.name}
+        for grade in grades
+        if getattr(grade, 'result', '') == 'failed'
+    ]
     return {
         'grading_ready_team_count': ready,
         'grading_total_team_count': total,
@@ -1940,6 +1952,8 @@ def grading_readiness_counts_for_group(semester, scope, stage_label, *, config=N
         'peer_total_team_count': total,
         'redefense_team_count': len(redefense_teams),
         'redefense_teams': redefense_teams,
+        'failing_team_count': len(failing_teams),
+        'failing_teams': failing_teams,
     }
 
 

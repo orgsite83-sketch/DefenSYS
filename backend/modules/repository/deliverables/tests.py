@@ -847,22 +847,14 @@ class CapstoneDeliverablesApiTests(APITestCase):
             created_by=self.admin,
         )
         
-        # Test 1: Uploading a file with incorrect name should fail
-        response_fail = self.client.post(
-            '/api/repository/deliverables/upload/',
-            self.upload_payload(deliverable_id='D4.1', file_name='IncorrectFileName.pdf'),
-            format='json',
-        )
-        self.assertEqual(response_fail.status_code, 400)
-        self.assertIn('naming convention', response_fail.data['file_name'][0])
-
-        # Test 2: Uploading with correct suggested name (case-insensitive) should succeed
+        # Uploading with student's local filename succeeds without rigid blocking
         response_success = self.client.post(
             '/api/repository/deliverables/upload/',
-            self.upload_payload(deliverable_id='D4.1', file_name='CLOUDFILESYNC.pdf'),
+            self.upload_payload(deliverable_id='D4.1', file_name='ArbitraryStudentDraft.pdf'),
             format='json',
         )
         self.assertEqual(response_success.status_code, 200)
+        self.assertIn('submission_id', response_success.data)
 
     def test_pit_lead_scoping_for_deliverables(self):
         # Create a PIT lead user (3rd Year)
@@ -1542,6 +1534,110 @@ class CapstoneDeliverablesApiTests(APITestCase):
         })
         self.assertEqual(blocked_unendorse.status_code, 400)
         self.assertIn('already scheduled', blocked_unendorse.data['detail'])
+
+    def test_pit_post_deliverables_lifecycle_and_safeguards(self):
+        from defense.scheduler.models import PitEventGradingConfig, PitEventDeliverable, DefenseSchedule
+        from grading.rubrics.models import Rubric
+        from grading.grades.models import TeamGrade
+        from repository.deliverables.services import archive_unlocked
+
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric Event',
+            evaluation_type=Rubric.EVAL_PANEL,
+            scope=Rubric.SCOPE_PIT,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric Event',
+            evaluation_type=Rubric.EVAL_PEER,
+            scope=Rubric.SCOPE_PIT,
+            status=Rubric.STATUS_PUBLISHED,
+            semester=self.semester,
+        )
+        pit_cfg = PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year PIT Showcase',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+            panel_weight=80,
+            peer_weight=20,
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=pit_cfg,
+            deliverable_id='PIT_PRE',
+            label='Project Brief',
+            deliverable_type=PitEventDeliverable.TYPE_PRE,
+            required=True,
+        )
+        PitEventDeliverable.objects.create(
+            pit_event_config=pit_cfg,
+            deliverable_id='PIT_POST',
+            label='Final Source Code & Manual',
+            deliverable_type=PitEventDeliverable.TYPE_POST,
+            required=True,
+        )
+
+        pit_team = StudentTeam.objects.create(
+            name='Alpha Coders',
+            project_title='Alpha PIT Project',
+            level=StudentTeam.LEVEL_2_PIT,
+            year_level='2nd Year',
+            semester=self.semester,
+            leader=self.other_student,
+        )
+
+        # 1. Before presentation is done: post-deliverable is locked
+        self.assertFalse(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+
+        # 2. Schedule created and defense presentation marked DONE
+        sched = DefenseSchedule.objects.create(
+            semester=self.semester,
+            scope=DefenseSchedule.SCOPE_PIT,
+            team=pit_team,
+            event_name='2nd Year PIT Showcase',
+            scheduled_date=timezone.now().date(),
+            start_time='10:00:00',
+            room='Expo Hall',
+            status=DefenseSchedule.STATUS_DONE,
+        )
+
+        # Post deliverable unlocks immediately upon presentation completion (STATUS_DONE)
+        self.assertTrue(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+
+        # 3. Student can now upload post-deliverable
+        self.client.force_authenticate(user=self.admin)
+        res_upload = self.client.post(
+            '/api/repository/deliverables/upload/',
+            {
+                'team_id': pit_team.id,
+                'stage_label': '2nd Year PIT Showcase',
+                'deliverable_id': 'PIT_POST',
+                'file_name': 'alphapitproject_manual.pdf',
+            },
+            format='json',
+        )
+        self.assertEqual(res_upload.status_code, 200)
+
+        # 4. If team grade result is recorded as failed (< 75%), post-deliverables lock
+        from decimal import Decimal
+        team_grade = TeamGrade.objects.create(
+            team=pit_team,
+            schedule=sched,
+            semester=self.semester,
+            scope=TeamGrade.SCOPE_PIT,
+            stage_label='2nd Year PIT Showcase',
+            pit_event_config=pit_cfg,
+            panel_score=Decimal('60.00'),
+            peer_score=Decimal('60.00'),
+            final_grade=Decimal('60.00'),
+            panel_weight=80,
+            peer_weight=20,
+            status=TeamGrade.STATUS_PUBLISHED,
+        )
+        self.assertEqual(team_grade.result, 'failed')
+        self.assertFalse(archive_unlocked(pit_team, '2nd Year PIT Showcase', deliverable_type='post'))
+
 
 
 

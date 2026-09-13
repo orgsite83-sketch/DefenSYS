@@ -579,9 +579,11 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                             selectedStage.trim().toLowerCase(),
                         orElse: () => <String, dynamic>{},
                       );
-                      final rawSubmissions = (stageInfo['my_peer_submissions'] as List? ??
-                              (widget.studentData?['myPeerSubmissions'] as List? ?? []))
-                          .cast<Map<String, dynamic>>();
+                      final stageSubs = (stageInfo['my_peer_submissions'] as List?)
+                              ?.cast<Map<String, dynamic>>() ?? [];
+                      final fallbackSubs = (widget.studentData?['myPeerSubmissions'] as List?)
+                              ?.cast<Map<String, dynamic>>() ?? [];
+                      final rawSubmissions = stageSubs.isNotEmpty ? stageSubs : fallbackSubs;
                       final stageMySubmissions = rawSubmissions.where((sub) {
                         final subStage = sub['stage']?.toString();
                         if (subStage == null || subStage.isEmpty) {
@@ -590,6 +592,9 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         return subStage.trim().toLowerCase() ==
                             selectedStage.trim().toLowerCase();
                       }).toList();
+                      final effectiveSubmissions = (stageMySubmissions.isEmpty && isSelectedStageActive)
+                          ? rawSubmissions
+                          : stageMySubmissions;
 
                       final stagePeerCriteria = (stageInfo['peer_criteria'] as List? ??
                               (isSelectedStageActive
@@ -609,7 +614,7 @@ class _StudentEventsTabState extends ConsumerState<StudentEventsTab>
                         peerEvalAllowed: stagePeerEvalAllowed,
                         teammates: teammates,
                         peerCriteria: stagePeerCriteria,
-                        myPeerSubmissions: stageMySubmissions,
+                        myPeerSubmissions: effectiveSubmissions,
                         studentId: widget.studentData?['student']?['id']?.toString() ?? '',
                         teamId: team?['id']?.toString() ?? '',
                         peerWeight:

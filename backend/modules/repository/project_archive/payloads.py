@@ -238,12 +238,24 @@ def capstone_entry_payload(submission, request=None, *, include_ml=False, includ
         }.get(submission.status, (submission.status or 'Approved').title())
         deliverable_type_label = 'Post-Defense' if is_post else 'Pre-Defense'
 
+        canonical_name = ''
+        if is_post and team:
+            from repository.project_archive.services import resolve_archive_file_template
+            canonical_name = resolve_archive_file_template(
+                '',
+                team,
+                submission.stage_label,
+                team.semester.label if team.semester else '1st Semester',
+                deliverable_label=submission.label,
+            )
+
         payload = {
             'id': entry_id,
             'source_id': submission.id,
             'file_id': f.id,
             'type': entry_type,
             'file_name': f.file_name,
+            'canonical_file_name': canonical_name or f.file_name,
             'file_size': f.file_size,
             'file_url': resolve_uploaded_file_url(request, f.file) if f.file else '',
             'has_file': bool(f.file or f.file_name),

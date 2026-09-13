@@ -82,6 +82,9 @@ class FakeStudentTeamsNotifier extends StudentTeamsNotifier {
     String? scope,
     String? yearLevel,
     String? section,
+    String? eventName,
+    bool clearYearLevel = false,
+    bool clearEventName = false,
     String? successMessage,
   }) async {}
 }

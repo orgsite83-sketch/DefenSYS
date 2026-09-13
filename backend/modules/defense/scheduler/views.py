@@ -874,6 +874,33 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         if item.get('is_defense_material', False) and item.get('uploaded')
     ]
 
+    leader_name = ''
+    if getattr(team, 'leader', None):
+        leader_name = f"{team.leader.first_name} {team.leader.last_name}".strip() or team.leader.username
+
+    adviser_name = ''
+    instructor_name = ''
+    if schedule.scope == DefenseSchedule.SCOPE_CAPSTONE:
+        if getattr(team, 'adviser', None):
+            adviser_name = f"{team.adviser.first_name} {team.adviser.last_name}".strip() or team.adviser.username
+    else:
+        if getattr(team, 'section', None) and getattr(team, 'semester', None):
+            try:
+                from user_management.models import SectionInstructorAssignment
+                from student_teams.team_levels import normalize_year_level
+                assignment = SectionInstructorAssignment.objects.filter(
+                    semester=team.semester,
+                    year_level=normalize_year_level(getattr(team, 'year_level', '') or ''),
+                    section=team.section,
+                    is_active=True
+                ).select_related('faculty').first()
+                if assignment and assignment.faculty:
+                    instructor_name = f"{assignment.faculty.first_name} {assignment.faculty.last_name}".strip() or assignment.faculty.username
+            except Exception:
+                pass
+        if not instructor_name and getattr(team, 'adviser', None):
+            instructor_name = f"{team.adviser.first_name} {team.adviser.last_name}".strip() or team.adviser.username
+
     return {
         'id': team.id,
         'schedule_id': schedule.id,
@@ -882,6 +909,12 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
         'event_name': schedule.event_name or '',
         'name': team.name,
         'project_title': team.project_title or '',
+        'leader_name': leader_name,
+        'leader_id': getattr(team, 'leader_id', None),
+        'adviser_name': adviser_name,
+        'instructor_name': instructor_name,
+        'section': getattr(team, 'section', '') or '',
+        'year_level': getattr(team, 'year_level', '') or '',
         'defense_stage': schedule.stage_label,
         'scheduled_date': schedule.scheduled_date.isoformat(),
         'start_time': schedule.start_time.strftime('%H:%M'),
@@ -904,6 +937,7 @@ def _team_assignment_payload(schedule, is_posted=False, submissions=None, is_cha
                 'id': m.student_id,
                 'name': f'{m.student.first_name} {m.student.last_name}'.strip() or m.student.username,
                 'username': m.student.username,
+                'is_leader': m.student_id == getattr(team, 'leader_id', None),
             }
             for m in team.memberships.all()
         ],

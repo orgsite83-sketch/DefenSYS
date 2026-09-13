@@ -67,18 +67,24 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   String? _submissionKey(Map<String, dynamic> submission) {
     final id = submission['evaluateeId']?.toString() ??
         submission['evaluatee_id']?.toString();
-    if (id != null && id.isNotEmpty) return id;
-
     final name = (submission['evaluateeName']?.toString() ??
         submission['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
-    if (name.isEmpty) return null;
 
-    for (final teammate in widget.teammates) {
-      if (_teammateName(teammate).trim().toLowerCase() == name) {
-        return _teammateId(teammate);
+    if (id != null && id.isNotEmpty) {
+      for (final teammate in widget.teammates) {
+        if (_teammateId(teammate) == id) return _teammateId(teammate);
       }
     }
-    return name;
+
+    if (name.isNotEmpty) {
+      for (final teammate in widget.teammates) {
+        if (_teammateName(teammate).trim().toLowerCase() == name) {
+          return _teammateId(teammate);
+        }
+      }
+    }
+
+    return (id != null && id.isNotEmpty) ? id : (name.isNotEmpty ? name : null);
   }
 
   @override

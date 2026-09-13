@@ -6,6 +6,8 @@ import '../../../../services/academic_period_provider.dart';
 import '../../../../toasts/feedback_toast.dart';
 import '../../../../widgets/feedback/empty_state.dart';
 import '../widgets/defensys_admin_shell.dart';
+import '../grade_center/grade_center_shared.dart'
+    show showPeerGradingHelpDialog;
 
 class AcademicPeriodsScreen extends ConsumerStatefulWidget {
   const AcademicPeriodsScreen({super.key});
@@ -671,6 +673,9 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
                 subtitle: 'Student Peer Eval tab for Capstone teams.',
                 value: peerOn,
                 enabled: !saving && semesterId != null,
+                helpTooltip: 'Click for Capstone Peer Evaluation Workflow Guide',
+                onHelpTap: () =>
+                    showPeerGradingHelpDialog(context, isPit: false),
                 onChanged: (value) {
                   if (semesterId == null) return;
                   ref
@@ -714,25 +719,6 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
               );
             },
           ),
-          const SizedBox(height: 12),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF6FF),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: const Color(0xFFBFDBFE)),
-            ),
-            child: const Text(
-              'PIT peer grading is configured per event in Evaluation & Grades.',
-              style: TextStyle(
-                color: Color(0xFF1E40AF),
-                fontSize: 12,
-                height: 1.35,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
         ],
       ),
     );
@@ -764,6 +750,8 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
     required bool value,
     required bool enabled,
     required ValueChanged<bool> onChanged,
+    VoidCallback? onHelpTap,
+    String? helpTooltip,
   }) {
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
@@ -779,13 +767,37 @@ class _AcademicPeriodsScreenState extends ConsumerState<AcademicPeriodsScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: _ink,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(
+                        title,
+                        style: const TextStyle(
+                          color: _ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                    if (onHelpTap != null) ...[
+                      const SizedBox(width: 6),
+                      Tooltip(
+                        message: helpTooltip ?? 'View Guide',
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(999),
+                          onTap: onHelpTap,
+                          child: const Padding(
+                            padding: EdgeInsets.all(2),
+                            child: Icon(
+                              Icons.help_outline_rounded,
+                              size: 15,
+                              color: Color(0xFF94A3B8),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 4),
                 Text(

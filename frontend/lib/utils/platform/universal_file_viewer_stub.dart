@@ -1,6 +1,9 @@
 // Mobile & Desktop implementation for non-web platforms
+import 'dart:io';
 import 'dart:typed_data';
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:syncfusion_flutter_pdfviewer/pdfviewer.dart';
 
 import '../../theme/defensys_tokens.dart';
@@ -11,12 +14,46 @@ import 'universal_file_viewer_widgets.dart';
 export 'universal_file_viewer_models.dart';
 export 'universal_file_viewer_widgets.dart';
 
+/// Saves in-memory bytes to device storage on mobile or desktop platforms.
 Future<void> downloadBytesFile({
   required List<int> bytes,
   required String fileName,
   String mimeType = 'application/octet-stream',
 }) async {
-  // Mobile platform placeholder - bytes are handled in-app
+  try {
+    final Uint8List data = Uint8List.fromList(bytes);
+
+    // Try native Save File picker first (works on desktop and newer mobile OS)
+    String? outputPath;
+    try {
+      outputPath = await FilePicker.platform.saveFile(
+        dialogTitle: 'Save File',
+        fileName: fileName,
+        bytes: data,
+      );
+    } catch (_) {}
+
+    if (outputPath != null && outputPath.isNotEmpty) {
+      final file = File(outputPath);
+      if (!await file.exists() || (await file.length()) == 0) {
+        await file.writeAsBytes(data, flush: true);
+      }
+      return;
+    }
+
+    // Fallback saving directly to Downloads or Documents directory
+    Directory? dir;
+    try {
+      dir = await getDownloadsDirectory();
+    } catch (_) {}
+    dir ??= await getApplicationDocumentsDirectory();
+
+    final fallbackFile = File('${dir.path}/$fileName');
+    await fallbackFile.writeAsBytes(data, flush: true);
+  } catch (e) {
+    debugPrint('Error saving file in mobile/desktop stub: $e');
+    rethrow;
+  }
 }
 
 Future<void> viewFileInDialog({

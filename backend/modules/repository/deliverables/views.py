@@ -153,7 +153,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         else (stage_options[0] if stage_options else '')
     )
     return {
-        'teams': [team_payload(team, selected_stage=stage) for team in current],
+        'teams': [
+            team_payload(team, selected_stage=stage, evaluator=request.user)
+            for team in current
+        ],
         'counts': counts_payload(current, selected_stage=stage),
         'stage_options': stage_options,
         'selected_stage': stage,
