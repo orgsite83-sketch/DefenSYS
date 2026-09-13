@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../services/authenticated_client.dart';
 import '../../../services/bridge_service.dart';
 import '../../../theme/defensys_tokens.dart';
+import '../../../widgets/buttons/save_button.dart';
 import '../../../widgets/confirm_dialog.dart';
 import '../../../widgets/status_badge.dart';
 import '../../../toasts/feedback_toast.dart';
@@ -46,6 +47,7 @@ class PeerEvalTab extends ConsumerStatefulWidget {
 class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
   late Map<String, Map<String, double>> _scores;
   late Map<String, bool> _posted;
+  late Map<String, bool> _submitting;
 
   List<Map<String, dynamic>> get _effectiveCriteria => widget.peerCriteria.isNotEmpty
       ? widget.peerCriteria
@@ -63,14 +65,16 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       teammate['name']?.toString() ?? _teammateId(teammate);
 
   String? _submissionKey(Map<String, dynamic> submission) {
-    final id = submission['evaluateeId']?.toString();
+    final id = submission['evaluateeId']?.toString() ??
+        submission['evaluatee_id']?.toString();
     if (id != null && id.isNotEmpty) return id;
 
-    final name = submission['evaluateeName']?.toString() ?? '';
+    final name = (submission['evaluateeName']?.toString() ??
+        submission['evaluatee_name']?.toString() ?? '').trim().toLowerCase();
     if (name.isEmpty) return null;
 
     for (final teammate in widget.teammates) {
-      if (_teammateName(teammate) == name) {
+      if (_teammateName(teammate).trim().toLowerCase() == name) {
         return _teammateId(teammate);
       }
     }
@@ -82,6 +86,7 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
     super.initState();
     _scores = {};
     _posted = {};
+    _submitting = {};
     _buildScores();
   }
 
@@ -512,16 +517,15 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
             if (!isPosted)
               SizedBox(
                 width: double.infinity,
-                child: ElevatedButton.icon(
-                  icon: const Icon(Icons.lock_outline_rounded, size: 15),
-                  label: const Text('Submit & Lock Evaluation', style: TextStyle(fontSize: 12.5, fontWeight: FontWeight.bold)),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: DefensysTokens.maroon,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  ),
-                  onPressed: () => _confirmPost(teammateId, name, scores),
+                child: DefensysSaveButton(
+                  icon: Icons.save_rounded,
+                  label: 'Submit Evaluation',
+                  savingLabel: 'Submitting…',
+                  isPill: true,
+                  isSaving: _submitting[teammateId] == true,
+                  onPressed: _submitting[teammateId] == true
+                      ? null
+                      : () => _confirmPost(teammateId, name, scores),
                 ),
               ),
           ],
@@ -550,45 +554,61 @@ class _PeerEvalTabState extends ConsumerState<PeerEvalTab> {
       return;
     }
 
-    final confirmed = await confirmDestructive(
+    final confirmed = await confirmLock(
       context,
       title: 'Submit Peer Evaluation?',
-      message: 'Your evaluation for $name will be permanently locked.',
-      confirmLabel: 'Submit & Lock',
+      message: 'Your evaluation for $name will be saved and permanently locked.',
+      confirmLabel: 'Submit',
+      icon: Icons.save_rounded,
+      confirmColor: DefensysTokens.saveActionBg,
     );
     if (!confirmed || !mounted) return;
 
-    setState(() => _posted[teammateId] = true);
+    setState(() => _submitting[teammateId] = true);
 
-    final breakdown = scores.entries.map((e) => {
-      'criteriaName': e.key,
-      'score': e.value,
-      'max': _effectiveCriteria.firstWhere(
-        (c) => (c['name'] as String?) == e.key,
-        orElse: () => <String, Object>{'maxScore': 5},
-      )['maxScore'],
-    }).toList();
-    final total = scores.values.fold(0.0, (s, v) => s + v);
-    final max = _effectiveCriteria.fold(
-      0.0,
-      (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0),
-    );
+    try {
+      final breakdown = scores.entries.map((e) => {
+        'criteriaName': e.key,
+        'score': e.value,
+        'max': _effectiveCriteria.firstWhere(
+          (c) => (c['name'] as String?) == e.key,
+          orElse: () => <String, Object>{'maxScore': 5},
+        )['maxScore'],
+      }).toList();
+      final total = scores.values.fold(0.0, (s, v) => s + v);
+      final max = _effectiveCriteria.fold(
+        0.0,
+        (s, c) => s + ((c['maxScore'] as num?)?.toDouble() ?? 5.0),
+      );
 
-    await BridgeService.submitPeerGrade(
-      httpClient: ref.read(authenticatedHttpClientProvider),
-      teamId: widget.teamId,
-      evaluatorId: widget.studentId,
-      evaluateeId: teammateId,
-      breakdown: breakdown,
-      total: total,
-      max: max,
-      stage: widget.stage,
-    );
+      await BridgeService.submitPeerGrade(
+        httpClient: ref.read(authenticatedHttpClientProvider),
+        teamId: widget.teamId,
+        evaluatorId: widget.studentId,
+        evaluateeId: teammateId,
+        breakdown: breakdown,
+        total: total,
+        max: max,
+        stage: widget.stage,
+      );
 
-    widget.onPeerSubmitted?.call();
+      if (mounted) {
+        setState(() {
+          _posted[teammateId] = true;
+          _submitting[teammateId] = false;
+        });
+      }
 
-    if (mounted) {
-      showSuccessToast(context, 'Peer evaluation for $name submitted.');
+      widget.onPeerSubmitted?.call();
+
+      if (mounted) {
+        showSuccessToast(context, 'Peer evaluation for $name submitted.');
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _submitting[teammateId] = false);
+        showValidationToast(context, 'Failed to submit peer evaluation.');
+      }
     }
   }
 

@@ -103,6 +103,10 @@ def deliverables_payload(request, queryset=None, selected_stage=None, scope=None
         else:
             current = current.exclude(level__icontains='PIT')
 
+    team_id = request.query_params.get('team_id', '').strip()
+    if team_id:
+        current = current.filter(id=team_id)
+
     semester = active_semester()
     if scope == 'pit':
         from defense.scheduler.models import PitEventGradingConfig

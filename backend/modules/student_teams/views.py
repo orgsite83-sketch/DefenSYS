@@ -96,7 +96,7 @@ def filter_students_for_pit_roster(students, active, *, pit_lead_year=None, user
     return students.filter(pk__in=student_ids)
 
 
-def options_payload(team_id=None, team_level=None, user=None, include_roster_options=True):
+def options_payload(team_id=None, team_level=None, user=None, include_roster_options=True, event_name=None):
     """
     Get options for team creation/editing.
     
@@ -105,10 +105,32 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
         team_level: If provided, filters students based on team level (PIT/Capstone)
         user: The requesting user (to auto-detect PIT Lead filtering)
         include_roster_options: When False, omits student/adviser pick lists (list API privacy).
+        event_name: When provided for PIT, scopes student availability to this specific event.
     """
     active = active_semester()
     role_levels = levels_for_user(user) if user else [choice[0] for choice in StudentTeam.LEVEL_CHOICES]
     capstone_window = capstone_mode_payload(active)
+    pit_events = []
+    if active:
+        from defense.scheduler.models import PitEventGradingConfig
+        from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
+        pit_configs = PitEventGradingConfig.objects.filter(semester=active).order_by('event_name')
+        pit_events = []
+        for cfg in pit_configs:
+            ev_year = None
+            ev_name_lower = (cfg.event_name or '').lower()
+            for yl, hints in PIT_YEAR_EVENT_HINTS.items():
+                if any(h.lower() in ev_name_lower for h in hints):
+                    ev_year = yl
+                    break
+            pit_events.append({
+                'event_name': cfg.event_name,
+                'event_code': cfg.event_code,
+                'year_level': ev_year,
+                'panel_weight': cfg.panel_weight,
+                'peer_weight': cfg.peer_weight,
+            })
+
     if not include_roster_options:
         return {
             'active_semester': SemesterSerializer(active).data if active else None,
@@ -116,21 +138,35 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
             'advisers': [],
             'levels': role_levels,
             'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES],
+            'pit_events': pit_events,
             **capstone_window,
         }
 
     # Get all active students
     students = User.objects.filter(role='student', is_active=True).order_by('username')
     
-    # Filter out students who are already in teams
-    # But if editing a team, include students from the current team
+    # Filter out students based on team level and event
+    is_pit_filter = bool(team_level and 'PIT' in team_level.upper())
     if team_id:
         # Get students who are NOT in any team OR are in the current team being edited
         students = students.filter(
             Q(team_memberships__isnull=True) | Q(team_memberships__team_id=team_id)
         ).distinct()
+    elif is_pit_filter and event_name:
+        # For a specific PIT event, only exclude students already in a team for that same event
+        students = students.exclude(
+            team_memberships__team__semester=active,
+            team_memberships__team__level__icontains='PIT',
+            team_memberships__team__current_defense_stage=event_name,
+        ).distinct()
+    elif is_pit_filter:
+        # General PIT: exclude students who belong to unassigned PIT teams
+        students = students.exclude(
+            Q(team_memberships__team__semester=active, team_memberships__team__level__icontains='PIT'),
+            Q(team_memberships__team__current_defense_stage__isnull=True) | Q(team_memberships__team__current_defense_stage=''),
+        ).distinct()
     else:
-        # Creating new team - only show students not in any team
+        # Capstone: only show students not in any team
         students = students.filter(team_memberships__isnull=True)
     
     # Auto-detect PIT Lead and apply filtering
@@ -164,6 +200,7 @@ def options_payload(team_id=None, team_level=None, user=None, include_roster_opt
         'advisers': AdviserOptionSerializer(advisers, many=True).data,
         'levels': role_levels,
         'statuses': [choice[0] for choice in StudentTeam.STATUS_CHOICES],
+        'pit_events': pit_events,
         **capstone_window,
     }
     if user:
@@ -242,11 +279,38 @@ class StudentTeamListCreateView(APIView):
         if section:
             queryset = queryset.filter(section=section)
 
+        event_name = request.query_params.get('event_name', '').strip()
+        if event_name:
+            from repository.project_archive.services import PIT_YEAR_EVENT_HINTS
+            event_year = None
+            for y, hints in PIT_YEAR_EVENT_HINTS.items():
+                if any(h in event_name.lower() for h in hints):
+                    event_year = y
+                    break
+
+            event_filter = (
+                Q(current_defense_stage=event_name)
+                | Q(defense_schedules__event_name=event_name)
+                | Q(grade_records__stage_label=event_name)
+                | Q(deliverable_submissions__stage_label=event_name)
+            )
+            if event_year:
+                event_filter |= Q(
+                    Q(current_defense_stage__isnull=True) | Q(current_defense_stage=''),
+                    year_level=event_year,
+                    level__icontains='PIT',
+                )
+            queryset = queryset.filter(event_filter).distinct()
+
         # Get team_level from query params for filtering students
         team_level_filter = request.query_params.get('team_level', '').strip()
         full_dir = user_can_see_full_team_directory(request.user)
 
         stats_base = apply_team_scope(visible, scope='active', user=request.user)
+        if level == 'Capstone':
+            stats_base = stats_base.filter(level__icontains='Capstone')
+        elif level == 'PIT':
+            stats_base = stats_base.filter(level__icontains='PIT')
 
         return Response({
             'teams': self._serialize_teams(queryset, request.user),
@@ -255,6 +319,7 @@ class StudentTeamListCreateView(APIView):
                 team_level=team_level_filter if team_level_filter else None,
                 user=request.user,
                 include_roster_options=full_dir,
+                event_name=event_name or None,
             ),
         })
 

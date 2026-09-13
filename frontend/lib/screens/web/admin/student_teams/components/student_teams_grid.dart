@@ -397,14 +397,19 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
     final leaderName = team['leader_name']?.toString() ?? '-';
     final members = team['members'] as List? ?? const [];
     final leaderId = team['leader_id'];
-    final leaderMember = members.firstWhere(
-      (m) => m is Map && m['id'] == leaderId,
-      orElse: () => null,
-    );
+    final leaderMember = members.whereType<Map>().where((m) => m['id'] == leaderId).firstOrNull;
     final leaderEnrolled = leaderMember == null || leaderMember['is_enrolled'] == true;
     final hasUnenrolled = members.any((m) => m is Map && m['is_enrolled'] == false);
 
-    final defenseText = isPit ? (team['pit_event_name']?.toString() ?? 'No PIT Event') : _defenseContext(team);
+    final rawPitEvent = team['pit_event_name']?.toString().trim() ??
+        team['current_defense_stage']?.toString().trim() ??
+        (team['defense_context'] is Map ? (team['defense_context']['event_label']?.toString().trim() ?? '') : '');
+    final hasAssignedPitEvent = rawPitEvent.isNotEmpty &&
+        rawPitEvent != 'No PIT event scheduled' &&
+        rawPitEvent != 'No PIT Event';
+    final defenseText = isPit
+        ? (hasAssignedPitEvent ? rawPitEvent : 'No PIT Event')
+        : _defenseContext(team);
     final status = team['status']?.toString() ?? 'Pending';
 
     final titleCol = Column(
@@ -532,11 +537,37 @@ class _GroupedSectionViewState extends State<GroupedSectionView> {
           _sectionTableCell(titleCol, flex: flexes[0]),
           _sectionTableCell(leaderAndMembersCol, flex: flexes[1]),
           _sectionTableCell(
-            Text(
-              defenseText.isEmpty ? '-' : defenseText,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: DefensysUi.textDark, fontSize: 12.5, fontWeight: FontWeight.w500),
-            ),
+            isPit && hasAssignedPitEvent
+                ? Align(
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFF6FF),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: const Color(0xFFBFDBFE)),
+                      ),
+                      child: Text(
+                        defenseText,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Color(0xFF1D4ED8),
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  )
+                : Text(
+                    defenseText.isEmpty ? '-' : defenseText,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: isPit && !hasAssignedPitEvent ? DefensysUi.steelGrey : DefensysUi.textDark,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w500,
+                      fontStyle: isPit && !hasAssignedPitEvent ? FontStyle.italic : FontStyle.normal,
+                    ),
+                  ),
             flex: flexes[2],
           ),
           _sectionTableCell(

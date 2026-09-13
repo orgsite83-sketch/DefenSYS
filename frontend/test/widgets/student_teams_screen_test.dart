@@ -23,6 +23,9 @@ class _FakeStudentTeamsNotifier extends StudentTeamsNotifier {
     String? scope,
     String? yearLevel,
     String? section,
+    String? eventName,
+    bool clearEventName = false,
+    bool clearYearLevel = false,
     String? successMessage,
   }) async {}
 }
@@ -229,6 +232,135 @@ void main() {
 
       expect(find.text('Capstone team creation closed'), findsNothing);
       expect(find.text('Create New Team'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'Admin in PIT mode displays Year Level and PIT Event dropdown filters and event badge',
+    (tester) async {
+      await pumpTeamsScreen(
+        tester,
+        mode: TeamListMode.capstoneAdmin,
+        overrides: [
+          studentTeamsProvider.overrideWith(
+            () => _FakeStudentTeamsNotifier(
+              const StudentTeamsState(
+                level: 'PIT',
+                yearLevel: '1st Year',
+                eventName: '1st Year Concept Pitch',
+                pitEvents: [
+                  {
+                    'event_name': '1st Year Concept Pitch',
+                    'year_level': '1st Year',
+                  },
+                  {
+                    'event_name': '2nd Year Innovation Expo',
+                    'year_level': '2nd Year',
+                  },
+                ],
+                teams: [
+                  {
+                    'id': 101,
+                    'name': 'Team Alpha',
+                    'project_title': 'Alpha Project',
+                    'level': '1st Year PIT',
+                    'year_level': '1st Year',
+                    'section': 'CS-1A',
+                    'leader_id': 1,
+                    'leader_name': 'Juan Cruz',
+                    'members': [{'id': 1, 'name': 'Juan Cruz', 'is_enrolled': true}],
+                    'member_count': 1,
+                    'pit_event_name': '1st Year Concept Pitch',
+                    'current_defense_stage': '1st Year Concept Pitch',
+                    'status': 'Pending',
+                  },
+                ],
+              ),
+            ),
+          ),
+          dashboardProvider('faculty').overrideWith(
+            _FakeFacultyPitLeadDashboardNotifier.new,
+          ),
+          dashboardProvider('admin').overrideWith(
+            _FakeAdminDashboardNotifier.new,
+          ),
+        ],
+      );
+
+      // Verify filters are rendered
+      expect(find.text('1st Year'), findsWidgets);
+      expect(find.text('1st Year Concept Pitch'), findsWidgets);
+
+      // Expand section to view table
+      await tester.tap(find.text('CS-1A'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('PIT EVENT'), findsOneWidget);
+      expect(find.text('Team Alpha'), findsOneWidget);
+      // The event name should be displayed
+      expect(find.text('1st Year Concept Pitch'), findsWidgets);
+    },
+  );
+
+  testWidgets(
+    'admin student teams scopes to Capstone initially even if state contains PIT teams',
+    (tester) async {
+      await pumpTeamsScreen(
+        tester,
+        mode: TeamListMode.capstoneAdmin,
+        overrides: [
+          studentTeamsProvider.overrideWith(
+            () => _FakeStudentTeamsNotifier(
+              const StudentTeamsState(
+                teams: [
+                  {
+                    'id': 1,
+                    'name': 'PIT 1 Team',
+                    'section': 'BSIT-1A',
+                    'level': '1st Year PIT',
+                    'year_level': '1st Year',
+                    'status': 'Pending',
+                  },
+                  {
+                    'id': 2,
+                    'name': 'PIT 2 Team',
+                    'section': 'BSIT-2A',
+                    'level': '2nd Year PIT',
+                    'year_level': '2nd Year',
+                    'status': 'Pending',
+                  },
+                  {
+                    'id': 3,
+                    'name': 'Capstone 4 Team',
+                    'section': 'BSIT-4A',
+                    'level': '4th Year Capstone',
+                    'year_level': '4th Year',
+                    'status': 'Pending',
+                  },
+                ],
+                counts: {'all': 3, 'pending': 3, 'approved': 0, 'failed': 0},
+              ),
+            ),
+          ),
+          dashboardProvider('faculty').overrideWith(
+            _FakeFacultyPitLeadDashboardNotifier.new,
+          ),
+          dashboardProvider('admin').overrideWith(
+            _FakeAdminDashboardNotifier.new,
+          ),
+        ],
+      );
+
+      // Verify that Capstone Teams is selected
+      expect(find.text('Capstone Teams'), findsOneWidget);
+
+      // Verify only Capstone section (BSIT-4A) is displayed
+      expect(find.text('BSIT-4A'), findsOneWidget);
+      expect(find.text('BSIT-1A'), findsNothing);
+      expect(find.text('BSIT-2A'), findsNothing);
+
+      // Verify footer says Showing 1 of 1 teams
+      expect(find.text('Showing 1 of 1 teams'), findsOneWidget);
     },
   );
 }

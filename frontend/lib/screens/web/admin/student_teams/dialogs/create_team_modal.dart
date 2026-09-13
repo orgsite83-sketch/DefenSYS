@@ -26,18 +26,22 @@ Future<void> showCreateTeamModal({
   final name = TextEditingController();
   final projectTitle = TextEditingController();
   final isFirstSem = state.activeSemester?['label']?.toString().toLowerCase().contains('1st') ?? false;
-  final defaultYear = isCapstoneAdmin
-      ? (isFirstSem ? '4th Year' : '3rd Year')
-      : (pitLeadYear ?? '3rd Year');
-  var yearLevel = isCapstoneAdmin ? defaultYear : (pitLeadYear ?? '3rd Year');
+  final isPitView = state.level.toUpperCase().contains('PIT') || isPitLeadManager;
+  final defaultYear = isPitLeadManager
+      ? (pitLeadYear ?? '3rd Year')
+      : (isPitView
+          ? (state.yearLevel ?? '1st Year')
+          : (isFirstSem ? '4th Year' : '3rd Year'));
+  var yearLevel = defaultYear;
   if (!yearOptions.contains(yearLevel)) {
     yearLevel = defaultYear;
   }
-  var level = isPitLeadManager
+  var level = isPitView
       ? '$yearLevel PIT'
       : (yearLevel == '4th Year' || (yearLevel == '3rd Year' && !isFirstSem)
           ? '$yearLevel Capstone'
           : '$yearLevel PIT');
+  String? selectedPitEvent = state.eventName;
   var status = 'Pending';
   if (!statusOptions.contains(status)) {
     status = statusOptions.first;
@@ -140,8 +144,36 @@ Future<void> showCreateTeamModal({
                         },
                       ),
                       const SizedBox(height: 16),
-                    ] else
-                      const SizedBox(height: 4),
+                    ] else ...[
+                      if (state.pitEvents.isNotEmpty) ...[
+                        DropdownButtonFormField<String?>(
+                          initialValue: selectedPitEvent,
+                          decoration: const InputDecoration(
+                            labelText: 'PIT Event',
+                            hintText: 'Assign to specific event (optional)',
+                          ),
+                          items: [
+                            const DropdownMenuItem<String?>(
+                              value: null,
+                              child: Text('None / General PIT'),
+                            ),
+                            ...state.pitEvents.map((ev) {
+                              final evName = ev['event_name']?.toString() ?? '';
+                              return DropdownMenuItem<String?>(
+                                value: evName,
+                                child: Text(evName),
+                              );
+                            }),
+                          ],
+                          onChanged: (value) {
+                            setDialogState(() {
+                              selectedPitEvent = value;
+                            });
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                    ],
                     Align(
                       alignment: Alignment.centerLeft,
                       child: Text(
@@ -267,12 +299,14 @@ Future<void> showCreateTeamModal({
     'project_title': projectTitle.text.trim().isEmpty
         ? name.text.trim()
         : projectTitle.text.trim(),
-    if (isPitLeadManager) 'level': level,
-    if (isPitLeadManager) 'year_level': yearLevel,
+    if (isPitLeadManager || isPitView) 'level': level,
+    if (isPitLeadManager || isPitView) 'year_level': yearLevel,
     'leader_id': leaderId,
     'member_ids': selectedMembers.toList(),
     'adviser_id': isCapstone ? adviserId : null,
     'status': status,
+    if (!isCapstone && selectedPitEvent != null && selectedPitEvent!.trim().isNotEmpty)
+      'current_defense_stage': selectedPitEvent!.trim(),
   };
 
   name.dispose();

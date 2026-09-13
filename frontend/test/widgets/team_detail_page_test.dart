@@ -114,6 +114,81 @@ void main() {
     expect(find.text('Weekly Reports'), findsNothing);
     expect(find.text('Team Documents'), findsNothing);
   });
+
+  testWidgets('TeamDetailPage Deliverables tab only shows 1st year events for 1st year PIT team', (tester) async {
+    await pumpDefensysWidget(
+      tester,
+      SizedBox(
+        width: 1200,
+        height: 800,
+        child: TeamDetailPage(
+          teamId: 2,
+          canManage: false,
+          isPitLead: false,
+          onBack: () {},
+        ),
+      ),
+      overrides: [
+        teamDetailProvider(2).overrideWith(_FakeFirstYearPitTeamDetailNotifier.new),
+      ],
+    );
+
+    // Switch to Deliverables tab
+    await tester.tap(find.text('Deliverables'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('1st Year Concept Pitch'), findsWidgets);
+    expect(find.text('2nd Year Architecture Pitch'), findsNothing);
+  });
+}
+
+class _FakeFirstYearPitTeamDetailNotifier extends TeamDetailNotifier {
+  _FakeFirstYearPitTeamDetailNotifier() : super(2);
+
+  @override
+  TeamDetailState build() {
+    return TeamDetailState(
+      team: {
+        'id': 2,
+        'name': 'Team CyberShield',
+        'project_title': 'Secure Vault Authentication Gateway',
+        'year_level': '1st Year',
+        'level': '1st Year PIT',
+        'status': 'Approved',
+        'member_ids': [10],
+        'leader_id': 10,
+      },
+      students: [
+        {'id': 10, 'name': 'Lucas Alcantara', 'username': '4081'},
+      ],
+      statuses: const ['Pending', 'Approved'],
+      deliverableTeam: {
+        'id': 2,
+        'name': 'Team CyberShield',
+        'current_stage': '1st Year Concept Pitch',
+        'stages': [
+          {
+            'stage_label': '1st Year Concept Pitch',
+            'deliverables_configured': true,
+            'deliverables': [
+              {
+                'id': '1',
+                'label': 'Draft Concept Paper & System Case Study',
+                'required': true,
+                'type': 'pre',
+                'uploaded': true,
+              }
+            ]
+          }
+        ]
+      },
+      // Simulate backend having returned multiple years in stageOptions
+      stageOptions: const ['1st Year Concept Pitch', '2nd Year Architecture Pitch'],
+    );
+  }
+
+  @override
+  Future<void> load() async {}
 }
 
 class _FakePitTeamDetailNotifier extends TeamDetailNotifier {

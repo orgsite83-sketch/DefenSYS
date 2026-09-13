@@ -92,6 +92,8 @@ def counts_payload(base_queryset, current_queryset=None):
         'awaiting_peers': current.filter(status=TeamGrade.STATUS_AWAITING_PEERS).count(),
         'passed': current.filter(final_grade__gte=75).count(),
         'failed': current.filter(final_grade__lt=75, final_grade__isnull=False).count(),
+        'total_capstone': base_queryset.filter(scope=TeamGrade.SCOPE_CAPSTONE).count(),
+        'total_pit': base_queryset.filter(scope=TeamGrade.SCOPE_PIT).count(),
         'capstone': current.filter(scope=TeamGrade.SCOPE_CAPSTONE).count(),
         'pit': current.filter(scope=TeamGrade.SCOPE_PIT).count(),
     }

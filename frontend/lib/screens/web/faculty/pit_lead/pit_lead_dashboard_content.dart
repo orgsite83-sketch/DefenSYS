@@ -535,7 +535,10 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
     final readyForDefense =
         pipeline['ready_for_defense'] as int? ??
         (int.tryParse(stats['ready_pit_teams']?.toString() ?? '0') ?? 0);
-    final withAdviser = pipeline['teams_with_adviser'] as int? ?? 0;
+    final withInstructor =
+        pipeline['teams_with_instructor'] as int? ??
+        pipeline['teams_with_adviser'] as int? ??
+        0;
     final stages =
         (pipeline['stage_distribution'] as List?)?.cast<Map>() ?? [];
 
@@ -589,14 +592,14 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                       const SizedBox(width: 10),
                       Expanded(
                         child: _miniMetricTile(
-                          label: 'With Adviser',
+                          label: 'With Instructor',
                           value: totalTeams > 0
-                              ? '${((withAdviser / totalTeams) * 100).round()}%'
+                              ? '${((withInstructor / totalTeams) * 100).round()}%'
                               : '0%',
-                          color: const Color(0xFF7C3AED),
-                          bgColor: const Color(0xFFF5F3FF),
-                          borderColor: const Color(0xFFDDD6FE),
-                          icon: Icons.school_rounded,
+                          color: const Color(0xFF15803D),
+                          bgColor: const Color(0xFFF0FDF4),
+                          borderColor: const Color(0xFFBBF7D0),
+                          icon: Icons.co_present_rounded,
                         ),
                       ),
                     ],
@@ -709,18 +712,18 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                     child: Row(
                       children: [
                         Icon(
-                          withAdviser == totalTeams
+                          withInstructor == totalTeams
                               ? Icons.check_circle_outline_rounded
                               : Icons.info_outline_rounded,
                           size: 16,
-                          color: withAdviser == totalTeams
+                          color: withInstructor == totalTeams
                               ? const Color(0xFF059669)
                               : const Color(0xFFD97706),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '$withAdviser of $totalTeams teams assigned with advisers',
+                            '$withInstructor of $totalTeams teams assigned to section instructors',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -1091,6 +1094,16 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         badgeTextColor = const Color(0xFF047857);
                         categoryLabel = 'READY TO SCHEDULE';
                         onActionTap = widget.onOpenScheduler;
+                      } else if (itemId == 'unassigned_instructors' ||
+                          targetSectionKey == 'pit_instructors') {
+                        actionIcon = Icons.person_add_alt_1_rounded;
+                        iconColor = const Color(0xFF15803D);
+                        iconBg = const Color(0xFFDCFCE7);
+                        badgeBg = const Color(0xFFF0FDF4);
+                        badgeBorder = const Color(0xFFBBF7D0);
+                        badgeTextColor = const Color(0xFF166534);
+                        categoryLabel = 'INSTRUCTOR ASSIGNMENT';
+                        onActionTap = widget.onOpenCohort;
                       } else if (itemId == 'unassigned_advisers' ||
                           targetSectionKey == 'student_teams') {
                         actionIcon = Icons.person_add_alt_1_rounded;
@@ -1099,7 +1112,7 @@ class _PitLeadDashboardContentState extends State<PitLeadDashboardContent> {
                         badgeBg = const Color(0xFFEEF2FF);
                         badgeBorder = const Color(0xFFC7D2FE);
                         badgeTextColor = const Color(0xFF4338CA);
-                        categoryLabel = 'ADVISER ASSIGNMENT';
+                        categoryLabel = 'TEAM MANAGEMENT';
                         onActionTap = widget.onOpenStudentTeams;
                       } else if (itemId == 'unassigned_students' ||
                           targetSectionKey == 'cohort') {

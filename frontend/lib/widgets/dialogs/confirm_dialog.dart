@@ -12,7 +12,19 @@ Future<bool> showConfirmDialog(
   String confirmLabel = 'Confirm',
   bool destructive = false,
   IconData? icon,
+  Color? confirmColor,
+  Color? iconColor,
+  Color? iconBgColor,
 }) async {
+  final effectiveIconColor = iconColor ??
+      (destructive
+          ? DefensysTokens.danger
+          : (confirmColor ?? DefensysTokens.maroon));
+  final effectiveIconBgColor =
+      iconBgColor ?? effectiveIconColor.withValues(alpha: 0.08);
+  final effectiveConfirmColor = confirmColor ??
+      (destructive ? DefensysTokens.danger : DefensysTokens.maroon);
+
   final confirmed = await showDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
@@ -26,13 +38,13 @@ Future<bool> showConfirmDialog(
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: (destructive ? DefensysTokens.danger : DefensysTokens.maroon).withValues(alpha: 0.08),
+                    color: effectiveIconBgColor,
                     borderRadius: BorderRadius.circular(DefensysTokens.radiusSm),
                   ),
                   child: Icon(
                     icon,
                     size: 20,
-                    color: destructive ? DefensysTokens.danger : DefensysTokens.maroon,
+                    color: effectiveIconColor,
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -60,7 +72,7 @@ Future<bool> showConfirmDialog(
         ),
         ElevatedButton(
           style: ElevatedButton.styleFrom(
-            backgroundColor: destructive ? DefensysTokens.danger : DefensysTokens.maroon,
+            backgroundColor: effectiveConfirmColor,
             foregroundColor: Colors.white,
             elevation: 0,
             padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 10),
@@ -101,6 +113,32 @@ Future<bool> confirmDestructive(
     confirmLabel: confirmLabel,
     destructive: true,
     icon: Icons.warning_amber,
+  );
+}
+
+/// Standardized confirmation dialog for irreversible lock / finalization actions
+/// (e.g. submitting peer evaluations, posting grades, issuing verdicts).
+///
+/// Unlike [confirmDestructive], this uses non-destructive styling (Dark Slate Navy
+/// or Brand Maroon) and lock/save iconography to prevent user anxiety.
+Future<bool> confirmLock(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String confirmLabel = 'Submit',
+  String cancelLabel = 'Cancel',
+  IconData icon = Icons.lock_outline_rounded,
+  Color confirmColor = DefensysTokens.saveActionBg,
+}) {
+  return showConfirmDialog(
+    context,
+    title: title,
+    message: message,
+    confirmLabel: confirmLabel,
+    cancelLabel: cancelLabel,
+    destructive: false,
+    icon: icon,
+    confirmColor: confirmColor,
   );
 }
 

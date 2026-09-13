@@ -222,8 +222,36 @@ class _TeamTabState extends ConsumerState<TeamTab> {
       fileCount = deliverables.length;
     }
 
-    final peerEvalComplete = studentData?['myPeerEvalComplete'] == true ||
-        studentData?['peerEvalComplete'] == true;
+    final hasPendingPeer = StudentTaskBadgeHelper.hasPendingPeerEval(studentData);
+    final peerEvalComplete = !hasPendingPeer &&
+        (studentData?['myPeerEvalComplete'] == true ||
+            studentData?['peerEvalComplete'] == true);
+
+    // Extract set of evaluated teammate IDs/names
+    final mySubmissions = (studentData?['myPeerSubmissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+    final evaluatedTeammateKeys = <String>{};
+    for (final sub in mySubmissions) {
+      final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+      if (id != null && id.isNotEmpty) evaluatedTeammateKeys.add(id);
+      final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
+      if (name != null && name.trim().isNotEmpty) {
+        evaluatedTeammateKeys.add(name.trim().toLowerCase());
+      }
+    }
+    if (evaluatedTeammateKeys.isEmpty) {
+      final stages = (studentData?['stages'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+      for (final s in stages) {
+        final stageSubs = (s['my_peer_submissions'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        for (final sub in stageSubs) {
+          final id = sub['evaluateeId']?.toString() ?? sub['evaluatee_id']?.toString();
+          if (id != null && id.isNotEmpty) evaluatedTeammateKeys.add(id);
+          final name = sub['evaluateeName']?.toString() ?? sub['evaluatee_name']?.toString();
+          if (name != null && name.trim().isNotEmpty) {
+            evaluatedTeammateKeys.add(name.trim().toLowerCase());
+          }
+        }
+      }
+    }
 
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -245,6 +273,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
         _buildQuickActionCards(
           fileCount: fileCount,
           peerEvalComplete: peerEvalComplete,
+          hasPendingPeer: hasPendingPeer,
           onSelectTab: onSelectTab,
         ),
         const SizedBox(height: 12),
@@ -264,6 +293,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           members: members,
           studentInfo: studentInfo,
           peerEvalComplete: peerEvalComplete,
+          evaluatedTeammateKeys: evaluatedTeammateKeys,
           onSelectTab: onSelectTab,
         ),
         const SizedBox(height: 24),
@@ -472,6 +502,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
   Widget _buildQuickActionCards({
     required int fileCount,
     required bool peerEvalComplete,
+    bool hasPendingPeer = false,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
     return Row(
@@ -563,30 +594,64 @@ class _TeamTabState extends ConsumerState<TeamTab> {
               ),
               child: Row(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(8),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFEF2F2),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: const Icon(
-                      Icons.rate_review_outlined,
-                      size: 18,
-                      color: DefensysTokens.maroon,
-                    ),
+                  Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFEF2F2),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: const Icon(
+                          Icons.rate_review_outlined,
+                          size: 18,
+                          color: DefensysTokens.maroon,
+                        ),
+                      ),
+                      if (hasPendingPeer)
+                        Positioned(
+                          top: -2,
+                          right: -2,
+                          child: Container(
+                            width: 8,
+                            height: 8,
+                            decoration: BoxDecoration(
+                              color: Colors.redAccent,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 1.5),
+                            ),
+                          ),
+                        ),
+                    ],
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'Peer Eval',
-                          style: TextStyle(
-                            fontSize: 12.5,
-                            fontWeight: FontWeight.bold,
-                            color: DefensysTokens.textPrimary,
-                          ),
+                        Row(
+                          children: [
+                            const Text(
+                              'Peer Eval',
+                              style: TextStyle(
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.bold,
+                                color: DefensysTokens.textPrimary,
+                              ),
+                            ),
+                            if (hasPendingPeer) ...[
+                              const SizedBox(width: 5),
+                              Container(
+                                width: 6,
+                                height: 6,
+                                decoration: const BoxDecoration(
+                                  color: Colors.redAccent,
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                            ],
+                          ],
                         ),
                         const SizedBox(height: 1),
                         Text(
@@ -680,14 +745,18 @@ class _TeamTabState extends ConsumerState<TeamTab> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  cardTitle,
-                  style: const TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.bold,
-                    color: DefensysTokens.textPrimary,
+                Expanded(
+                  child: Text(
+                    cardTitle,
+                    style: const TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
+                      color: DefensysTokens.textPrimary,
+                    ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+                const SizedBox(width: 8),
                 Row(
                   mainAxisSize: MainAxisSize.min,
                   children: const [
@@ -875,6 +944,7 @@ class _TeamTabState extends ConsumerState<TeamTab> {
     required List<Map<String, dynamic>> members,
     required Map<String, dynamic>? studentInfo,
     required bool peerEvalComplete,
+    required Set<String> evaluatedTeammateKeys,
     required void Function(int index, {int? subTabIndex})? onSelectTab,
   }) {
     return Container(
@@ -898,23 +968,28 @@ class _TeamTabState extends ConsumerState<TeamTab> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  const Icon(
-                    Icons.group_outlined,
-                    size: 16,
-                    color: DefensysTokens.maroon,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Team Members (${members.length})',
-                    style: const TextStyle(
-                      fontSize: 13,
-                      fontWeight: FontWeight.bold,
-                      color: DefensysTokens.textPrimary,
+              Expanded(
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.group_outlined,
+                      size: 16,
+                      color: DefensysTokens.maroon,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Team Members (${members.length})',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                          color: DefensysTokens.textPrimary,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
               ),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2.5),
@@ -961,6 +1036,13 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                 final username = m['username']?.toString() ?? m['id']?.toString() ?? '—';
                 final isCurrent = m['id']?.toString() == studentInfo?['id']?.toString() ||
                     m['username']?.toString() == studentInfo?['username']?.toString();
+
+                final mId = m['id']?.toString() ?? '';
+                final mName = name.toLowerCase();
+                final mUsername = m['username']?.toString() ?? '';
+                final isEvaluated = evaluatedTeammateKeys.contains(mId) ||
+                    evaluatedTeammateKeys.contains(mName) ||
+                    (mUsername.isNotEmpty && evaluatedTeammateKeys.contains(mUsername));
 
                 final initials = name.isNotEmpty
                     ? name.split(' ').where((w) => w.isNotEmpty).map((e) => e[0]).take(2).join().toUpperCase()
@@ -1054,6 +1136,40 @@ class _TeamTabState extends ConsumerState<TeamTab> {
                             fontSize: 9.5,
                             fontWeight: FontWeight.w500,
                             color: DefensysTokens.textSecondary,
+                          ),
+                        ),
+                      )
+                    else if (isEvaluated)
+                      InkWell(
+                        onTap: () => onSelectTab?.call(1, subTabIndex: 2), // Directly opens Tab 1, Sub-tab 2 (Peer Eval)
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3.5),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFDCFCE7),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: const Color(0xFF86EFAC),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: const [
+                              Icon(
+                                Icons.check_rounded,
+                                size: 12,
+                                color: Color(0xFF15803D),
+                              ),
+                              SizedBox(width: 3),
+                              Text(
+                                'Evaluated',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF15803D),
+                                ),
+                              ),
+                            ],
                           ),
                         ),
                       )

@@ -177,7 +177,7 @@ class _AdminShellState extends ConsumerState<AdminShell> {
         ref.read(studentAcademicRecordsProvider.notifier).fetchRecords();
         break;
       case DefensysAdminSection.studentTeams:
-        ref.read(studentTeamsProvider.notifier).fetchTeams();
+        ref.read(studentTeamsProvider.notifier).fetchTeams(level: 'Capstone');
         ref.read(userManagementProvider.notifier).fetchUsers();
         ref.read(academicPeriodProvider.notifier).fetchPeriods();
         break;

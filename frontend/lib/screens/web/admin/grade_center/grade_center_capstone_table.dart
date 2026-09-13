@@ -12,8 +12,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   const CapstoneStagesUnifiedCard({
     super.key,
     required this.state,
-    required this.stages,
-    required this.stagesLoading,
+    this.stages = const [],
+    this.stagesLoading = false,
     required this.isAdmin,
     required this.searchController,
     required this.scopeFilter,
@@ -21,10 +21,15 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     required this.statusFilter,
     required this.onOpenStage,
     required this.onOfficiallyCompleteChanged,
+    this.onPeerGradingChanged,
     required this.onSearchChanged,
     required this.onSearchSubmitted,
     required this.onSearchFocusChanged,
     this.showScopeFilter = false,
+    this.scope = 'capstone',
+    this.title,
+    this.subtitle,
+    this.icon,
   });
 
   final GradeCenterState state;
@@ -38,16 +43,46 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   final void Function(CapstoneStageRow row) onOpenStage;
   final void Function(CapstoneStageRow row, bool value)
   onOfficiallyCompleteChanged;
+  final void Function(CapstoneStageRow row, bool value)? onPeerGradingChanged;
   final ValueChanged<String> onSearchChanged;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<bool> onSearchFocusChanged;
   final bool showScopeFilter;
+  final String scope;
+  final String? title;
+  final String? subtitle;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final rows = buildCapstoneStageRows(state: state, defenseStages: stages);
+    final isPit = scope == 'pit';
+    final isAll = scope == 'all';
+    final rows = isPit
+        ? buildPitStageRows(state: state, pitEvents: stages)
+        : (isAll
+            ? buildAllStageRows(
+                state: state,
+                defenseStages: stages,
+                pitEvents: state.pitEvents,
+              )
+            : buildCapstoneStageRows(state: state, defenseStages: stages));
     final sem = state.activeSemester;
     final termLabel = sem?['display_name']?.toString().trim() ?? '';
+
+    final effectiveIcon = icon ??
+        (isPit
+            ? Icons.lightbulb_rounded
+            : (isAll ? Icons.auto_graph_rounded : Icons.rocket_launch_rounded));
+    final effectiveTitle = title ??
+        (isPit
+            ? 'PIT Expos & Event Stages'
+            : (isAll ? 'All Grade Groups' : 'Capstone stages'));
+    final effectiveSubtitle = subtitle ??
+        (isPit
+            ? 'Manage panel and peer grading across PIT year-level expos and event tracks.'
+            : (isAll
+                ? 'Overview of all Capstone and PIT grade groups for the active term.'
+                : 'Manage grading by defense stage for the active term.'));
 
     return DefensysCard(
       padding: EdgeInsets.zero,
@@ -59,8 +94,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.rocket_launch_rounded,
+                Icon(
+                  effectiveIcon,
                   color: DefensysUi.primaryMaroon,
                   size: 22,
                 ),
@@ -69,18 +104,18 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text(
-                        'Capstone stages',
-                        style: TextStyle(
+                      Text(
+                        effectiveTitle,
+                        style: const TextStyle(
                           fontSize: 17,
                           fontWeight: FontWeight.w800,
                           color: DefensysUi.textDark,
                         ),
                       ),
                       const SizedBox(height: 3),
-                      const Text(
-                        'Manage grading by defense stage for the active term.',
-                        style: TextStyle(
+                      Text(
+                        effectiveSubtitle,
+                        style: const TextStyle(
                           fontSize: 12.5,
                           color: DefensysUi.steelGrey,
                           height: 1.35,
@@ -88,19 +123,84 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                       ),
                       if (isAdmin) ...[
                         const SizedBox(height: 8),
-                        capstoneTermStatusBadgeRow(
-                          state,
-                          showPeerEvaluation: true,
-                        ),
-                        const SizedBox(height: 4),
-                        const Text(
-                          'Change term-wide peer and adviser settings in Academic Periods.',
-                          style: TextStyle(
-                            fontSize: 11.5,
-                            color: Color(0xFF98A2B3),
-                            height: 1.3,
+                        if (isPit) ...[
+                          Builder(
+                            builder: (ctx) => pitTermStatusBadgeRow(
+                              state,
+                              context: ctx,
+                            ),
                           ),
-                        ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'PIT events use panel and peer evaluation rubrics. Adviser grading is not applicable.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF98A2B3),
+                              height: 1.3,
+                            ),
+                          ),
+                        ] else if (isAll) ...[
+                          Builder(
+                            builder: (ctx) => Wrap(
+                              spacing: 8,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                const Text(
+                                  'Term:',
+                                  style: TextStyle(
+                                    color: Color(0xFF98A2B3),
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                                capstoneTermStatusChip(
+                                  label: 'Adviser grading (Capstone)',
+                                  enabled:
+                                      capstoneTermAdviserGradingEnabled(state),
+                                ),
+                                capstoneTermStatusChip(
+                                  label: 'Peer evaluation',
+                                  enabled: capstoneTermPeerEvalEnabled(state),
+                                  helpTooltip:
+                                      'Click for Peer Evaluation Workflow Guide',
+                                  onHelpTap: () =>
+                                      showPeerGradingHelpDialog(ctx, isPit: false),
+                                ),
+                                capstoneTermStatusChip(
+                                  label: 'PIT Panel & Peer',
+                                  enabled: true,
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Overview of Capstone defense stages and PIT year-level expos for the active term.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF98A2B3),
+                              height: 1.3,
+                            ),
+                          ),
+                        ] else ...[
+                          Builder(
+                            builder: (ctx) => capstoneTermStatusBadgeRow(
+                              state,
+                              showPeerEvaluation: true,
+                              context: ctx,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          const Text(
+                            'Change term-wide peer and adviser settings in Academic Periods.',
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              color: Color(0xFF98A2B3),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
                       ],
                     ],
                   ),
@@ -113,7 +213,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                 _headerPill(
                   rows.isEmpty
                       ? '0 stages'
-                      : '1–${rows.length} of ${rows.length} stages',
+                      : '1–${rows.length} of ${rows.length} ${isAll ? 'groups' : 'stages'}',
                 ),
               ],
             ),
@@ -136,7 +236,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
             ),
           ),
           const Divider(height: 1, color: Color(0xFFE5E7EB)),
-          if (unscheduledCapstoneTeamCount(state) > 0) ...[
+          if ((scope == 'capstone' || scope == 'all') &&
+              unscheduledCapstoneTeamCount(state) > 0) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 12, 24, 0),
               child: gradeCenterUnscheduledBanner(
@@ -253,6 +354,8 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   }
 
   Widget _tableBody(List<CapstoneStageRow> rows) {
+    final isPit = scope == 'pit';
+    final isAll = scope == 'all';
     if (state.isLoading || (stagesLoading && stages.isEmpty)) {
       return const SizedBox(
         height: 200,
@@ -262,12 +365,13 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
       );
     }
 
-    if (stages.isEmpty) {
+    if (!isAll && stages.isEmpty && (!isPit || state.pitEvents.isEmpty)) {
       return DefensysEmptyState.table(
-        icon: Icons.layers_outlined,
-        title: 'No Defense Stages Setup',
-        description:
-            'Configure defense stages under Defense Stages Setup to enable evaluation tracking.',
+        icon: isPit ? Icons.lightbulb_outline_rounded : Icons.layers_outlined,
+        title: isPit ? 'No PIT Events Setup' : 'No Defense Stages Setup',
+        description: isPit
+            ? 'Configure PIT events under Defense Operations or Academic Periods to enable evaluation tracking.'
+            : 'Configure defense stages under Defense Stages Setup to enable evaluation tracking.',
         size: DefensysEmptyStateSize.compact,
       );
     }
@@ -275,9 +379,14 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
     if (rows.isEmpty) {
       return DefensysEmptyState.table(
         icon: Icons.filter_alt_off_outlined,
-        title: 'No Active Stages to Display',
-        description:
-            'Activate stages under Defense Stages Setup to track student team grades.',
+        title: isAll
+            ? 'No Active Grade Groups to Display'
+            : 'No Active Stages to Display',
+        description: isAll
+            ? 'No Capstone defense stages or PIT events match the selected filters.'
+            : (isPit
+                ? 'No PIT stages match the selected filters.'
+                : 'Activate stages under Defense Stages Setup to track student team grades.'),
         size: DefensysEmptyStateSize.compact,
       );
     }
@@ -303,7 +412,9 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   Widget _stageMilestoneCard(CapstoneStageRow row) {
     final order = row.displayOrder > 0 ? row.displayOrder : 1;
     final isComplete = row.isOfficiallyComplete;
-    final groupGrades = gradesForGroup(state, 'capstone', row.label);
+    final rowScope = row.groupKey.split('|').first;
+    final isPitRow = rowScope == 'pit';
+    final groupGrades = gradesForGroup(state, rowScope, row.label);
     final redefenseTeams = groupGrades
         .where((g) => g['verdict']?.toString() == 'for_redefense')
         .map((g) => g['team_name']?.toString() ?? g['team']?['name']?.toString() ?? 'Unknown Team')
@@ -353,7 +464,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        row.label,
+                        scope == 'all' ? row.title : row.label,
                         style: const TextStyle(
                           color: DefensysUi.textDark,
                           fontSize: 15,
@@ -434,6 +545,37 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(width: 12),
+
+                  // Peer Grading Toggle (PIT Scope)
+                  if (isPitRow && onPeerGradingChanged != null) ...[
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Peer grading open',
+                          style: TextStyle(
+                            color: isComplete
+                                ? const Color(0xFF98A2B3)
+                                : const Color(0xFF344054),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Transform.scale(
+                          scale: 0.75,
+                          child: Switch(
+                            value: row.peerGradingEnabled,
+                            activeColor: const Color(0xFF047857),
+                            onChanged: (!state.isSaving && !isComplete)
+                                ? (val) => onPeerGradingChanged!(row, val)
+                                : null,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                      ],
+                    ),
+                  ],
 
                   // Quick Inspection Action: View Details
                   Tooltip(
@@ -556,9 +698,11 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
   }
 
   Widget _stageEvaluationSnapshot(CapstoneStageRow row) {
+    final rowScope = row.groupKey.split('|').first;
+    final isPitRow = rowScope == 'pit';
     final isComplete = row.isOfficiallyComplete;
     final hasTeams = row.teamCount > 0;
-    final groupGrades = gradesForGroup(state, 'capstone', row.label);
+    final groupGrades = gradesForGroup(state, rowScope, row.label);
     final readyCount =
         groupGrades.where((g) => g['grading_ready'] == true).length;
     final panelCompleteCount =
@@ -567,9 +711,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
         groupGrades.where((g) => g['adviser_complete'] == true).length;
     final peerCompleteCount =
         groupGrades.where((g) => g['peer_eval_complete'] == true).length;
-    final peerEnabled =
-        row.peerGradingEnabled || capstoneTermPeerEvalEnabled(state);
-    final adviserEnabled = capstoneTermAdviserGradingEnabled(state);
+    final peerEnabled = row.peerGradingEnabled ||
+        (!isPitRow && capstoneTermPeerEvalEnabled(state));
+    final adviserEnabled =
+        isPitRow ? false : capstoneTermAdviserGradingEnabled(state);
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -617,6 +762,7 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
                   : 'Active')
               : 'Disabled',
           isComplete: isComplete,
+          showAdviser: !isPitRow,
         );
 
         if (isNarrow) {
@@ -705,9 +851,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
 
   Widget _snapshotComponentsTile({
     required String panelText,
-    required String adviserText,
+    String? adviserText,
     required String peerText,
     required bool isComplete,
+    bool showAdviser = true,
   }) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -738,8 +885,10 @@ class CapstoneStagesUnifiedCard extends ConsumerWidget {
           Row(
             children: [
               _componentMiniPill('Panel', panelText),
-              const SizedBox(width: 4),
-              _componentMiniPill('Adviser', adviserText),
+              if (showAdviser && adviserText != null) ...[
+                const SizedBox(width: 4),
+                _componentMiniPill('Adviser', adviserText),
+              ],
               const SizedBox(width: 4),
               _componentMiniPill('Peer', peerText),
             ],

@@ -1938,3 +1938,84 @@ class StudentTeamApiTests(APITestCase):
         team.refresh_from_db()
         self.assertEqual(team.name, 'Team Guard Test Renamed')
 
+    def test_pit_team_per_event_membership_allowed_for_different_events(self):
+        from defense.scheduler.models import PitEventGradingConfig
+        from grading.rubrics.models import Rubric
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric Event Test',
+            evaluation_type='panel',
+            scope='pit',
+            status='published',
+            semester=self.first_semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric Event Test',
+            evaluation_type='peer',
+            scope='pit',
+            status='published',
+            semester=self.first_semester,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.first_semester,
+            event_name='1st Year Concept Pitch',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.first_semester,
+            event_name='1st Year Expo',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        self.client.force_authenticate(user=self.admin)
+
+        # 1. Create team for Event 1 with student_1
+        res1 = self.client.post('/api/teams/', {
+            'name': 'Team Event One',
+            'project_title': 'Event One Project',
+            'level': '1st Year PIT',
+            'year_level': '1st Year',
+            'leader_id': self.student_1.id,
+            'member_ids': [self.student_1.id],
+            'current_defense_stage': '1st Year Concept Pitch',
+            'status': 'Pending',
+        }, format='json')
+        self.assertEqual(res1.status_code, 201)
+        self.assertEqual(res1.data['team']['pit_event_name'], '1st Year Concept Pitch')
+
+        # 2. Create team for Event 2 with the SAME student_1 (allowed because different event!)
+        res2 = self.client.post('/api/teams/', {
+            'name': 'Team Event Two',
+            'project_title': 'Event Two Project',
+            'level': '1st Year PIT',
+            'year_level': '1st Year',
+            'leader_id': self.student_1.id,
+            'member_ids': [self.student_1.id],
+            'current_defense_stage': '1st Year Expo',
+            'status': 'Pending',
+        }, format='json')
+        self.assertEqual(res2.status_code, 201)
+        self.assertEqual(res2.data['team']['pit_event_name'], '1st Year Expo')
+
+        # 3. Create another team for Event 1 with student_1 (blocked because student already in Event 1 team!)
+        res3 = self.client.post('/api/teams/', {
+            'name': 'Team Event One Duplicate',
+            'project_title': 'Event One Duplicate Project',
+            'level': '1st Year PIT',
+            'year_level': '1st Year',
+            'leader_id': self.student_1.id,
+            'member_ids': [self.student_1.id],
+            'current_defense_stage': '1st Year Concept Pitch',
+            'status': 'Pending',
+        }, format='json')
+        self.assertEqual(res3.status_code, 400)
+        self.assertIn('member_ids', res3.data)
+
+        # 4. Filter by Event 1
+        list_res = self.client.get('/api/teams/?level=PIT&event_name=1st+Year+Concept+Pitch')
+        self.assertEqual(list_res.status_code, 200)
+        names = [t['name'] for t in list_res.data['teams']]
+        self.assertIn('Team Event One', names)
+        self.assertNotIn('Team Event Two', names)
+
+

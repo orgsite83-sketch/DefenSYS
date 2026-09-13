@@ -629,9 +629,9 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                       Expanded(
                         child: _miniMetricTile(
                           label: 'With Adviser',
-                          value: totalTeams > 0
-                              ? '${((withAdviser / totalTeams) * 100).round()}%'
-                              : '0%',
+                          value: capstoneCount > 0
+                              ? '${((withAdviser / capstoneCount) * 100).round()}%'
+                              : (totalTeams > 0 ? 'N/A' : '0%'),
                           color: const Color(0xFF7C3AED),
                           bgColor: const Color(0xFFF5F3FF),
                           borderColor: const Color(0xFFDDD6FE),
@@ -748,18 +748,22 @@ class _AdminDashboardContentState extends ConsumerState<AdminDashboardContent> {
                     child: Row(
                       children: [
                         Icon(
-                          withAdviser == totalTeams
-                              ? Icons.check_circle_outline_rounded
-                              : Icons.info_outline_rounded,
+                          capstoneCount == 0
+                              ? Icons.info_outline_rounded
+                              : (withAdviser == capstoneCount
+                                  ? Icons.check_circle_outline_rounded
+                                  : Icons.info_outline_rounded),
                           size: 16,
-                          color: withAdviser == totalTeams
+                          color: capstoneCount > 0 && withAdviser == capstoneCount
                               ? const Color(0xFF059669)
                               : const Color(0xFFD97706),
                         ),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            '$withAdviser of $totalTeams teams assigned with advisers',
+                            capstoneCount > 0
+                                ? '$withAdviser of $capstoneCount Capstone teams assigned with advisers'
+                                : 'Advisers apply to Capstone teams only',
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,

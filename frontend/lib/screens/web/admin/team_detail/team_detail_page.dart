@@ -121,7 +121,18 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
       _syncFormFromTeam(team, detailState.statuses);
     }
 
-    final stageOptions = detailState.stageOptions;
+    final level = team['level']?.toString() ?? '';
+    final isCapstone = level.toUpperCase().contains('CAPSTONE');
+    final tabCount = isCapstone ? 4 : 3;
+
+    final teamStages = (detailState.deliverableTeam?['stages'] as List? ?? const [])
+        .whereType<Map>()
+        .map((s) => s['stage_label']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final stageOptions = teamStages.isNotEmpty
+        ? teamStages
+        : _filterStageOptionsForTeam(detailState.stageOptions, team, isCapstone);
     final currentStage = detailState.deliverableTeam?['current_stage']?.toString();
     if (stageOptions.isNotEmpty) {
       if (_selectedDeliverableStage.isEmpty || !stageOptions.contains(_selectedDeliverableStage)) {
@@ -145,10 +156,6 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
         showErrorToast(context, error);
       }
     });
-
-    final level = team['level']?.toString() ?? '';
-    final isCapstone = level.toUpperCase().contains('CAPSTONE');
-    final tabCount = isCapstone ? 4 : 3;
 
     return DefaultTabController(
       length: tabCount,
@@ -1225,6 +1232,40 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
     );
   }
 
+  List<String> _filterStageOptionsForTeam(
+    List<String> options,
+    Map<String, dynamic>? team,
+    bool isCapstone,
+  ) {
+    if (isCapstone || team == null || options.isEmpty) {
+      return options;
+    }
+    final yearLevel = (team['year_level'] ?? team['level'] ?? '')
+        .toString()
+        .toLowerCase();
+    if (yearLevel.isEmpty) {
+      return options;
+    }
+    const otherYearHints = {
+      '1st': ['2nd', 'second', '3rd', 'third', '4th', 'fourth'],
+      '2nd': ['1st', 'first', '3rd', 'third', '4th', 'fourth'],
+      '3rd': ['1st', 'first', '2nd', 'second', '4th', 'fourth'],
+      '4th': ['1st', 'first', '2nd', 'second', '3rd', 'third'],
+    };
+    final matchedKey = otherYearHints.keys.firstWhere(
+      (k) => yearLevel.contains(k),
+      orElse: () => '',
+    );
+    if (matchedKey.isEmpty) {
+      return options;
+    }
+    final toExclude = otherYearHints[matchedKey]!;
+    return options.where((opt) {
+      final lower = opt.toLowerCase();
+      return !toExclude.any((hint) => lower.contains(hint));
+    }).toList();
+  }
+
   Widget _buildDeliverablesTab(
     TeamDetailState detailState,
     List<String> stageOptions,
@@ -1239,7 +1280,16 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             : 'No deliverables record for this team.',
       );
     }
-    if (stageOptions.isEmpty) {
+    final teamStages = (deliverableTeam['stages'] as List? ?? const [])
+        .whereType<Map>()
+        .map((s) => s['stage_label']?.toString() ?? '')
+        .where((s) => s.isNotEmpty)
+        .toList();
+    final effectiveStageOptions = teamStages.isNotEmpty
+        ? teamStages
+        : _filterStageOptionsForTeam(stageOptions, detailState.team, isCapstone);
+
+    if (effectiveStageOptions.isEmpty) {
       return _emptyTab(isCapstone ? 'No defense stages setup yet.' : 'No PIT events setup yet.');
     }
 
@@ -1305,7 +1355,7 @@ class _TeamDetailPageState extends ConsumerState<TeamDetailPage> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: stageOptions.map((label) {
+              children: effectiveStageOptions.map((label) {
                 final active = label == _selectedDeliverableStage;
                 final isCurrentConfig = label == deliverableTeam['current_stage']?.toString();
                 return Tooltip(

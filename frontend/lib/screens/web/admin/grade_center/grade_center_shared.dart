@@ -2462,6 +2462,152 @@ List<CapstoneStageRow> buildCapstoneStageRows({
   return rows;
 }
 
+List<CapstoneStageRow> buildPitStageRows({
+  required GradeCenterState state,
+  List<Map<String, dynamic>> pitEvents = const [],
+}) {
+  final rawEvents = pitEvents.isNotEmpty ? pitEvents : state.pitEvents;
+  final rows = <CapstoneStageRow>[];
+  final seenLabels = <String>{};
+
+  final sortedEvents = List<Map<String, dynamic>>.from(rawEvents)
+    ..sort((a, b) {
+      final aOrder = asInt(a['display_order']);
+      final bOrder = asInt(b['display_order']);
+      if (aOrder != null && bOrder != null && aOrder != bOrder) {
+        return aOrder.compareTo(bOrder);
+      }
+      final aName = a['event_name']?.toString() ?? '';
+      final bName = b['event_name']?.toString() ?? '';
+      return aName.compareTo(bName);
+    });
+
+  for (int i = 0; i < sortedEvents.length; i++) {
+    final ev = sortedEvents[i];
+    final label = ev['event_name']?.toString().trim() ?? '';
+    if (label.isEmpty) continue;
+    seenLabels.add(label);
+
+    final groupKey = gradeGroupKey('pit', label);
+    final settings = groupSettingsForKey(state, groupKey);
+    final teamCount = gradesForGroup(state, 'pit', label).length;
+    final isComplete = settings['is_officially_complete'] == true ||
+        ev['is_officially_complete'] == true;
+    final peerEnabled = settings['peer_grading_enabled'] == true ||
+        ev['peer_grading_enabled'] == true;
+
+    final order = asInt(ev['display_order']) ?? (i + 1);
+
+    String description = ev['description']?.toString() ?? '';
+    if (description.isEmpty &&
+        ev['panel_weight'] != null &&
+        ev['peer_weight'] != null) {
+      final delivs = ev['deliverables'];
+      final delivCount = delivs is List ? delivs.length : 0;
+      final delivSuffix = delivCount > 0
+          ? ' · $delivCount deliverable${delivCount == 1 ? '' : 's'}'
+          : '';
+      description =
+          'Panel (${ev['panel_weight']}%) · Peer (${ev['peer_weight']}%)$delivSuffix';
+    }
+
+    rows.add(
+      CapstoneStageRow(
+        displayOrder: order,
+        label: label,
+        description: description,
+        teamCount: teamCount,
+        isOfficiallyComplete: isComplete,
+        peerGradingEnabled: peerEnabled,
+        workflowStatus: capstoneStageWorkflowStatus(
+          isOfficiallyComplete: isComplete,
+          teamCount: teamCount,
+        ),
+        groupKey: groupKey,
+      ),
+    );
+  }
+
+  // Include any extra PIT grade groups from state that might not be in pitEvents
+  final pitGrades = state.grades.where((g) => g['scope']?.toString() == 'pit');
+  for (final g in pitGrades) {
+    final label = g['stage_label']?.toString().trim() ?? '';
+    if (label.isNotEmpty && !seenLabels.contains(label)) {
+      seenLabels.add(label);
+      final groupKey = gradeGroupKey('pit', label);
+      final settings = groupSettingsForKey(state, groupKey);
+      final teamCount = gradesForGroup(state, 'pit', label).length;
+      final isComplete = settings['is_officially_complete'] == true;
+      final peerEnabled = settings['peer_grading_enabled'] == true;
+
+      rows.add(
+        CapstoneStageRow(
+          displayOrder: rows.length + 1,
+          label: label,
+          description: '',
+          teamCount: teamCount,
+          isOfficiallyComplete: isComplete,
+          peerGradingEnabled: peerEnabled,
+          workflowStatus: capstoneStageWorkflowStatus(
+            isOfficiallyComplete: isComplete,
+            teamCount: teamCount,
+          ),
+          groupKey: groupKey,
+        ),
+      );
+    }
+  }
+
+  return rows;
+}
+
+List<CapstoneStageRow> buildAllStageRows({
+  required GradeCenterState state,
+  required List<Map<String, dynamic>> defenseStages,
+  List<Map<String, dynamic>> pitEvents = const [],
+}) {
+  final capstoneRows = buildCapstoneStageRows(
+    state: state,
+    defenseStages: defenseStages,
+  );
+  final pitRows = buildPitStageRows(
+    state: state,
+    pitEvents: pitEvents,
+  );
+
+  final combined = <CapstoneStageRow>[];
+  var order = 1;
+  for (final row in capstoneRows) {
+    combined.add(
+      CapstoneStageRow(
+        displayOrder: order++,
+        label: row.label,
+        description: row.description,
+        teamCount: row.teamCount,
+        isOfficiallyComplete: row.isOfficiallyComplete,
+        peerGradingEnabled: row.peerGradingEnabled,
+        workflowStatus: row.workflowStatus,
+        groupKey: row.groupKey,
+      ),
+    );
+  }
+  for (final row in pitRows) {
+    combined.add(
+      CapstoneStageRow(
+        displayOrder: order++,
+        label: row.label,
+        description: row.description,
+        teamCount: row.teamCount,
+        isOfficiallyComplete: row.isOfficiallyComplete,
+        peerGradingEnabled: row.peerGradingEnabled,
+        workflowStatus: row.workflowStatus,
+        groupKey: row.groupKey,
+      ),
+    );
+  }
+  return combined;
+}
+
 const double kCapstoneStagesTableBodyMaxHeight = 520;
 const double kCapstoneStagesTableHeaderBlockHeight = 40;
 const double kCapstoneStagesTableRowHeight = 24;
@@ -3062,6 +3208,36 @@ Widget capstoneTermStatusBadgeRow(
               ? () => showPeerGradingHelpDialog(context, isPit: false)
               : null,
         ),
+    ],
+  );
+}
+
+Widget pitTermStatusBadgeRow(
+  GradeCenterState state, {
+  BuildContext? context,
+}) {
+  return Wrap(
+    spacing: 8,
+    runSpacing: 6,
+    crossAxisAlignment: WrapCrossAlignment.center,
+    children: [
+      const Text(
+        'Term:',
+        style: TextStyle(
+          color: Color(0xFF98A2B3),
+          fontSize: 11.5,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+      capstoneTermStatusChip(label: 'Panel evaluation', enabled: true),
+      capstoneTermStatusChip(
+        label: 'Peer evaluation',
+        enabled: true,
+        helpTooltip: 'Click for PIT Peer Evaluation Workflow Guide',
+        onHelpTap: context != null
+            ? () => showPeerGradingHelpDialog(context, isPit: true)
+            : null,
+      ),
     ],
   );
 }

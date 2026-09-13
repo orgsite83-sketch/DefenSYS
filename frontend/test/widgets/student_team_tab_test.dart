@@ -95,7 +95,7 @@ void main() {
         height: 900,
         child: TeamTab(
           studentData: mockStudentData,
-          onSelectTab: (index) => selectedTab = index,
+          onSelectTab: (index, {subTabIndex}) => selectedTab = index,
         ),
       ),
     );

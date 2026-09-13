@@ -272,3 +272,121 @@ class PitTeamScopeToggle extends StatelessWidget {
     );
   }
 }
+
+class PitYearLevelDropdownFilter extends StatelessWidget {
+  const PitYearLevelDropdownFilter({
+    super.key,
+    required this.currentYearLevel,
+    required this.isSaving,
+    required this.onYearChanged,
+  });
+
+  final String? currentYearLevel;
+  final bool isSaving;
+  final ValueChanged<String?> onYearChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    const items = [
+      DropdownMenuItem<String?>(value: null, child: Text('All Year Levels')),
+      DropdownMenuItem<String?>(value: '1st Year', child: Text('1st Year')),
+      DropdownMenuItem<String?>(value: '2nd Year', child: Text('2nd Year')),
+      DropdownMenuItem<String?>(value: '3rd Year', child: Text('3rd Year')),
+    ];
+
+    return Container(
+      width: 155,
+      height: 43,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: currentYearLevel,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+          style: const TextStyle(
+            color: DefensysUi.textDark,
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+          items: items,
+          onChanged: isSaving ? null : onYearChanged,
+        ),
+      ),
+    );
+  }
+}
+
+class PitEventDropdownFilter extends StatelessWidget {
+  const PitEventDropdownFilter({
+    super.key,
+    required this.currentEventName,
+    required this.pitEvents,
+    required this.selectedYearLevel,
+    required this.isSaving,
+    required this.onEventChanged,
+  });
+
+  final String? currentEventName;
+  final List<Map<String, dynamic>> pitEvents;
+  final String? selectedYearLevel;
+  final bool isSaving;
+  final ValueChanged<String?> onEventChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final filtered = pitEvents.where((e) {
+      if (selectedYearLevel == null || selectedYearLevel!.isEmpty) return true;
+      final y = e['year_level']?.toString();
+      return y == null || y == selectedYearLevel;
+    }).toList();
+
+    final menuItems = <DropdownMenuItem<String?>>[
+      const DropdownMenuItem<String?>(
+        value: null,
+        child: Text('All PIT Events'),
+      ),
+      ...filtered.map((e) {
+        final name = e['event_name']?.toString() ?? '';
+        return DropdownMenuItem<String?>(
+          value: name,
+          child: Text(name, overflow: TextOverflow.ellipsis),
+        );
+      }),
+    ];
+
+    final values = menuItems.map((m) => m.value).toSet();
+    final safeValue = values.contains(currentEventName) ? currentEventName : null;
+
+    return Container(
+      width: 220,
+      height: 43,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(7),
+        border: Border.all(color: const Color(0xFFD1D5DB)),
+      ),
+      child: DropdownButtonHideUnderline(
+        child: DropdownButton<String?>(
+          value: safeValue,
+          isExpanded: true,
+          icon: const Icon(Icons.keyboard_arrow_down_rounded, size: 18),
+          style: const TextStyle(
+            color: DefensysUi.textDark,
+            fontFamily: DefensysUi.fontFamily,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w500,
+          ),
+          items: menuItems,
+          onChanged: isSaving ? null : onEventChanged,
+        ),
+      ),
+    );
+  }
+}

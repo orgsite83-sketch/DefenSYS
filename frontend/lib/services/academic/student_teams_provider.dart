@@ -7,6 +7,7 @@ import '../network/authenticated_client.dart';
 import '../app/dashboard_provider.dart';
 import '../defense/defense_board_provider.dart';
 import '../grading/grade_center_provider.dart';
+import '../auth/auth_provider.dart';
 
 final studentTeamsProvider =
     NotifierProvider<StudentTeamsNotifier, StudentTeamsState>(
@@ -33,6 +34,8 @@ class StudentTeamsState {
   final String status;
   final String? yearLevel;
   final String? section;
+  final String? eventName;
+  final List<Map<String, dynamic>> pitEvents;
   final String? error;
   final String? message;
 
@@ -56,6 +59,8 @@ class StudentTeamsState {
     this.status = '',
     this.yearLevel,
     this.section,
+    this.eventName,
+    this.pitEvents = const [],
     this.error,
     this.message,
   });
@@ -80,11 +85,15 @@ class StudentTeamsState {
     String? status,
     String? yearLevel,
     String? section,
+    String? eventName,
+    List<Map<String, dynamic>>? pitEvents,
     String? error,
     String? message,
     bool clearError = false,
     bool clearMessage = false,
     bool clearActiveSemester = false,
+    bool clearEventName = false,
+    bool clearYearLevel = false,
   }) {
     return StudentTeamsState(
       isLoading: isLoading ?? this.isLoading,
@@ -107,8 +116,10 @@ class StudentTeamsState {
       search: search ?? this.search,
       level: level ?? this.level,
       status: status ?? this.status,
-      yearLevel: yearLevel ?? this.yearLevel,
+      yearLevel: clearYearLevel ? null : yearLevel ?? this.yearLevel,
       section: section ?? this.section,
+      eventName: clearEventName ? null : eventName ?? this.eventName,
+      pitEvents: pitEvents ?? this.pitEvents,
       error: clearError ? null : error ?? this.error,
       message: clearMessage ? null : message ?? this.message,
     );
@@ -130,13 +141,26 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
     String? scope,
     String? yearLevel,
     String? section,
+    String? eventName,
+    bool clearEventName = false,
+    bool clearYearLevel = false,
     String? successMessage,
   }) async {
+    String? resolvedLevel = level;
+    if (resolvedLevel == null && state.level.isEmpty) {
+      final user = ref.read(authProvider).user;
+      final isAdmin = user != null &&
+          (user['role']?.toString() == 'admin' || user['is_superuser'] == true);
+      if (isAdmin) {
+        resolvedLevel = 'Capstone';
+      }
+    }
     final nextSearch = search ?? state.search;
-    final nextLevel = level ?? state.level;
+    final nextLevel = resolvedLevel ?? state.level;
     final nextStatus = status ?? state.status;
-    final nextYearLevel = yearLevel ?? state.yearLevel;
+    final nextYearLevel = clearYearLevel ? null : (yearLevel ?? state.yearLevel);
     final nextSection = section ?? state.section;
+    final nextEventName = clearEventName ? null : (eventName ?? state.eventName);
 
     state = state.copyWith(
       isLoading: state.teams.isEmpty,
@@ -145,7 +169,10 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       level: nextLevel,
       status: nextStatus,
       yearLevel: nextYearLevel,
+      clearYearLevel: clearYearLevel,
       section: nextSection,
+      eventName: nextEventName,
+      clearEventName: clearEventName,
       clearError: true,
       clearMessage: true,
     );
@@ -159,6 +186,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
           if (scope != null && scope.isNotEmpty) 'scope': scope,
           if (nextYearLevel != null && nextYearLevel.isNotEmpty) 'year_level': nextYearLevel,
           if (nextSection != null && nextSection.isNotEmpty) 'section': nextSection,
+          if (nextEventName != null && nextEventName.isNotEmpty) 'event_name': nextEventName,
         },
       );
       final response = await _client.get(uri);
@@ -439,6 +467,7 @@ class StudentTeamsNotifier extends Notifier<StudentTeamsState> {
       capstoneModeMessage: payload['capstone_mode_message']?.toString(),
       operatingMode: payload['operating_mode']?.toString() ?? 'active',
       operatingMessage: payload['operating_message']?.toString(),
+      pitEvents: _readMapList(payload['pit_events']),
       message: successMessage,
       clearError: true,
     );

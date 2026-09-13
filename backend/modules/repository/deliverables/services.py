@@ -340,6 +340,10 @@ def filter_teams(request, queryset):
     search = request.query_params.get('search', '').strip()
     status_filter = request.query_params.get('status', '').strip()
     year_level = request.query_params.get('year_level', '').strip()
+    team_id = request.query_params.get('team_id', '').strip()
+
+    if team_id:
+        queryset = queryset.filter(pk=team_id)
 
     if year_level:
         queryset = queryset.filter(year_level=year_level)

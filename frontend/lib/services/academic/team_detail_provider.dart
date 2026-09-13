@@ -273,9 +273,13 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
   Future<(Map<String, dynamic>?, List<String>)> _fetchDeliverableTeam(bool isCapstone) async {
     try {
       final scope = isCapstone ? 'capstone' : 'pit';
-      final response = await _client.get(
-        Uri.parse('${ApiConfig.capstoneDeliverablesUrl}/?scope=$scope'),
+      final uri = Uri.parse(ApiConfig.capstoneDeliverablesUrl).replace(
+        queryParameters: {
+          'scope': scope,
+          'team_id': _teamId.toString(),
+        },
       );
+      final response = await _client.get(uri);
       if (response.statusCode != 200) {
         return (null, <String>[]);
       }
@@ -284,7 +288,12 @@ class TeamDetailNotifier extends Notifier<TeamDetailState> {
       final stageOptions = _readStringList(payload['stage_options']);
       for (final team in teams) {
         if (_asInt(team['id']) == _teamId) {
-          return (team, stageOptions);
+          final teamStages = _readMapList(team['stages'])
+              .map((s) => s['stage_label']?.toString() ?? '')
+              .where((s) => s.isNotEmpty)
+              .toList();
+          final effectiveStageOptions = teamStages.isNotEmpty ? teamStages : stageOptions;
+          return (team, effectiveStageOptions);
         }
       }
       return (null, stageOptions);

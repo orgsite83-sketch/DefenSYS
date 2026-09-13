@@ -704,3 +704,150 @@ class DashboardApiTests(APITestCase):
         self.assertNotIn(pit_team.id, cap_ids)
         self.assertTrue(response.data['roles']['capstone_instructor'])
         self.assertIn('3rd Year', response.data['roles']['capstone_instructor_years'])
+
+    def test_admin_dashboard_unassigned_advisers_action_item_excludes_pit_teams(self):
+        admin = User.objects.create_user(
+            username='admin-adv-test',
+            password='pass12345',
+            role='admin',
+        )
+        student_pit = User.objects.create_user(
+            username='student-pit-lead-adv',
+            password='pass12345',
+            role='student',
+        )
+        student_cap = User.objects.create_user(
+            username='student-cap-adv',
+            password='pass12345',
+            role='student',
+        )
+        faculty_adv = User.objects.create_user(
+            username='faculty-adviser-target',
+            password='pass12345',
+            role='faculty',
+            is_adviser=True,
+        )
+        school_year, _ = SchoolYear.objects.get_or_create(label='2025-2026')
+        semester, _ = Semester.objects.get_or_create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            defaults={'is_active': True},
+        )
+
+        # 1. When only PIT teams exist without advisers
+        StudentTeam.objects.create(
+            name='PIT Team Only',
+            project_title='PIT Title',
+            level=StudentTeam.LEVEL_1_PIT,
+            year_level='1st Year',
+            semester=semester,
+            leader=student_pit,
+            adviser=None,
+        )
+
+        self.client.force_authenticate(user=admin)
+        res = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data['team_pipeline']['teams_without_adviser'], 0)
+        action_item_ids = [item['id'] for item in res.data['action_items']]
+        self.assertNotIn('unassigned_advisers', action_item_ids)
+
+        # 2. When a Capstone team exists without an adviser
+        cap_team = StudentTeam.objects.create(
+            name='Capstone Team Need Adv',
+            project_title='Cap Title',
+            level=StudentTeam.LEVEL_3_CAPSTONE,
+            year_level='3rd Year',
+            semester=semester,
+            leader=student_cap,
+            adviser=None,
+        )
+
+        res2 = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(res2.status_code, 200)
+        self.assertEqual(res2.data['team_pipeline']['teams_without_adviser'], 1)
+        unassigned_item = next(
+            (item for item in res2.data['action_items'] if item['id'] == 'unassigned_advisers'),
+            None,
+        )
+        self.assertIsNotNone(unassigned_item)
+        self.assertIn('1 Capstone Team needs an Adviser', unassigned_item['title'])
+
+        # 3. When the Capstone team gets an adviser assigned
+        cap_team.adviser = faculty_adv
+        cap_team.save(update_fields=['adviser'])
+
+        res3 = self.client.get('/api/dashboards/admin/')
+        self.assertEqual(res3.status_code, 200)
+        self.assertEqual(res3.data['team_pipeline']['teams_without_adviser'], 0)
+        self.assertEqual(res3.data['team_pipeline']['teams_with_adviser'], 1)
+        action_item_ids3 = [item['id'] for item in res3.data['action_items']]
+        self.assertNotIn('unassigned_advisers', action_item_ids3)
+
+    def test_pit_lead_dashboard_tracks_instructors_not_advisers(self):
+        pit_lead = User.objects.create_user(
+            username='pit-lead-instr-test',
+            password='pass12345',
+            role='faculty',
+            is_pit_lead=True,
+            pit_lead_year='1st Year',
+        )
+        student_pit = User.objects.create_user(
+            username='student-pit-lead-instr',
+            password='pass12345',
+            role='student',
+        )
+        instructor = User.objects.create_user(
+            username='faculty-instructor-target',
+            password='pass12345',
+            role='faculty',
+        )
+        school_year, _ = SchoolYear.objects.get_or_create(label='2025-2026')
+        semester, _ = Semester.objects.get_or_create(
+            school_year=school_year,
+            label=Semester.FIRST,
+            defaults={'is_active': True},
+        )
+
+        # 1. Create PIT team without adviser in section BSIT-1A
+        StudentTeam.objects.create(
+            name='PIT Team 1A',
+            project_title='PIT 1A Title',
+            level=StudentTeam.LEVEL_1_PIT,
+            year_level='1st Year',
+            section='BSIT-1A',
+            semester=semester,
+            leader=student_pit,
+            adviser=None,
+        )
+
+        self.client.force_authenticate(user=pit_lead)
+        res = self.client.get('/api/dashboards/faculty/')
+        self.assertEqual(res.status_code, 200)
+        overview = res.data.get('pit_lead_overview')
+        self.assertIsNotNone(overview)
+        action_item_ids = [item['id'] for item in overview['action_items']]
+        self.assertNotIn('unassigned_advisers', action_item_ids)
+        self.assertIn('unassigned_instructors', action_item_ids)
+        self.assertEqual(overview['team_pipeline']['teams_with_instructor'], 0)
+        self.assertEqual(overview['team_pipeline']['teams_without_instructor'], 1)
+
+        # 2. Assign section instructor to BSIT-1A
+        from user_management.models import SectionInstructorAssignment
+        SectionInstructorAssignment.objects.create(
+            semester=semester,
+            section='BSIT-1A',
+            year_level='1st Year',
+            faculty=instructor,
+            is_active=True,
+        )
+
+        res2 = self.client.get('/api/dashboards/faculty/')
+        self.assertEqual(res2.status_code, 200)
+        overview2 = res2.data.get('pit_lead_overview')
+        action_item_ids2 = [item['id'] for item in overview2['action_items']]
+        self.assertNotIn('unassigned_instructors', action_item_ids2)
+        self.assertEqual(overview2['team_pipeline']['teams_with_instructor'], 1)
+        self.assertEqual(overview2['team_pipeline']['teams_without_instructor'], 0)
+
+

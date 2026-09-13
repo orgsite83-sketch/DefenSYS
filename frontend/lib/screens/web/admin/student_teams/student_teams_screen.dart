@@ -108,6 +108,46 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       _isPitInstructor ||
       (_isCapstoneAdmin && _teamLevelFilter(state) == 'PIT');
 
+  StudentTeamsState _scopedStateForDisplay(StudentTeamsState state) {
+    if (!_isCapstoneAdmin) return state;
+    final levelFilter = _teamLevelFilter(state);
+    if (levelFilter == 'Capstone') {
+      final capstoneTeams = state.teams.where((team) {
+        final lvl = team['level']?.toString().toLowerCase() ?? '';
+        if (lvl.isEmpty) return true;
+        return lvl.contains('capstone');
+      }).toList();
+      final counts = Map<String, dynamic>.from(state.counts);
+      counts['all'] = capstoneTeams.length;
+      counts['filtered'] = capstoneTeams.length;
+      counts['pending'] = capstoneTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'pending').length;
+      counts['approved'] = capstoneTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'approved').length;
+      counts['failed'] = capstoneTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'failed').length;
+      counts['no_adviser'] = capstoneTeams.where((t) {
+        final adv = t['adviser_name'] ?? t['adviser'];
+        return adv == null || adv.toString().trim().isEmpty;
+      }).length;
+      return state.copyWith(teams: capstoneTeams, counts: counts);
+    } else if (levelFilter == 'PIT') {
+      final pitTeams = state.teams.where((team) {
+        final lvl = team['level']?.toString().toLowerCase() ?? '';
+        return lvl.contains('pit');
+      }).toList();
+      final counts = Map<String, dynamic>.from(state.counts);
+      counts['all'] = pitTeams.length;
+      counts['filtered'] = pitTeams.length;
+      counts['pending'] = pitTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'pending').length;
+      counts['approved'] = pitTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'approved').length;
+      counts['failed'] = pitTeams.where((t) => (t['status'] ?? '').toString().toLowerCase() == 'failed').length;
+      counts['no_adviser'] = pitTeams.where((t) {
+        final adv = t['adviser_name'] ?? t['adviser'];
+        return adv == null || adv.toString().trim().isEmpty;
+      }).length;
+      return state.copyWith(teams: pitTeams, counts: counts);
+    }
+    return state;
+  }
+
   void _deriveLevelOnRow(Map<String, dynamic> row) {
     applyDerivedLevelToRow(
       row,
@@ -133,8 +173,8 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       }
     });
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      await _loadBulkDraft();
       _fetchTeamsForCurrentRole();
+      await _loadBulkDraft();
       if (widget.initialBulkImport && mounted) {
         _openBulkImport();
       }
@@ -855,6 +895,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
       ref.watch(dashboardProvider('faculty'));
     }
     final state = ref.watch(studentTeamsProvider);
+    final displayState = _scopedStateForDisplay(state);
 
     ref.listen<DefensysAdminSection>(activeAdminSectionProvider, (previous, next) {
       if (next == DefensysAdminSection.studentTeams && previous != DefensysAdminSection.studentTeams) {
@@ -952,34 +993,34 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 : 'Manage PIT teams and PIT events setup for your assigned year level.',
             actions: StudentTeamsHeaderActions(
               isPitInstructor: _isPitInstructor,
-              canTapActions: _canTapTeamActions(state),
-              onBulkImport: () => _onBulkImportPressed(state),
-              onCreateTeam: () => _onCreateTeamPressed(state),
+              canTapActions: _canTapTeamActions(displayState),
+              onBulkImport: () => _onBulkImportPressed(displayState),
+              onCreateTeam: () => _onCreateTeamPressed(displayState),
             ),
           ),
           const SizedBox(height: 26),
           StudentTeamsSummaryCards(
-            state: state,
-            isPitContext: _isPitContext(state),
+            state: displayState,
+            isPitContext: _isPitContext(displayState),
           ),
-          if (state.error != null) ...[
+          if (displayState.error != null) ...[
             const SizedBox(height: 14),
-            _notice(state.error!, warning: true),
+            _notice(displayState.error!, warning: true),
           ],
-          if (state.message != null) ...[
+          if (displayState.message != null) ...[
             const SizedBox(height: 14),
-            _notice(state.message!),
+            _notice(displayState.message!),
           ],
-          if (state.operatingMessage != null &&
-              state.operatingMessage!.trim().isNotEmpty) ...[
+          if (displayState.operatingMessage != null &&
+              displayState.operatingMessage!.trim().isNotEmpty) ...[
             const SizedBox(height: 14),
-            _notice(state.operatingMessage!, warning: _pitTermIsAudit),
+            _notice(displayState.operatingMessage!, warning: _pitTermIsAudit),
           ],
           if (_isPitLeadManager || _isPitInstructor) ...[
             const SizedBox(height: 14),
             PitTeamScopeToggle(
               teamListScope: _teamListScope,
-              isSaving: state.isSaving,
+              isSaving: displayState.isSaving,
               onScopeChanged: (value) {
                 if (value == null) return;
                 setState(() => _teamListScope = value);
@@ -1016,34 +1057,68 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                     Expanded(
                       child: StudentTeamsSearchField(
                         controller: _searchController,
-                        isSaving: state.isSaving,
-                        isPitContext: _isPitContext(state),
+                        isSaving: displayState.isSaving,
+                        isPitContext: _isPitContext(displayState),
                         onSubmitted: (value) {
                           ref.read(studentTeamsProvider.notifier).fetchTeams(search: value);
                         },
                       ),
                     ),
-                    const SizedBox(width: 16),
-                    StudentTeamsLevelFilter(
-                      isPitLeadManager: _isPitLeadManager,
-                      isPitInstructor: _isPitInstructor,
-                      currentLevel: _teamLevelFilter(state),
-                      isSaving: state.isSaving,
-                      onLevelChanged: (value) {
-                        ref.read(studentTeamsProvider.notifier).fetchTeams(level: value ?? '');
-                      },
-                    ),
+                    if (_isPitContext(displayState) && !_isPitLeadManager) ...[
+                      const SizedBox(width: 12),
+                      PitYearLevelDropdownFilter(
+                        currentYearLevel: displayState.yearLevel,
+                        isSaving: displayState.isSaving,
+                        onYearChanged: (year) {
+                          ref.read(studentTeamsProvider.notifier).fetchTeams(
+                                yearLevel: year,
+                                clearYearLevel: year == null,
+                              );
+                        },
+                      ),
+                    ],
+                    if (_isPitContext(displayState)) ...[
+                      const SizedBox(width: 12),
+                      PitEventDropdownFilter(
+                        currentEventName: displayState.eventName,
+                        pitEvents: displayState.pitEvents,
+                        selectedYearLevel: _pitLeadYear ?? displayState.yearLevel,
+                        isSaving: displayState.isSaving,
+                        onEventChanged: (event) {
+                          ref.read(studentTeamsProvider.notifier).fetchTeams(
+                                eventName: event,
+                                clearEventName: event == null,
+                              );
+                        },
+                      ),
+                    ],
+                    if (!_isPitLeadManager && !_isPitInstructor) ...[
+                      const SizedBox(width: 12),
+                      StudentTeamsLevelFilter(
+                        isPitLeadManager: _isPitLeadManager,
+                        isPitInstructor: _isPitInstructor,
+                        currentLevel: _teamLevelFilter(displayState),
+                        isSaving: displayState.isSaving,
+                        onLevelChanged: (value) {
+                          ref.read(studentTeamsProvider.notifier).fetchTeams(
+                                level: value ?? '',
+                                clearEventName: true,
+                                clearYearLevel: true,
+                              );
+                        },
+                      ),
+                    ],
                   ],
                 ),
                 const SizedBox(height: 16),
-                state.isLoading
+                displayState.isLoading
                     ? const SizedBox(
                         height: 150,
                         child: Center(child: CircularProgressIndicator(color: DefensysUi.primaryMaroon)),
                       )
                     : GroupedSectionView(
-                        state: state,
-                        isPit: _isPitContext(state),
+                        state: displayState,
+                        isPit: _isPitContext(displayState),
                         searchQuery: _searchController.text,
                         onOpenTeamDetail: _openTeamDetailRoute,
                       ),
@@ -1053,7 +1128,7 @@ class _StudentTeamsScreenState extends ConsumerState<StudentTeamsScreen> {
                 Row(
                   children: [
                     Text(
-                      'Showing ${state.teams.length} of ${_count(state, 'filtered')} teams',
+                      'Showing ${displayState.teams.length} of ${_count(displayState, 'filtered')} teams',
                       style: const TextStyle(
                         color: Color(0xFF98A2B3),
                         fontSize: 12,

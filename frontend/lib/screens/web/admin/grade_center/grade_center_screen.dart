@@ -346,23 +346,40 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
   }
 
   int _kpiTotal(GradeCenterState state) {
-    if (_filtersActive(state)) {
-      return _count(state, 'filtered');
-    }
-    return _count(state, 'all');
+    return _count(state, 'filtered');
   }
 
   Widget _buildStats(GradeCenterState state) {
     final filtersActive = _filtersActive(state);
+    final scope = _effectiveScope(state);
     final total = _kpiTotal(state);
     final publishedPct = total == 0 ? 0.0 : _count(state, 'published') / total;
     final pendingPct = total == 0 ? 0.0 : _count(state, 'pending') / total;
+
+    final String teamsTitle;
+    if (filtersActive) {
+      if (scope == 'capstone') {
+        teamsTitle = 'Filtered Capstone teams';
+      } else if (scope == 'pit') {
+        teamsTitle = 'Filtered PIT teams';
+      } else {
+        teamsTitle = 'Filtered teams';
+      }
+    } else {
+      if (scope == 'capstone') {
+        teamsTitle = 'Total Capstone teams';
+      } else if (scope == 'pit') {
+        teamsTitle = 'Total PIT teams';
+      } else {
+        teamsTitle = 'Total teams';
+      }
+    }
 
     return Row(
       children: [
         Expanded(
           child: gradeCenterKpiStatCard(
-            title: filtersActive ? 'Filtered teams' : 'Total teams',
+            title: teamsTitle,
             value: total.toString(),
             icon: Icons.groups_rounded,
             accent: DefensysUi.techBlue,
@@ -427,55 +444,46 @@ class _GradeCenterScreenState extends ConsumerState<GradeCenterScreen> {
     final stagesLoading =
         state.capstoneStages.isEmpty && stagesState.isLoading;
 
-    if (scope == 'capstone') {
-      return CapstoneStagesUnifiedCard(
-        state: state,
-        stages: stages,
-        stagesLoading: stagesLoading,
-        isAdmin: isAdmin,
-        searchController: _searchController,
-        scopeFilter: _scopeFilter(state),
-        yearLevelFilter: _yearLevelFilter(state),
-        statusFilter: _statusFilter(state),
-        onOpenStage: (row) => _openEventTeams(
-          groupKey: row.groupKey,
-          scope: 'capstone',
-          stageLabel: row.label,
-          title: row.title,
-        ),
-        onOfficiallyCompleteChanged: (row, value) {
-          ref.read(gradeCenterProvider.notifier).updateGroupSettings(
-                scope: 'capstone',
-                stageLabel: row.label,
-                isOfficiallyComplete: value,
-                peerGradingEnabled: value ? false : null,
-              );
-        },
-        onSearchChanged: _onSearchChanged,
-        onSearchSubmitted: _onSearchSubmitted,
-        onSearchFocusChanged: (focused) => _searchFieldFocused = focused,
-      );
-    }
+    final isPit = scope == 'pit';
+    final activeStages = isPit ? state.pitEvents : stages;
+    final activeLoading = isPit ? false : stagesLoading;
 
-    final title =
-        scope == 'pit' ? 'PIT Expos & Event Stages' : 'All Grade Groups';
-    final subtitle = scope == 'pit'
-        ? 'Manage panel and peer grading across PIT year-level expos and event tracks.'
-        : 'Overview of all Capstone and PIT grade groups for the active term.';
-    final icon =
-        scope == 'pit' ? Icons.lightbulb_rounded : Icons.auto_graph_rounded;
-
-    return GradeCenterGroupedUnifiedCard(
-      title: title,
-      subtitle: subtitle,
-      icon: icon,
+    return CapstoneStagesUnifiedCard(
+      scope: scope,
       state: state,
+      stages: activeStages,
+      stagesLoading: activeLoading,
       isAdmin: isAdmin,
       searchController: _searchController,
       scopeFilter: _scopeFilter(state),
       yearLevelFilter: _yearLevelFilter(state),
       statusFilter: _statusFilter(state),
-      listContent: _buildGroupedListContent(state),
+      onOpenStage: (row) {
+        final rowScope = row.groupKey.split('|').first;
+        _openEventTeams(
+          groupKey: row.groupKey,
+          scope: rowScope,
+          stageLabel: row.label,
+          title: row.title,
+        );
+      },
+      onOfficiallyCompleteChanged: (row, value) {
+        final rowScope = row.groupKey.split('|').first;
+        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
+              scope: rowScope,
+              stageLabel: row.label,
+              isOfficiallyComplete: value,
+              peerGradingEnabled: value ? false : null,
+            );
+      },
+      onPeerGradingChanged: (row, value) {
+        final rowScope = row.groupKey.split('|').first;
+        ref.read(gradeCenterProvider.notifier).updateGroupSettings(
+              scope: rowScope,
+              stageLabel: row.label,
+              peerGradingEnabled: value,
+            );
+      },
       onSearchChanged: _onSearchChanged,
       onSearchSubmitted: _onSearchSubmitted,
       onSearchFocusChanged: (focused) => _searchFieldFocused = focused,

@@ -241,6 +241,7 @@ class DeliverableFormatInfo {
   final Color color;
   final List<String> extensions;
   final String description;
+  final String badgeCode;
 
   const DeliverableFormatInfo({
     required this.label,
@@ -248,7 +249,124 @@ class DeliverableFormatInfo {
     required this.color,
     required this.extensions,
     required this.description,
+    this.badgeCode = 'DOC',
   });
+
+  static DeliverableFormatInfo fromFileName(String fileName) {
+    final clean = fileName.trim().toLowerCase();
+    final dotIndex = clean.lastIndexOf('.');
+    final ext = dotIndex != -1 && dotIndex < clean.length - 1
+        ? clean.substring(dotIndex + 1)
+        : '';
+
+    switch (ext) {
+      case 'pdf':
+        return const DeliverableFormatInfo(
+          label: 'PDF Document',
+          icon: Icons.picture_as_pdf_outlined,
+          color: Color(0xFFDC2626),
+          extensions: ['pdf'],
+          description: 'Portable Document Format (*.pdf)',
+          badgeCode: 'PDF',
+        );
+      case 'doc':
+      case 'docx':
+      case 'odt':
+      case 'rtf':
+        return const DeliverableFormatInfo(
+          label: 'Word Document',
+          icon: Icons.description_outlined,
+          color: Color(0xFF2563EB),
+          extensions: ['doc', 'docx', 'odt', 'rtf'],
+          description: 'Microsoft Word Document',
+          badgeCode: 'W',
+        );
+      case 'xls':
+      case 'xlsx':
+      case 'csv':
+        return const DeliverableFormatInfo(
+          label: 'Spreadsheet',
+          icon: Icons.table_chart_outlined,
+          color: Color(0xFF059669),
+          extensions: ['xlsx', 'xls', 'csv'],
+          description: 'Spreadsheet / Workbook',
+          badgeCode: 'X',
+        );
+      case 'ppt':
+      case 'pptx':
+        return const DeliverableFormatInfo(
+          label: 'Presentation',
+          icon: Icons.slideshow_outlined,
+          color: Color(0xFFD97706),
+          extensions: ['ppt', 'pptx'],
+          description: 'Presentation Slide Deck',
+          badgeCode: 'P',
+        );
+      case 'zip':
+      case 'rar':
+      case '7z':
+      case 'tar':
+      case 'gz':
+        return const DeliverableFormatInfo(
+          label: 'Archive Package',
+          icon: Icons.folder_zip_outlined,
+          color: Color(0xFFEA580C),
+          extensions: ['zip', 'rar', '7z', 'tar', 'gz'],
+          description: 'Compressed Archive File',
+          badgeCode: 'ZIP',
+        );
+      case 'mp4':
+      case 'mov':
+      case 'avi':
+      case 'mkv':
+      case 'webm':
+        return const DeliverableFormatInfo(
+          label: 'Video',
+          icon: Icons.videocam_outlined,
+          color: Color(0xFF7C3AED),
+          extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'],
+          description: 'Media Video File',
+          badgeCode: 'VID',
+        );
+      case 'mp3':
+      case 'wav':
+      case 'aac':
+      case 'ogg':
+      case 'm4a':
+      case 'flac':
+        return const DeliverableFormatInfo(
+          label: 'Audio Recording',
+          icon: Icons.audiotrack_outlined,
+          color: Color(0xFF9333EA),
+          extensions: ['mp3', 'wav', 'aac', 'ogg', 'm4a', 'flac'],
+          description: 'Audio Recording File',
+          badgeCode: 'AUD',
+        );
+      case 'png':
+      case 'jpg':
+      case 'jpeg':
+      case 'webp':
+      case 'gif':
+      case 'svg':
+        return const DeliverableFormatInfo(
+          label: 'Image File',
+          icon: Icons.image_outlined,
+          color: Color(0xFF0284C7),
+          extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
+          description: 'Graphic Image File',
+          badgeCode: 'IMG',
+        );
+      default:
+        return DeliverableFormatInfo(
+          label: ext.isNotEmpty ? '${ext.toUpperCase()} File' : 'Document',
+          icon: Icons.insert_drive_file_outlined,
+          color: const Color(0xFF64748B),
+          extensions: ext.isNotEmpty ? [ext] : ['bin'],
+          description: ext.isNotEmpty ? '${ext.toUpperCase()} File' : 'Standard Document',
+          badgeCode: ext.isNotEmpty ? (ext.length > 4 ? ext.substring(0, 3).toUpperCase() : ext.toUpperCase()) : 'DOC',
+        );
+    }
+  }
 
   static DeliverableFormatInfo fromFormat(String? format) {
     switch ((format ?? 'any').toLowerCase()) {
@@ -259,6 +377,7 @@ class DeliverableFormatInfo {
           color: Color(0xFFDC2626),
           extensions: ['pdf'],
           description: 'PDF Document (*.pdf)',
+          badgeCode: 'PDF',
         );
       case 'video':
         return const DeliverableFormatInfo(
@@ -267,6 +386,7 @@ class DeliverableFormatInfo {
           color: Color(0xFF7C3AED),
           extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'],
           description: 'Video (*.mp4, *.mov, *.webm, *.avi)',
+          badgeCode: 'VID',
         );
       case 'image':
         return const DeliverableFormatInfo(
@@ -275,6 +395,7 @@ class DeliverableFormatInfo {
           color: Color(0xFF0284C7),
           extensions: ['png', 'jpg', 'jpeg', 'webp', 'gif', 'svg'],
           description: 'Image (*.png, *.jpg, *.webp, *.gif)',
+          badgeCode: 'IMG',
         );
       case 'presentation':
         return const DeliverableFormatInfo(
@@ -283,6 +404,7 @@ class DeliverableFormatInfo {
           color: Color(0xFFD97706),
           extensions: ['pptx', 'ppt', 'pdf'],
           description: 'Presentation (*.pptx, *.ppt, *.pdf)',
+          badgeCode: 'P',
         );
       case 'document':
         return const DeliverableFormatInfo(
@@ -291,6 +413,7 @@ class DeliverableFormatInfo {
           color: Color(0xFF2563EB),
           extensions: ['docx', 'doc', 'pdf', 'txt', 'rtf', 'odt'],
           description: 'Document (*.docx, *.doc, *.pdf)',
+          badgeCode: 'W',
         );
       case 'spreadsheet':
         return const DeliverableFormatInfo(
@@ -299,6 +422,7 @@ class DeliverableFormatInfo {
           color: Color(0xFF059669),
           extensions: ['xlsx', 'xls', 'csv'],
           description: 'Spreadsheet (*.xlsx, *.xls, *.csv)',
+          badgeCode: 'X',
         );
       case 'archive':
         return const DeliverableFormatInfo(
@@ -307,6 +431,7 @@ class DeliverableFormatInfo {
           color: Color(0xFFEA580C),
           extensions: ['zip', 'rar', '7z', 'tar', 'gz'],
           description: 'Archive (*.zip, *.rar, *.7z)',
+          badgeCode: 'ZIP',
         );
       case 'audio':
         return const DeliverableFormatInfo(
@@ -315,6 +440,7 @@ class DeliverableFormatInfo {
           color: Color(0xFF9333EA),
           extensions: ['mp3', 'wav', 'aac', 'ogg', 'm4a', 'flac'],
           description: 'Audio (*.mp3, *.wav, *.ogg, *.m4a)',
+          badgeCode: 'AUD',
         );
       case 'any':
       default:
@@ -328,8 +454,41 @@ class DeliverableFormatInfo {
             'zip', 'rar', '7z', 'doc', 'docx', 'ppt', 'pptx', 'xls', 'xlsx', 'csv', 'txt'
           ],
           description: 'Any standard format (PDF, media, office, zip)',
+          badgeCode: 'DOC',
         );
     }
   }
 }
+
+/// Optional submission audit metadata displayed in the "FILE PROPERTIES & INFO" grid.
+class DeliverablePropertiesInfo {
+  final String? fileSize;
+  final String? fileType;
+  final String? uploader;
+  final String? timestamp;
+  final String? status;
+  final String? feedback;
+  final bool isApproved;
+  final bool isRejected;
+  final String? teamName;
+  final String? stageLabel;
+  final VoidCallback? onReplace;
+  final VoidCallback? onRemove;
+
+  const DeliverablePropertiesInfo({
+    this.fileSize,
+    this.fileType,
+    this.uploader,
+    this.timestamp,
+    this.status,
+    this.feedback,
+    this.isApproved = false,
+    this.isRejected = false,
+    this.teamName,
+    this.stageLabel,
+    this.onReplace,
+    this.onRemove,
+  });
+}
+
 

@@ -1,5 +1,6 @@
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import Q
 from rest_framework import serializers
 
 from academic_period_management.models import Semester
@@ -112,6 +113,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
     instructor_name = serializers.SerializerMethodField()
     system_name = serializers.SerializerMethodField()
     project_manager_name = serializers.SerializerMethodField()
+    pit_event_name = serializers.SerializerMethodField()
 
     class Meta:
         model = StudentTeam
@@ -140,6 +142,7 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             'capstone_phase',
             'ready_for_stage',
             'current_defense_stage',
+            'pit_event_name',
             'is_capstone',
             'deliverable_count',
             'defense_context',
@@ -201,6 +204,23 @@ class StudentTeamSerializer(serializers.ModelSerializer):
             return 0
         return obj.deliverable_submissions.count()
 
+    def get_pit_event_name(self, obj):
+        if not obj.is_pit:
+            return None
+        if obj.current_defense_stage:
+            return obj.current_defense_stage
+        schedule = (
+            DefenseSchedule.objects.filter(
+                team=obj,
+                scope=DefenseSchedule.SCOPE_PIT,
+            )
+            .order_by('scheduled_date', 'start_time')
+            .first()
+        )
+        if schedule and schedule.stage_label:
+            return schedule.stage_label
+        return None
+
     def get_defense_context(self, obj):
         if obj.is_capstone:
             return {
@@ -223,6 +243,12 @@ class StudentTeamSerializer(serializers.ModelSerializer):
                 'is_pit': True,
                 'event_label': (schedule.stage_label or '').strip(),
                 'scheduled_date': schedule.scheduled_date.isoformat() if schedule.scheduled_date else '',
+            }
+        if obj.current_defense_stage:
+            return {
+                'is_pit': True,
+                'event_label': obj.current_defense_stage.strip(),
+                'scheduled_date': '',
             }
         return {
             'is_pit': True,
@@ -285,26 +311,61 @@ class StudentTeamWriteSerializer(serializers.Serializer):
 
         # Check if any student is already in another team
         team_id = self.context.get('team_id')  # Current team ID when updating
-        
+        target_level = attrs.get('level') or (self.instance.level if self.instance else '')
+        is_pit_team = 'PIT' in target_level.upper() if target_level else False
+        event_name = (attrs.get('current_defense_stage') or (self.instance.current_defense_stage if self.instance else '') or '').strip()
+
         for student_id in member_ids:
-            # Find existing team memberships for this student in the active semester
-            existing_memberships = TeamMembership.objects.filter(
-                student_id=student_id,
-                team__semester__is_active=True,
-            )
-            
-            # If updating, exclude the current team
-            if team_id:
-                existing_memberships = existing_memberships.exclude(team_id=team_id)
-            
-            if existing_memberships.exists():
-                # Get the student and their current team
-                student = User.objects.get(pk=student_id)
-                current_team = existing_memberships.first().team
-                student_name = display_name(student)
-                raise serializers.ValidationError({
-                    'member_ids': f'{student_name} is already assigned to team "{current_team.name}". A student can only be in one team at a time.'
-                })
+            if is_pit_team:
+                existing_memberships = TeamMembership.objects.filter(
+                    student_id=student_id,
+                    team__semester__is_active=True,
+                    team__level__icontains='PIT',
+                )
+                if team_id:
+                    existing_memberships = existing_memberships.exclude(team_id=team_id)
+
+                if event_name:
+                    # In PIT, a student cannot be in more than one team for the SAME PIT event
+                    existing_in_event = existing_memberships.filter(
+                        Q(team__current_defense_stage=event_name)
+                        | Q(team__defense_schedules__event_name=event_name)
+                    ).distinct()
+                    if existing_in_event.exists():
+                        student = User.objects.get(pk=student_id)
+                        current_team = existing_in_event.first().team
+                        student_name = display_name(student)
+                        raise serializers.ValidationError({
+                            'member_ids': f'{student_name} is already assigned to team "{current_team.name}" for {event_name}. A student can only be in one team per PIT event.'
+                        })
+                else:
+                    # If no event is specified, check against other PIT teams that also have no event specified
+                    existing_unassigned = existing_memberships.filter(
+                        Q(team__current_defense_stage__isnull=True) | Q(team__current_defense_stage='')
+                    ).distinct()
+                    if existing_unassigned.exists():
+                        student = User.objects.get(pk=student_id)
+                        current_team = existing_unassigned.first().team
+                        student_name = display_name(student)
+                        raise serializers.ValidationError({
+                            'member_ids': f'{student_name} is already assigned to team "{current_team.name}". A student can only be in one team at a time.'
+                        })
+            else:
+                # Capstone: student can only be in one Capstone team per semester
+                existing_memberships = TeamMembership.objects.filter(
+                    student_id=student_id,
+                    team__semester__is_active=True,
+                    team__level__icontains='Capstone',
+                )
+                if team_id:
+                    existing_memberships = existing_memberships.exclude(team_id=team_id)
+                if existing_memberships.exists():
+                    student = User.objects.get(pk=student_id)
+                    current_team = existing_memberships.first().team
+                    student_name = display_name(student)
+                    raise serializers.ValidationError({
+                        'member_ids': f'{student_name} is already assigned to team "{current_team.name}". A student can only be in one Capstone team at a time.'
+                    })
 
         try:
             attrs['leader'] = User.objects.get(pk=attrs['leader_id'], role='student')
@@ -503,9 +564,28 @@ class StudentTeamWriteSerializer(serializers.Serializer):
         # Remove old memberships for this team
         team.memberships.all().delete()
         
-        # Remove students from any other teams they might be in
-        # This ensures a student is only in one team at a time
-        TeamMembership.objects.filter(student_id__in=member_ids).exclude(team=team).delete()
+        # Remove students from conflicting teams in the same semester
+        if team.is_pit:
+            event_name = (team.current_defense_stage or '').strip()
+            if event_name:
+                TeamMembership.objects.filter(
+                    student_id__in=member_ids,
+                    team__semester=team.semester,
+                    team__current_defense_stage=event_name,
+                ).exclude(team=team).delete()
+            else:
+                TeamMembership.objects.filter(
+                    student_id__in=member_ids,
+                    team__semester=team.semester,
+                    team__level__icontains='PIT',
+                    team__current_defense_stage__in=['', None],
+                ).exclude(team=team).delete()
+        else:
+            TeamMembership.objects.filter(
+                student_id__in=member_ids,
+                team__semester=team.semester,
+                team__level__icontains='Capstone',
+            ).exclude(team=team).delete()
         
         # Create new memberships
         memberships = [

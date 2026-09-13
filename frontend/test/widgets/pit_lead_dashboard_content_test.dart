@@ -26,7 +26,8 @@ void main() {
         'team_pipeline': {
           'total_teams': 3,
           'ready_for_defense': 1,
-          'teams_with_adviser': 3,
+          'teams_with_instructor': 3,
+          'teams_with_adviser': 0,
           'teams_without_adviser': 0,
           'stage_distribution': [
             {'label': 'Concept Proposal', 'code': 'CP', 'count': 1},
@@ -110,7 +111,7 @@ void main() {
     expect(find.text('PIT Pipeline & Readiness'), findsOneWidget);
     expect(find.text('Total Teams'), findsOneWidget);
     expect(find.text('Stage Ready'), findsOneWidget);
-    expect(find.text('With Adviser'), findsOneWidget);
+    expect(find.text('With Instructor'), findsOneWidget);
 
     // Verify Action Items Tab
     expect(find.text('Action Items'), findsOneWidget);

@@ -1197,6 +1197,72 @@ class CapstoneDeliverablesApiTests(APITestCase):
         self.assertIn('2nd Year Expo', response.data['stage_options'])
         self.assertNotIn('1st year Expo', response.data['stage_options'])
 
+    def test_pit_deliverables_filtered_by_team_id_scopes_stage_options_to_team_year(self):
+        from defense.scheduler.models import PitEventGradingConfig
+        from grading.rubrics.models import Rubric
+        panel_rubric = Rubric.objects.create(
+            name='PIT Panel Rubric 3',
+            evaluation_type='panel',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        peer_rubric = Rubric.objects.create(
+            name='PIT Peer Rubric 3',
+            evaluation_type='peer',
+            scope='pit',
+            status='published',
+            semester=self.semester,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='1st Year Concept Pitch',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        PitEventGradingConfig.objects.create(
+            semester=self.semester,
+            event_name='2nd Year Architecture Pitch',
+            panel_rubric=panel_rubric,
+            peer_rubric=peer_rubric,
+        )
+        pit_student_1 = User.objects.create_user(
+            username='pit-student-1st',
+            password='pass12345',
+            role='student',
+        )
+        pit_team_1 = StudentTeam.objects.create(
+            name='Team CyberShield',
+            semester=self.semester,
+            leader=pit_student_1,
+            level='1st Year PIT',
+            year_level='1st Year',
+        )
+        TeamMembership.objects.create(team=pit_team_1, student=pit_student_1)
+
+        pit_student_2 = User.objects.create_user(
+            username='pit-student-2nd',
+            password='pass12345',
+            role='student',
+        )
+        pit_team_2 = StudentTeam.objects.create(
+            name='Team ArchGuard',
+            semester=self.semester,
+            leader=pit_student_2,
+            level='2nd Year PIT',
+            year_level='2nd Year',
+        )
+        TeamMembership.objects.create(team=pit_team_2, student=pit_student_2)
+
+        # As admin, query with team_id for 1st Year team
+        self.client.force_authenticate(user=self.admin)
+        response = self.client.get(f'/api/repository/deliverables/?scope=pit&team_id={pit_team_1.id}')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(len(response.data['teams']), 1)
+        self.assertEqual(response.data['teams'][0]['id'], pit_team_1.id)
+        self.assertIn('1st Year Concept Pitch', response.data['stage_options'])
+        self.assertNotIn('2nd Year Architecture Pitch', response.data['stage_options'])
+
     def test_post_defense_review_locked_for_faculty_and_unlocked_by_admin(self):
         DefenseSchedule.objects.create(
             scope=DefenseSchedule.SCOPE_CAPSTONE,

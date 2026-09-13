@@ -696,8 +696,26 @@ def _pit_lead_overview_payload(user, active_sem=None):
             'count': count,
         })
 
-    teams_with_adviser = pit_teams.filter(adviser__isnull=False).count()
-    teams_without_adviser = pit_teams.filter(adviser__isnull=True).count()
+    # Section instructor coverage for PIT sections (PIT teams do not use project advisers)
+    from user_management.models import SectionInstructorAssignment
+    from student_teams.team_levels import normalize_year_level
+    norm_pit_year = normalize_year_level(pit_year) if pit_year else None
+    pit_sections = [s for s in pit_teams.values_list('section', flat=True).distinct() if s]
+    assigned_sections = set()
+    if active_sem and pit_sections:
+        assign_qs = SectionInstructorAssignment.objects.filter(
+            semester=active_sem,
+            section__in=pit_sections,
+            is_active=True,
+            faculty__isnull=False,
+        )
+        if norm_pit_year:
+            assign_qs = assign_qs.filter(year_level=norm_pit_year)
+        assigned_sections = set(assign_qs.values_list('section', flat=True))
+
+    teams_with_instructor = pit_teams.filter(section__in=assigned_sections).count()
+    teams_without_instructor = pit_teams.exclude(section__in=assigned_sections).count()
+
     ready_pit_count = pit_teams.filter(
         ready_for_stage__isnull=False
     ).exclude(ready_for_stage='').count()
@@ -705,21 +723,25 @@ def _pit_lead_overview_payload(user, active_sem=None):
     team_pipeline = {
         'total_teams': pit_teams.count(),
         'ready_for_defense': ready_pit_count,
-        'teams_with_adviser': teams_with_adviser,
-        'teams_without_adviser': teams_without_adviser,
+        'teams_with_instructor': teams_with_instructor,
+        'teams_without_instructor': teams_without_instructor,
+        'teams_with_adviser': 0,
+        'teams_without_adviser': 0,
         'pit_teams': pit_teams.count(),
         'stage_distribution': stage_distribution,
     }
 
     # Action items for PIT Lead
     action_items = []
-    if teams_without_adviser > 0:
+    unassigned_sections = [s for s in pit_sections if s not in assigned_sections]
+    if unassigned_sections:
+        sec_count = len(unassigned_sections)
         action_items.append({
-            'id': 'unassigned_advisers',
-            'title': f'{teams_without_adviser} PIT {"Team needs" if teams_without_adviser == 1 else "Teams need"} an Adviser',
-            'description': 'Assign project advisers in Student Teams.',
+            'id': 'unassigned_instructors',
+            'title': f'{sec_count} PIT {"Section needs" if sec_count == 1 else "Sections need"} an Instructor',
+            'description': 'Assign section instructors in PIT Instructors.',
             'severity': 'warning',
-            'target_section': 'student_teams',
+            'target_section': 'pit_instructors',
             'button_label': 'Assign',
         })
 
@@ -854,8 +876,13 @@ class AdminDashboardView(APIView):
         stage_count = DefenseStage.objects.filter(is_active=True).count()
         published_rubric_count = Rubric.objects.filter(status=Rubric.STATUS_PUBLISHED).count()
         upcoming_defense_count = DefenseSchedule.objects.filter(status=DefenseSchedule.STATUS_SCHEDULED).count()
-        published_grade_count = TeamGrade.objects.filter(status=TeamGrade.STATUS_PUBLISHED).count()
-        pending_grade_count = TeamGrade.objects.exclude(status=TeamGrade.STATUS_PUBLISHED).count()
+        published_grade_count = TeamGrade.objects.filter(
+            scope=TeamGrade.SCOPE_CAPSTONE,
+            status=TeamGrade.STATUS_PUBLISHED,
+        ).count()
+        pending_grade_count = TeamGrade.objects.filter(
+            scope=TeamGrade.SCOPE_CAPSTONE,
+        ).exclude(status=TeamGrade.STATUS_PUBLISHED).count()
         submitted_deliverable_count = DeliverableSubmission.objects.count()
         archive_file_count = visible_archive_entries_count()
         restricted_archive_file_count = restricted_archive_entries_count()
@@ -910,9 +937,10 @@ class AdminDashboardView(APIView):
                 'count': count,
             })
 
-        teams_with_adviser = StudentTeam.objects.filter(adviser__isnull=False).count()
-        teams_without_adviser = StudentTeam.objects.filter(adviser__isnull=True).count()
-        capstone_teams_count = StudentTeam.objects.filter(level__icontains='Capstone').count()
+        capstone_teams = StudentTeam.objects.filter(level__icontains='Capstone')
+        teams_with_adviser = capstone_teams.filter(adviser__isnull=False).count()
+        teams_without_adviser = capstone_teams.filter(adviser__isnull=True).count()
+        capstone_teams_count = capstone_teams.count()
         pit_teams_count = StudentTeam.objects.filter(level__icontains='PIT').count()
 
         team_pipeline = {
@@ -930,7 +958,7 @@ class AdminDashboardView(APIView):
         if teams_without_adviser > 0:
             action_items.append({
                 'id': 'unassigned_advisers',
-                'title': f'{teams_without_adviser} {"Team needs" if teams_without_adviser == 1 else "Teams need"} an Adviser',
+                'title': f'{teams_without_adviser} Capstone {"Team needs" if teams_without_adviser == 1 else "Teams need"} an Adviser',
                 'description': 'Assign project advisers in Student Teams.',
                 'severity': 'warning',
                 'target_section': 'studentTeams',
@@ -943,12 +971,13 @@ class AdminDashboardView(APIView):
             ).values_list('team_id', flat=True)
         )
         unscheduled_ready_count = StudentTeam.objects.filter(
-            ready_for_stage__isnull=False
+            level__icontains='Capstone',
+            ready_for_stage__isnull=False,
         ).exclude(ready_for_stage='').exclude(id__in=scheduled_team_ids).count()
         if unscheduled_ready_count > 0:
             action_items.append({
                 'id': 'unscheduled_ready_teams',
-                'title': f'{unscheduled_ready_count} {"Team" if unscheduled_ready_count == 1 else "Teams"} Ready for Defense',
+                'title': f'{unscheduled_ready_count} Capstone {"Team" if unscheduled_ready_count == 1 else "Teams"} Ready for Defense',
                 'description': 'Deliverables verified. Review readiness queue to schedule.',
                 'severity': 'action',
                 'target_section': 'defenseBoardReadiness',
@@ -958,7 +987,7 @@ class AdminDashboardView(APIView):
         if pending_grade_count > 0:
             action_items.append({
                 'id': 'pending_grades',
-                'title': f'{pending_grade_count} Unpublished Defense {"Grade" if pending_grade_count == 1 else "Grades"}',
+                'title': f'{pending_grade_count} Unpublished Capstone Defense {"Grade" if pending_grade_count == 1 else "Grades"}',
                 'description': 'Review and publish panel scores in Grade Center.',
                 'severity': 'warning',
                 'target_section': 'gradeCenter',
